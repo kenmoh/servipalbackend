@@ -1,0 +1,456 @@
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
+import secrets
+from uuid import UUID, uuid4
+import uuid
+from datetime import datetime
+from decimal import Decimal
+import logging
+from typing import Optional, Tuple
+
+from sqlalchemy import DateTime, ForeignKey, ARRAY, Sequence, String, func, Float, text
+from sqlalchemy.dialects.postgresql import CHAR
+from sqlalchemy.orm import mapped_column, Mapped, relationship
+from sqlalchemy.types import TypeDecorator
+
+from app.database.database import Base
+from app.schemas.delivery_schemas import DeliveryType
+from app.schemas.item_schemas import ItemType
+from app.schemas.status_schema import (
+    AccountStatus,
+    DelivertyStatus,
+    OrderStatus,
+    OrderType,
+    PaymentStatus,
+    RequireDeliverySchema,
+    TransactionType,
+)
+
+logging.basicConfig(level=logging.INFO)
+logging.getLogger("sqlalchemy.engine").setLevel(logging.INFO)
+
+
+# def generate_order_number():
+#     characters = string.ascii_uppercase + string.digits
+#     return "".join(random.choice(characters) for _ in range(10))
+
+
+def generate_order_number():
+    date_part = datetime.now().strftime("%Y%m%d")
+    random_part = secrets.token_hex(3).upper()[:5]
+    return f"ORD-{date_part}-{random_part}"
+
+
+class Base(DeclarativeBase):
+    pass
+
+
+class User(Base):
+    __tablename__ = "users"
+
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    email: Mapped[str] = mapped_column(unique=True, nullable=False)
+    password: Mapped[str]
+    is_blocked: Mapped[bool] = mapped_column(default=False)
+    is_verified: Mapped[bool] = mapped_column(default=False)
+    user_type: Mapped[str] = mapped_column(  # make it a UserType Enum
+        nullable=False,
+    )
+    account_status: Mapped[AccountStatus] = mapped_column(
+        default=AccountStatus.PENDING)
+    # Add dispatcher-rider relationship
+    dispatcher_id: Mapped[Optional[UUID]] = mapped_column(
+        ForeignKey("users.id"),
+        nullable=True,
+    )
+
+    # Dispatcher-side
+    managed_riders: Mapped[list["User"]] = relationship(
+        "User",
+        back_populates="dispatcher",
+        foreign_keys=[dispatcher_id],
+        # remote_side=[id],
+        lazy="dynamic",  # Important for self-referential relationship
+    )
+    # Rider-side
+
+    dispatcher: Mapped[Optional["User"]] = relationship(
+        "User",
+        back_populates="managed_riders",
+        foreign_keys=[dispatcher_id],
+        remote_side=[id],
+        lazy="joined",
+    )
+    created_at: Mapped[datetime] = mapped_column(default=datetime.now)
+    updated_at: Mapped[datetime] = mapped_column(
+        default=datetime.now, onupdate=datetime.now
+    )
+
+    # Relationships
+    profile: Mapped["Profile"] = relationship(
+        back_populates="user",
+        uselist=False,
+        lazy="selectin",
+    )
+    wallet: Mapped["Wallet"] = relationship(
+        back_populates="user",
+        uselist=False,
+        lazy="selectin",
+    )
+    items: Mapped[list["Item"]] = relationship(back_populates="vendor")
+    orders_placed: Mapped[list["Order"]] = relationship(
+        back_populates="owner", foreign_keys="Order.owner_id"
+    )
+    orders_received: Mapped[list["Order"]] = relationship(
+        back_populates="vendor", foreign_keys="Order.vendor_id"
+    )
+    deliveries_as_rider: Mapped[list["Delivery"]] = relationship(
+        back_populates="rider", foreign_keys="Delivery.rider_id"
+    )
+    deliveries_as_sender: Mapped[list["Delivery"]] = relationship(
+        back_populates="sender", foreign_keys="Delivery.sender_id"
+    )
+    # products_listed: Mapped[list["Product"]] = relationship(
+    #     back_populates="seller", foreign_keys="Product.seller_id"
+    # )
+    refresh_tokens = relationship(
+        "RefreshToken", back_populates="user", cascade="all, delete-orphan"
+    )
+
+
+class Profile(Base):
+    __tablename__ = "profile"
+
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    user_id: Mapped[UUID] = mapped_column(ForeignKey("users.id"), unique=True)
+    business_name: Mapped[str] = mapped_column(nullable=True)
+    bank_name: Mapped[str] = mapped_column(nullable=True)
+    bank_account_number: Mapped[str] = mapped_column(nullable=True)
+    business_address: Mapped[str] = mapped_column(nullable=True)
+    business_registration_number: Mapped[str] = mapped_column(nullable=True)
+    opening_hours: Mapped[datetime] = mapped_column(nullable=True)
+    closing_hours: Mapped[datetime] = mapped_column(nullable=True)
+    full_name: Mapped[str] = mapped_column(nullable=True)
+    phone_number: Mapped[str] = mapped_column(unique=True, nullable=False)
+    bike_number: Mapped[str] = mapped_column(unique=True, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(default=datetime.now)
+    updated_at: Mapped[datetime] = mapped_column(
+        default=datetime.now, onupdate=datetime.now
+    )
+
+    user: Mapped["User"] = relationship(back_populates="profile")
+
+
+class Session(Base):
+    __tablename__ = "sessions"
+
+    id: Mapped[UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid4)
+    user_id: Mapped[UUID] = mapped_column(ForeignKey("users.id"))
+    device_info: Mapped[str] = mapped_column(String)
+    ip_address: Mapped[str] = mapped_column(String)
+    last_active: Mapped[datetime] = mapped_column(default=datetime.now)
+    is_active: Mapped[bool]
+
+
+class Wallet(Base):
+    __tablename__ = "wallets"
+
+    id: Mapped[UUID] = mapped_column(ForeignKey("users.id"), primary_key=True)
+    balance: Mapped[Decimal] = mapped_column(default=0.00)
+    escrow_balance: Mapped[Decimal] = mapped_column(default=0.00)
+    created_at: Mapped[datetime] = mapped_column(default=datetime.now)
+    updated_at: Mapped[datetime] = mapped_column(
+        default=datetime.now, onupdate=datetime.now
+    )
+
+    user: Mapped["User"] = relationship(back_populates="wallet")
+    # product: Mapped["Product"] = relationship(
+    #     back_populates="wallet", lazy="selectin")
+    transactions: Mapped[list["Transaction"]] = relationship(
+        back_populates="wallet", lazy="selectin"
+    )
+
+
+class Transaction(Base):
+    __tablename__ = "transactions"
+
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    wallet_id: Mapped[UUID] = mapped_column(ForeignKey("wallets.id"))
+    # product_id: Mapped[Optional[UUID]] = mapped_column(  # Added link to product
+    #     ForeignKey("products.id"), nullable=True
+    # )
+    amount: Mapped[Decimal] = mapped_column(default=0.00)
+    transaction_type: Mapped[TransactionType]
+    payment_status: Mapped[PaymentStatus] = mapped_column(
+        default=PaymentStatus.PENDING)
+    payment_link: Mapped[str] = mapped_column(nullable=True)
+    created_at: Mapped[datetime] = mapped_column(default=datetime.now)
+    updated_at: Mapped[datetime] = mapped_column(
+        default=datetime.now, onupdate=datetime.now
+    )
+    wallet: Mapped["Wallet"] = relationship(back_populates="transactions")
+    # product: Mapped[Optional['Product']] = relationship(  # Added relationship to Product
+    #     back_populates="transactions"
+    # )
+
+
+class RefreshToken(Base):
+    __tablename__ = "refresh_tokens"
+
+    id: Mapped[UUID] = mapped_column(
+        primary_key=True, nullable=False, default=uuid.uuid1, index=True
+    )
+    token: Mapped[str] = mapped_column(unique=True, index=True, nullable=False)
+    user_type: Mapped[str] = mapped_column(
+        nullable=True)  # TODO: change to False
+    expires_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+    is_revoked: Mapped[bool] = mapped_column(default=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+    # Relationships
+    user_id: Mapped[UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    user = relationship("User", back_populates="refresh_tokens")
+
+
+class Category(Base):
+    __tablename__ = "categories"
+
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    name: Mapped[str] = mapped_column(unique=True)
+    created_at: Mapped[datetime] = mapped_column(default=datetime.now)
+
+    items: Mapped[list["Item"]] = relationship(back_populates="category")
+    # products: Mapped[list["Product"]] = relationship(back_populates="category")
+
+
+class Item(Base):
+    __tablename__ = "items"
+
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    item_type: Mapped[ItemType]
+    user_id: Mapped[UUID] = mapped_column(ForeignKey("users.id"))
+    name: Mapped[str]
+    description: Mapped[str] = mapped_column(nullable=True)
+    price: Mapped[Decimal] = mapped_column(default=0.00, nullable=False)
+    image_url: Mapped[str] = mapped_column(nullable=True)
+    sizes: Mapped[str] = mapped_column(nullable=True)
+    colors: Mapped[list[str]] = mapped_column(ARRAY(String), nullable=True)
+    stock: Mapped[int] = mapped_column(nullable=True)
+    in_stock: Mapped[bool] = mapped_column(default=True)
+    total_sold: Mapped[int] = mapped_column(nullable=True)
+
+    category_id: Mapped[UUID] = mapped_column(
+        ForeignKey("categories.id"), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(default=datetime.now)
+    updated_at: Mapped[datetime] = mapped_column(
+        default=datetime.now, onupdate=datetime.now
+    )
+
+    vendor: Mapped["User"] = relationship(back_populates="items")
+    category: Mapped["Category"] = relationship(back_populates="items")
+    order_items: Mapped[list["OrderItem"]
+                        ] = relationship(back_populates="item")
+
+
+class Order(Base):
+    __tablename__ = "orders"
+
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    # order_number: Mapped[str] = mapped_column(
+    # String(15),
+    # server_default=text("'ORD-' || lpad(nextval('order_number_seq')::text, 6, '0')"),
+    # nullable=False,
+    # unique=True,
+    # )
+    owner_id: Mapped[UUID] = mapped_column(ForeignKey("users.id"))
+    vendor_id: Mapped[UUID] = mapped_column(ForeignKey("users.id"))
+    order_type: Mapped[OrderType] = mapped_column(default=OrderType.PACKAGE)
+    total_price: Mapped[Decimal] = mapped_column(default=0.00)
+    amount_due_vendor: Mapped[Decimal] = mapped_column(nullable=False)
+    payment_link: Mapped[str] = mapped_column(nullable=True)
+    order_payment_status: Mapped[PaymentStatus] = mapped_column(
+        default=PaymentStatus.PENDING
+    )
+    order_status: Mapped[OrderStatus] = mapped_column(nullable=True)
+
+    require_delivery: Mapped[RequireDeliverySchema] = mapped_column(
+        default=RequireDeliverySchema.PICKUP
+    )
+    created_at: Mapped[datetime] = mapped_column(default=datetime.now)
+    updated_at: Mapped[datetime] = mapped_column(
+        default=datetime.now, onupdate=datetime.now
+    )
+
+    owner: Mapped["User"] = relationship(
+        back_populates="orders_placed", foreign_keys=[owner_id]
+    )
+    vendor: Mapped["User"] = relationship(
+        back_populates="orders_received", foreign_keys=[vendor_id]
+    )
+    order_items: Mapped[list["OrderItem"]] = relationship(
+        back_populates="order",
+        lazy="selectin",
+    )
+    delivery: Mapped["Delivery"] = relationship(back_populates="order")
+
+
+class OrderItem(Base):
+    __tablename__ = "order_items"
+
+    order_id: Mapped[UUID] = mapped_column(
+        ForeignKey("orders.id"), primary_key=True)
+    item_id: Mapped[UUID] = mapped_column(
+        ForeignKey("items.id"), primary_key=True)
+    quantity: Mapped[int] = mapped_column(default=1)
+    created_at: Mapped[datetime] = mapped_column(default=datetime.now)
+
+    order: Mapped["Order"] = relationship(back_populates="order_items")
+    item: Mapped["Item"] = relationship(back_populates="order_items")
+
+
+class Delivery(Base):
+    __tablename__ = "deliveries"
+
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    order_id: Mapped[UUID] = mapped_column(ForeignKey("orders.id"))
+    rider_id: Mapped[UUID] = mapped_column(
+        ForeignKey("users.id"), nullable=True)
+    dispatch_id: Mapped[UUID] = mapped_column(
+        ForeignKey("users.id"), nullable=True)
+    vendor_id: Mapped[UUID] = mapped_column(
+        ForeignKey("users.id"), nullable=True)
+    sender_id: Mapped[UUID] = mapped_column(
+        ForeignKey("users.id"), nullable=True)
+    image_url: Mapped[str] = mapped_column(nullable=True)
+    pickup_coordinates: Mapped[Tuple[float, float]
+                               ] = mapped_column(ARRAY(Float))
+    dropoff_coordinates: Mapped[Tuple[float, float]
+                                ] = mapped_column(ARRAY(Float))
+    delivery_status: Mapped[str] = mapped_column(nullable=True)
+    delivery_fee: Mapped[Decimal] = mapped_column(nullable=False)
+
+    delivery_status: Mapped[DelivertyStatus] = mapped_column(
+        default=DelivertyStatus.PENDING
+    )
+    delivery_type: Mapped[DeliveryType]
+    amount_due_dispatch: Mapped[Decimal] = mapped_column(nullable=False)
+    created_at: Mapped[datetime] = mapped_column(default=datetime.now)
+    updated_at: Mapped[datetime] = mapped_column(
+        default=datetime.now, onupdate=datetime.now
+    )
+
+    order: Mapped["Order"] = relationship(
+        back_populates="delivery",
+        lazy="selectin",
+    )
+    rider: Mapped["User"] = relationship(
+        back_populates="deliveries_as_rider", foreign_keys=[rider_id]
+    )
+    sender: Mapped["User"] = relationship(
+        back_populates="deliveries_as_sender", foreign_keys=[sender_id]
+    )
+
+
+class ChargeAndCommission(Base):
+    __tablename__ = "charges"
+
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    payment_gate_way_fee: Mapped[Decimal]
+    value_added_tax: Mapped[Decimal]
+    payout_charge_transaction_upto_5000_naira: Mapped[Decimal]
+    payout_charge_transaction_from_5001_to_50_000_naira: Mapped[Decimal]
+    payout_charge_transaction_above_50_000_naira: Mapped[Decimal]
+    stamp_duty: Mapped[Decimal]
+    base_delivery_fee: Mapped[Decimal]
+    delivery_fee_per_km: Mapped[Decimal]
+    delivery_commission_percentage: Mapped[Decimal]
+    food_laundry_commission_percentage: Mapped[Decimal]
+    product_commission_percentage: Mapped[Decimal]
+    created_at: Mapped[datetime] = mapped_column(default=datetime.today)
+    updated_at: Mapped[datetime] = mapped_column(default=datetime.today)
+
+
+# class Product(Base):
+#     __tablename__ = "products"
+
+#     id: Mapped[UUID] = mapped_column(
+#         primary_key=True, nullable=False, default=uuid4)
+#     seller_id: Mapped[UUID] = mapped_column(
+#         ForeignKey("users.id"), nullable=False)
+# buyer_id: Mapped[UUID] = mapped_column(
+#     ForeignKey("users.id"), nullable=True)
+# wallet_id: Mapped[UUID] = mapped_column(ForeignKey("wallets.id"))
+# category_id: Mapped[UUID] = mapped_column(
+#     # Assuming mandatory category
+#     ForeignKey("categories.id", ondelete="SET NULL"), nullable=False
+# )
+# name: Mapped[str]
+# total_sold: Mapped[int] = mapped_column(nullable=False, default=0)
+# price: Mapped[Decimal]
+# stock: Mapped[int]
+# image_urls: Mapped[list[str]] = mapped_column(ARRAY(String))
+# sizes: Mapped[str] = mapped_column(nullable=True)
+# colors: Mapped[list[str]] = mapped_column(ARRAY(String), nullable=True)
+# description: Mapped[str]
+# in_stock: Mapped[bool] = mapped_column(default=True)
+# seller: Mapped["User"] = relationship(
+#     "User", back_populates="products_listed", lazy="selectin")
+# wallet: Mapped["Wallet"] = relationship("Wallet", back_populates="product")
+# category: Mapped["Category"] = relationship(
+#     back_populates="products", lazy="selectin")
+# transactions: Mapped[list["Transaction"]] = relationship(
+#     back_populates="product" , lazy="selectin" # Matches Transaction.product
+# )
+# created_at: Mapped[datetime] = mapped_column(default=datetime.now)
+# updated_at: Mapped[datetime] = mapped_column(
+#     default=datetime.now, onupdate=datetime.now)
+
+
+"""
+
+-- 🚀 CENTRAL ORDERS TABLE
+CREATE TABLE orders (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    owner_id UUID REFERENCES users(id) ON DELETE CASCADE,
+    vendor_id UUID REFERENCES users(id) ON DELETE CASCADE,
+    order_type VARCHAR(50) NOT NULL CHECK (order_type IN ('meal', 'laundry', 'p2p', 'package')),
+    total_price NUMERIC(10, 2) NOT NULL,
+    payment_link TEXT
+    order_payment_status VARCHAR(50) NOT NULL CHECK (order_payment_status IN ('pending', 'paid', 'processing', 'completed', 'cancelled')),
+    created_at TIMESTAMP DEFAULT NOW(),
+    updated_at TIMESTAMP DEFAULT NOW()
+);
+
+-- Meal Order Items (items inside a meal order)
+CREATE TABLE order_items (
+
+    order_id UUID REFERENCES orders(id) ON DELETE CASCADE,
+    item_id UUID REFERENCES items(id) ON DELETE CASCADE,
+    quantity INTEGER DEFAULT 1,
+    created_at TIMESTAMP DEFAULT NOW()
+);
+
+-- Deliveries Table
+CREATE TABLE deliveries (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    order_id UUID REFERENCES orders(id) ON DELETE CASCADE,
+    image_url TEXT,
+    rider_id UUID NULL REFERENCES users(id),
+    sender_id UUID NULL REFERENCES users(id),
+    delivery_type VARCHAR(50) NOT NULL CHECK (delivery_type IN ('meal', 'laundry', 'package')),
+    pickup_coordinates GEOMETRY(Point, 4326),
+    dropoff_coordinates GEOMETRY(Point, 4326),
+    delivery_status VARCHAR(50) CHECK (delivery_status IN ('pending', 'in_progress', 'completed', 'cancelled')),
+    delivery_fee NUMERIC(10, 2) NOT NULL,
+    amount_due_dispatch NUMERIC(10, 2) NOT NULL,
+    created_at TIMESTAMP DEFAULT NOW(),
+    updated_at TIMESTAMP DEFAULT NOW()
+);
+"""
