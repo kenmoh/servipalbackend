@@ -40,20 +40,6 @@ class Base(AsyncAttrs, DeclarativeBase):
     pass
 
 
-# async def retry_operation(operation, max_retries: int = 3, delay: int = 1):
-#     """Retry database operations with exponential backoff"""
-#     for attempt in range(max_retries):
-#         try:
-#             return await operation()
-#         except DBAPIError as e:
-#             if attempt == max_retries - 1:  # Last attempt
-#                 raise HTTPException(
-#                     status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-#                     detail="Database connection error. Please try again later."
-#                 ) from e
-#             await asyncio.sleep(delay * (2 ** attempt))  # Exponential backoff
-
-
 @with_db_retry()
 async def get_db() -> AsyncGenerator[AsyncSession, None]:
     async with async_sessionmaker(engine, expire_on_commit=False)() as session:

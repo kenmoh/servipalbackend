@@ -203,8 +203,6 @@ class Wallet(Base):
     )
 
     user: Mapped["User"] = relationship(back_populates="wallet")
-    # product: Mapped["Product"] = relationship(
-    #     back_populates="wallet", lazy="selectin")
     transactions: Mapped[list["Transaction"]] = relationship(
         back_populates="wallet", lazy="selectin"
     )
@@ -215,9 +213,6 @@ class Transaction(Base):
 
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
     wallet_id: Mapped[UUID] = mapped_column(ForeignKey("wallets.id"))
-    # product_id: Mapped[Optional[UUID]] = mapped_column(  # Added link to product
-    #     ForeignKey("products.id"), nullable=True
-    # )
     amount: Mapped[Decimal] = mapped_column(default=0.00)
     transaction_type: Mapped[TransactionType]
     payment_status: Mapped[PaymentStatus] = mapped_column(
@@ -228,9 +223,6 @@ class Transaction(Base):
         default=datetime.now, onupdate=datetime.now
     )
     wallet: Mapped["Wallet"] = relationship(back_populates="transactions")
-    # product: Mapped[Optional['Product']] = relationship(  # Added relationship to Product
-    #     back_populates="transactions"
-    # )
 
 
 class RefreshToken(Base):
@@ -434,82 +426,3 @@ class ChargeAndCommission(Base):
     product_commission_percentage: Mapped[Decimal]
     created_at: Mapped[datetime] = mapped_column(default=datetime.today)
     updated_at: Mapped[datetime] = mapped_column(default=datetime.today)
-
-
-# class Product(Base):
-#     __tablename__ = "products"
-
-#     id: Mapped[UUID] = mapped_column(
-#         primary_key=True, nullable=False, default=uuid4)
-#     seller_id: Mapped[UUID] = mapped_column(
-#         ForeignKey("users.id"), nullable=False)
-# buyer_id: Mapped[UUID] = mapped_column(
-#     ForeignKey("users.id"), nullable=True)
-# wallet_id: Mapped[UUID] = mapped_column(ForeignKey("wallets.id"))
-# category_id: Mapped[UUID] = mapped_column(
-#     # Assuming mandatory category
-#     ForeignKey("categories.id", ondelete="SET NULL"), nullable=False
-# )
-# name: Mapped[str]
-# total_sold: Mapped[int] = mapped_column(nullable=False, default=0)
-# price: Mapped[Decimal]
-# stock: Mapped[int]
-# image_urls: Mapped[list[str]] = mapped_column(ARRAY(String))
-# sizes: Mapped[str] = mapped_column(nullable=True)
-# colors: Mapped[list[str]] = mapped_column(ARRAY(String), nullable=True)
-# description: Mapped[str]
-# in_stock: Mapped[bool] = mapped_column(default=True)
-# seller: Mapped["User"] = relationship(
-#     "User", back_populates="products_listed", lazy="selectin")
-# wallet: Mapped["Wallet"] = relationship("Wallet", back_populates="product")
-# category: Mapped["Category"] = relationship(
-#     back_populates="products", lazy="selectin")
-# transactions: Mapped[list["Transaction"]] = relationship(
-#     back_populates="product" , lazy="selectin" # Matches Transaction.product
-# )
-# created_at: Mapped[datetime] = mapped_column(default=datetime.now)
-# updated_at: Mapped[datetime] = mapped_column(
-#     default=datetime.now, onupdate=datetime.now)
-
-
-"""
-
--- 🚀 CENTRAL ORDERS TABLE
-CREATE TABLE orders (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    owner_id UUID REFERENCES users(id) ON DELETE CASCADE,
-    vendor_id UUID REFERENCES users(id) ON DELETE CASCADE,
-    order_type VARCHAR(50) NOT NULL CHECK (order_type IN ('meal', 'laundry', 'p2p', 'package')),
-    total_price NUMERIC(10, 2) NOT NULL,
-    payment_link TEXT
-    order_payment_status VARCHAR(50) NOT NULL CHECK (order_payment_status IN ('pending', 'paid', 'processing', 'completed', 'cancelled')),
-    created_at TIMESTAMP DEFAULT NOW(),
-    updated_at TIMESTAMP DEFAULT NOW()
-);
-
--- Meal Order Items (items inside a meal order)
-CREATE TABLE order_items (
-
-    order_id UUID REFERENCES orders(id) ON DELETE CASCADE,
-    item_id UUID REFERENCES items(id) ON DELETE CASCADE,
-    quantity INTEGER DEFAULT 1,
-    created_at TIMESTAMP DEFAULT NOW()
-);
-
--- Deliveries Table
-CREATE TABLE deliveries (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    order_id UUID REFERENCES orders(id) ON DELETE CASCADE,
-    image_url TEXT,
-    rider_id UUID NULL REFERENCES users(id),
-    sender_id UUID NULL REFERENCES users(id),
-    delivery_type VARCHAR(50) NOT NULL CHECK (delivery_type IN ('meal', 'laundry', 'package')),
-    pickup_coordinates GEOMETRY(Point, 4326),
-    dropoff_coordinates GEOMETRY(Point, 4326),
-    delivery_status VARCHAR(50) CHECK (delivery_status IN ('pending', 'in_progress', 'completed', 'cancelled')),
-    delivery_fee NUMERIC(10, 2) NOT NULL,
-    amount_due_dispatch NUMERIC(10, 2) NOT NULL,
-    created_at TIMESTAMP DEFAULT NOW(),
-    updated_at TIMESTAMP DEFAULT NOW()
-);
-"""

@@ -371,3 +371,30 @@ class RiderCreate(RiderBase):
     phone_number: str
     bike_number: str
     full_name: str
+
+
+class SessionResponse(BaseModel):
+    id: UUID
+    device_info: str
+    ip_address: str
+    last_active: datetime
+    is_active: bool
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class AdminSessionResponse(BaseModel):
+    id: UUID
+    user_id: UUID
+    user_email: str = Field(..., alias="user.email")
+    device_info: str
+    ip_address: str
+    last_active: datetime
+    is_active: bool
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+        populate_by_name = True

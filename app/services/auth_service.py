@@ -434,3 +434,96 @@ async def reset_password(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to reset password: {str(e)}"
         )
+
+
+async def get_user_sessions(
+    db: AsyncSession,
+    current_user: User,
+    active_only: bool = False
+) -> list[Session]:
+    """
+    Get all sessions for a user
+
+    Args:
+        db: Database session
+        current_user: Currently authenticated user
+        active_only: If True, return only active sessions
+
+    Returns:
+        list[Session]: List of user sessions
+    """
+    try:
+        query = (
+            select(Session)
+            .where(Session.user_id == current_user.id)
+            .order_by(Session.last_active.desc())
+        )
+
+        if active_only:
+            query = query.where(Session.is_active == True)
+
+        result = await db.execute(query)
+        sessions = result.scalars().all()
+
+        return sessions
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to fetch sessions: {str(e)}"
+        )
+
+
+async def get_all_user_sessions(
+    db: AsyncSession,
+    current_user: User,
+    user_id: UUID = None,
+    active_only: bool = False,
+    skip: int = 0,
+    limit: int = 50
+) -> list[Session]:
+    """
+    Get all sessions (admin only)
+
+    Args:
+        db: Database session
+        current_user: Currently authenticated user (must be admin)
+        user_id: Optional - filter by specific user
+        active_only: If True, return only active sessions
+        skip: Number of records to skip
+        limit: Maximum number of records to return
+
+    Returns:
+        list[Session]: List of all sessions
+    """
+    if current_user.user_type != UserType.ADMIN:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin access required"
+        )
+
+    try:
+        query = (
+            select(Session)
+            .options(joinedload(Session.user))
+            .order_by(Session.last_active.desc())
+            .offset(skip)
+            .limit(limit)
+        )
+
+        if user_id:
+            query = query.where(Session.user_id == user_id)
+
+        if active_only:
+            query = query.where(Session.is_active == True)
+
+        result = await db.execute(query)
+        sessions = result.scalars().all()
+
+        return sessions
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to fetch sessions: {str(e)}"
+        )

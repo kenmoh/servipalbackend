@@ -1,4 +1,5 @@
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from uuid import UUID
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.security import OAuth2PasswordRequestForm
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -6,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.auth.auth import create_tokens, get_current_user
 from app.database.database import get_db
 from app.models.models import User
-from app.schemas.user_schemas import PasswordChange, PasswordResetConfirm, PasswordResetRequest, RiderCreate, TokenResponse, UserBase, UserCreate
+from app.schemas.user_schemas import AdminSessionResponse, PasswordChange, PasswordResetConfirm, PasswordResetRequest, RiderCreate, SessionResponse, TokenResponse, UserBase, UserCreate
 from app.services import auth_service
 
 
@@ -75,6 +76,36 @@ async def create_user(
 
     return await auth_service.create_new_rider(
         db=db, data=data, current_user=current_user
+    )
+
+
+@router.get("/sessions", response_model=list[SessionResponse])
+async def list_sessions(
+    active_only: bool = Query(False, description="Show only active sessions"),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """List all sessions for the current user"""
+    return await auth_service.get_user_sessions(db, current_user, active_only)
+
+
+@router.get("/admin/sessions", response_model=list[AdminSessionResponse])
+async def list_all_sessions(
+    user_id: UUID = Query(None, description="Filter by user ID"),
+    active_only: bool = Query(False, description="Show only active sessions"),
+    skip: int = Query(0, ge=0),
+    limit: int = Query(50, ge=1, le=100),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """List all sessions (admin only)"""
+    return await auth_service.get_all_user_sessions(
+        db,
+        current_user,
+        user_id,
+        active_only,
+        skip,
+        limit
     )
 
 # <<<<< ------------- PASSWORD CHANGE ------------ >>>>>
