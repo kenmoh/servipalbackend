@@ -237,7 +237,8 @@ async def create_session(
     session = Session(
         user_id=user_id,
         device_info=request.headers.get("user-agent", "unknown"),
-        ip_address=request.client.host
+        ip_address=request.client.host,
+        is_active=True
     )
     db.add(session)
     await db.commit()
