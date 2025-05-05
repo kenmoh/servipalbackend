@@ -138,6 +138,46 @@ class Profile(Base):
     )
 
     user: Mapped["User"] = relationship(back_populates="profile")
+    profile_image: Mapped["ProfileImage"] = relationship(
+        back_populates="profile",
+        uselist=False,
+        cascade="all, delete-orphan",
+        lazy="selectin"
+    )
+    backdrop: Mapped["ProfileBackdrop"] = relationship(
+        back_populates="profile",
+        uselist=False,
+        cascade="all, delete-orphan",
+        lazy="selectin"
+    )
+
+
+class ProfileImage(Base):
+    __tablename__ = "profile_images"
+
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    profile_id: Mapped[UUID] = mapped_column(
+        ForeignKey("profile.id", ondelete="CASCADE"))
+    url: Mapped[str]
+    created_at: Mapped[datetime] = mapped_column(default=datetime.now)
+    updated_at: Mapped[datetime] = mapped_column(
+        default=datetime.now, onupdate=datetime.now)
+
+    profile: Mapped["Profile"] = relationship(back_populates="profile_image")
+
+
+class ProfileBackdrop(Base):
+    __tablename__ = "profile_backdrops"
+
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    profile_id: Mapped[UUID] = mapped_column(
+        ForeignKey("profile.id", ondelete="CASCADE"))
+    url: Mapped[str]
+    created_at: Mapped[datetime] = mapped_column(default=datetime.now)
+    updated_at: Mapped[datetime] = mapped_column(
+        default=datetime.now, onupdate=datetime.now)
+
+    profile: Mapped["Profile"] = relationship(back_populates="backdrop")
 
 
 class Session(Base):
@@ -237,7 +277,6 @@ class Item(Base):
     name: Mapped[str]
     description: Mapped[str] = mapped_column(nullable=True)
     price: Mapped[Decimal] = mapped_column(default=0.00, nullable=False)
-    image_url: Mapped[str] = mapped_column(nullable=True)
     sizes: Mapped[str] = mapped_column(nullable=True)
     colors: Mapped[list[str]] = mapped_column(ARRAY(String), nullable=True)
     stock: Mapped[int] = mapped_column(nullable=True)
@@ -256,6 +295,27 @@ class Item(Base):
     category: Mapped["Category"] = relationship(back_populates="items")
     order_items: Mapped[list["OrderItem"]
                         ] = relationship(back_populates="item")
+    images: Mapped[list["ItemImage"]] = relationship(
+        back_populates="item",
+        cascade="all, delete-orphan",
+        lazy="selectin",
+        uselist=True
+    )
+
+
+class ItemImage(Base):
+    __tablename__ = "item_images"
+
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    item_id: Mapped[UUID] = mapped_column(
+        ForeignKey("items.id", ondelete="CASCADE"))
+    url: Mapped[str]
+    # is_primary: Mapped[bool] = mapped_column(default=False)
+    created_at: Mapped[datetime] = mapped_column(default=datetime.now)
+    updated_at: Mapped[datetime] = mapped_column(
+        default=datetime.now, onupdate=datetime.now)
+
+    item: Mapped["Item"] = relationship(back_populates="images")
 
 
 class Order(Base):

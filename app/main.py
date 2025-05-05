@@ -82,12 +82,12 @@ templates = Jinja2Templates(directory="templates")
 # SQLAlchemyInstrumentor().instrument(engine=engine)
 
 
-@app.get("/db", tags=["Health Status"])
+@app.get("/api/db", tags=["Health Status"])
 async def check_db_health(db: AsyncSession = Depends(get_db)):
     """Check database connectivity"""
     try:
         # Simple query to check connection
-        await db.execute("SELECT 1")
+        await db.execute(text("SELECT 1"))
         return {"status": "healthy", "database": "connected"}
     except Exception as e:
         return {

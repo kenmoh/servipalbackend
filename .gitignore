@@ -37,6 +37,8 @@ htmlcov/
 *.py,cover
 .hypothesis/
 .pytest_cache/
+.ruff_cahe/
+.venv/
 
 # Jupyter Notebook
 .ipynb_checkpoints
