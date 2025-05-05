@@ -199,7 +199,7 @@ def validate_password(password: str) -> bool:
 # <<<<< ---------- Account lockout after failed attempts:
 
 
-async def check_login_attempts(email: str, redis_client: Redis) -> None:
+def check_login_attempts(email: str, redis_client: Redis) -> None:
     """Check and handle failed login attempts"""
     key = f"login_attempts:{email}"
     attempts = redis_client.get(key)
@@ -214,7 +214,7 @@ async def check_login_attempts(email: str, redis_client: Redis) -> None:
         )
 
 
-async def record_failed_attempt(email: str, redis_client: Redis) -> None:
+def record_failed_attempt(email: str, redis_client: Redis) -> None:
     """Record failed login attempt"""
     key = f"login_attempts:{email}"
     redis_client.incr(key)

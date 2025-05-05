@@ -43,7 +43,7 @@ async def login_user(db: AsyncSession,  login_data: UserLogin) -> User:
     """
 
     # Check for account lockout
-    await check_login_attempts(login_data.username, redis_client)
+    check_login_attempts(login_data.username, redis_client)
     # Find user by username
     stmt = select(User).where(User.email == login_data.username)
     result = await db.execute(stmt)
