@@ -1,11 +1,12 @@
 from contextlib import asynccontextmanager
 from functools import lru_cache
 
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import text
-from app.database.database import async_session
+from sqlalchemy.ext.asyncio import AsyncSession
+from app.database.database import async_session, get_db
 from app.routes import (
     auth_routes,
     user_routes,
@@ -79,6 +80,21 @@ templates = Jinja2Templates(directory="templates")
 # logfire.instrument_fastapi(app=app)
 
 # SQLAlchemyInstrumentor().instrument(engine=engine)
+
+
+@app.get("/db", tags=["Health Status"])
+async def check_db_health(db: AsyncSession = Depends(get_db)):
+    """Check database connectivity"""
+    try:
+        # Simple query to check connection
+        await db.execute("SELECT 1")
+        return {"status": "healthy", "database": "connected"}
+    except Exception as e:
+        return {
+            "status": "unhealthy",
+            "database": "disconnected",
+            "error": str(e)
+        }
 
 
 @app.get("/api/health", tags=["Health Status"])

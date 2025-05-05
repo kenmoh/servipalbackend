@@ -12,7 +12,6 @@ from sqlalchemy import func, select, update
 from sqlalchemy.orm import joinedload
 from passlib.context import CryptContext
 
-
 from app.schemas.status_schema import AccountStatus, UserType
 from app.schemas.user_schemas import PasswordChange, PasswordResetConfirm, RiderCreate, UserBase, UserCreate, UserLogin
 from app.models.models import Profile, Session, User, RefreshToken, Wallet
@@ -44,6 +43,7 @@ async def login_user(db: AsyncSession,  login_data: UserLogin) -> User:
 
     # Check for account lockout
     check_login_attempts(login_data.username, redis_client)
+
     # Find user by username
     stmt = select(User).where(User.email == login_data.username)
     result = await db.execute(stmt)
@@ -51,7 +51,7 @@ async def login_user(db: AsyncSession,  login_data: UserLogin) -> User:
 
     if not user or not verify_password(login_data.password, user.password):
         # Record failed attempt
-        await record_failed_attempt(login_data.username, redis_client)
+        record_failed_attempt(login_data.username, redis_client)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid credentials"

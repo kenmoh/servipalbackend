@@ -43,6 +43,14 @@ class Settings(BaseSettings):
     EMAIL_TEMPLATES_DIR: str = str(
         Path(__file__).parent.parent / "templates" / "email")
 
+    # Database connection settings
+    DB_POOL_SIZE: int = 20
+    DB_MAX_OVERFLOW: int = 10
+    DB_POOL_TIMEOUT: int = 30
+    DB_POOL_RECYCLE: int = 1800
+    DB_MAX_RETRIES: int = 3
+    DB_RETRY_DELAY: int = 1
+
     # Redis
     REDIS_HOST: str = "localhost"
     REDIS_PORT: int = 6379
