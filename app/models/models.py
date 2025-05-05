@@ -143,8 +143,7 @@ class Profile(Base):
 class Session(Base):
     __tablename__ = "sessions"
 
-    id: Mapped[UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid4)
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
     user_id: Mapped[UUID] = mapped_column(ForeignKey("users.id"))
     device_info: Mapped[str] = mapped_column(String)
     ip_address: Mapped[str] = mapped_column(String)

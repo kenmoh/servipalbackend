@@ -33,15 +33,15 @@ class Settings(BaseSettings):
     # Email Settings
     MAIL_USERNAME: str
     MAIL_PASSWORD: str
-    MAIL_FROM: str
+    MAIL_FROM: EmailStr
     MAIL_FROM_NAME: str
     MAIL_PORT: int
     MAIL_SERVER: str
     MAIL_SSL_TLS: bool = True
     MAIL_STARTTLS: bool = False
     USE_CREDENTIALS: bool = True
-    EMAIL_TEMPLATES_DIR: str = Path(
-        __file__).parent.parent / "templates" / "email"
+    EMAIL_TEMPLATES_DIR: str = str(
+        Path(__file__).parent.parent / "templates" / "email")
 
     # Redis
     REDIS_HOST: str = "localhost"
@@ -68,7 +68,7 @@ redis_client = redis.Redis(
 email_conf = ConnectionConfig(
     MAIL_USERNAME=settings.MAIL_USERNAME,
     MAIL_PASSWORD=settings.MAIL_PASSWORD,
-    MAIL_FROM=EmailStr(settings.MAIL_FROM),
+    MAIL_FROM=settings.MAIL_FROM,
     MAIL_FROM_NAME=settings.MAIL_FROM_NAME,
     MAIL_PORT=settings.MAIL_PORT,
     MAIL_SERVER=settings.MAIL_SERVER,
