@@ -527,3 +527,61 @@ async def get_all_user_sessions(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to fetch sessions: {str(e)}"
         )
+
+
+async def terminate_session(
+    db: AsyncSession,
+    current_user: User,
+    session_id: UUID
+) -> None:
+    """
+    Terminate a specific session and revoke associated tokens
+    Admins can terminate any session, users can only terminate their own
+    """
+    try:
+        # Build base query
+        stmt = select(Session).where(Session.id == session_id)
+
+        # If not admin, restrict to user's own sessions
+        if current_user.user_type != UserType.ADMIN:
+            stmt = stmt.where(Session.user_id == current_user.id)
+
+        result = await db.execute(stmt)
+        session = result.scalar_one_or_none()
+
+        if not session:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Session not found or access denied"
+            )
+
+        # Revoke refresh tokens associated with this session
+        await db.execute(
+            update(RefreshToken)
+            .where(
+                # Use session.user_id instead of current_user.id
+                RefreshToken.user_id == session.user_id,
+                RefreshToken.session_id == session_id
+            )
+            .values(
+                is_revoked=True,
+                revoked_at=datetime.now()
+            )
+        )
+
+        # Deactivate the session
+        session.is_active = False
+        session.last_active = datetime.now()
+
+        # Add termination metadata
+        session.terminated_by = current_user.id
+        session.termination_reason = "Terminated by admin" if current_user.user_type == UserType.ADMIN else "User logout"
+
+        await db.commit()
+
+    except Exception as e:
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to terminate session: {str(e)}"
+        )

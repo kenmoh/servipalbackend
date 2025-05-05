@@ -108,6 +108,15 @@ async def list_all_sessions(
         limit
     )
 
+
+@router.delete("/sessions/{session_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def terminate_session(
+    session_id: UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Terminate a specific session"""
+    await auth_service.terminate_session(db, current_user, session_id)
 # <<<<< ------------- PASSWORD CHANGE ------------ >>>>>
 
 

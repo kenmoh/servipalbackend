@@ -185,10 +185,18 @@ class Session(Base):
 
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
     user_id: Mapped[UUID] = mapped_column(ForeignKey("users.id"))
+    terminated_by: Mapped[Optional[UUID]] = mapped_column(
+        ForeignKey("users.id"), nullable=True)
     device_info: Mapped[str]
     ip_address: Mapped[str]
     last_active: Mapped[datetime] = mapped_column(default=datetime.now)
     is_active: Mapped[bool] = mapped_column(default=True, nullable=False)
+    termination_reason: Mapped[str] = mapped_column(nullable=True)
+    terminated_by_user: Mapped["User"] = relationship(
+        "User",
+        foreign_keys=[terminated_by],
+        backref="terminated_sessions"
+    )
 
 
 class Wallet(Base):
