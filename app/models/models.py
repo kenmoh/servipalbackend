@@ -322,12 +322,11 @@ class Order(Base):
     __tablename__ = "orders"
 
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
-    # order_number: Mapped[str] = mapped_column(
-    # String(15),
-    # server_default=text("'ORD-' || lpad(nextval('order_number_seq')::text, 6, '0')"),
-    # nullable=False,
-    # unique=True,
-    # )
+    order_number: Mapped[int] = mapped_column(Sequence('order_id_seq', start=1000,
+                                                       increment=1),
+                                              nullable=True,
+                                              unique=True,
+                                              )
     owner_id: Mapped[UUID] = mapped_column(ForeignKey("users.id"))
     vendor_id: Mapped[UUID] = mapped_column(ForeignKey("users.id"))
     order_type: Mapped[OrderType] = mapped_column(default=OrderType.PACKAGE)
@@ -394,6 +393,9 @@ class Delivery(Base):
                                 ] = mapped_column(ARRAY(Float))
     delivery_status: Mapped[str] = mapped_column(nullable=True)
     delivery_fee: Mapped[Decimal] = mapped_column(nullable=False)
+    delivery_fee: Mapped[Decimal] = mapped_column(nullable=False)
+    distance: Mapped[Decimal] = mapped_column(nullable=True)
+    duration: Mapped[Decimal] = mapped_column(nullable=True)
 
     delivery_status: Mapped[DelivertyStatus] = mapped_column(
         default=DelivertyStatus.PENDING

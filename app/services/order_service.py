@@ -189,7 +189,7 @@ async def order_food_or_request_laundy_service(
     Creates a meal or linen order and its associated delivery record.
     Args:
         current_user: The user creating the order.
-        supabase: Supabase client instance.
+        db: AsyncSession  client instance.
         vendor_id: The ID of the vendor for the order.
         order_item: The order item details including items and delivery info.
     Returns:
@@ -292,7 +292,7 @@ async def order_food_or_request_laundy_service(
         amount_due_dispatch = await calculte_amount_due_dispatch(db, delivery_fee)
 
         # 7. Create the Delivery Record
-        delivery_insert_result = await db.execute(
+        await db.execute(
             insert(Delivery).values(
                 {
                     "order_id": order.id,
@@ -301,8 +301,8 @@ async def order_food_or_request_laundy_service(
                     "delivery_status": DeliveryStatus.PENDING,
                     "pickup_coordinates": order_item.pickup_coordinates,
                     "dropoff_coordinates": order_item.dropoff_coordinates,
-                    "distance": order_item.distance,
-                    "duration": order_item.duration,
+                    "distance": Decimal(order_item.distance),
+                    "duration": Decimal(order_item.duration),
                     "delivery_fee": delivery_fee,
                     "amount_due_dispatch": amount_due_dispatch,
                 }
@@ -411,6 +411,16 @@ async def update_delivery_status(
     Raises:
         HTTPException: If the delivery is not found or if the user does not have permission.
     """
+    delivery = await fetch_delivery_by_id(db, delivery_id)
+
+    dispatch_id = get_dispatch_id(current_user)
+
+    dispatch_wallet = await fetch_wallet(db, delivery.dispatch_id)
+    vendor_wallet = await fetch_wallet(db, delivery.vendor_id)
+
+    # Get Escrow balance
+    dispatch_escrow_balance = dispatch_wallet.escrow_balance or 0
+    vendor_escrow_balance = vendor_wallet.escrow_balance or 0
 
     if current_user.user_type in [UserType.RIDER, UserType.DISPATCH] and not (
         current_user.profile.full_name or current_user.profile.phone_number
@@ -419,10 +429,6 @@ async def update_delivery_status(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Phone number and full name are required. Please update your profile!",
         )
-
-    delivery = await fetch_delivery_by_id(db, delivery_id)
-    order_id = delivery.get("order", {}).get("id")
-    dispatch_id = get_dispatch_id(current_user)
 
     if current_user.user_type == UserType.CUSTOMER:
         if delivery.sender_id != current_user.id:
@@ -434,31 +440,25 @@ async def update_delivery_status(
         if delivery.delivery_status != DeliveryStatus.COMPLETED:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="This delivery is no yet completed.",
+                detail="This delivery is still in transit.",
             )
 
         await update_delivery_status_in_db(
             db=db, delivery_id=delivery_id, status=DeliveryStatus.RECEIVED
         )
 
-        dispatch_wallet = await fetch_wallet(db, delivery.dispatch_id)
-        vendor_wallet = await fetch_wallet(db, delivery.vendor_id)
-
-        # Get Escrow balance
-        dispatch_escrow_balance = dispatch_wallet.escrow_balance or 0
-        vendor_escrow_balance = vendor_wallet.escrow_balance or 0
-
         dispatch_wallet_transaction = await create_wallet_transaction(
             db,
             dispatch_wallet.id,
             delivery.amount_due_dispatch or 0,
             WalletTransactionType.DEPOSIT,
-            current_user.full_name,
+            current_user.profile.full_name,
         )
         await update_wallet_balance(
-            db,
-            dispatch_wallet.id,
-            dispatch_wallet.balance + dispatch_wallet_transaction.amount,
+            db=db,
+            wallet_id=dispatch_wallet.id,
+            new_balance=dispatch_wallet.balance + dispatch_wallet_transaction.amount,
+            escrow_balance=dispatch_escrow_balance
         )
 
         vendor_wallet_transaction = create_wallet_transaction(
@@ -466,13 +466,14 @@ async def update_delivery_status(
             vendor_wallet.id,
             delivery.order.amount_due_vendor or 0,
             WalletTransactionType.DEPOSIT,
-            current_user.full_name,
+            current_user.profile.full_name,
         )
 
         await update_wallet_balance(
-            db,
-            vendor_wallet.id,
-            vendor_wallet.balance + vendor_wallet_transaction.amount,
+            db=db,
+            wallet_id=vendor_wallet.id,
+            new_balance=vendor_wallet.balance + vendor_wallet_transaction.amount,
+            escrow_balance=dispatch_escrow_balance
         )
 
         return DeliveryStatusUpdateSchema(**delivery.delivery_status)
@@ -516,11 +517,11 @@ async def update_delivery_status(
             # Refresh status
             await db.refresh(delivery, attribute_names=["delivery_status"])
 
-        dispatch_wallet = fetch_wallet(db, delivery.dispatch_id)
-        vendor_wallet = fetch_wallet(db, delivery.vendor_id)
+        # dispatch_wallet = fetch_wallet(db, delivery.dispatch_id)
+        # vendor_wallet = fetch_wallet(db, delivery.vendor_id)
 
-        dispatch_escrow_balance = dispatch_wallet.escrow_balance or 0
-        vendor_escrow_balance = vendor_wallet.escrow_balance or 0
+        # dispatch_escrow_balance = dispatch_wallet.escrow_balance or 0
+        # vendor_escrow_balance = vendor_wallet.escrow_balance or 0
 
         if _status in [
             DeliveryStatus.IN_TRANSIT,
@@ -762,13 +763,15 @@ async def create_wallet_transaction(
 
 
 async def update_wallet_balance(
-    db: AsyncSession, wallet_id: UUID, new_balance: Decimal
+    db: AsyncSession, wallet_id: UUID, new_balance: Decimal, escrow_balance: Decimal = 0
 ) -> WalletRespose:
     """Updates a wallet's balance."""
+    escrow_balance = Decimal(
+        escrow_balance - new_balance) if Decimal(escrow_balance) >= Decimal(new_balance) else Decimal(new_balance)
     await db.execute(
         select(Wallet.__table__)
         .where(Wallet.__table__.c.idd == wallet_id)
-        .update({"balance": new_balance})
+        .update({"balance": new_balance, 'escrow_balance': Decimal(escrow_balance)})
     )
 
 

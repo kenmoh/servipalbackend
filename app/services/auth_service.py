@@ -165,22 +165,22 @@ async def create_new_rider(
             status_code=status.HTTP_403_FORBIDDEN, detail="Please verify your account!"
         )
 
-    # if not user.profile.business_registration_number and riders > 1:
-    #     HTTPException(
-    #         status_code=status.HTTP_403_FORBIDDEN,
-    #         detail="Please add company registration number to add more than one rider.",
-    #     )
+    if not user.profile.business_registration_number and riders > 1:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Please add company registration number to add more than one rider.",
+        )
     if not user.user_type == UserType.DISPATCH:
-        HTTPException(
+        raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only dispatch company users can create riders!",
         )
 
-    # if not user["business_name"]:
-    #     HTTPException(
-    #         status_code=status.HTTP_403_FORBIDDEN,
-    #         detail="Please update your profile with your company name.",
-    #     )
+    if not user.profile.business_name or not user.profile.phone_number:
+        HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Please update your profile with your company name and phone number.",
+        )
 
     email_exists = await db.execute(select(User.email).where(User.email == data.email))
     if email_exists.scalar_one_or_none():
@@ -243,8 +243,6 @@ async def create_session(
     db.add(session)
     await db.commit()
     return session
-
-# Update your login endpoint to track sessions
 
 
 async def delete_rider(current_user: User, db: AsyncSession, rider_id: UUID) -> None:

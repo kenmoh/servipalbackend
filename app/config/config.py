@@ -18,7 +18,6 @@ class Settings(BaseSettings):
     DATABASE_URL: str = os.getenv("DATABASE_URL")
 
     # FLUTTERWAVE
-    # FLUTTERWAVE
     FLW_PUBLIC_KEY: str = os.getenv("FLW_PUBLIC_KEY")
     FLW_SECRET_KEY: str = os.getenv("FLW_SECRET_KEY")
     FLW_SECRET_HASH: str = os.getenv("FLW_SECRET_HASH")
@@ -29,17 +28,21 @@ class Settings(BaseSettings):
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
     REFRESH_TOKEN_EXPIRE_DAYS: int = 7
 
-    # Email
+    # AWS
+    AWS_SECRET_KEY: str = os.getenv("AWSSecretKey")
+    AWS_ACCESS_KEY_ID: str = os.getenv("AWSAccessKeyId")
+    BUCKET_NAME: str = os.getenv("AWSRegion")
+
     # Email Settings
-    MAIL_USERNAME: str
-    MAIL_PASSWORD: str
-    MAIL_FROM: EmailStr
-    MAIL_FROM_NAME: str
-    MAIL_PORT: int
-    MAIL_SERVER: str
-    MAIL_SSL_TLS: bool = True
-    MAIL_STARTTLS: bool = False
-    USE_CREDENTIALS: bool = True
+    MAIL_USERNAME: str = os.getenv("MAIL_USERNAME")
+    MAIL_PASSWORD: str = os.getenv("MAIL_PASSWORD")
+    MAIL_FROM: EmailStr = os.getenv("MAIL_FROM")
+    MAIL_FROM_NAME: str = os.getenv("MAIL_FROM_NAME")
+    MAIL_PORT: int = os.getenv("MAIL_PORT")
+    MAIL_SERVER: str = os.getenv("MAIL_SERVER")
+    MAIL_SSL_TLS: bool = os.getenv("MAIL_SSL_TLS")
+    MAIL_STARTTLS: bool = os.getenv("MAIL_STARTTLS")
+    USE_CREDENTIALS: bool = os.getenv("USE_CREDENTIALS")
     EMAIL_TEMPLATES_DIR: str = str(
         Path(__file__).parent.parent / "templates" / "email")
 
