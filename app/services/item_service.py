@@ -1,3 +1,4 @@
+import logging
 from uuid import UUID
 import json
 from fastapi import HTTPException, UploadFile, status
@@ -301,28 +302,42 @@ async def update_item(
 
 
 async def delete_item(db: AsyncSession, current_user: User, item_id: UUID) -> None:
-    """Deletes an item belonging to the current VENDOR user."""
+    """Deletes an item and its associated images belonging to the current VENDOR user."""
     # First, check if the item exists and belongs to the user
-    await get_item_by_id(db, current_user, item_id)
-
-    stmt = delete(Item).where(Item.id == item_id,
-                              Item.user_id == current_user.id)
+    item = await get_item_by_id(db, current_user, item_id)
 
     try:
+        # Get all image URLs before deleting the item
+        image_result = await db.execute(
+            select(ItemImage).where(ItemImage.item_id == item_id)
+        )
+        item_images = image_result.scalars().all()
+
+        # Delete item (this will cascade delete ItemImage records due to FK constraint)
+        stmt = delete(Item).where(
+            Item.id == item_id,
+            Item.user_id == current_user.id
+        )
         await db.execute(stmt)
+
+        # Delete images from S3
+        for image in item_images:
+            await delete_s3_object(image.url)
+
         await db.commit()
+
         # Invalidate caches
         invalidate_item_cache(item_id)
         redis_client.delete(f"vendor_items:{current_user.id}")
+
         return None
     except Exception as e:
         await db.rollback()
-        # Log the error e
+        logging.error(f"Failed to delete item and images: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to delete item: {str(e)}",
+            detail=f"Failed to delete item: {str(e)}"
         )
-
 
 # <<<<< ---------- CACHE UTILITY FOR ITEM ---------- >>>>>
 CACHE_TTL = 3600

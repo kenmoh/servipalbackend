@@ -155,4 +155,6 @@ async def logout_all(
 ) -> dict[str, str]:
     """Logout from all devices"""
     await auth_service.logout_all_sessions(db, current_user.id)
+
     return {"message": "Successfully logged out from all devices"}
+
