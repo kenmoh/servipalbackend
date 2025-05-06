@@ -1,10 +1,10 @@
 from uuid import UUID
 import json
-from fastapi import HTTPException, status
+from fastapi import HTTPException, UploadFile, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, delete, update
 
-from app.models.models import Item, Category, User
+from app.models.models import Item, Category, ItemImage, User
 from app.schemas.item_schemas import (
     CategoryCreate,
     CategoryResponse,
@@ -13,6 +13,7 @@ from app.schemas.item_schemas import (
 )
 from app.schemas.status_schema import AccountStatus, UserType
 from app.config.config import redis_client
+from app.utils.s3_service import delete_s3_object, upload_multiple_images
 
 
 async def create_category(
@@ -82,7 +83,7 @@ async def get_categories(db: AsyncSession) -> list[CategoryResponse]:
 
 
 async def create_item(
-    db: AsyncSession, current_user: User, item_data: ItemCreate
+    db: AsyncSession, current_user: User, item_data: ItemCreate, images: list[UploadFile]
 ) -> ItemResponse:
     """Creates a new item for the current VENDOR user."""
     if current_user.user_type != UserType.VENDOR:
@@ -108,8 +109,24 @@ async def create_item(
         )
 
     try:
+        # Create item first
         new_item = Item(**item_data.model_dump(), user_id=current_user.id)
         db.add(new_item)
+        await db.flush()
+
+        # Upload images and create ItemImage records
+        urls = await upload_multiple_images(
+            images,
+            folder=f"items/{current_user.id}"
+        )
+
+        for url in urls:
+            item_image = ItemImage(
+                item_id=new_item.id,
+                url=url
+            )
+            db.add(item_image)
+
         await db.commit()
         await db.refresh(new_item)
 
@@ -202,9 +219,11 @@ async def get_item_by_id(
 
 
 async def update_item(
-    db: AsyncSession, current_user: User, item_id: UUID, item_data: ItemCreate
+    db: AsyncSession, current_user: User, item_id: UUID, item_data: ItemCreate, images: list[UploadFile] = None
 ) -> ItemResponse:
-    """Updates an existing item belonging to the current VENDOR user."""
+    """ Updates an existing item belonging to the current VENDOR user.
+        Handles both item data and image updates.
+    """
     item = await get_item_by_id(
         db, current_user, item_id
     )  # Reuse get_item_by_id to check ownership and existence
@@ -234,10 +253,41 @@ async def update_item(
 
         result = await db.execute(stmt)
         updated_item = result.scalar_one()
+
+        # Handle image updates if provided
+        if images:
+            # Get existing image URLs
+            old_images = await db.execute(
+                select(ItemImage).where(ItemImage.item_id == item_id)
+            )
+            old_urls = [img.url for img in old_images.scalars().all()]
+
+            # Upload new images
+            new_urls = await upload_multiple_images(
+                images,
+                folder=f"items/{current_user.id}"
+            )
+
+            # Delete old images from database
+            await db.execute(
+                delete(ItemImage).where(ItemImage.item_id == item_id)
+            )
+
+            # Create new image records
+            for url in new_urls:
+                new_image = ItemImage(item_id=item_id, url=url)
+                db.add(new_image)
+
+            # Delete old images from S3
+            for old_url in old_urls:
+                await delete_s3_object(old_url)
+
         await db.commit()
+        await db.refresh(updated_item)
 
         # Invalidate caches
         invalidate_item_cache(item_id)
+        redis_client.delete(f"vendor_items:{current_user.id}")
 
         return updated_item
 

@@ -1,7 +1,7 @@
 from uuid import UUID
 from typing import List
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.auth import get_db, get_current_user
@@ -45,6 +45,7 @@ async def create_new_category(
 )
 async def create_new_item(
     item_data: ItemCreate,
+    images: List[UploadFile] = File(...),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> ItemResponse:
@@ -54,7 +55,7 @@ async def create_new_item(
     - The specified category_id must exist.
     """
 
-    return await item_service.create_item(db, current_user, item_data)
+    return await item_service.create_item(db, current_user, item_data, images=images)
 
 
 @router.get(
@@ -144,6 +145,7 @@ async def update_existing_item(
     item_id: UUID,
     item_data: ItemCreate,  # Using ItemCreate for update allows changing all fields
     db: AsyncSession = Depends(get_db),
+    images: list[UploadFile] = File(None),
     current_user: User = Depends(get_current_user),
 ) -> ItemResponse:
     """
@@ -152,7 +154,7 @@ async def update_existing_item(
     - Returns 404 if the item is not found or does not belong to the user.
     - Returns 404 if the target category_id does not exist.
     """
-    return await item_service.update_item(db, current_user, item_id, item_data)
+    return await item_service.update_item(db,  current_user, item_id, item_data, images=images,)
 
 
 @router.delete(

@@ -1,0 +1,208 @@
+from uuid import uuid4
+from app.config.config import settings
+import os
+import secrets
+import logging
+
+from fastapi import HTTPException, UploadFile, status
+import boto3
+from botocore.exceptions import ClientError
+from uuid import uuid4
+
+logging.basicConfig(level=logging.INFO)
+
+
+aws_bucket_name = settings.S3_BUCKET_NAME
+s3 = boto3.resource(
+    "s3",
+    aws_access_key_id=settings.AWS_ACCESS_KEY_ID,
+    aws_secret_access_key=settings.AWS_SECRET_KEY,
+)
+
+# UPLOAD IMAGE TO AWS
+
+
+async def add_image(image: UploadFile):
+    token_name = secrets.token_hex(12)
+    file_name = f"{token_name}{image.filename}"
+
+    bucket = s3.Bucket(aws_bucket_name)
+    bucket.upload_fileobj(image.file, file_name)
+
+    image_url = f"https://{aws_bucket_name}.s3.amazonaws.com/{file_name}"
+
+    return image_url
+
+
+async def add_profile_image(image: UploadFile, folder: str) -> str:
+    """
+    Upload a single image to S3
+    Args:
+        image: UploadFile object
+        folder: S3 folder path (default: 'misc')
+    Returns:
+        str: Image URL
+    """
+    # Validate file type
+    if not image.content_type.startswith("image/"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="File must be an image"
+        )
+
+    try:
+        # Generate unique file name
+        file_key = f"{folder}/{uuid4()}-{image.filename}"
+
+        # Upload to S3
+        bucket = s3.Bucket(aws_bucket_name)
+        bucket.upload_fileobj(
+            image.file,
+            file_key,
+            ExtraArgs={
+                "ContentType": image.content_type,
+                "ACL": "public-read"
+            }
+        )
+
+        # Generate and return URL
+        image_url = f"https://{aws_bucket_name}.s3.amazonaws.com/{file_key}"
+        logging.info(f"Successfully uploaded image: {file_key}")
+
+        return image_url
+
+    except ClientError as e:
+        logging.error(f"Failed to upload image: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to upload image: {str(e)}"
+        )
+    except Exception as e:
+        logging.error(f"Unexpected error uploading image: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="An unexpected error occurred"
+        )
+
+
+async def upload_multiple_images(files: list[UploadFile], folder: str) -> list[str]:
+    """
+    Upload multiple images to S3
+    Args:
+        files: List of image files
+        folder: S3 folder path
+    Returns:
+        List of image URLs
+    """
+    if not files:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="At least one image is required"
+        )
+
+    if len(files) > 4:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Maximum 4 images allowed"
+        )
+
+    urls = []
+    for file in files:
+        if not file.content_type.startswith("image/"):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"File {file.filename} is not an image"
+            )
+
+        try:
+            file_key = f"{folder}/{uuid4()}-{file.filename}"
+            s3.upload_fileobj(
+                file.file,
+                settings.S3_BUCKET_NAME,
+                file_key,
+                ExtraArgs={
+                    "ContentType": file.content_type,
+                    "ACL": "public-read"
+                }
+            )
+
+            url = f"https://{settings.S3_BUCKET_NAME}.s3.amazonaws.com/{file_key}"
+            urls.append(url)
+
+        except ClientError as e:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Failed to upload image: {str(e)}"
+            )
+
+    return urls
+
+# DELETE IMAGE FROM AWS
+
+
+async def delete_s3_object(file_url: str) -> bool:
+    """
+    Delete an object from S3 using its URL
+    Args:
+        file_url: Full S3 URL of the object
+    Returns:
+        bool: True if deletion successful
+    """
+    try:
+        # Extract key from URL
+        key = file_url.split(f"{aws_bucket_name}.s3.amazonaws.com/")[1]
+
+        bucket = s3.Bucket(aws_bucket_name)
+        bucket.Object(key).delete()
+
+        logging.info(f"Successfully deleted S3 object: {key}")
+        return True
+
+    except Exception as e:
+        logging.error(f"Failed to delete S3 object: {str(e)}")
+        return False
+
+
+async def update_image(
+    new_image: UploadFile,
+    old_image_url: str,
+    folder: str = "misc"
+) -> str:
+    """
+    Update an image by deleting the old one and uploading the new one
+    Args:
+        new_image: New image to upload
+        old_image_url: URL of image to replace
+        folder: S3 folder path
+    Returns:
+        str: New image URL
+    """
+    # Delete old image
+    if old_image_url:
+        await delete_s3_object(old_image_url)
+
+    # Upload new image
+    return await add_profile_image(new_image, folder)
+
+
+async def update_multiple_images(
+    new_images: list[UploadFile],
+    old_image_urls: list[str],
+    folder: str = 'Items-Images'
+) -> list[str]:
+    """
+    Update multiple images by deleting old ones and uploading new ones
+    Args:
+        new_images: List of new images to upload
+        old_image_urls: List of URLs to replace
+        folder: S3 folder path
+    Returns:
+        list[str]: List of new image URLs
+    """
+    # Delete old images
+    for url in old_image_urls:
+        if url:
+            await delete_s3_object(url)
+
+    # Upload new images
+    return await upload_multiple_images(new_images, folder)

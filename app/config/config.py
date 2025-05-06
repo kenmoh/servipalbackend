@@ -31,7 +31,7 @@ class Settings(BaseSettings):
     # AWS
     AWS_SECRET_KEY: str = os.getenv("AWSSecretKey")
     AWS_ACCESS_KEY_ID: str = os.getenv("AWSAccessKeyId")
-    BUCKET_NAME: str = os.getenv("AWSRegion")
+    S3_BUCKET_NAME: str = os.getenv("S3_BUCKET_NAME")
 
     # Email Settings
     MAIL_USERNAME: str = os.getenv("MAIL_USERNAME")
