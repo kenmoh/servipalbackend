@@ -40,6 +40,11 @@ htmlcov/
 .ruff_cahe/
 .venv/
 
+# Pytest
+.pytest_cache/
+__pycache__/
+*.pyc
+
 # Jupyter Notebook
 .ipynb_checkpoints
 

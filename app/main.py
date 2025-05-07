@@ -30,6 +30,9 @@ async def lifespan(application: FastAPI):
         print("Starting up...")
         async with async_session() as db:
             await db.execute(text("SELECT 1"))
+            await db.execute(text("CREATE SEQUENCE IF NOT EXISTS order_number_seq START WITH 1000 INCREMENT BY 1"))
+            
+            
         print("Database connection successful.")
         # Check Redis connection
         redis_client.ping()

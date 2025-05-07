@@ -16,6 +16,7 @@ class Settings(BaseSettings):
 
     # Database settings
     DATABASE_URL: str = os.getenv("DATABASE_URL")
+    TEST_DATABASE_URL: str = os.getenv("TEST_DATABASE_URL")
 
     # FLUTTERWAVE
     FLW_PUBLIC_KEY: str = os.getenv("FLW_PUBLIC_KEY")
@@ -60,6 +61,12 @@ class Settings(BaseSettings):
     REDIS_DB: int = 0
     REDIS_EX: int = 3600
     REDIS_PASSWORD: str | None = None  # Set this in production
+
+    # API URL
+    API_URL: str = "http://localhost:8000"
+    TEST_API_URL: str = "http://localhost:8000"
+
+    TEST_BASE_URL: str = "http://test"
 
 
 settings = Settings()

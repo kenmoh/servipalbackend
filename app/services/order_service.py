@@ -1,6 +1,7 @@
-from datetime import timedelta
+from datetime import timedelta, datetime
+from typing import Optional
 from sqlalchemy import or_, select, update, insert
-from sqlalchemy.orm import joinedload
+from sqlalchemy.orm import joinedload, selectinload
 from app.models.models import (
     ChargeAndCommission,
     Delivery,
@@ -10,6 +11,7 @@ from app.models.models import (
     Transaction,
     User,
     Wallet,
+    ItemImage
 )
 
 import json
@@ -18,17 +20,21 @@ from uuid import UUID
 
 from fastapi import HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
+from app.schemas.status_schema import OrderStatus
+
 from app.schemas.order_schema import (
 
     PaymentStatus,
     OrderItemResponseSchema,
+    OrderResponseSchema,
 
     PackageCreate,
 
     WalletTransactionType,
     DeliveryStatusUpdateSchema,
+    ItemImageSchema
 )
-from app.schemas.delivery_schemas import DeliveryResponse, DeliveryType, DeliveryStatus
+from app.schemas.delivery_schemas import DeliveryResponse, DeliveryType, DeliveryStatus, DeliverySchema
 from app.schemas.item_schemas import ItemType
 
 from app.schemas.status_schema import RequireDeliverySchema
@@ -38,6 +44,98 @@ from app.utils.utils import (
     get_payment_link,
 )
 from app.config.config import redis_client
+
+
+async def get_delivery_by_id(db: AsyncSession, delivery_id: UUID) -> DeliveryResponse:
+    """
+    Properly loads all relationships including item images without errors
+    """
+
+    cached_delivery = redis_client.get(f"delivery:{delivery_id}")
+    if cached_delivery:
+        return DeliveryResponse(**json.loads(cached_delivery))
+
+    stmt = (
+        select(Delivery)
+        .where(Delivery.id == delivery_id)
+        .options(
+            joinedload(Delivery.order).options(
+                selectinload(Order.order_items).options(
+                    joinedload(OrderItem.item).options(
+                        selectinload(Item.images)  # This loads the item images
+                    )
+                ),
+                joinedload(Order.delivery)  # This loads the order's delivery
+            )
+        )
+    )
+
+    result = await db.execute(stmt)
+    delivery = result.unique().scalars().one_or_none()
+
+    if not delivery:
+        return None
+    delivery_response = format_delivery_response(delivery.order, delivery)
+
+    # Cache the formatted response
+    redis_client.setex(
+        f"delivery:{delivery_id}",
+        timedelta(seconds=CACHE_TTL),
+        json.dumps(delivery_response.model_dump(), default=str)
+    )
+
+    return delivery_response
+
+
+async def get_all_deliveries(
+    db: AsyncSession,
+    skip: int = 0,
+    limit: int = 20
+) -> list[DeliveryResponse]:
+    """
+    Get all deliveries with pagination and caching
+    """
+    cache_key = f"all_deliveries:{skip}:{limit}"
+
+    # Try cache first
+    cached_deliveries = redis_client.get(cache_key)
+    if cached_deliveries:
+        return [DeliveryResponse(**d) for d in json.loads(cached_deliveries)]
+
+    stmt = (
+        select(Delivery)
+        .options(
+            joinedload(Delivery.order).options(
+                selectinload(Order.order_items).options(
+                    joinedload(OrderItem.item).options(
+                        selectinload(Item.images)
+                    )
+                ),
+                joinedload(Order.delivery)
+            )
+        )
+        .offset(skip)
+        .limit(limit)
+        .order_by(Delivery.created_at.desc())
+    )
+
+    result = await db.execute(stmt)
+    deliveries = result.unique().scalars().all()
+
+    # Format responses
+    delivery_responses = [
+        format_delivery_response(delivery.order, delivery)
+        for delivery in deliveries
+    ]
+
+    # Cache the formatted responses
+    redis_client.setex(
+        cache_key,
+        timedelta(seconds=CACHE_TTL),
+        json.dumps([d.model_dump() for d in delivery_responses], default=str)
+    )
+
+    return delivery_responses
 
 
 async def create_package_order(
@@ -74,7 +172,7 @@ async def create_package_order(
                     "item_type": ItemType.PACKAGE,
                     "name": data.name,
                     "description": data.description,
-                    "image_url": data.image_url,
+
                 }
             )
             .returning(
@@ -82,8 +180,21 @@ async def create_package_order(
             )
         )
 
-        # package_insert_result = result.scalar_one_or_none()
         package_data = package_insert_result.fetchone()
+
+        if hasattr(data, 'image_urls') and data.image_urls:
+            image_payloads = [
+                {
+                    "item_id": package_data.id,
+                    "url": image_url,
+                    "created_at": datetime.now(),
+                    "updated_at": datetime.now()
+                }
+                for image_url in data.image_urls
+            ]
+
+            if image_payloads:
+                await db.execute(insert(ItemImage.__table__).values(image_payloads))
 
         order_insert_result = await db.execute(
             insert(Order.__table__)
@@ -93,6 +204,7 @@ async def create_package_order(
                     "vendor_id": package_data.user_id,  # Review this logic
                     "order_type": DeliveryType.PACKAGE,
                     "amount_due_vendor": 0,
+                    "order_status": OrderStatus.PENDING,
                     "order_payment_status": PaymentStatus.PENDING,
                     "require_delivery": RequireDeliverySchema.DELIVERY,
                 }
@@ -127,12 +239,13 @@ async def create_package_order(
                     "order_id": order_data.id,
                     "delivery_type": DeliveryType.PACKAGE,
                     "delivery_status": DeliveryStatus.PENDING,
-                    "sender_id": order_data.owner_id,
-                    "vendor_id": order_data.owner_id,
+                    "sender_id": current_user.id,
+                    "vendor_id": current_user.id,
                     "pickup_coordinates": data.pickup_coordinates,
                     "dropoff_coordinates": data.dropoff_coordinates,
                     "delivery_fee": delivery_fee,
                     "amount_due_dispatch": amount_due_dispatch,
+                    "distance": data.distance
 
                 }
             )
@@ -140,6 +253,7 @@ async def create_package_order(
                 Delivery.__table__.c.id,
                 Delivery.__table__.c.order_id,
                 Delivery.__table__.c.delivery_fee,
+                Delivery.__table__.c.vendor_id,
             )
         )
 
@@ -166,9 +280,25 @@ async def create_package_order(
 
         invalidate_order_cache(delivery_data.order_id)
         redis_client.delete(f"user_orders:{current_user.id}")
-        redis_client.delete(f"vendor_orders:{delivery_data.vendor_id}")
+        if hasattr(delivery_data, 'vendor_id'):
+            redis_client.delete(f"vendor_orders:{delivery_data.vendor_id}")
+        else:
+            redis_client.delete(f"vendor_orders:{current_user.id}")
 
-        return delivery_data
+        stmt = select(Order).where(Order.id == delivery_data.order_id).options(
+            selectinload(Order.order_items).options(
+                joinedload(OrderItem.item).options(
+                    selectinload(Item.images)
+                )
+            )
+        )
+        order = (await db.execute(stmt)).scalar_one()
+
+        delivery_stmt = select(Delivery).where(Delivery.id == delivery_data.id)
+        delivery = (await db.execute(delivery_stmt)).scalar_one()
+
+        # REUSE the formatting function
+        return format_delivery_response(order, delivery)
 
     except Exception as e:
         # Rollback
@@ -379,7 +509,7 @@ async def get_order_with_items(
                 "name": item.name,
                 "price": str(item.price),
                 "quantity": item.quantity,
-                "image_url": item.image_url,
+                "url": item.url,
             }
             for item in order.items
         ],
@@ -597,7 +727,9 @@ async def cancel_delivery(
                 .values(delivery_status=DeliveryStatus.CANCELLED)
             )
             await db.commit()
-            return result.scalar_one_or_none()
+            delivery_result = result.scalar_one_or_none()
+            invalidate_delivery_cache(delivery_result.id)
+            return
 
     if current_user.user_type in [UserType.RIDER, UserType.DISPATCH]:
         result = await db.execute(
@@ -625,7 +757,9 @@ async def cancel_delivery(
             )
 
             await db.commit()
-            return result.scalar_one_or_none()
+            delivery_result = result.scalar_one_or_none()
+            invalidate_delivery_cache(delivery_result.id)
+            return delivery_result
 
 
 # <<<--- admin_modify_delivery_status --->>>
@@ -667,6 +801,7 @@ async def admin_modify_delivery_status(
                 detail=f"Delivery {delivery_id} not found.",
             )
         await update_delivery_status_in_db(db, delivery_id, new_status)
+        invalidate_delivery_cache(delivery_data.id)
         return DeliveryStatusUpdateSchema
     except Exception as e:
         await db.rollback()
@@ -811,8 +946,235 @@ async def fetch_delivery_by_id(db: AsyncSession, delivery_id: UUID) -> DeliveryR
     return delivery
 
 
+def format_delivery_response1(
+    order: Order,
+    delivery: Optional[Delivery] = None,
+) -> DeliveryResponse:
+    """
+    Format SQLAlchemy Order and Delivery objects into a standardized DeliveryResponse.
+
+    Args:
+        order: SQLAlchemy Order model instance
+        delivery: Optional SQLAlchemy Delivery model instance
+
+    Returns:
+        DeliveryResponse object with properly formatted data
+    """
+    # Process order items
+    order_items = []
+    for order_item in order.order_items:
+        item = order_item.item
+        images = [
+            ItemImageSchema(
+                id=image.id,
+                item_id=image.item_id,
+                url=image.url
+            ) for image in item.images
+        ]
+
+        order_items.append(
+            OrderItemResponseSchema(
+                id=item.id,
+                user_id=item.user_id,
+                name=item.name,
+                price=item.price,
+                images=images,
+                description=item.description or "",
+                quantity=order_item.quantity
+            )
+        )
+
+    # Create OrderResponseSchema
+    order_schema = OrderResponseSchema(
+        id=order.id,
+        user_id=order.owner_id,
+        vendor_id=order.vendor_id,
+        order_type=order.order_type.value,
+        total_price=order.total_price,
+        order_payment_status=order.order_payment_status.value,
+        order_status=order.order_status.value if order.order_status else None,
+        amount_due_vendor=order.amount_due_vendor,
+        payment_link=order.payment_link or "",
+        order_items=order_items
+    )
+
+    # Create DeliverySchema if delivery exists
+    delivery_schema = None
+    if delivery:
+        delivery_schema = DeliverySchema(
+            id=delivery.id,
+            delivery_type=delivery.delivery_type.value,
+            delivery_status=delivery.delivery_status.value,
+            sender_id=delivery.sender_id,
+            vendor_id=delivery.vendor_id,
+            dispatch_id=delivery.dispatch_id,
+            distance=delivery.distance,
+            delivery_fee=delivery.delivery_fee,
+            amount_due_dispatch=delivery.amount_due_dispatch,
+            created_at=delivery.created_at
+        )
+
+    return DeliveryResponse(
+        delivery=delivery_schema,
+        order=order_schema
+    )
+
+
+def format_delivery_response2(
+    order: Order,
+    delivery: Optional[Delivery] = None,
+) -> DeliveryResponse:
+    """
+    #Format SQLAlchemy Order and Delivery objects into a standardized DeliveryResponse.
+
+    #Args:
+        #order: SQLAlchemy Order model instance
+        #delivery: Optional SQLAlchemy Delivery model instance
+        #distance: Optional distance information if available
+
+    #Returns:
+        #DeliveryResponse object with properly formatted data
+    """
+
+    # Convert Order to expected dictionary structure
+    order_dict = {
+        "id": str(order.id),
+        "user_id": str(order.owner_id),
+        "vendor_id": str(order.vendor_id),
+        "order_type": order.order_type,
+        "total_price": str(order.total_price),
+        "order_payment_status": order.order_payment_status,
+        "order_status": order.order_status,
+        "amount_due_vendor": str(order.amount_due_vendor),
+        "payment_link": order.payment_link,
+        "order_items": []
+    }
+
+    # Process order items and their images
+    for item_rel in order.order_items:
+        item = item_rel.item
+        item_dict = {
+            "id": str(item.id),
+            "user_id": str(item.user_id),
+            "name": item.name,
+            "price": str(item.price),
+            "description": item.description,
+            "quantity": item_rel.quantity,
+            "images": []
+        }
+
+        # Add images if they exist
+        if hasattr(item, 'images') and item.images:
+            image_data = {
+                "id": str(item.images[0].id) if item.images else None,
+                "item_id": str(item.id),
+                "url": [img.url for img in item.images]
+            }
+            item_dict["image_url"] = [image_data]
+
+        order_dict["order_items"].append(item_dict)
+
+    # Convert Delivery to expected dictionary structure if available
+    delivery_dict = None
+    if delivery:
+        delivery_dict = {
+            "id": delivery.id,
+            "delivery_type": delivery.delivery_type,
+            "delivery_status": delivery.delivery_status,
+            "sender_id": delivery.sender_id,
+            "vendor_id": delivery.vendor_id,
+            "dispatch_id": str(delivery.dispatch_id) if hasattr(delivery, "dispatch_id") and delivery.dispatch_id else None,
+            "distance": str(delivery.distance),
+            # "duration": getattr(delivery, "duration", None),
+            "delivery_fee": delivery.delivery_fee,
+            "amount_due_dispatch": delivery.amount_due_dispatch,
+            "created_at": delivery.created_at
+        }
+
+    # Create and return the response
+    order_schema = OrderResponseSchema.model_validate(order_dict)
+    delivery_schema = DeliverySchema.model_validate(
+        delivery_dict) if delivery_dict else None
+
+    return DeliveryResponse(
+        delivery=delivery_schema,
+        order=order_schema
+    )
+
+
+def format_delivery_response(order: Order, delivery: Optional[Delivery] = None) -> DeliveryResponse:
+    # Format order items with proper image structure
+    order_items = []
+    for order_item in order.order_items:
+        item = order_item.item
+        images = [
+            {
+                "id": str(image.id),
+                "item_id": str(image.item_id),
+                "url": image.url
+            }
+            for image in item.images
+        ]
+
+        order_items.append({
+            "id": str(item.id),
+            "user_id": str(item.user_id),
+            "name": item.name,
+            "price": str(item.price),
+            "images": images,  # Properly structured
+            "description": item.description or "",
+            "quantity": order_item.quantity
+        })
+
+    # Format delivery if exists
+    delivery_data = None
+    if delivery:
+        delivery_data = {
+            "id": str(delivery.id),
+            "delivery_type": delivery.delivery_type.value,
+            "delivery_status": delivery.delivery_status.value,
+            "sender_id": str(delivery.sender_id),
+            "vendor_id": str(delivery.vendor_id),
+            "dispatch_id": str(delivery.dispatch_id) if delivery.dispatch_id else None,
+            "distance": str(delivery.distance),
+            "delivery_fee": str(delivery.delivery_fee),
+            "amount_due_dispatch": str(delivery.amount_due_dispatch),
+            "created_at": delivery.created_at.isoformat()
+        }
+
+    # Format order
+    order_data = {
+        "id": str(order.id),
+        "user_id": str(order.owner_id),
+        "vendor_id": str(order.vendor_id),
+        "order_type": order.order_type.value,
+        "total_price": str(order.total_price),
+        "order_payment_status": order.order_payment_status.value,
+        "order_status": order.order_status.value if order.order_status else None,
+        "amount_due_vendor": str(order.amount_due_vendor),
+        "payment_link": order.payment_link or "",
+        "order_items": order_items
+    }
+
+    return DeliveryResponse(
+        delivery=delivery_data,
+        order=order_data
+    )
+
+
 # <<<<< --------- CACHE UTILITY FUNCTION ---------- >>>>>
 CACHE_TTL = 3600  # 1 hour in seconds
+
+
+def invalidate_delivery_cache(delivery_id: UUID) -> None:
+    """
+    Invalidate delivery cache when delivery is updated
+    """
+    redis_client.delete(f"delivery:{delivery_id}")
+    # Also invalidate any cached list that might contain this delivery
+    keys = redis_client.keys("all_deliveries:*")
+    if keys:
+        redis_client.delete(*keys)
 
 
 def get_cached_order(order_id: UUID) -> dict:

@@ -18,6 +18,10 @@ from sqlalchemy.orm import DeclarativeBase
 from app.config.config import settings
 from app.utils.middleware import with_db_retry
 
+from urllib.parse import urlparse
+
+# Test database URL
+TEST_DATABASE_URL = settings.TEST_DATABASE_URL
 
 SQLALCHEMY_DATABASE_URL = settings.DATABASE_URL
 DEBUG = settings.DEBUG
@@ -25,6 +29,23 @@ DEBUG = settings.DEBUG
 # engine = create_engine(SQLALCHEMY_DATABASE_URL, echo=True if DEBUG else False)
 # SessionLocal = sessionmaker(bind=engine, autocommit=False, autoflush=False)
 # session = SessionLocal()
+
+# Parse and clean test database URL
+test_db_url = settings.TEST_DATABASE_URL
+parsed_url = urlparse(test_db_url)
+cleaned_test_url = f"{parsed_url.scheme}://{parsed_url.netloc}{parsed_url.path}"
+
+# Create test engine
+test_engine = create_async_engine(
+    cleaned_test_url,
+    echo=True,
+    future=True
+)
+TestingSessionLocal = async_sessionmaker(
+    test_engine,
+    class_=AsyncSession,
+    expire_on_commit=False
+)
 
 
 engine = create_async_engine(settings.DATABASE_URL, echo=settings.DEBUG,

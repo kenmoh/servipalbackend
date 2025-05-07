@@ -57,6 +57,19 @@ async def get_order_details(
     return await order_service.get_order_with_items(db, order_id)
 
 
+
+@router.get(
+    "/{delivery_id}",
+)
+async def get_delivery_by_id(
+    delivery_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> DeliveryResponse:
+    return await order_service.get_delivery_by_id(
+        db=db, delivery_id=delivery_id
+    )
+
 @router.put(
     "/{delivery_id}",
 )

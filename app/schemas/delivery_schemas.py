@@ -41,8 +41,9 @@ class DeliverySchema(BaseModel):
     sender_id: UUID
     vendor_id: UUID | None = None
     dispatch_id: UUID | None = None
+    rider_id: UUID | None = None
     distance: Decimal
-    duration: Decimal
+    #duration: Decimal
     delivery_fee: Decimal
     amount_due_dispatch: Decimal
     created_at: datetime

@@ -7,6 +7,7 @@ from decimal import Decimal
 from pydantic import BaseModel, Field
 
 from app.schemas.item_schemas import ItemResponse
+from app.schemas.status_schema import OrderStatus
 
 
 class PaymentStatus(str, Enum):
@@ -98,15 +99,22 @@ class Coordinate(BaseModel):
 class PackageCreate(BaseModel):
     name: str
     description: str
-    image_url: str
+    image_urls: list[str]
     distance: Decimal
     # duration: Decimal
     pickup_coordinates: Tuple[float, float]
     dropoff_coordinates: Tuple[float, float]
 
 
-class PackageResponse(PackageCreate):
+class PackageResponse(BaseModel):
     id: UUID
+    name: str
+    description: str
+    url: list[str]
+    distance: Decimal
+    # duration: Decimal
+    pickup_coordinates: Tuple[float, float]
+    dropoff_coordinates: Tuple[float, float]
 
 
 class OrderItem(BaseModel):
@@ -124,12 +132,17 @@ class OrderAndDeliverySchema(BaseModel):
     additional_info: str | None = None
 
 
+class ItemImageSchema(BaseModel):
+	id: UUID
+	item_id: UUID
+	url: str
+
 class OrderItemResponseSchema(BaseModel):
     id: UUID
     user_id: UUID
     name: str
     price: Decimal
-    image_url: str
+    images: list[ItemImageSchema]
     description: str
     quantity: int | None = None
 
@@ -141,7 +154,7 @@ class OrderResponseSchema(BaseModel):
     order_type: str
     total_price: Decimal
     order_payment_status: str
-    order_status: str
+    order_status: OrderStatus
     amount_due_vendor: Decimal
     payment_link: str
     order_items: list[OrderItemResponseSchema]

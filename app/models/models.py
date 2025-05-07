@@ -7,7 +7,7 @@ from decimal import Decimal
 import logging
 from typing import Optional, Tuple
 
-from sqlalchemy import DateTime, ForeignKey, ARRAY, Sequence, String, func, Float, text
+from sqlalchemy import DateTime, ForeignKey, ARRAY, Sequence, String, func, Float, text, Identity, Integer
 from sqlalchemy.dialects.postgresql import CHAR
 from sqlalchemy.orm import mapped_column, Mapped, relationship
 from sqlalchemy.types import TypeDecorator
@@ -322,10 +322,11 @@ class Order(Base):
     __tablename__ = "orders"
 
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
-    order_number: Mapped[int] = mapped_column(Sequence('order_id_seq', start=1000,
-                                                       increment=1),
-                                              nullable=True,
-                                              unique=True,
+    order_number: Mapped[int] = mapped_column(
+		    Integer,
+		    Identity(start=1000, increment=1),
+		    nullable=True,
+		    unique=True
                                               )
     owner_id: Mapped[UUID] = mapped_column(ForeignKey("users.id"))
     vendor_id: Mapped[UUID] = mapped_column(ForeignKey("users.id"))
