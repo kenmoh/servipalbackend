@@ -7,7 +7,8 @@ from decimal import Decimal
 import logging
 from typing import Optional, Tuple
 
-from sqlalchemy import DateTime, ForeignKey, ARRAY, Sequence, String, func, Float, text, Identity, Integer
+from sqlalchemy import DateTime, ForeignKey, ARRAY, String, func, Float, text, Identity, Integer, UniqueConstraint
+from sqlalchemy.schema import Sequence
 from sqlalchemy.dialects.postgresql import CHAR
 from sqlalchemy.orm import mapped_column, Mapped, relationship
 from sqlalchemy.types import TypeDecorator
@@ -52,9 +53,18 @@ class User(Base):
     password: Mapped[str]
     is_blocked: Mapped[bool] = mapped_column(default=False)
     is_verified: Mapped[bool] = mapped_column(default=False)
+    reset_token: Mapped[Optional[str]] = mapped_column(
+        nullable=True, unique=True)
+    reset_token_expires: Mapped[Optional[datetime]
+                                ] = mapped_column(nullable=True)
     user_type: Mapped[str] = mapped_column(  # make it a UserType Enum
         nullable=False,
     )
+
+    is_email_verified: Mapped[bool] = mapped_column(default=False, nullable=True)
+    email_verification_code: Mapped[str] = mapped_column(nullable=True)
+    email_verification_expires: Mapped[datetime] = mapped_column(
+        nullable=True)
     account_status: Mapped[AccountStatus] = mapped_column(
         default=AccountStatus.PENDING)
     # Add dispatcher-rider relationship
@@ -132,6 +142,10 @@ class Profile(Base):
     full_name: Mapped[str] = mapped_column(nullable=True)
     phone_number: Mapped[str] = mapped_column(unique=True, nullable=False)
     bike_number: Mapped[str] = mapped_column(unique=True, nullable=True)
+    is_phone_verified: Mapped[bool] = mapped_column(default=False, nullable=True)
+    phone_verification_code: Mapped[str] = mapped_column(nullable=True)
+    phone_verification_expires: Mapped[datetime] = mapped_column(
+        nullable=True)
     created_at: Mapped[datetime] = mapped_column(default=datetime.now)
     updated_at: Mapped[datetime] = mapped_column(
         default=datetime.now, onupdate=datetime.now
@@ -301,7 +315,9 @@ class Item(Base):
         lazy="selectin",
         uselist=True
     )
-
+    __table_args__ = (
+       UniqueConstraint("name", "user_id", name="uq_name_item"),
+    )
 
 class ItemImage(Base):
     __tablename__ = "item_images"
@@ -323,11 +339,11 @@ class Order(Base):
 
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
     order_number: Mapped[int] = mapped_column(
-		    Integer,
-		    Identity(start=1000, increment=1),
-		    nullable=True,
-		    unique=True
-                                              )
+        Integer,
+        Sequence('order_number_seq',start=1000, increment=1),
+        nullable=True,
+        unique=True
+    )
     owner_id: Mapped[UUID] = mapped_column(ForeignKey("users.id"))
     vendor_id: Mapped[UUID] = mapped_column(ForeignKey("users.id"))
     order_type: Mapped[OrderType] = mapped_column(default=OrderType.PACKAGE)

@@ -103,6 +103,10 @@ async def create_user(db: AsyncSession, user_data: UserCreate) -> UserBase:
 
         await db.refresh(user)
 
+        # Generate and send verification codes
+        email_code, phone_code = await generate_verification_codes(user, db)
+        await send_verification_codes(user, email_code, phone_code, db)
+
         return user
     except IntegrityError as e:
         await db.rollback()
@@ -299,14 +303,17 @@ async def recover_password(email: str, db: AsyncSession) -> dict:
     user.reset_token_expires = token_expires
     await db.commit()
 
+    # Send reset email with frontend URL
+    reset_url = f"{settings.FRONTEND_URL}/reset-password?token={reset_token}"
+
     # Send reset email
     message = MessageSchema(
         subject="Password Reset Request",
         recipients=[email],
         template_body={
-            "reset_token": reset_token,
+            "reset_url": reset_url,
             "user": user.email,
-            "url": settings.FRONTEND_URL
+            "expires_in": "24 hours"
         },
         subtype="html"
     )
@@ -315,6 +322,26 @@ async def recover_password(email: str, db: AsyncSession) -> dict:
     await fm.send_message(message, template_name="reset_password.html")
 
     return {"message": "Password reset instructions sent to your email"}
+
+
+async def verify_reset_token(token: str, db: AsyncSession) -> bool:
+    """
+    Verify if reset token is valid and not expired
+    """
+    stmt = select(User).where(
+        User.reset_token == token,
+        User.reset_token_expires > datetime.now()
+    )
+    result = await db.execute(stmt)
+    user = result.scalar_one_or_none()
+
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid or expired reset token"
+        )
+
+    return True
 
 
 async def change_password(
@@ -400,8 +427,10 @@ async def reset_password(
 ) -> dict:
     """Reset password using reset token"""
 
-    # Find user with valid reset token
+    # Validate password first
     validate_password(reset_data.new_password)
+
+    # Find user with valid reset token
     stmt = select(User).where(
         User.reset_token == reset_data.token,
         User.reset_token_expires > datetime.now()
@@ -415,17 +444,21 @@ async def reset_password(
             detail="Invalid or expired reset token"
         )
 
-    # Update password
-    user.password = hash_password(reset_data.new_password)
-    user.reset_token = None  # Clear the reset token
-    user.reset_token_expires = None
-    user.updated_at = datetime.now()
-
     try:
+        # Update password
+        user.password = hash_password(reset_data.new_password)
+        # Clear reset token
+        user.reset_token = None
+        user.reset_token_expires = None
+        user.updated_at = datetime.now()
+
         await db.commit()
-        # Logout from all devices for security
-        await logout_user(db, user.id)
+
+        # Log out from all devices for security
+        await logout_user(db, user)
+
         return {"message": "Password reset successful"}
+
     except Exception as e:
         await db.rollback()
         raise HTTPException(
@@ -583,3 +616,149 @@ async def terminate_session(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to terminate session: {str(e)}"
         )
+
+
+async def generate_2fa_code(user: User, db: AsyncSession) -> str:
+    """Generate 2FA code and send to user's email"""
+    code = secrets.randbelow(1000000)
+    formatted_code = f"{code:06d}"  # Ensure 6 digits
+
+    user.two_factor_code = formatted_code
+    user.two_factor_expires = datetime.now() + timedelta(minutes=10)
+    await db.commit()
+
+    # Send code via email
+    message = MessageSchema(
+        subject="Your 2FA Code",
+        recipients=[user.email],
+        template_body={"code": formatted_code},
+        subtype="html"
+    )
+
+    fm = FastMail(email_conf)
+    await fm.send_message(message, template_name="2fa_code.html")
+    return formatted_code
+
+
+async def generate_verification_codes(user: User, db: AsyncSession) -> tuple[str, str]:
+    """Generate verification codes for both email and phone"""
+
+    # Generate codes
+    email_code = f"{secrets.randbelow(1000000):06d}"
+    phone_code = f"{secrets.randbelow(1000000):06d}"
+
+    # Set expiration
+    expires = datetime.now() + timedelta(minutes=10)
+
+    # Update user record
+    user.email_verification_code = email_code
+    user.phone_verification_code = phone_code
+    user.email_verification_expires = expires
+    user.phone_verification_expires = expires
+
+    await db.commit()
+
+    return email_code, phone_code
+
+
+async def send_verification_codes(
+    user: User,
+    email_code: str,
+    phone_code: str,
+    db: AsyncSession
+) -> dict:
+    """Send verification codes via email and SMS"""
+
+    stmt = (
+        select(User)
+        .options(joinedload(User.profile))
+    )
+    result = await db.execute(stmt)
+    user_with_profile = result.scalars().first()
+
+    if not user_with_profile.profile.phone_number:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="User profile not found"
+        )
+
+    # Send email code
+    message = MessageSchema(
+        subject="Verify Your Email",
+        recipients=[user.email],
+        template_body={
+            "code": email_code,
+            "expires_in": "10 minutes"
+        },
+        subtype="html"
+    )
+
+    fm = FastMail(email_conf)
+    await fm.send_message(message, template_name="verify_email.html")
+
+    # Send SMS code (using your SMS service)
+    # Example using Twilio:
+    # await send_sms(
+    #     to=user.profile.phone_number,
+    #     message=f"Your verification code is: {phone_code}"
+    # )
+
+    return {
+        "message": "Verification codes sent to your email and phone"
+    }
+
+
+async def verify_user_contact(
+    email_code: str,
+    phone_code: str,
+    db: AsyncSession
+) -> dict:
+    """Verify both email and phone codes"""
+
+    now = datetime.now()
+
+    # Load user with profile
+    stmt = select(User).options(joinedload(User.profile))
+
+    result = await db.execute(stmt)
+    user = result.scalars().first()
+
+    if not user.profile:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="User profile not found"
+        )
+
+    # Check if codes are expired
+    if (user.email_verification_expires < now or
+            user.profile.phone_verification_expires < now):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Verification codes have expired"
+        )
+
+    # Verify email code
+    if email_code != user.email_verification_code:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid email verification code"
+        )
+
+    # Verify phone code
+    if phone_code != user.profile.phone_verification_code:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid phone verification code"
+        )
+
+    # Update verification status
+    user.is_email_verified = True
+    user.is_phone_verified = True
+    user.email_verification_code = None
+    user.phone_verification_code = None
+    user.email_verification_expires = None
+    user.phone_verification_expires = None
+
+    await db.commit()
+
+    return {"message": "Email and phone verified successfully"}

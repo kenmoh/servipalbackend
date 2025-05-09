@@ -1,4 +1,4 @@
-from uuid import uuid4
+from uuid import uuid4, uuid1
 from app.config.config import settings
 import os
 import secrets
@@ -19,6 +19,8 @@ s3 = boto3.resource(
     aws_secret_access_key=settings.AWS_SECRET_KEY,
 )
 
+s3_client = boto3.client('s3')
+
 # UPLOAD IMAGE TO AWS
 
 
@@ -29,9 +31,56 @@ async def add_image(image: UploadFile):
     bucket = s3.Bucket(aws_bucket_name)
     bucket.upload_fileobj(image.file, file_name)
 
+
     image_url = f"https://{aws_bucket_name}.s3.amazonaws.com/{file_name}"
 
     return image_url
+
+
+async def upload_multiple_images(images: list[UploadFile]):
+
+    
+    urls = []
+    # Validate file type
+    if not images:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="At least one image is required"
+        )
+
+    if len(images) > 4:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,detail="At most 4 images allowed")
+           
+    
+
+    for image in images:
+
+        if not image.content_type.startswith("image/"):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"File {image.filename} is not an image"
+            )
+        try:
+            file_key = f'{uuid1()}-{image.filename}'
+            # file_name = f"{token_name}{image.filename}"
+
+            bucket = s3.Bucket(aws_bucket_name)
+            bucket.upload_fileobj(image.file, file_key)
+
+
+            url = f"https://{aws_bucket_name}.s3.amazonaws.com/{file_key}"
+            urls.append(url)
+            
+        except ClientError as e:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Failed to upload image: {str(e)}"
+            )
+
+ 
+
+    return urls
 
 
 async def add_profile_image(image: UploadFile, folder: str) -> str:
@@ -59,10 +108,10 @@ async def add_profile_image(image: UploadFile, folder: str) -> str:
         bucket.upload_fileobj(
             image.file,
             file_key,
-            ExtraArgs={
-                "ContentType": image.content_type,
-                "ACL": "public-read"
-            }
+            # ExtraArgs={
+            #     "ContentType": image.content_type,
+            #     "ACL": "public-read"
+            # }
         )
 
         # Generate and return URL
@@ -85,7 +134,7 @@ async def add_profile_image(image: UploadFile, folder: str) -> str:
         )
 
 
-async def upload_multiple_images(files: list[UploadFile], folder: str) -> list[str]:
+async def upload_multiple_images1(files: list[UploadFile]) -> list[str]:
     """
     Upload multiple images to S3
     Args:
@@ -115,16 +164,17 @@ async def upload_multiple_images(files: list[UploadFile], folder: str) -> list[s
             )
 
         try:
-            file_key = f"{folder}/{uuid4()}-{file.filename}"
-            s3.upload_fileobj(
-                file.file,
-                settings.S3_BUCKET_NAME,
-                file_key,
-                ExtraArgs={
-                    "ContentType": file.content_type,
-                    "ACL": "public-read"
-                }
-            )
+            file_key = f"{uuid4()}-{file.filename}"
+            # bucket = s3.Bucket(aws_bucket_name)
+            # bucket.upload_fileobj(
+            #     file.file,
+            #     settings.S3_BUCKET_NAME,
+            #     file_key,
+               
+            # )
+            response = s3_client.upload_file(file_key, aws_bucket_name, file.filename)
+
+            print(file_key, file.filename, '===============================')
 
             url = f"https://{settings.S3_BUCKET_NAME}.s3.amazonaws.com/{file_key}"
             urls.append(url)

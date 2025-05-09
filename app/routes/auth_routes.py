@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.auth.auth import create_tokens, get_current_user
 from app.database.database import get_db
 from app.models.models import User
-from app.schemas.user_schemas import AdminSessionResponse, PasswordChange, PasswordResetConfirm, PasswordResetRequest, RiderCreate, SessionResponse, TokenResponse, UserBase, UserCreate
+from app.schemas.user_schemas import AdminSessionResponse, PasswordChange, PasswordResetConfirm, PasswordResetRequest, RiderCreate, SessionResponse, TokenResponse, UserBase, UserCreate, VerificationSchema
 from app.services import auth_service
 
 
@@ -117,6 +117,41 @@ async def terminate_session(
 ):
     """Terminate a specific session"""
     await auth_service.terminate_session(db, current_user, session_id)
+
+
+@router.get("/verify-reset-token/{token}")
+async def verify_token(token: str, db: AsyncSession = Depends(get_db)):
+    """
+    Verify reset token when user clicks email link
+    """
+    return await auth_service.verify_reset_token(token, db)
+
+
+@router.post("/verify-contacts")
+async def verify_user_contacts(
+    verification_data: VerificationSchema,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+) -> dict:
+    """Verify user's email and phone"""
+    return await auth_service.verify_user_contact(
+        current_user,
+        verification_data.email_code,
+        verification_data.phone_code,
+        db
+    )
+
+
+@router.post("/resend-verification")
+async def resend_verification_codes(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+) -> dict:
+    """Resend verification codes"""
+    email_code, phone_code = await auth_service.generate_verification_codes(current_user, db)
+    return await auth_service.send_verification_codes(current_user, email_code, phone_code, db)
+
+
 # <<<<< ------------- PASSWORD CHANGE ------------ >>>>>
 
 
@@ -157,4 +192,3 @@ async def logout_all(
     await auth_service.logout_all_sessions(db, current_user.id)
 
     return {"message": "Successfully logged out from all devices"}
-

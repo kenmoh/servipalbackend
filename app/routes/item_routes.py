@@ -1,7 +1,7 @@
 from uuid import UUID
-from typing import List
+from typing import List, Annotated
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status, Form
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.auth import get_db, get_current_user
@@ -44,7 +44,7 @@ async def create_new_category(
     description="Allows VENDOR users to create a new item associated with their account and a category.",
 )
 async def create_new_item(
-    item_data: ItemCreate,
+    item_data: ItemCreate = Depends(),
     images: List[UploadFile] = File(...),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -55,7 +55,7 @@ async def create_new_item(
     - The specified category_id must exist.
     """
 
-    return await item_service.create_item(db, current_user, item_data, images=images)
+    return await item_service.create_item(db=db, current_user=current_user, item_data=item_data, images=images)
 
 
 @router.get(
@@ -85,12 +85,12 @@ async def get_categories(
     """
     Endpoint to get all categories.
     """
-    return await item_service.get_categories(db, current_user)
+    return await item_service.get_categories(db)
 
 
 @router.get(
     "/{vendor_id}",
-    summary="Get items for current user",
+    summary="Get vendor items",
     description="Retrieves all items belonging to a VENDOR user.",
     status_code=status.HTTP_200_OK
 )
@@ -123,7 +123,7 @@ async def read_item(
     - Requires authenticated VENDOR user.
     - Returns 404 if the item is not found or does not belong to the user.
     """
-    item = await item_service.get_item_by_id(db, current_user, item_id)
+    item = await item_service.get_item_by_id(db, item_id)
     if not item:
         # This check might be redundant if get_item_by_id already raises HTTPException
         # but it's good practice for clarity.

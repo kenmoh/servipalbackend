@@ -3,6 +3,7 @@ from uuid import UUID
 import json
 from fastapi import HTTPException, UploadFile, status
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import joinedload
 from sqlalchemy import select, delete, update
 
 from app.models.models import Item, Category, ItemImage, User
@@ -69,7 +70,7 @@ async def get_categories(db: AsyncSession) -> list[CategoryResponse]:
     # Try cache first
     cached_categories = get_cached_categories()
     if cached_categories:
-        return [CategoryResponse(**category) for category in cached_categories]
+        return cached_categories
 
     # If not in cache, fetch from database
     stmt = select(Category)
@@ -111,14 +112,15 @@ async def create_item(
 
     try:
         # Create item first
-        new_item = Item(**item_data.model_dump(), user_id=current_user.id)
+        new_item = Item(**item_data.model_dump(),
+                user_id=current_user.id
+            )
         db.add(new_item)
         await db.flush()
 
         # Upload images and create ItemImage records
         urls = await upload_multiple_images(
             images,
-            folder=f"items/{current_user.id}"
         )
 
         for url in urls:
@@ -135,6 +137,7 @@ async def create_item(
 
         return new_item
     except Exception as e:
+
         await db.rollback()
         # Log the error e
         raise HTTPException(
@@ -155,19 +158,41 @@ async def get_items_by_current_user(
     # Try cache first
     cached_items = redis_client.get(f"vendor_items:{current_user.id}")
     if cached_items:
-        return json.loads(cached_items)
+        item_dicts = json.loads(cached_items)
+        return [ItemResponse(**item) for item in item_dicts]
 
-    stmt = select(Item).where(Item.user_id == current_user.id)
+    stmt = (
+        select(Item)
+        .where(Item.user_id == current_user.id)
+        .options(joinedload(Item.images))
+    )
     result = await db.execute(stmt)
-    items = result.scalars().all()
+    items = result.unique().scalars().all()
+
+    item_list_dict = []
+    for item in items:
+        item_dict = {
+            "name": item.name,
+            "description": item.description,
+            "price": item.price,
+            "item_type": item.item_type,
+            "category_id": item.category_id,
+            "id": item.id,
+            "user_id": item.user_id,
+            "images": [{"id": img.id, "url": img.url, "item_id": img.item_id} for img in item.images]
+        }
+        item_list_dict.append(item_dict)
 
     # Cache the results
-    redis_client.setex(
-        f"vendor_items:{current_user.id}",
-        CACHE_TTL,
-        json.dumps([item.dict() for item in items], default=str)
-    )
-    return items
+    if item_list_dict:
+        redis_client.setex(
+            f"vendor_items:{current_user.id}",
+            CACHE_TTL,
+            json.dumps(item_list_dict, default=str)
+        )
+
+    return [ItemResponse(**item) for item in item_list_dict]
+
 
 
 async def get_items_by_user_id(db: AsyncSession, user_id: UUID) -> list[ItemResponse]:
@@ -192,31 +217,52 @@ async def get_items_by_user_id(db: AsyncSession, user_id: UUID) -> list[ItemResp
 
 
 async def get_item_by_id(
-    db: AsyncSession, current_user: User, item_id: UUID
+    db: AsyncSession, item_id: UUID
 ) -> ItemResponse:
     """Retrieves a specific item by ID belonging to the current VENDOR user."""
-    if current_user.user_type != UserType.VENDOR:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN, detail="Permission denied"
-        )
 
-     # Try cache first
-    cached_item = await get_cached_item(item_id)
-    if cached_item and cached_item["user_id"] == str(current_user.id):
-        return ItemResponse(**cached_item)
+    # if current_user.user_type != UserType.VENDOR:
+    #     raise HTTPException(
+    #         status_code=status.HTTP_403_FORBIDDEN, detail="Permission denied"
+    #     )
 
-    stmt = select(Item).where(Item.id == item_id,
-                              Item.user_id == current_user.id)
+    cache_key = f"item-{item_id}"
+
+    # Try cache first
+    cached_item = redis_client.get(cache_key)
+    if cached_item:
+        return ItemResponse(**json.loads(cached_item))
+
+    # Query database
+    stmt = select(Item).where(Item.id == item_id).options(joinedload(Item.images))
     result = await db.execute(stmt)
-    item = result.scalar_one_or_none()
+    item = result.unique().scalar_one_or_none()
 
     if not item:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Item not found"
         )
-    set_cached_item(item_id, item.dict())
 
-    return item
+    # Prepare dict for caching and response
+    item_dict = {
+        "name": item.name,
+        "description": item.description,
+        "price": item.price,
+        "item_type": item.item_type,
+        "category_id": item.category_id,
+        "id": item.id,
+        "user_id": item.user_id,
+        "images": [
+            {"id": img.id, "url": img.url, "item_id": img.item_id}
+            for img in item.images
+        ],
+    }
+
+    # Cache the serialized item
+    redis_client.setex(cache_key, CACHE_TTL, json.dumps(item_dict, default=str))
+
+    # Return response model
+    return ItemResponse(**item_dict)
 
 
 async def update_item(
@@ -373,10 +419,15 @@ def get_cached_categories() -> list:
 
 def set_cached_categories(categories: list) -> None:
     """Set categories in cache"""
+    categories_dict_list = [{
+    'id': category.id,
+    "name": category.name
+
+    } for category in categories]
     redis_client.setex(
         "all_categories",
         CACHE_TTL,
-        json.dumps([category.dict() for category in categories], default=str)
+        json.dumps(categories_dict_list, default=str)
     )
 
 

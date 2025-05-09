@@ -20,19 +20,18 @@ from uuid import UUID
 
 from fastapi import HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
-from app.schemas.status_schema import OrderStatus
+from app.schemas.status_schema import OrderStatus, TransactionType
 
 from app.schemas.order_schema import (
 
     PaymentStatus,
     OrderItemResponseSchema,
     OrderResponseSchema,
-
+    OrderItemCreate,
     PackageCreate,
-
-    WalletTransactionType,
     DeliveryStatusUpdateSchema,
-    ItemImageSchema
+    ItemImageSchema,
+    OrderAndDeliverySchema
 )
 from app.schemas.delivery_schemas import DeliveryResponse, DeliveryType, DeliveryStatus, DeliverySchema
 from app.schemas.item_schemas import ItemType
@@ -53,6 +52,7 @@ async def get_delivery_by_id(db: AsyncSession, delivery_id: UUID) -> DeliveryRes
 
     cached_delivery = redis_client.get(f"delivery:{delivery_id}")
     if cached_delivery:
+
         return DeliveryResponse(**json.loads(cached_delivery))
 
     stmt = (
@@ -95,7 +95,7 @@ async def get_all_deliveries(
     """
     Get all deliveries with pagination and caching
     """
-    cache_key = f"all_deliveries:{skip}:{limit}"
+    cache_key = f"all_deliveries"
 
     # Try cache first
     cached_deliveries = redis_client.get(cache_key)
@@ -134,7 +134,7 @@ async def get_all_deliveries(
         timedelta(seconds=CACHE_TTL),
         json.dumps([d.model_dump() for d in delivery_responses], default=str)
     )
-
+    
     return delivery_responses
 
 
@@ -280,6 +280,7 @@ async def create_package_order(
 
         invalidate_order_cache(delivery_data.order_id)
         redis_client.delete(f"user_orders:{current_user.id}")
+        redis_client.delete('all_deliveries')
         if hasattr(delivery_data, 'vendor_id'):
             redis_client.delete(f"vendor_orders:{delivery_data.vendor_id}")
         else:
@@ -313,7 +314,7 @@ async def order_food_or_request_laundy_service(
     current_user: User,
     db: AsyncSession,
     vendor_id: UUID,
-    order_item: list[OrderItem],
+    order_item: OrderAndDeliverySchema,
 ) -> DeliveryResponse:
     """
     Creates a meal or linen order and its associated delivery record.
@@ -358,24 +359,26 @@ async def order_food_or_request_laundy_service(
 
     # 2. Calculate Total Price of Items
     total_price = Decimal("0.00")
-    item_type = None  # Initialize as Decimal
+    item_type = None 
 
     for item in order_item.order_items:
         # Fetch each item's price
-        item_data = await db.execute(
+        item_data_response = await db.execute(
             select(Item).where(Item.id == item.item_id)
         )
+        item_data = item_data_response.scalar_one_or_none()
+
         if not item_data:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND, detail=f"Item not found"
             )
 
-        total_price += Decimal(item_data["price"]) * Decimal(item.quantity)
+        total_price += Decimal(item_data.price) * Decimal(item.quantity)
         item_type = item_data.item_type
 
     # 3. Calculate Amount Due to Vendor (after commission)
 
-    amount_due_vendor = calculate_amount_due_vendor(db, order_item.order_items)
+    amount_due_vendor = await calculate_amount_due_vendor(db, order_item.order_items)
 
     try:
         # 4. Create the Order Record
@@ -383,18 +386,20 @@ async def order_food_or_request_laundy_service(
             insert(Order.__table__)
             .values(
                 {
-                    "user_id": current_user.id,
+                    "owner_id": current_user.id,
                     "vendor_id": vendor_id,
                     "order_type": item_type,
                     "total_price": total_price,
                     "order_payment_status": PaymentStatus.PENDING,
+                    "order_status": OrderStatus.PENDING,
                     "amount_due_vendor": amount_due_vendor,
                 }
             )
             .returning(
                 Order.__table__.c.id,
                 Order.__table__.c.vendor_id,
-                Order.__table__.c.user_id,
+                Order.__table__.c.owner_id,
+                Order.__table__.c.order_type,
             )
         )
         # order_insert_result = insert_result.scalar_one_or_none()
@@ -413,7 +418,7 @@ async def order_food_or_request_laundy_service(
                 }
             )
         # Insert all items in one go
-        await db.execute(select(OrderItem).insert(order_items_payload))
+        await db.execute(insert(OrderItem).values(order_items_payload))
 
         # 6. Calculate Delivery Fees
         delivery_fee = await calculate_delivery_fee(order_item.distance, db)
@@ -422,26 +427,28 @@ async def order_food_or_request_laundy_service(
         amount_due_dispatch = await calculte_amount_due_dispatch(db, delivery_fee)
 
         # 7. Create the Delivery Record
-        await db.execute(
-            insert(Delivery).values(
-                {
-                    "order_id": order.id,
-                    "sender_id": current_user.id,
-                    "delivery_type": item_type,
-                    "delivery_status": DeliveryStatus.PENDING,
-                    "pickup_coordinates": order_item.pickup_coordinates,
-                    "dropoff_coordinates": order_item.dropoff_coordinates,
-                    "distance": Decimal(order_item.distance),
-                    "duration": Decimal(order_item.duration),
-                    "delivery_fee": delivery_fee,
-                    "amount_due_dispatch": amount_due_dispatch,
-                }
-            )
+        delivery_result = await db.execute(
+            insert(Delivery)
+            .values({
+                "order_id": order.id,
+                "vendor_id":order.vendor_id,
+                "sender_id": current_user.id,
+                "delivery_type": 'meal',
+                "delivery_status": DeliveryStatus.PENDING,
+                "pickup_coordinates": order_item.pickup_coordinates,
+                "dropoff_coordinates": order_item.dropoff_coordinates,
+                "distance": Decimal(order_item.distance),
+                "delivery_fee": delivery_fee,
+                "amount_due_dispatch": amount_due_dispatch,
+            })
+            .returning(Delivery.id, Delivery.order_id, Delivery.vendor_id)
         )
+
+        delivery_data = delivery_result.fetchone()
 
         # 8. Calculate Final Amount & Generate Payment Link
         final_amount_due = total_price + delivery_fee
-        payment_link = get_payment_link(
+        payment_link = await get_payment_link(
             order.id, final_amount_due, current_user)
 
         # 9. Update Order with Payment Link
@@ -457,7 +464,21 @@ async def order_food_or_request_laundy_service(
         redis_client.delete(f"vendor_orders:{vendor_id}")
         redis_client.delete(f"order_details:{order_id}")
 
-        return DeliveryResponse
+        stmt = select(Order).where(Order.id == delivery_data.order_id).options(
+            selectinload(Order.order_items).options(
+                joinedload(OrderItem.item).options(
+                    selectinload(Item.images)
+                )
+            )
+        )
+        order = (await db.execute(stmt)).scalar_one()
+
+        delivery_stmt = select(Delivery).where(Delivery.id == delivery_data.id)
+        delivery = (await db.execute(delivery_stmt)).scalar_one()
+
+        return format_delivery_response(order, delivery)
+
+        # return DeliveryResponse
 
     except Exception as e:
         await db.rollback()
@@ -523,170 +544,131 @@ async def get_order_with_items(
 
     return OrderItemResponseSchema(**order_data)
 
+async def confirm_delivery_received(
+    db: AsyncSession, delivery_id: UUID, current_user: User
+) -> DeliveryStatusUpdateSchema:
+    result = await db.execute(
+        select(Delivery).where(Delivery.id == delivery_id).options(selectinload(Delivery.order))
+    )
+    delivery = result.scalar_one_or_none()
 
-async def update_delivery_status(
-    db: AsyncSession, delivery_id: UUID, current_user: User, _status: DeliveryStatus
-) -> DeliveryResponse:
-    """Updates the status of a delivery and handles related financial transactions.
+    if not delivery:
+        raise HTTPException(status_code=404, detail="Delivery not found.")
 
-    Args:
-        supabase: Supabase client instance.
-        delivery_id: UUID of the delivery to update.
-        current_user: Dictionary containing the current user's information.
-        _status: New delivery status.
+    if current_user.user_type not in [UserType.CUSTOMER, UserType.VENDOR] or delivery.sender_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Unauthorized.")
 
-    Returns:
-        The updated delivery data.
+    if delivery.delivery_status != DeliveryStatus.DELIVERED:
+        raise HTTPException(status_code=400, detail="Delivery is not yet completed.")
+    try:
+        delivery.delivery_status = DeliveryStatus.RECEIVED
+        await db.commit()
+        await db.refresh(delivery)
 
-    Raises:
-        HTTPException: If the delivery is not found or if the user does not have permission.
-    """
-    delivery = await fetch_delivery_by_id(db, delivery_id)
 
-    dispatch_id = get_dispatch_id(current_user)
+        dispatch_wallet = await fetch_wallet(db, delivery.dispatch_id)
+        vendor_wallet = await fetch_wallet(db, delivery.vendor_id)
 
-    dispatch_wallet = await fetch_wallet(db, delivery.dispatch_id)
-    vendor_wallet = await fetch_wallet(db, delivery.vendor_id)
+        dispatch_escrow = dispatch_wallet.escrow_balance or 0
+        vendor_escrow = vendor_wallet.escrow_balance or 0
 
-    # Get Escrow balance
-    dispatch_escrow_balance = dispatch_wallet.escrow_balance or 0
-    vendor_escrow_balance = vendor_wallet.escrow_balance or 0
-
-    if current_user.user_type in [UserType.RIDER, UserType.DISPATCH] and not (
-        current_user.profile.full_name or current_user.profile.phone_number
-    ):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Phone number and full name are required. Please update your profile!",
-        )
-
-    if current_user.user_type == UserType.CUSTOMER:
-        if delivery.sender_id != current_user.id:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Delivery not found",
-            )
-
-        if delivery.delivery_status != DeliveryStatus.COMPLETED:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="This delivery is still in transit.",
-            )
-
-        await update_delivery_status_in_db(
-            db=db, delivery_id=delivery_id, status=DeliveryStatus.RECEIVED
-        )
-
-        dispatch_wallet_transaction = await create_wallet_transaction(
+        # Dispatch payment
+        dispatch_tx = await create_wallet_transaction(
             db,
             dispatch_wallet.id,
             delivery.amount_due_dispatch or 0,
-            WalletTransactionType.DEPOSIT,
-            current_user.profile.full_name,
+            TransactionType.CREDIT,
+            # current_user.profile.full_name,
         )
         await update_wallet_balance(
-            db=db,
+            db,
             wallet_id=dispatch_wallet.id,
-            new_balance=dispatch_wallet.balance + dispatch_wallet_transaction.amount,
-            escrow_balance=dispatch_escrow_balance
+            new_balance=dispatch_wallet.balance + dispatch_tx.amount,
+            escrow_balance=dispatch_escrow 
         )
 
-        vendor_wallet_transaction = create_wallet_transaction(
+        # Vendor payment
+        vendor_tx = await create_wallet_transaction(
             db,
             vendor_wallet.id,
             delivery.order.amount_due_vendor or 0,
-            WalletTransactionType.DEPOSIT,
-            current_user.profile.full_name,
+            TransactionType.CREDIT,
+            # current_user.profile.full_name,
         )
-
         await update_wallet_balance(
-            db=db,
+            db,
             wallet_id=vendor_wallet.id,
-            new_balance=vendor_wallet.balance + vendor_wallet_transaction.amount,
-            escrow_balance=dispatch_escrow_balance
+            new_balance=vendor_wallet.balance + vendor_tx.amount,
+            escrow_balance=vendor_escrow
         )
 
-        return DeliveryStatusUpdateSchema(**delivery.delivery_status)
+        await db.commit()
+        await db.refresh(delivery)
 
-    if current_user.user_type in [UserType.DISPATCH, UserType.RIDER]:
-        # Handle the specific transition from PENDING
-        if delivery.delivery_status == DeliveryStatus.PENDING:
-            # Ensure the requested status is IN_TRANSIT for this initial step
-            if _status != DeliveryStatus.IN_TRANSIT:
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="First status update for a PENDING delivery by rider/dispatch must be IN_TRANSIT",
-                )
+        return DeliveryStatusUpdateSchema(delivery_status=delivery.delivery_status)
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    
 
-            await db.execute(
-                update(Delivery)
-                .where(Delivery.id == delivery_id)
-                .values(
-                    delivery_status=DeliveryStatus.IN_TRANSIT,
-                    rider_id=current_user.id,
-                    dispatch_id=dispatch_id,
-                )
-            )
-            # Refresh the delivery object to reflect the change for subsequent logic
-            await db.refresh(
-                delivery, attribute_names=[
-                    "delivery_status", "rider_id", "dispatch_id"]
-            )
-
-        # Handle other status updates or check permissions for non-PENDING states
-        elif (
-            delivery.dispatch_id != dispatch_id or delivery.rider_id != current_user.id
-        ):
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Not authorized to update this delivery's status.",
-            )
-        elif delivery.delivery_status != _status:
-            # If status is not PENDING and needs changing to _status
-            await update_delivery_status_in_db(db, delivery_id, _status)
-            # Refresh status
-            await db.refresh(delivery, attribute_names=["delivery_status"])
-
-        # dispatch_wallet = fetch_wallet(db, delivery.dispatch_id)
-        # vendor_wallet = fetch_wallet(db, delivery.vendor_id)
-
-        # dispatch_escrow_balance = dispatch_wallet.escrow_balance or 0
-        # vendor_escrow_balance = vendor_wallet.escrow_balance or 0
-
-        if _status in [
-            DeliveryStatus.IN_TRANSIT,
-            DeliveryStatus.LAUNDRY_DELIVERES_TO_VENDORR,
-            DeliveryStatus.COMPLETED,
-        ]:
-            dispatch_new_escrow_balance = (
-                dispatch_escrow_balance + delivery.amount_due_dispatch or 0
-            )
-
-            vendor_new_escrow_balance = (
-                vendor_escrow_balance + delivery.amount_due_vendor or 0
-            )
-            await update_wallet_escrow_balance(
-                db, delivery.dispatch_id, dispatch_new_escrow_balance
-            )
-
-            await update_wallet_escrow_balance(
-                db, delivery.vendor_id, vendor_new_escrow_balance
-            )
-
-        # --- Cache Invalidation ---
-        invalidate_order_cache(delivery.order_id)
-        redis_client.delete(f"user_orders:{delivery.sender_id}")
-
-        if delivery.dispatch_id:
-            redis_client.delete(f"dispatch_deliveries:{delivery.dispatch_id}")
-
-        if delivery.rider_id:
-            redis_client.delete(f"rider_deliveries:{delivery.rider_id}")
-
-        return DeliveryStatusUpdateSchema(**delivery.delivery_status)
+    
 
 
-# Return None if formatting fails for an order
+
+async def rider_update_delivery_status(
+    db: AsyncSession, delivery_id: UUID, current_user: User
+) -> DeliveryStatusUpdateSchema:
+    dispatch_id = get_dispatch_id(current_user)
+
+    result = await db.execute(
+        select(Delivery).where(Delivery.id == delivery_id).options(selectinload(Delivery.order))
+    )
+    delivery = result.scalar_one_or_none()
+
+    if not delivery:
+        raise HTTPException(status_code=404, detail="Delivery not found.")
+
+    if current_user.user_type not in [UserType.RIDER, UserType.DISPATCH]:
+        raise HTTPException(status_code=403, detail="Unauthorized.")
+
+    dispatch_wallet = await fetch_wallet(db, dispatch_id)
+    vendor_wallet = await fetch_wallet(db, delivery.vendor_id)
+
+    if delivery.delivery_status == DeliveryStatus.PENDING:
+        delivery.delivery_status = DeliveryStatus.IN_TRANSIT
+        delivery.rider_id = current_user.id
+        delivery.dispatch_id = dispatch_id
+
+        # Move funds to escrow
+        dispatch_new_escrow = (dispatch_wallet.escrow_balance or 0) + (delivery.amount_due_dispatch or 0)
+        vendor_new_escrow = (vendor_wallet.escrow_balance or 0) + (delivery.order.amount_due_vendor or 0)
+
+        await update_wallet_escrow_balance(db, dispatch_id, dispatch_new_escrow)
+        await update_wallet_escrow_balance(db, delivery.vendor_id, vendor_new_escrow)
+
+        await db.commit()
+        await db.refresh(delivery)
+
+    elif delivery.delivery_status == DeliveryStatus.IN_TRANSIT:
+        if current_user.id != delivery.rider_id:
+            raise HTTPException(status_code=403, detail="You're not assigned to this delivery.")
+
+        delivery.delivery_status = DeliveryStatus.DELIVERED
+        await db.commit()
+        await db.refresh(delivery)
+
+    # Invalidate Cache
+    invalidate_order_cache(delivery.order_id)
+    redis_client.delete(f"user_orders:{delivery.sender_id}")
+    if delivery.dispatch_id:
+        redis_client.delete(f"dispatch_deliveries:{delivery.dispatch_id}")
+    if delivery.rider_id:
+        redis_client.delete(f"rider_deliveries:{delivery.rider_id}")
+
+    return {'delivery_status':delivery.delivery_status}
+
+
+
 
 
 # <<< ----- CANCEL DELIVERY(RIDER/DISPATCH/CUSTOMER)
@@ -763,14 +745,16 @@ async def cancel_delivery(
 
 
 # <<<--- admin_modify_delivery_status --->>>
+
+
 async def admin_modify_delivery_status(
-    db: AsyncSession, delivery_id: UUID, new_status: DeliveryStatus, current_user: dict
-) -> DeliveryResponse:
+    db: AsyncSession, delivery_id: UUID, current_user: User
+) -> DeliveryStatusUpdateSchema:
     """
     Allows an ADMIN user to forcibly change the status of any delivery.
 
     Args:
-        supabase: Supabase client instance.
+        db: Async database session.
         delivery_id: The UUID of the delivery to modify.
         new_status: The new DeliveryStatus enum value to set.
         current_user: The user performing the action (must be ADMIN).
@@ -781,33 +765,39 @@ async def admin_modify_delivery_status(
     Raises:
         HTTPException: If user is not ADMIN, delivery not found, or update fails.
     """
-    # --- 1. Permission Check ---
-    if current_user.get("user_type") != UserType.ADMIN.value:
+    if current_user.user_type != UserType.ADMIN.value:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Permission denied. Only ADMIN users can modify delivery status directly.",
         )
 
-    # --- 2. Fetch Delivery (to ensure it exists) ---
     try:
-        # Fetch enough details to return a DeliveryResponse later
         result = await db.execute(select(Delivery).where(Delivery.id == delivery_id))
+        delivery = result.scalar_one_or_none()
 
-        delivery_data = result.scalar_one_or_none()
-
-        if not delivery_data:
+        if not delivery:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=f"Delivery {delivery_id} not found.",
             )
-        await update_delivery_status_in_db(db, delivery_id, new_status)
+
+        # Update delivery status
+        delivery.delivery_status = DeliveryStatus.RECEIVED
+        await db.commit()
+
+        # Refetch updated delivery for response
+        await db.refresh(delivery)
+
+        # Invalidate cache (if async)
         invalidate_delivery_cache(delivery_data.id)
-        return DeliveryStatusUpdateSchema
+
+        return {'delivery_status': delivery.delivery_status}
+
     except Exception as e:
         await db.rollback()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed update delivery status: {e}",
+            detail=f"Failed to update delivery status: {e}",
         )
 
 
@@ -838,32 +828,32 @@ async def calculte_amount_due_dispatch(
 
 
 async def calculate_amount_due_vendor(
-    db: AsyncSession, order_items: list[dict]
+    db: AsyncSession, order_items: list[OrderItemCreate]
 ) -> Decimal:
-    # table_name = determine_delivery_type(order_items)
+
     total_price = Decimal("0.00")
     for item in order_items:
         # fetch each item price (meal or linen service)
         result = await db.execute(
-            select(Item.__table__).where(Item.__table__.c.id == item["id"])
+            select(Item).where(Item.id == item.item_id)
         )
         item_data = result.scalar_one_or_none()
 
         if not item_data:
             raise Exception("Invalid item selected")
 
-        total_price += Decimal(item_data["price"]) * item["quantity"]
+        total_price += Decimal(item_data.price) * item.quantity
 
     # 3. Calculate commission
     # Fetch commission config
     charge = await get_charges(db)
-    return total_price - (total_price * charge["food_laundry_commission_percentage"])
+    return total_price - (total_price * charge.food_laundry_commission_percentage)
 
 
 async def fetch_wallet(db: AsyncSession, user_id: UUID) -> WalletRespose:
     """Fetches a wallet for a user."""
     result = await db.execute(
-        select(Wallet.__table__).where(Wallet.__table__.c.id == user_id)
+        select(Wallet).where(Wallet.id == user_id)
     )
     wallet = result.scalar_one_or_none()
     if not wallet:
@@ -877,24 +867,21 @@ async def create_wallet_transaction(
     db: AsyncSession,
     wallet_id: UUID,
     amount: Decimal,
-    transaction_type: WalletTransactionType,
-    username: str,
-) -> TransactionSchema:
+    transaction_type: TransactionType,
+) -> Transaction:
     """Creates a wallet transaction."""
-    result = await db.execute(
-        select(Transaction.__table__)
-        .where(Transaction.__table__.c.wallet_id == wallet_id)
-        .insert(
-            {
-                "username": username or None,
-                "wallet_id": wallet_id,
-                "amount": amount,
-                "transaction_type": transaction_type,
-            }
-        )
+    transx = Transaction(
+        wallet_id=wallet_id,
+        amount=amount,
+        transaction_type=transaction_type,
     )
+    db.add(transx)
+    await db.flush()  
+    await db.refresh(transx)
 
-    return result.scalar_one_or_none()
+    return transx
+
+
 
 
 async def update_wallet_balance(
@@ -904,9 +891,11 @@ async def update_wallet_balance(
     escrow_balance = Decimal(
         escrow_balance - new_balance) if Decimal(escrow_balance) >= Decimal(new_balance) else Decimal(new_balance)
     await db.execute(
-        select(Wallet.__table__)
-        .where(Wallet.__table__.c.idd == wallet_id)
-        .update({"balance": new_balance, 'escrow_balance': Decimal(escrow_balance)})
+        update(Wallet)
+        .where(Wallet.id == wallet_id)
+        .values(balance=new_balance, escrow_balance = Decimal(escrow_balance)
+
+        )
     )
 
 
@@ -914,29 +903,32 @@ async def update_wallet_escrow_balance(
     db: AsyncSession, wallet_id: UUID, new_escrow_balance: Decimal
 ) -> None:
     """Updates a wallet's escrow balance."""
-    await db.execute(
-        select(Wallet.__table__)
-        .where(Wallet.__table__.c.id == wallet_id)
-        .update({"escrow_balance": new_escrow_balance})
+    db.execute(
+        update(Wallet)
+        .where(Wallet.id == wallet_id)
+        .values(escrow_balance=new_escrow_balance)
+        .execution_options(synchronize_session="fetch") 
     )
 
 
 async def update_delivery_status_in_db(
-    db: AsyncSession, delivery_id: UUID, status: DeliveryStatus
+    db: AsyncSession, delivery_id: UUID, _status: DeliveryStatus
 ) -> dict:
     """Updates the delivery status in the database."""
     result = await db.execute(
-        update(Delivery.__table__)
-        .where(Delivery.__table__.c.id == delivery_id)
-        .values({"delivery_status": status})
+        update(Delivery)
+        .where(Delivery.id == delivery_id)
+        .values(delivery_status=_status)
     )
-    return result.scalar_one_or_none()
+    await db.commit()
+    updated_status = result.scalar_one_or_none()
+    return updated_status
 
 
 async def fetch_delivery_by_id(db: AsyncSession, delivery_id: UUID) -> DeliveryResponse:
     """Fetches a delivery by its ID."""
     result = await db.execute(
-        (Delivery.__table__).where(Delivery.__table__.c.id == delivery_id)
+        select(Delivery).where(Delivery.id == delivery_id)
     )
     delivery = result.scalar_one_or_none()
     if not delivery:
@@ -945,163 +937,6 @@ async def fetch_delivery_by_id(db: AsyncSession, delivery_id: UUID) -> DeliveryR
         )
     return delivery
 
-
-def format_delivery_response1(
-    order: Order,
-    delivery: Optional[Delivery] = None,
-) -> DeliveryResponse:
-    """
-    Format SQLAlchemy Order and Delivery objects into a standardized DeliveryResponse.
-
-    Args:
-        order: SQLAlchemy Order model instance
-        delivery: Optional SQLAlchemy Delivery model instance
-
-    Returns:
-        DeliveryResponse object with properly formatted data
-    """
-    # Process order items
-    order_items = []
-    for order_item in order.order_items:
-        item = order_item.item
-        images = [
-            ItemImageSchema(
-                id=image.id,
-                item_id=image.item_id,
-                url=image.url
-            ) for image in item.images
-        ]
-
-        order_items.append(
-            OrderItemResponseSchema(
-                id=item.id,
-                user_id=item.user_id,
-                name=item.name,
-                price=item.price,
-                images=images,
-                description=item.description or "",
-                quantity=order_item.quantity
-            )
-        )
-
-    # Create OrderResponseSchema
-    order_schema = OrderResponseSchema(
-        id=order.id,
-        user_id=order.owner_id,
-        vendor_id=order.vendor_id,
-        order_type=order.order_type.value,
-        total_price=order.total_price,
-        order_payment_status=order.order_payment_status.value,
-        order_status=order.order_status.value if order.order_status else None,
-        amount_due_vendor=order.amount_due_vendor,
-        payment_link=order.payment_link or "",
-        order_items=order_items
-    )
-
-    # Create DeliverySchema if delivery exists
-    delivery_schema = None
-    if delivery:
-        delivery_schema = DeliverySchema(
-            id=delivery.id,
-            delivery_type=delivery.delivery_type.value,
-            delivery_status=delivery.delivery_status.value,
-            sender_id=delivery.sender_id,
-            vendor_id=delivery.vendor_id,
-            dispatch_id=delivery.dispatch_id,
-            distance=delivery.distance,
-            delivery_fee=delivery.delivery_fee,
-            amount_due_dispatch=delivery.amount_due_dispatch,
-            created_at=delivery.created_at
-        )
-
-    return DeliveryResponse(
-        delivery=delivery_schema,
-        order=order_schema
-    )
-
-
-def format_delivery_response2(
-    order: Order,
-    delivery: Optional[Delivery] = None,
-) -> DeliveryResponse:
-    """
-    #Format SQLAlchemy Order and Delivery objects into a standardized DeliveryResponse.
-
-    #Args:
-        #order: SQLAlchemy Order model instance
-        #delivery: Optional SQLAlchemy Delivery model instance
-        #distance: Optional distance information if available
-
-    #Returns:
-        #DeliveryResponse object with properly formatted data
-    """
-
-    # Convert Order to expected dictionary structure
-    order_dict = {
-        "id": str(order.id),
-        "user_id": str(order.owner_id),
-        "vendor_id": str(order.vendor_id),
-        "order_type": order.order_type,
-        "total_price": str(order.total_price),
-        "order_payment_status": order.order_payment_status,
-        "order_status": order.order_status,
-        "amount_due_vendor": str(order.amount_due_vendor),
-        "payment_link": order.payment_link,
-        "order_items": []
-    }
-
-    # Process order items and their images
-    for item_rel in order.order_items:
-        item = item_rel.item
-        item_dict = {
-            "id": str(item.id),
-            "user_id": str(item.user_id),
-            "name": item.name,
-            "price": str(item.price),
-            "description": item.description,
-            "quantity": item_rel.quantity,
-            "images": []
-        }
-
-        # Add images if they exist
-        if hasattr(item, 'images') and item.images:
-            image_data = {
-                "id": str(item.images[0].id) if item.images else None,
-                "item_id": str(item.id),
-                "url": [img.url for img in item.images]
-            }
-            item_dict["image_url"] = [image_data]
-
-        order_dict["order_items"].append(item_dict)
-
-    # Convert Delivery to expected dictionary structure if available
-    delivery_dict = None
-    if delivery:
-        delivery_dict = {
-            "id": delivery.id,
-            "delivery_type": delivery.delivery_type,
-            "delivery_status": delivery.delivery_status,
-            "sender_id": delivery.sender_id,
-            "vendor_id": delivery.vendor_id,
-            "dispatch_id": str(delivery.dispatch_id) if hasattr(delivery, "dispatch_id") and delivery.dispatch_id else None,
-            "distance": str(delivery.distance),
-            # "duration": getattr(delivery, "duration", None),
-            "delivery_fee": delivery.delivery_fee,
-            "amount_due_dispatch": delivery.amount_due_dispatch,
-            "created_at": delivery.created_at
-        }
-
-    # Create and return the response
-    order_schema = OrderResponseSchema.model_validate(order_dict)
-    delivery_schema = DeliverySchema.model_validate(
-        delivery_dict) if delivery_dict else None
-
-    return DeliveryResponse(
-        delivery=delivery_schema,
-        order=order_schema
-    )
-
-
 def format_delivery_response(order: Order, delivery: Optional[Delivery] = None) -> DeliveryResponse:
     # Format order items with proper image structure
     order_items = []
@@ -1109,19 +944,19 @@ def format_delivery_response(order: Order, delivery: Optional[Delivery] = None) 
         item = order_item.item
         images = [
             {
-                "id": str(image.id),
-                "item_id": str(image.item_id),
+                "id": image.id,
+                "item_id": image.item_id,
                 "url": image.url
             }
             for image in item.images
         ]
 
         order_items.append({
-            "id": str(item.id),
-            "user_id": str(item.user_id),
+            "id": item.id,
+            "user_id": item.user_id,
             "name": item.name,
-            "price": str(item.price),
-            "images": images,  # Properly structured
+            "price": item.price,
+            "images": images,
             "description": item.description or "",
             "quantity": order_item.quantity
         })
@@ -1133,12 +968,12 @@ def format_delivery_response(order: Order, delivery: Optional[Delivery] = None) 
             "id": str(delivery.id),
             "delivery_type": delivery.delivery_type.value,
             "delivery_status": delivery.delivery_status.value,
-            "sender_id": str(delivery.sender_id),
-            "vendor_id": str(delivery.vendor_id),
-            "dispatch_id": str(delivery.dispatch_id) if delivery.dispatch_id else None,
-            "distance": str(delivery.distance),
-            "delivery_fee": str(delivery.delivery_fee),
-            "amount_due_dispatch": str(delivery.amount_due_dispatch),
+            "sender_id": delivery.sender_id,
+            "vendor_id": delivery.vendor_id,
+            "dispatch_id": delivery.dispatch_id if delivery.dispatch_id else None,
+            "distance": delivery.distance,
+            "delivery_fee": delivery.delivery_fee,
+            "amount_due_dispatch": delivery.amount_due_dispatch,
             "created_at": delivery.created_at.isoformat()
         }
 
@@ -1198,44 +1033,4 @@ def invalidate_order_cache(order_id: UUID) -> None:
     redis_client.delete("all_orders")
 
 
-"""
 
-  "delivery": {
-    "distance": "string",
-    "id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
-    "delivery_type": "meal",
-    "delivery_status": "pending",
-    "sender_id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
-    "vendor_id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
-    "dispatch_id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
-    "name": "string",
-    "image_url": "string",
-    "duration": "string",
-    "delivery_fee": "string",
-    "amount_due_dispatch": "string",
-    "created_at": "2025-05-05T11:03:43.084Z"
-  },
-  "order": {
-    "id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
-    "user_id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
-    "vendor_id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
-    "order_type": "string",
-    "total_price": "string",
-    "order_payment_status": "string",
-    "order_status": "string",
-    "amount_due_vendor": "string",
-    "payment_link": "string",
-    "order_items": [
-      {
-        "id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
-        "user_id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
-        "name": "string",
-        "price": "string",
-        "image_url": "string",
-        "description": "string",
-        "quantity": 0
-      }
-    ]
-  }
-}
-"""

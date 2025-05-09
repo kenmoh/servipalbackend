@@ -367,6 +367,10 @@ class RiderBase(BaseModel):
     password: str
 
 
+class PasswordResetForm(BaseModel):
+    new_password: str
+
+
 class RiderCreate(RiderBase):
     phone_number: str
     bike_number: str
@@ -398,3 +402,8 @@ class AdminSessionResponse(BaseModel):
     class Config:
         from_attributes = True
         populate_by_name = True
+
+
+class VerificationSchema(BaseModel):
+    email_code: str = Field(..., min_length=6, max_length=6)
+    phone_code: str = Field(..., min_length=6, max_length=6)

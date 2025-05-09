@@ -1,5 +1,6 @@
 from decimal import Decimal
 from enum import Enum
+from fastapi import Form
 from pydantic import BaseModel
 from typing import Optional
 from uuid import UUID
@@ -21,14 +22,19 @@ class ItemType(str, Enum):
 
 
 class ItemCreate(BaseModel):
-    name: str
-    description: Optional[str] = None
-    price: Decimal
-    item_type: ItemType
-    image_url: str
-    category_id: UUID | None = None
 
+    name: str = Form(...),
+    description: str = Form(...),
+    price: Decimal = Form(...),
+    item_type: ItemType = Form(...),
+    category_id: UUID = Form(...),
+
+class ItemImageSchema(BaseModel):
+    id: UUID
+    item_id: UUID
+    url: str
 
 class ItemResponse(ItemCreate):
     id: UUID
     user_id: UUID
+    images: list[ItemImageSchema]
