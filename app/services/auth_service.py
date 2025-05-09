@@ -13,10 +13,21 @@ from sqlalchemy.orm import joinedload
 from passlib.context import CryptContext
 
 from app.schemas.status_schema import AccountStatus, UserType
-from app.schemas.user_schemas import PasswordChange, PasswordResetConfirm, RiderCreate, UserBase, UserCreate, UserLogin
+from app.schemas.user_schemas import (
+    PasswordChange,
+    PasswordResetConfirm,
+    RiderCreate,
+    UserBase,
+    UserCreate,
+    UserLogin,
+)
 from app.models.models import Profile, Session, User, RefreshToken, Wallet
 from app.config.config import settings, email_conf
-from app.utils.utils import check_login_attempts, record_failed_attempt, validate_password
+from app.utils.utils import (
+    check_login_attempts,
+    record_failed_attempt,
+    validate_password,
+)
 from app.config.config import redis_client
 
 
@@ -31,7 +42,7 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
     return pwd_context.verify(plain_password, hashed_password)
 
 
-async def login_user(db: AsyncSession,  login_data: UserLogin) -> User:
+async def login_user(db: AsyncSession, login_data: UserLogin) -> User:
     """
     Args:
             db: Database session
@@ -53,8 +64,7 @@ async def login_user(db: AsyncSession,  login_data: UserLogin) -> User:
         # Record failed attempt
         record_failed_attempt(login_data.username, redis_client)
         raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid credentials"
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials"
         )
 
     # Reset failed attempts on successful login
@@ -138,8 +148,7 @@ async def create_new_rider(
     validate_password(data.password)
 
     stmt = (
-        select(User).where(User.id == current_user.id).options(
-            joinedload(User.profile))
+        select(User).where(User.id == current_user.id).options(joinedload(User.profile))
     )
     result = await db.execute(stmt)
     user = result.scalar_one_or_none()
@@ -232,17 +241,13 @@ async def create_new_rider(
         )
 
 
-async def create_session(
-    db: AsyncSession,
-    user_id: UUID,
-    request: Request
-) -> Session:
+async def create_session(db: AsyncSession, user_id: UUID, request: Request) -> Session:
     """Create new session record"""
     session = Session(
         user_id=user_id,
         device_info=request.headers.get("user-agent", "unknown"),
         ip_address=request.client.host,
-        is_active=True
+        is_active=True,
     )
     db.add(session)
     await db.commit()
@@ -291,7 +296,7 @@ async def recover_password(email: str, db: AsyncSession) -> dict:
     if not user:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="No account found with this email"
+            detail="No account found with this email",
         )
 
     # Generate reset token
@@ -313,9 +318,9 @@ async def recover_password(email: str, db: AsyncSession) -> dict:
         template_body={
             "reset_url": reset_url,
             "user": user.email,
-            "expires_in": "24 hours"
+            "expires_in": "24 hours",
         },
-        subtype="html"
+        subtype="html",
     )
 
     fm = FastMail(email_conf)
@@ -329,8 +334,7 @@ async def verify_reset_token(token: str, db: AsyncSession) -> bool:
     Verify if reset token is valid and not expired
     """
     stmt = select(User).where(
-        User.reset_token == token,
-        User.reset_token_expires > datetime.now()
+        User.reset_token == token, User.reset_token_expires > datetime.now()
     )
     result = await db.execute(stmt)
     user = result.scalar_one_or_none()
@@ -338,16 +342,14 @@ async def verify_reset_token(token: str, db: AsyncSession) -> bool:
     if not user:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invalid or expired reset token"
+            detail="Invalid or expired reset token",
         )
 
     return True
 
 
 async def change_password(
-    current_user: User,
-    password_data: PasswordChange,
-    db: AsyncSession
+    current_user: User, password_data: PasswordChange, db: AsyncSession
 ) -> dict:
     """
     Changes user's password after verifying current password
@@ -367,7 +369,7 @@ async def change_password(
     if not verify_password(password_data.current_password, current_user.password):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Current password is incorrect"
+            detail="Current password is incorrect",
         )
 
     # Update password
@@ -383,7 +385,7 @@ async def change_password(
         await db.rollback()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to change password: {str(e)}"
+            detail=f"Failed to change password: {str(e)}",
         )
 
 
@@ -403,12 +405,9 @@ async def logout_user(db: AsyncSession, current_user: User) -> bool:
             update(RefreshToken)
             .where(
                 RefreshToken.user_id == current_user.id,
-                RefreshToken.is_revoked == False
+                RefreshToken.is_revoked == False,
             )
-            .values(
-                is_revoked=True,
-                revoked_at=datetime.now()
-            )
+            .values(is_revoked=True, revoked_at=datetime.now())
         )
         await db.execute(stmt)
         await db.commit()
@@ -417,14 +416,11 @@ async def logout_user(db: AsyncSession, current_user: User) -> bool:
         await db.rollback()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to logout all sessions: {str(e)}"
+            detail=f"Failed to logout all sessions: {str(e)}",
         )
 
 
-async def reset_password(
-    reset_data: PasswordResetConfirm,
-    db: AsyncSession
-) -> dict:
+async def reset_password(reset_data: PasswordResetConfirm, db: AsyncSession) -> dict:
     """Reset password using reset token"""
 
     # Validate password first
@@ -432,8 +428,7 @@ async def reset_password(
 
     # Find user with valid reset token
     stmt = select(User).where(
-        User.reset_token == reset_data.token,
-        User.reset_token_expires > datetime.now()
+        User.reset_token == reset_data.token, User.reset_token_expires > datetime.now()
     )
     result = await db.execute(stmt)
     user = result.scalar_one_or_none()
@@ -441,7 +436,7 @@ async def reset_password(
     if not user:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invalid or expired reset token"
+            detail="Invalid or expired reset token",
         )
 
     try:
@@ -463,14 +458,12 @@ async def reset_password(
         await db.rollback()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to reset password: {str(e)}"
+            detail=f"Failed to reset password: {str(e)}",
         )
 
 
 async def get_user_sessions(
-    db: AsyncSession,
-    current_user: User,
-    active_only: bool = False
+    db: AsyncSession, current_user: User, active_only: bool = False
 ) -> list[Session]:
     """
     Get all sessions for a user
@@ -501,7 +494,7 @@ async def get_user_sessions(
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to fetch sessions: {str(e)}"
+            detail=f"Failed to fetch sessions: {str(e)}",
         )
 
 
@@ -511,7 +504,7 @@ async def get_all_user_sessions(
     user_id: UUID = None,
     active_only: bool = False,
     skip: int = 0,
-    limit: int = 50
+    limit: int = 50,
 ) -> list[Session]:
     """
     Get all sessions (admin only)
@@ -529,8 +522,7 @@ async def get_all_user_sessions(
     """
     if current_user.user_type != UserType.ADMIN:
         raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Admin access required"
+            status_code=status.HTTP_403_FORBIDDEN, detail="Admin access required"
         )
 
     try:
@@ -556,14 +548,12 @@ async def get_all_user_sessions(
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to fetch sessions: {str(e)}"
+            detail=f"Failed to fetch sessions: {str(e)}",
         )
 
 
 async def terminate_session(
-    db: AsyncSession,
-    current_user: User,
-    session_id: UUID
+    db: AsyncSession, current_user: User, session_id: UUID
 ) -> None:
     """
     Terminate a specific session and revoke associated tokens
@@ -583,7 +573,7 @@ async def terminate_session(
         if not session:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail="Session not found or access denied"
+                detail="Session not found or access denied",
             )
 
         # Revoke refresh tokens associated with this session
@@ -592,12 +582,9 @@ async def terminate_session(
             .where(
                 # Use session.user_id instead of current_user.id
                 RefreshToken.user_id == session.user_id,
-                RefreshToken.session_id == session_id
+                RefreshToken.session_id == session_id,
             )
-            .values(
-                is_revoked=True,
-                revoked_at=datetime.now()
-            )
+            .values(is_revoked=True, revoked_at=datetime.now())
         )
 
         # Deactivate the session
@@ -606,7 +593,11 @@ async def terminate_session(
 
         # Add termination metadata
         session.terminated_by = current_user.id
-        session.termination_reason = "Terminated by admin" if current_user.user_type == UserType.ADMIN else "User logout"
+        session.termination_reason = (
+            "Terminated by admin"
+            if current_user.user_type == UserType.ADMIN
+            else "User logout"
+        )
 
         await db.commit()
 
@@ -614,7 +605,7 @@ async def terminate_session(
         await db.rollback()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to terminate session: {str(e)}"
+            detail=f"Failed to terminate session: {str(e)}",
         )
 
 
@@ -632,7 +623,7 @@ async def generate_2fa_code(user: User, db: AsyncSession) -> str:
         subject="Your 2FA Code",
         recipients=[user.email],
         template_body={"code": formatted_code},
-        subtype="html"
+        subtype="html",
     )
 
     fm = FastMail(email_conf)
@@ -662,35 +653,25 @@ async def generate_verification_codes(user: User, db: AsyncSession) -> tuple[str
 
 
 async def send_verification_codes(
-    user: User,
-    email_code: str,
-    phone_code: str,
-    db: AsyncSession
+    user: User, email_code: str, phone_code: str, db: AsyncSession
 ) -> dict:
     """Send verification codes via email and SMS"""
 
-    stmt = (
-        select(User)
-        .options(joinedload(User.profile))
-    )
+    stmt = select(User).options(joinedload(User.profile))
     result = await db.execute(stmt)
     user_with_profile = result.scalars().first()
 
     if not user_with_profile.profile.phone_number:
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="User profile not found"
+            status_code=status.HTTP_400_BAD_REQUEST, detail="User profile not found"
         )
 
     # Send email code
     message = MessageSchema(
         subject="Verify Your Email",
         recipients=[user.email],
-        template_body={
-            "code": email_code,
-            "expires_in": "10 minutes"
-        },
-        subtype="html"
+        template_body={"code": email_code, "expires_in": "10 minutes"},
+        subtype="html",
     )
 
     fm = FastMail(email_conf)
@@ -703,15 +684,11 @@ async def send_verification_codes(
     #     message=f"Your verification code is: {phone_code}"
     # )
 
-    return {
-        "message": "Verification codes sent to your email and phone"
-    }
+    return {"message": "Verification codes sent to your email and phone"}
 
 
 async def verify_user_contact(
-    email_code: str,
-    phone_code: str,
-    db: AsyncSession
+    email_code: str, phone_code: str, db: AsyncSession
 ) -> dict:
     """Verify both email and phone codes"""
 
@@ -725,30 +702,31 @@ async def verify_user_contact(
 
     if not user.profile:
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="User profile not found"
+            status_code=status.HTTP_400_BAD_REQUEST, detail="User profile not found"
         )
 
     # Check if codes are expired
-    if (user.email_verification_expires < now or
-            user.profile.phone_verification_expires < now):
+    if (
+        user.email_verification_expires < now
+        or user.profile.phone_verification_expires < now
+    ):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Verification codes have expired"
+            detail="Verification codes have expired",
         )
 
     # Verify email code
     if email_code != user.email_verification_code:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invalid email verification code"
+            detail="Invalid email verification code",
         )
 
     # Verify phone code
     if phone_code != user.profile.phone_verification_code:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invalid phone verification code"
+            detail="Invalid phone verification code",
         )
 
     # Update verification status

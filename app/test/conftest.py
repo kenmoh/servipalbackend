@@ -35,6 +35,7 @@ async def db_session() -> AsyncGenerator:
 @pytest.fixture
 async def async_client(db_session: AsyncSession) -> AsyncGenerator:
     """Async client for testing async endpoints"""
+
     async def override_get_db():
         yield db_session
 
@@ -51,6 +52,7 @@ async def async_client(db_session: AsyncSession) -> AsyncGenerator:
 @pytest.fixture
 def test_client(db_session: AsyncSession) -> Generator:
     """Sync client for testing sync endpoints"""
+
     async def override_get_db():
         yield db_session
 
@@ -67,20 +69,18 @@ def test_users() -> List[Dict]:
         {
             "email": "customer@gmail.com",
             "password": "@Ttring12",
-            "user_type": "customer"
+            "user_type": "customer",
         },
         {
             "email": "customer@example.com",
             "password": "@Testpass123",
             "user_type": "customer",
-
         },
         {
             "email": "dispatch@example.com",
             "password": "@Testpass123",
             "user_type": "dispatch",
-
-        }
+        },
     ]
 
 
@@ -103,7 +103,7 @@ def admin_token(test_users: List[Dict]) -> str:
 async def authorized_vendor_client(async_client: AsyncClient, vendor_token: str):
     async_client.headers = {
         **async_client.headers,
-        "Authorization": f"Bearer {vendor_token}"
+        "Authorization": f"Bearer {vendor_token}",
     }
     return async_client
 
@@ -112,7 +112,7 @@ async def authorized_vendor_client(async_client: AsyncClient, vendor_token: str)
 def authorized_customer_client(test_client, customer_token: str):
     test_client.headers = {
         **test_client.headers,
-        "Authorization": f"Bearer {customer_token}"
+        "Authorization": f"Bearer {customer_token}",
     }
     return test_client
 
@@ -121,7 +121,7 @@ def authorized_customer_client(test_client, customer_token: str):
 def authorized_admin_client(test_client, admin_token: str):
     test_client.headers = {
         **test_client.headers,
-        "Authorization": f"Bearer {admin_token}"
+        "Authorization": f"Bearer {admin_token}",
     }
     return test_client
 

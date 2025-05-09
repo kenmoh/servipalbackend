@@ -19,7 +19,7 @@ s3 = boto3.resource(
     aws_secret_access_key=settings.AWS_SECRET_KEY,
 )
 
-s3_client = boto3.client('s3')
+s3_client = boto3.client("s3")
 
 # UPLOAD IMAGE TO AWS
 
@@ -31,54 +31,46 @@ async def add_image(image: UploadFile):
     bucket = s3.Bucket(aws_bucket_name)
     bucket.upload_fileobj(image.file, file_name)
 
-
     image_url = f"https://{aws_bucket_name}.s3.amazonaws.com/{file_name}"
 
     return image_url
 
 
 async def upload_multiple_images(images: list[UploadFile]):
-
-    
     urls = []
     # Validate file type
     if not images:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="At least one image is required"
+            detail="At least one image is required",
         )
 
     if len(images) > 4:
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,detail="At most 4 images allowed")
-           
-    
+            status_code=status.HTTP_400_BAD_REQUEST, detail="At most 4 images allowed"
+        )
 
     for image in images:
-
         if not image.content_type.startswith("image/"):
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"File {image.filename} is not an image"
+                detail=f"File {image.filename} is not an image",
             )
         try:
-            file_key = f'{uuid1()}-{image.filename}'
+            file_key = f"{uuid1()}-{image.filename}"
             # file_name = f"{token_name}{image.filename}"
 
             bucket = s3.Bucket(aws_bucket_name)
             bucket.upload_fileobj(image.file, file_key)
 
-
             url = f"https://{aws_bucket_name}.s3.amazonaws.com/{file_key}"
             urls.append(url)
-            
+
         except ClientError as e:
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"Failed to upload image: {str(e)}"
+                detail=f"Failed to upload image: {str(e)}",
             )
-
- 
 
     return urls
 
@@ -95,8 +87,7 @@ async def add_profile_image(image: UploadFile, folder: str) -> str:
     # Validate file type
     if not image.content_type.startswith("image/"):
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="File must be an image"
+            status_code=status.HTTP_400_BAD_REQUEST, detail="File must be an image"
         )
 
     try:
@@ -124,13 +115,13 @@ async def add_profile_image(image: UploadFile, folder: str) -> str:
         logging.error(f"Failed to upload image: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to upload image: {str(e)}"
+            detail=f"Failed to upload image: {str(e)}",
         )
     except Exception as e:
         logging.error(f"Unexpected error uploading image: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="An unexpected error occurred"
+            detail="An unexpected error occurred",
         )
 
 
@@ -146,13 +137,12 @@ async def upload_multiple_images1(files: list[UploadFile]) -> list[str]:
     if not files:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="At least one image is required"
+            detail="At least one image is required",
         )
 
     if len(files) > 4:
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Maximum 4 images allowed"
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Maximum 4 images allowed"
         )
 
     urls = []
@@ -160,7 +150,7 @@ async def upload_multiple_images1(files: list[UploadFile]) -> list[str]:
         if not file.content_type.startswith("image/"):
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"File {file.filename} is not an image"
+                detail=f"File {file.filename} is not an image",
             )
 
         try:
@@ -170,11 +160,11 @@ async def upload_multiple_images1(files: list[UploadFile]) -> list[str]:
             #     file.file,
             #     settings.S3_BUCKET_NAME,
             #     file_key,
-               
+
             # )
             response = s3_client.upload_file(file_key, aws_bucket_name, file.filename)
 
-            print(file_key, file.filename, '===============================')
+            print(file_key, file.filename, "===============================")
 
             url = f"https://{settings.S3_BUCKET_NAME}.s3.amazonaws.com/{file_key}"
             urls.append(url)
@@ -182,10 +172,11 @@ async def upload_multiple_images1(files: list[UploadFile]) -> list[str]:
         except ClientError as e:
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"Failed to upload image: {str(e)}"
+                detail=f"Failed to upload image: {str(e)}",
             )
 
     return urls
+
 
 # DELETE IMAGE FROM AWS
 
@@ -214,9 +205,7 @@ async def delete_s3_object(file_url: str) -> bool:
 
 
 async def update_image(
-    new_image: UploadFile,
-    old_image_url: str,
-    folder: str = "misc"
+    new_image: UploadFile, old_image_url: str, folder: str = "misc"
 ) -> str:
     """
     Update an image by deleting the old one and uploading the new one
@@ -238,7 +227,7 @@ async def update_image(
 async def update_multiple_images(
     new_images: list[UploadFile],
     old_image_urls: list[str],
-    folder: str = 'Items-Images'
+    folder: str = "Items-Images",
 ) -> list[str]:
     """
     Update multiple images by deleting old ones and uploading new ones

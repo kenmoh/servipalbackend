@@ -348,8 +348,7 @@ async def pay_with_wallet(
 
         # Update the vendor's escrow balance
         seller_wallet_stmt = (
-            select(Wallet).where(Wallet.id ==
-                                 order.vendor_id).with_for_update()
+            select(Wallet).where(Wallet.id == order.vendor_id).with_for_update()
         )
         seller_wallet_result = await db.execute(seller_wallet_stmt)
         seller_wallet = seller_wallet_result.scalar_one_or_none()

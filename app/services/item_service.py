@@ -85,7 +85,10 @@ async def get_categories(db: AsyncSession) -> list[CategoryResponse]:
 
 
 async def create_item(
-    db: AsyncSession, current_user: User, item_data: ItemCreate, images: list[UploadFile]
+    db: AsyncSession,
+    current_user: User,
+    item_data: ItemCreate,
+    images: list[UploadFile],
 ) -> ItemResponse:
     """Creates a new item for the current VENDOR user."""
     if current_user.user_type != UserType.VENDOR:
@@ -112,9 +115,7 @@ async def create_item(
 
     try:
         # Create item first
-        new_item = Item(**item_data.model_dump(),
-                user_id=current_user.id
-            )
+        new_item = Item(**item_data.model_dump(), user_id=current_user.id)
         db.add(new_item)
         await db.flush()
 
@@ -124,10 +125,7 @@ async def create_item(
         )
 
         for url in urls:
-            item_image = ItemImage(
-                item_id=new_item.id,
-                url=url
-            )
+            item_image = ItemImage(item_id=new_item.id, url=url)
             db.add(item_image)
 
         await db.commit()
@@ -137,7 +135,6 @@ async def create_item(
 
         return new_item
     except Exception as e:
-
         await db.rollback()
         # Log the error e
         raise HTTPException(
@@ -179,7 +176,10 @@ async def get_items_by_current_user(
             "category_id": item.category_id,
             "id": item.id,
             "user_id": item.user_id,
-            "images": [{"id": img.id, "url": img.url, "item_id": img.item_id} for img in item.images]
+            "images": [
+                {"id": img.id, "url": img.url, "item_id": img.item_id}
+                for img in item.images
+            ],
         }
         item_list_dict.append(item_dict)
 
@@ -188,11 +188,10 @@ async def get_items_by_current_user(
         redis_client.setex(
             f"vendor_items:{current_user.id}",
             CACHE_TTL,
-            json.dumps(item_list_dict, default=str)
+            json.dumps(item_list_dict, default=str),
         )
 
     return [ItemResponse(**item) for item in item_list_dict]
-
 
 
 async def get_items_by_user_id(db: AsyncSession, user_id: UUID) -> list[ItemResponse]:
@@ -211,14 +210,12 @@ async def get_items_by_user_id(db: AsyncSession, user_id: UUID) -> list[ItemResp
         redis_client.setex(
             f"vendor_items:{user_id}",
             CACHE_TTL,
-            json.dumps([item.dict() for item in items], default=str)
+            json.dumps([item.dict() for item in items], default=str),
         )
     return items
 
 
-async def get_item_by_id(
-    db: AsyncSession, item_id: UUID
-) -> ItemResponse:
+async def get_item_by_id(db: AsyncSession, item_id: UUID) -> ItemResponse:
     """Retrieves a specific item by ID belonging to the current VENDOR user."""
 
     # if current_user.user_type != UserType.VENDOR:
@@ -266,10 +263,14 @@ async def get_item_by_id(
 
 
 async def update_item(
-    db: AsyncSession, current_user: User, item_id: UUID, item_data: ItemCreate, images: list[UploadFile] = None
+    db: AsyncSession,
+    current_user: User,
+    item_id: UUID,
+    item_data: ItemCreate,
+    images: list[UploadFile] = None,
 ) -> ItemResponse:
-    """ Updates an existing item belonging to the current VENDOR user.
-        Handles both item data and image updates.
+    """Updates an existing item belonging to the current VENDOR user.
+    Handles both item data and image updates.
     """
     item = await get_item_by_id(
         db, current_user, item_id
@@ -297,7 +298,6 @@ async def update_item(
     )
 
     try:
-
         result = await db.execute(stmt)
         updated_item = result.scalar_one()
 
@@ -311,14 +311,11 @@ async def update_item(
 
             # Upload new images
             new_urls = await upload_multiple_images(
-                images,
-                folder=f"items/{current_user.id}"
+                images, folder=f"items/{current_user.id}"
             )
 
             # Delete old images from database
-            await db.execute(
-                delete(ItemImage).where(ItemImage.item_id == item_id)
-            )
+            await db.execute(delete(ItemImage).where(ItemImage.item_id == item_id))
 
             # Create new image records
             for url in new_urls:
@@ -360,10 +357,7 @@ async def delete_item(db: AsyncSession, current_user: User, item_id: UUID) -> No
         item_images = image_result.scalars().all()
 
         # Delete item (this will cascade delete ItemImage records due to FK constraint)
-        stmt = delete(Item).where(
-            Item.id == item_id,
-            Item.user_id == current_user.id
-        )
+        stmt = delete(Item).where(Item.id == item_id, Item.user_id == current_user.id)
         await db.execute(stmt)
 
         # Delete images from S3
@@ -382,8 +376,9 @@ async def delete_item(db: AsyncSession, current_user: User, item_id: UUID) -> No
         logging.error(f"Failed to delete item and images: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to delete item: {str(e)}"
+            detail=f"Failed to delete item: {str(e)}",
         )
+
 
 # <<<<< ---------- CACHE UTILITY FOR ITEM ---------- >>>>>
 CACHE_TTL = 3600
@@ -398,9 +393,7 @@ def get_cached_item(item_id: UUID) -> dict:
 def set_cached_item(item_id: UUID, item_data: dict) -> None:
     """Set item in cache"""
     redis_client.setex(
-        f"item:{str(item_id)}",
-        CACHE_TTL,
-        json.dumps(item_data, default=str)
+        f"item:{str(item_id)}", CACHE_TTL, json.dumps(item_data, default=str)
     )
 
 
@@ -419,15 +412,11 @@ def get_cached_categories() -> list:
 
 def set_cached_categories(categories: list) -> None:
     """Set categories in cache"""
-    categories_dict_list = [{
-    'id': category.id,
-    "name": category.name
-
-    } for category in categories]
+    categories_dict_list = [
+        {"id": category.id, "name": category.name} for category in categories
+    ]
     redis_client.setex(
-        "all_categories",
-        CACHE_TTL,
-        json.dumps(categories_dict_list, default=str)
+        "all_categories", CACHE_TTL, json.dumps(categories_dict_list, default=str)
     )
 
 

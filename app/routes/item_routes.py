@@ -55,7 +55,9 @@ async def create_new_item(
     - The specified category_id must exist.
     """
 
-    return await item_service.create_item(db=db, current_user=current_user, item_data=item_data, images=images)
+    return await item_service.create_item(
+        db=db, current_user=current_user, item_data=item_data, images=images
+    )
 
 
 @router.get(
@@ -75,9 +77,7 @@ async def read_user_items(
     return await item_service.get_items_by_current_user(db, current_user)
 
 
-@router.get(
-    "/categories", status_code=status.HTTP_200_OK
-)
+@router.get("/categories", status_code=status.HTTP_200_OK)
 async def get_categories(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -92,7 +92,7 @@ async def get_categories(
     "/{vendor_id}",
     summary="Get vendor items",
     description="Retrieves all items belonging to a VENDOR user.",
-    status_code=status.HTTP_200_OK
+    status_code=status.HTTP_200_OK,
 )
 async def read_vendor_items(
     vendor_id: UUID,
@@ -154,7 +154,13 @@ async def update_existing_item(
     - Returns 404 if the item is not found or does not belong to the user.
     - Returns 404 if the target category_id does not exist.
     """
-    return await item_service.update_item(db,  current_user, item_id, item_data, images=images,)
+    return await item_service.update_item(
+        db,
+        current_user,
+        item_id,
+        item_data,
+        images=images,
+    )
 
 
 @router.delete(

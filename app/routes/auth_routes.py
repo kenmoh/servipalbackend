@@ -7,7 +7,18 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.auth.auth import create_tokens, get_current_user
 from app.database.database import get_db
 from app.models.models import User
-from app.schemas.user_schemas import AdminSessionResponse, PasswordChange, PasswordResetConfirm, PasswordResetRequest, RiderCreate, SessionResponse, TokenResponse, UserBase, UserCreate, VerificationSchema
+from app.schemas.user_schemas import (
+    AdminSessionResponse,
+    PasswordChange,
+    PasswordResetConfirm,
+    PasswordResetRequest,
+    RiderCreate,
+    SessionResponse,
+    TokenResponse,
+    UserBase,
+    UserCreate,
+    VerificationSchema,
+)
 from app.services import auth_service
 
 
@@ -33,8 +44,7 @@ async def login_user(
         )
 
     except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
 
 @router.post("/logout", status_code=status.HTTP_200_OK)
@@ -52,8 +62,7 @@ async def logout(
         return {"message": "Successfully logged out"}
 
     except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
 
 @router.post("/register", status_code=status.HTTP_201_CREATED)
@@ -83,7 +92,7 @@ async def create_user(
 async def list_sessions(
     active_only: bool = Query(False, description="Show only active sessions"),
     current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
 ):
     """List all sessions for the current user"""
     return await auth_service.get_user_sessions(db, current_user, active_only)
@@ -96,16 +105,11 @@ async def list_all_sessions(
     skip: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=100),
     current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
 ):
     """List all sessions (admin only)"""
     return await auth_service.get_all_user_sessions(
-        db,
-        current_user,
-        user_id,
-        active_only,
-        skip,
-        limit
+        db, current_user, user_id, active_only, skip, limit
     )
 
 
@@ -113,7 +117,7 @@ async def list_all_sessions(
 async def terminate_session(
     session_id: UUID,
     current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
 ):
     """Terminate a specific session"""
     await auth_service.terminate_session(db, current_user, session_id)
@@ -131,25 +135,25 @@ async def verify_token(token: str, db: AsyncSession = Depends(get_db)):
 async def verify_user_contacts(
     verification_data: VerificationSchema,
     current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
 ) -> dict:
     """Verify user's email and phone"""
     return await auth_service.verify_user_contact(
-        current_user,
-        verification_data.email_code,
-        verification_data.phone_code,
-        db
+        current_user, verification_data.email_code, verification_data.phone_code, db
     )
 
 
 @router.post("/resend-verification")
 async def resend_verification_codes(
-    current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db)
+    current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)
 ) -> dict:
     """Resend verification codes"""
-    email_code, phone_code = await auth_service.generate_verification_codes(current_user, db)
-    return await auth_service.send_verification_codes(current_user, email_code, phone_code, db)
+    email_code, phone_code = await auth_service.generate_verification_codes(
+        current_user, db
+    )
+    return await auth_service.send_verification_codes(
+        current_user, email_code, phone_code, db
+    )
 
 
 # <<<<< ------------- PASSWORD CHANGE ------------ >>>>>
@@ -157,8 +161,7 @@ async def resend_verification_codes(
 
 @router.post("/recover-password", status_code=status.HTTP_200_OK)
 async def password_recovery(
-    email_data: PasswordResetRequest,
-    db: AsyncSession = Depends(get_db)
+    email_data: PasswordResetRequest, db: AsyncSession = Depends(get_db)
 ) -> dict[str, str]:
     """Request password recovery email"""
     return await auth_service.recover_password(email_data.email, db)
@@ -166,8 +169,7 @@ async def password_recovery(
 
 @router.post("/reset-password", status_code=status.HTTP_200_OK)
 async def reset_password_confirm(
-    reset_data: PasswordResetConfirm,
-    db: AsyncSession = Depends(get_db)
+    reset_data: PasswordResetConfirm, db: AsyncSession = Depends(get_db)
 ) -> dict[str, str]:
     """Reset password using token"""
     return await auth_service.reset_password(reset_data, db)
@@ -177,7 +179,7 @@ async def reset_password_confirm(
 async def update_password(
     password_data: PasswordChange,
     current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
 ) -> dict[str, str]:
     """Change password for logged in user"""
     return await auth_service.change_password(current_user, password_data, db)
@@ -185,8 +187,7 @@ async def update_password(
 
 @router.post("/logout", status_code=status.HTTP_200_OK)
 async def logout_all(
-    current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db)
+    current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)
 ) -> dict[str, str]:
     """Logout from all devices"""
     await auth_service.logout_all_sessions(db, current_user.id)

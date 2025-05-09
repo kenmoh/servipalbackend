@@ -7,7 +7,18 @@ from decimal import Decimal
 import logging
 from typing import Optional, Tuple
 
-from sqlalchemy import DateTime, ForeignKey, ARRAY, String, func, Float, text, Identity, Integer, UniqueConstraint
+from sqlalchemy import (
+    DateTime,
+    ForeignKey,
+    ARRAY,
+    String,
+    func,
+    Float,
+    text,
+    Identity,
+    Integer,
+    UniqueConstraint,
+)
 from sqlalchemy.schema import Sequence
 from sqlalchemy.dialects.postgresql import CHAR
 from sqlalchemy.orm import mapped_column, Mapped, relationship
@@ -53,20 +64,16 @@ class User(Base):
     password: Mapped[str]
     is_blocked: Mapped[bool] = mapped_column(default=False)
     is_verified: Mapped[bool] = mapped_column(default=False)
-    reset_token: Mapped[Optional[str]] = mapped_column(
-        nullable=True, unique=True)
-    reset_token_expires: Mapped[Optional[datetime]
-                                ] = mapped_column(nullable=True)
+    reset_token: Mapped[Optional[str]] = mapped_column(nullable=True, unique=True)
+    reset_token_expires: Mapped[Optional[datetime]] = mapped_column(nullable=True)
     user_type: Mapped[str] = mapped_column(  # make it a UserType Enum
         nullable=False,
     )
 
     is_email_verified: Mapped[bool] = mapped_column(default=False, nullable=True)
     email_verification_code: Mapped[str] = mapped_column(nullable=True)
-    email_verification_expires: Mapped[datetime] = mapped_column(
-        nullable=True)
-    account_status: Mapped[AccountStatus] = mapped_column(
-        default=AccountStatus.PENDING)
+    email_verification_expires: Mapped[datetime] = mapped_column(nullable=True)
+    account_status: Mapped[AccountStatus] = mapped_column(default=AccountStatus.PENDING)
     # Add dispatcher-rider relationship
     dispatcher_id: Mapped[Optional[UUID]] = mapped_column(
         ForeignKey("users.id"),
@@ -144,8 +151,7 @@ class Profile(Base):
     bike_number: Mapped[str] = mapped_column(unique=True, nullable=True)
     is_phone_verified: Mapped[bool] = mapped_column(default=False, nullable=True)
     phone_verification_code: Mapped[str] = mapped_column(nullable=True)
-    phone_verification_expires: Mapped[datetime] = mapped_column(
-        nullable=True)
+    phone_verification_expires: Mapped[datetime] = mapped_column(nullable=True)
     created_at: Mapped[datetime] = mapped_column(default=datetime.now)
     updated_at: Mapped[datetime] = mapped_column(
         default=datetime.now, onupdate=datetime.now
@@ -156,13 +162,13 @@ class Profile(Base):
         back_populates="profile",
         uselist=False,
         cascade="all, delete-orphan",
-        lazy="selectin"
+        lazy="selectin",
     )
     backdrop: Mapped["ProfileBackdrop"] = relationship(
         back_populates="profile",
         uselist=False,
         cascade="all, delete-orphan",
-        lazy="selectin"
+        lazy="selectin",
     )
 
 
@@ -171,11 +177,13 @@ class ProfileImage(Base):
 
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
     profile_id: Mapped[UUID] = mapped_column(
-        ForeignKey("profile.id", ondelete="CASCADE"))
+        ForeignKey("profile.id", ondelete="CASCADE")
+    )
     url: Mapped[str]
     created_at: Mapped[datetime] = mapped_column(default=datetime.now)
     updated_at: Mapped[datetime] = mapped_column(
-        default=datetime.now, onupdate=datetime.now)
+        default=datetime.now, onupdate=datetime.now
+    )
 
     profile: Mapped["Profile"] = relationship(back_populates="profile_image")
 
@@ -185,11 +193,13 @@ class ProfileBackdrop(Base):
 
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
     profile_id: Mapped[UUID] = mapped_column(
-        ForeignKey("profile.id", ondelete="CASCADE"))
+        ForeignKey("profile.id", ondelete="CASCADE")
+    )
     url: Mapped[str]
     created_at: Mapped[datetime] = mapped_column(default=datetime.now)
     updated_at: Mapped[datetime] = mapped_column(
-        default=datetime.now, onupdate=datetime.now)
+        default=datetime.now, onupdate=datetime.now
+    )
 
     profile: Mapped["Profile"] = relationship(back_populates="backdrop")
 
@@ -200,16 +210,15 @@ class Session(Base):
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
     user_id: Mapped[UUID] = mapped_column(ForeignKey("users.id"))
     terminated_by: Mapped[Optional[UUID]] = mapped_column(
-        ForeignKey("users.id"), nullable=True)
+        ForeignKey("users.id"), nullable=True
+    )
     device_info: Mapped[str]
     ip_address: Mapped[str]
     last_active: Mapped[datetime] = mapped_column(default=datetime.now)
     is_active: Mapped[bool] = mapped_column(default=True, nullable=False)
     termination_reason: Mapped[str] = mapped_column(nullable=True)
     terminated_by_user: Mapped["User"] = relationship(
-        "User",
-        foreign_keys=[terminated_by],
-        backref="terminated_sessions"
+        "User", foreign_keys=[terminated_by], backref="terminated_sessions"
     )
 
 
@@ -237,8 +246,7 @@ class Transaction(Base):
     wallet_id: Mapped[UUID] = mapped_column(ForeignKey("wallets.id"))
     amount: Mapped[Decimal] = mapped_column(default=0.00)
     transaction_type: Mapped[TransactionType]
-    payment_status: Mapped[PaymentStatus] = mapped_column(
-        default=PaymentStatus.PENDING)
+    payment_status: Mapped[PaymentStatus] = mapped_column(default=PaymentStatus.PENDING)
     payment_link: Mapped[str] = mapped_column(nullable=True)
     created_at: Mapped[datetime] = mapped_column(default=datetime.now)
     updated_at: Mapped[datetime] = mapped_column(
@@ -254,8 +262,7 @@ class RefreshToken(Base):
         primary_key=True, nullable=False, default=uuid.uuid1, index=True
     )
     token: Mapped[str] = mapped_column(unique=True, index=True, nullable=False)
-    user_type: Mapped[str] = mapped_column(
-        nullable=True)  # TODO: change to False
+    user_type: Mapped[str] = mapped_column(nullable=True)  # TODO: change to False
     expires_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False
     )
@@ -307,29 +314,27 @@ class Item(Base):
 
     vendor: Mapped["User"] = relationship(back_populates="items")
     category: Mapped["Category"] = relationship(back_populates="items")
-    order_items: Mapped[list["OrderItem"]
-                        ] = relationship(back_populates="item")
+    order_items: Mapped[list["OrderItem"]] = relationship(back_populates="item")
     images: Mapped[list["ItemImage"]] = relationship(
         back_populates="item",
         cascade="all, delete-orphan",
         lazy="selectin",
-        uselist=True
+        uselist=True,
     )
-    __table_args__ = (
-       UniqueConstraint("name", "user_id", name="uq_name_item"),
-    )
+    __table_args__ = (UniqueConstraint("name", "user_id", name="uq_name_item"),)
+
 
 class ItemImage(Base):
     __tablename__ = "item_images"
 
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
-    item_id: Mapped[UUID] = mapped_column(
-        ForeignKey("items.id", ondelete="CASCADE"))
+    item_id: Mapped[UUID] = mapped_column(ForeignKey("items.id", ondelete="CASCADE"))
     url: Mapped[str]
     # is_primary: Mapped[bool] = mapped_column(default=False)
     created_at: Mapped[datetime] = mapped_column(default=datetime.now)
     updated_at: Mapped[datetime] = mapped_column(
-        default=datetime.now, onupdate=datetime.now)
+        default=datetime.now, onupdate=datetime.now
+    )
 
     item: Mapped["Item"] = relationship(back_populates="images")
 
@@ -340,9 +345,9 @@ class Order(Base):
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
     order_number: Mapped[int] = mapped_column(
         Integer,
-        Sequence('order_number_seq',start=1000, increment=1),
+        Sequence("order_number_seq", start=1000, increment=1),
         nullable=True,
-        unique=True
+        unique=True,
     )
     owner_id: Mapped[UUID] = mapped_column(ForeignKey("users.id"))
     vendor_id: Mapped[UUID] = mapped_column(ForeignKey("users.id"))
@@ -350,6 +355,7 @@ class Order(Base):
     total_price: Mapped[Decimal] = mapped_column(default=0.00)
     amount_due_vendor: Mapped[Decimal] = mapped_column(nullable=False)
     payment_link: Mapped[str] = mapped_column(nullable=True)
+    # additional_info: Mapped[str] = mapped_column(nullable=True)
     order_payment_status: Mapped[PaymentStatus] = mapped_column(
         default=PaymentStatus.PENDING
     )
@@ -379,10 +385,8 @@ class Order(Base):
 class OrderItem(Base):
     __tablename__ = "order_items"
 
-    order_id: Mapped[UUID] = mapped_column(
-        ForeignKey("orders.id"), primary_key=True)
-    item_id: Mapped[UUID] = mapped_column(
-        ForeignKey("items.id"), primary_key=True)
+    order_id: Mapped[UUID] = mapped_column(ForeignKey("orders.id"), primary_key=True)
+    item_id: Mapped[UUID] = mapped_column(ForeignKey("items.id"), primary_key=True)
     quantity: Mapped[int] = mapped_column(default=1)
     created_at: Mapped[datetime] = mapped_column(default=datetime.now)
 
@@ -395,21 +399,14 @@ class Delivery(Base):
 
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
     order_id: Mapped[UUID] = mapped_column(ForeignKey("orders.id"))
-    rider_id: Mapped[UUID] = mapped_column(
-        ForeignKey("users.id"), nullable=True)
-    dispatch_id: Mapped[UUID] = mapped_column(
-        ForeignKey("users.id"), nullable=True)
-    vendor_id: Mapped[UUID] = mapped_column(
-        ForeignKey("users.id"), nullable=True)
-    sender_id: Mapped[UUID] = mapped_column(
-        ForeignKey("users.id"), nullable=True)
+    rider_id: Mapped[UUID] = mapped_column(ForeignKey("users.id"), nullable=True)
+    dispatch_id: Mapped[UUID] = mapped_column(ForeignKey("users.id"), nullable=True)
+    vendor_id: Mapped[UUID] = mapped_column(ForeignKey("users.id"), nullable=True)
+    sender_id: Mapped[UUID] = mapped_column(ForeignKey("users.id"), nullable=True)
     image_url: Mapped[str] = mapped_column(nullable=True)
-    pickup_coordinates: Mapped[Tuple[float, float]
-                               ] = mapped_column(ARRAY(Float))
-    dropoff_coordinates: Mapped[Tuple[float, float]
-                                ] = mapped_column(ARRAY(Float))
+    pickup_coordinates: Mapped[Tuple[float, float]] = mapped_column(ARRAY(Float))
+    dropoff_coordinates: Mapped[Tuple[float, float]] = mapped_column(ARRAY(Float))
     delivery_status: Mapped[str] = mapped_column(nullable=True)
-    delivery_fee: Mapped[Decimal] = mapped_column(nullable=False)
     delivery_fee: Mapped[Decimal] = mapped_column(nullable=False)
     distance: Mapped[Decimal] = mapped_column(nullable=True)
     duration: Mapped[Decimal] = mapped_column(nullable=True)

@@ -8,6 +8,7 @@ from pydantic import BaseModel, Field
 
 from app.schemas.item_schemas import ItemResponse
 from app.schemas.status_schema import OrderStatus
+from app.schemas.status_schema import RequireDeliverySchema
 
 
 class PaymentStatus(str, Enum):
@@ -17,7 +18,7 @@ class PaymentStatus(str, Enum):
 
 
 class OrderType(str, Enum):
-    MEAL = "meal"
+    FOOD = "food"
     PACKAGE = "package"
     LAUNDRY = "laundry"
     PRODUCT = "product"
@@ -101,14 +102,16 @@ class OrderAndDeliverySchema(BaseModel):
     pickup_coordinates: Tuple[float, float]
     dropoff_coordinates: Tuple[float, float]
     distance: Decimal
+    require_delivery: RequireDeliverySchema
     # duration: Decimal
     additional_info: str | None = None
 
 
 class ItemImageSchema(BaseModel):
-	id: UUID
-	item_id: UUID
-	url: str
+    id: UUID
+    item_id: UUID
+    url: str
+
 
 class OrderItemResponseSchema(BaseModel):
     id: UUID

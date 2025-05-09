@@ -19,20 +19,22 @@ class ItemType(str, Enum):
     FOOD = "food"
     PACKAGE = "package"
     LAUNDRY = "laundry"
+    PRODUCT = 'product'
 
 
 class ItemCreate(BaseModel):
+    name: str = (Form(...),)
+    description: str = (Form(...),)
+    price: Decimal = (Form(...),)
+    item_type: ItemType = (Form(...),)
+    category_id: UUID = (Form(...),)
 
-    name: str = Form(...),
-    description: str = Form(...),
-    price: Decimal = Form(...),
-    item_type: ItemType = Form(...),
-    category_id: UUID = Form(...),
 
 class ItemImageSchema(BaseModel):
     id: UUID
     item_id: UUID
     url: str
+
 
 class ItemResponse(ItemCreate):
     id: UUID

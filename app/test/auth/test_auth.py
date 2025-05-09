@@ -17,10 +17,7 @@ async def setup_test():
 @pytest.mark.asyncio
 async def test_user_registration(async_client: AsyncClient, test_users):
     """Test user registration"""
-    response = await async_client.post(
-        f"{BASE_URL}/auth/register",
-        json=test_users[0]
-    )
+    response = await async_client.post(f"{BASE_URL}/auth/register", json=test_users[0])
     assert response.status_code == status.HTTP_201_CREATED
     assert response.json()["email"] == test_users[0]["email"]
     assert response.json()["user_type"] == test_users[0]["user_type"]
@@ -37,8 +34,8 @@ async def test_user_login(async_client: AsyncClient, test_users):
         f"{BASE_URL}/auth/login",
         data={  # Use data for form data
             "username": test_users[0]["email"],
-            "password": test_users[0]["password"]
-        }
+            "password": test_users[0]["password"],
+        },
     )
     assert response.status_code == status.HTTP_200_OK
     assert "access_token" in response.json()
@@ -52,10 +49,7 @@ async def test_invalid_login(async_client: AsyncClient, test_users):
     # Try logging in with wrong password
     response = await async_client.post(
         f"{BASE_URL}/auth/login",
-        data={
-            "username": test_users[0]["email"],
-            "password": "wrongpassword"
-        }
+        data={"username": test_users[0]["email"], "password": "wrongpassword"},
     )
     assert response.status_code == status.HTTP_401_UNAUTHORIZED
 
@@ -69,7 +63,9 @@ async def test_password_hashing():
 
 
 @pytest.mark.asyncio
-async def test_protected_route(async_client: AsyncClient, authorized_vendor_client: AsyncClient):
+async def test_protected_route(
+    async_client: AsyncClient, authorized_vendor_client: AsyncClient
+):
     # Test with valid token
     response = await authorized_vendor_client.get(f"{BASE_URL}/auth/me")
     assert response.status_code == status.HTTP_200_OK
@@ -92,7 +88,7 @@ async def test_registration_validation(async_client: AsyncClient):
     invalid_user = {
         "email": "invalid_email",
         "password": "testpass123",
-        "user_type": "VENDOR"
+        "user_type": "VENDOR",
     }
     response = await async_client.post(f"{BASE_URL}/auth/register", json=invalid_user)
     assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
@@ -101,7 +97,7 @@ async def test_registration_validation(async_client: AsyncClient):
     invalid_user = {
         "email": "test@example.com",
         "password": "short",
-        "user_type": "VENDOR"
+        "user_type": "VENDOR",
     }
     response = await async_client.post(f"{BASE_URL}/auth/register", json=invalid_user)
     assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
@@ -110,7 +106,7 @@ async def test_registration_validation(async_client: AsyncClient):
     invalid_user = {
         "email": "test@example.com",
         "password": "testpass123",
-        "user_type": "INVALID"
+        "user_type": "INVALID",
     }
     response = await async_client.post(f"{BASE_URL}/auth/register", json=invalid_user)
     assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY

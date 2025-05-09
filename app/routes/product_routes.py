@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+from fastapi import APIRouter, Depends, HTTPException, status, Query, UploadFile, File
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import List, Optional
 from uuid import UUID
@@ -28,7 +28,8 @@ router = APIRouter(prefix="/products", tags=["Products"])
     description="Allows an authenticated user to list a new product for sale.",
 )
 async def create_new_product(
-    product_in: ProductCreate,
+    product_in: ProductCreate=Depends(),
+    images: list[UploadFile] = File(...),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):

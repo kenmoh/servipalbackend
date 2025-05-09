@@ -148,10 +148,13 @@ async def update_item_order_status(
     cached_order = await get_cached_order(order_id)
     if cached_order:
         # Verify user permissions using cached data
-        if current_user.id != cached_order["owner_id"] and current_user.id != cached_order["vendor_id"]:
+        if (
+            current_user.id != cached_order["owner_id"]
+            and current_user.id != cached_order["vendor_id"]
+        ):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail="Unauthorized to update this order"
+                detail="Unauthorized to update this order",
             )
     async with db.begin():
         stmt = (
@@ -233,9 +236,7 @@ async def update_item_order_status(
 
         # Invalidate caches after successful update
         await invalidate_order_cache(
-            order_id=order.id,
-            user_id=order.owner_id,
-            vendor_id=order.vendor_id
+            order_id=order.id, user_id=order.owner_id, vendor_id=order.vendor_id
         )
         return order
 
@@ -254,9 +255,7 @@ def get_cached_order(order_id: UUID) -> Optional[dict]:
 def set_cached_order(order_id: UUID, order_data: dict) -> None:
     """Set order in cache"""
     redis_client.setex(
-        f"order:{str(order_id)}",
-        CACHE_TTL,
-        json.dumps(order_data, default=str)
+        f"order:{str(order_id)}", CACHE_TTL, json.dumps(order_data, default=str)
     )
 
 

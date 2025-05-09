@@ -46,8 +46,7 @@ async def verify_transaction_tx_ref(tx_ref: str):
 
         return link
     except httpx.HTTPStatusError as e:
-        raise HTTPException(
-            status_code=502, detail=f"Payment gateway error: {str(e)}")
+        raise HTTPException(status_code=502, detail=f"Payment gateway error: {str(e)}")
     except Exception as e:
         raise HTTPException(
             status_code=500, detail=f"Failed to verify transaction reference: {str(e)}"
@@ -78,8 +77,7 @@ async def get_payment_link(id: UUID, amount: Decimal, current_user: User):
 
         return link
     except httpx.HTTPStatusError as e:
-        raise HTTPException(
-            status_code=502, detail=f"Payment gateway error: {str(e)}")
+        raise HTTPException(status_code=502, detail=f"Payment gateway error: {str(e)}")
     except Exception as e:
         raise HTTPException(
             status_code=500, detail=f"Failed to generate payment link: {str(e)}"
@@ -109,8 +107,7 @@ async def get_fund_wallet_payment_link(id: UUID, amount: Decimal, current_user: 
 
         return link
     except httpx.HTTPStatusError as e:
-        raise HTTPException(
-            status_code=502, detail=f"Payment gateway error: {str(e)}")
+        raise HTTPException(status_code=502, detail=f"Payment gateway error: {str(e)}")
     except Exception as e:
         raise HTTPException(
             status_code=500, detail=f"Failed to generate payment link: {str(e)}"
@@ -167,34 +164,35 @@ def validate_password(password: str) -> bool:
     if len(password) < 8:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Password must be at least 8 characters long"
+            detail="Password must be at least 8 characters long",
         )
 
     if not re.search(r"[A-Z]", password):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Password must contain at least one uppercase letter"
+            detail="Password must contain at least one uppercase letter",
         )
 
     if not re.search(r"[a-z]", password):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Password must contain at least one lowercase letter"
+            detail="Password must contain at least one lowercase letter",
         )
 
     if not re.search(r"\d", password):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Password must contain at least one number"
+            detail="Password must contain at least one number",
         )
 
-    if not re.search(r"[ !@#$%&'()*+,-./[\\\]^_`{|}~"+r'"]', password):
+    if not re.search(r"[ !@#$%&'()*+,-./[\\\]^_`{|}~" + r'"]', password):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Password must contain at least one special character"
+            detail="Password must contain at least one special character",
         )
 
     return True
+
 
 # <<<<< ---------- Account lockout after failed attempts:
 
@@ -210,7 +208,7 @@ def check_login_attempts(email: str, redis_client: Redis) -> None:
             redis_client.setex(f"account_locked:{email}", 900, 1)  # 15 minutes
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Account temporarily locked. Please try again later."
+            detail="Account temporarily locked. Please try again later.",
         )
 
 

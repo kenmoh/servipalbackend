@@ -12,7 +12,7 @@ class UserBase(BaseModel):
                 {
                     "email": "user@example.com",
                     "password": "strongpass123",
-                    "user_type": "vendor"
+                    "user_type": "vendor",
                 }
             ]
         }

@@ -44,8 +44,7 @@ class Settings(BaseSettings):
     MAIL_SSL_TLS: bool = os.getenv("MAIL_SSL_TLS")
     MAIL_STARTTLS: bool = os.getenv("MAIL_STARTTLS")
     USE_CREDENTIALS: bool = os.getenv("USE_CREDENTIALS")
-    EMAIL_TEMPLATES_DIR: str = str(
-        Path(__file__).parent.parent / "templates" / "email")
+    EMAIL_TEMPLATES_DIR: str = str(Path(__file__).parent.parent / "templates" / "email")
 
     # Database connection settings
     DB_POOL_SIZE: int = 20
@@ -93,5 +92,5 @@ email_conf = ConnectionConfig(
     MAIL_SSL_TLS=settings.MAIL_SSL_TLS,
     MAIL_STARTTLS=settings.MAIL_STARTTLS,
     USE_CREDENTIALS=settings.USE_CREDENTIALS,
-    TEMPLATE_FOLDER=settings.EMAIL_TEMPLATES_DIR
+    TEMPLATE_FOLDER=settings.EMAIL_TEMPLATES_DIR,
 )

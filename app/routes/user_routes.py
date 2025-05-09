@@ -26,7 +26,6 @@ router = APIRouter(prefix="/api/users", tags=["Users"])
 async def get_users(
     db: AsyncSession = Depends(get_db),
 ) -> list[UserResponse]:
-
     return await user_service.get_users(db=db)
 
 
@@ -34,7 +33,6 @@ async def get_users(
 async def get_user_wallets(
     db: AsyncSession = Depends(get_db),
 ) -> list[WalletSchema]:
-
     return await user_service.get_user_wallets(db=db)
 
 
@@ -44,7 +42,6 @@ async def create_user_profile(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> ProfileSchema:
-
     return await user_service.create_pofile(
         profile_data=profile_data, db=db, current_user=current_user
     )
@@ -54,23 +51,18 @@ async def create_user_profile(
 async def upload_profile_image(
     image: UploadFile = File(...),
     current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
 ):
     """Upload profile image"""
     try:
-        url = await add_profile_image(
-            image,
-            folder=f"profiles/{current_user.id}"
-        )
+        url = await add_profile_image(image, folder=f"profiles/{current_user.id}")
 
         # Update user profile
         profile = await db.get(Profile, current_user.id)
         if profile and profile.profile_image:
             # Update existing image
             url = await update_image(
-                image,
-                profile.profile_image.url,
-                folder=f"profiles/{current_user.id}"
+                image, profile.profile_image.url, folder=f"profiles/{current_user.id}"
             )
 
         profile_image = ProfileImage(url=url, profile_id=profile.id)
@@ -82,8 +74,7 @@ async def upload_profile_image(
     except Exception as e:
         await db.rollback()
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e)
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e)
         )
 
 
