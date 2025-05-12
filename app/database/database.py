@@ -20,10 +20,6 @@ from app.utils.middleware import with_db_retry
 
 from urllib.parse import urlparse
 
-# Test database URL
-TEST_DATABASE_URL = settings.TEST_DATABASE_URL
-
-SQLALCHEMY_DATABASE_URL = settings.DATABASE_URL
 DEBUG = settings.DEBUG
 
 # engine = create_engine(SQLALCHEMY_DATABASE_URL, echo=True if DEBUG else False)
@@ -51,7 +47,7 @@ engine = create_async_engine(
     pool_recycle=settings.DB_POOL_RECYCLE,
     pool_pre_ping=True,
 )
-async_session = async_sessionmaker(engine, expire_on_commit=False)
+async_session = async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
 
 
 class Base(AsyncAttrs, DeclarativeBase):

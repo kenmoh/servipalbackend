@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Welcome Email</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Montserrat:ital,wght@0,200;0,400;1,100;1,300;1,700&display=swap"
+      rel="stylesheet"
+    />
+
+    <style></style>
+  </head>
+  <body>
+    <div style="padding: 7px">
+      <div style="margin: 0 auto; padding: 5px">
+        <h4
+          style="
+            color: #1b263b;
+            font-weight: bold;
+            text-transform: uppercase;
+            letter-spacing: 1.5;
+            font-size: 18px;
+            font-family: Montserrat;
+          "
+        >
+          {{ title }}!
+        </h4>
+        <h5
+          style="
+            color: #1b263b;
+            font-size: 14px;
+            line-height: 1.5;
+
+            font-family: Montserrat;
+            font-weight: bold;
+          "
+        >
+          Hi, {{ name }}
+        </h5>
+        {{body}}
+        <br />
+        {% if code != '' %}
+        <h1
+          style="
+            color: white;
+            font-size: 16px;
+            font-weight: bold;
+            background-color: #1b263b;
+            padding: 5px;
+            border-radius: 2px;
+            display: inline-block;
+          "
+        >
+          {{code}}
+        </h1>
+        {% else %}
+        <!-- ----- -->
+        ''
+        <!-- ----- -->
+        {% endif %}
+        <br />
+        <br />
+        <br />
+        <br />
+        <strong> The QuickPickup Team </strong>
+      </div>
+    </div>
+  </body>
+</html>

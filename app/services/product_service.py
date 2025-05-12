@@ -6,6 +6,8 @@ from fastapi import HTTPException, status, UploadFile
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, update, delete
 from sqlalchemy.orm import selectinload
+from asyncpg.exceptions import UniqueViolationError
+from sqlalchemy.exc import IntegrityError
 
 from app.models.models import Item, User, Category, ItemImage
 from app.schemas.product_schemas import ProductCreate, ProductUpdate, ProductResponse
@@ -39,15 +41,10 @@ async def create_product(
             detail=f"Category with id {product_data.category_id} not found.",
         )
 
-    # 2. Create Item instance
-    new_product = Item(
-        **product_data.model_dump(exclude_unset=True),
-        seller_id=seller.id,
-    )
 
     try:
         # Create product first
-        new_product = Item(**product_data.model_dump(), user_id=current_user.id, item_type=ItemType.PRODUCT)
+        new_product = Item(**product_data.model_dump(), user_id=seller.id, item_type=ItemType.PRODUCT)
         db.add(new_product)
         await db.flush()
 
@@ -67,6 +64,15 @@ async def create_product(
         redis_client.delete(f"seller_products:{seller.id}")
 
         return new_product
+    except IntegrityError as e:
+        print
+        await db.rollback()
+        # Check if the error is due to the unique constraint violation
+        if isinstance(e.orig, UniqueViolationError) and 'uq_name_item' in str(e.orig):
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT,
+                detail=f"You already have an item with this name {item_data['name']}"
+            )
+        raise  
     except Exception as e:
         await db.rollback()
         # Log the error e
@@ -163,7 +169,7 @@ async def update_product(
             detail="Item not found!",
         )
 
-    if product.seller_id != current_user.id:
+    if product.user_id != current_user.id:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Not authorized to update this product",
@@ -238,7 +244,7 @@ async def delete_product(
             detail="Item not found",
         )
 
-    if product.seller_id != current_user.id:
+    if product.user_id != current_user.id:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Not authorized to delete this product",

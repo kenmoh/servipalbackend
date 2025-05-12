@@ -13,6 +13,7 @@ class Settings(BaseSettings):
     # Application settings
     APP_NAME: str = "ServiPal"
     DEBUG: bool = os.getenv("DEBUG", False) == True
+    ENVIRONMENT: str = os.getenv("ENVIRONMENT")
 
     # Database settings
     DATABASE_URL: str = os.getenv("DATABASE_URL")
@@ -44,7 +45,8 @@ class Settings(BaseSettings):
     MAIL_SSL_TLS: bool = os.getenv("MAIL_SSL_TLS")
     MAIL_STARTTLS: bool = os.getenv("MAIL_STARTTLS")
     USE_CREDENTIALS: bool = os.getenv("USE_CREDENTIALS")
-    EMAIL_TEMPLATES_DIR: str = str(Path(__file__).parent.parent / "templates" / "email")
+    EMAIL_TEMPLATES_DIR: str = str(
+        Path(__file__).parent.parent / "templates" / "email")
 
     # Database connection settings
     DB_POOL_SIZE: int = 20
@@ -53,6 +55,9 @@ class Settings(BaseSettings):
     DB_POOL_RECYCLE: int = 1800
     DB_MAX_RETRIES: int = 3
     DB_RETRY_DELAY: int = 1
+
+    # Termii
+    SMS_API_KEY: str = os.getenv("SMS_API_KEY")
 
     # Redis
     REDIS_HOST: str = "localhost"

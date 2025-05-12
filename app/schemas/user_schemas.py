@@ -407,5 +407,5 @@ class AdminSessionResponse(BaseModel):
 
 
 class VerificationSchema(BaseModel):
-    email_code: str = Field(..., min_length=6, max_length=6)
-    phone_code: str = Field(..., min_length=6, max_length=6)
+    email_code: str
+    phone_code: str

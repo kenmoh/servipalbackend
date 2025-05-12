@@ -31,8 +31,8 @@ class ProductUpdate(ProductBase):
 # Schema for representing a product in responses (output)
 class ProductResponse(ProductBase):
     id: UUID
-    seller_id: UUID
-    total_sold: int
+    seller_id: UUID = Field(alias='user_id')
+    total_sold: int  = 0
     created_at: datetime
     updated_at: datetime
 

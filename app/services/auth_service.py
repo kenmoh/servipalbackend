@@ -113,9 +113,9 @@ async def create_user(db: AsyncSession, user_data: UserCreate) -> UserBase:
 
         await db.refresh(user)
 
-        # Generate and send verification codes
-        email_code, phone_code = await generate_verification_codes(user, db)
-        await send_verification_codes(user, email_code, phone_code, db)
+        # # Generate and send verification codes
+        # email_code, phone_code = await generate_verification_codes(user, db)
+        # await send_verification_codes(user, email_code, phone_code, db)
 
         return user
     except IntegrityError as e:
@@ -148,7 +148,8 @@ async def create_new_rider(
     validate_password(data.password)
 
     stmt = (
-        select(User).where(User.id == current_user.id).options(joinedload(User.profile))
+        select(User).where(User.id == current_user.id).options(
+            joinedload(User.profile))
     )
     result = await db.execute(stmt)
     user = result.scalar_one_or_none()

@@ -83,7 +83,7 @@ def upgrade() -> None:
         sa.Column("id", sa.Uuid(), nullable=False),
         sa.Column(
             "item_type",
-            sa.Enum("FOOD", "PACKAGE", "LAUNDRY", name="itemtype"),
+            sa.Enum("FOOD", "PACKAGE", "LAUNDRY", "PRODUCT", name="itemtype"),
             nullable=False,
         ),
         sa.Column("user_id", sa.Uuid(), nullable=False),

@@ -1,132 +1,224 @@
 from app.auth.auth import create_access_token
-from app.models.models import User
-from typing import Dict, List
-from typing import AsyncGenerator, Generator
+from app.models.models import User, Wallet
+from typing import Dict, Tuple, Any
+from typing import AsyncGenerator, Any
 from fastapi.testclient import TestClient
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select  # Removed List as it's not used directly here
 import pytest
-from httpx import AsyncClient
+from httpx import AsyncClient, ASGITransport
+from alembic.config import Config
+from alembic import command
+
 from app.main import app
 from app.database.database import Base, TestingSessionLocal, get_db, test_engine
 from app.config.config import settings
+from app.services.auth_service import hash_password
+from app.schemas.user_schemas import UserType
+from app.schemas.status_schema import AccountStatus
+import asyncio
+
+# Ensure all your models are imported so Base.metadata is populated.
+# This might be done in app.main, or you might need to explicitly
+# import your models module here or in app.models.__init__.py
+
+# @pytest.fixture(autouse=True)
+# async def setup_db():
+#     """Automatically setup and cleanup database for every test"""
+#     async with test_engine.begin() as conn:
+#         await conn.run_sync(Base.metadata.create_all)
+#     yield
+#     async with test_engine.begin() as conn:
+#         await conn.run_sync(Base.metadata.drop_all)
 
 
-@pytest.fixture(autouse=True)
+# If you are using pytest-asyncio, it's generally recommended to let it manage
+# the event loop. Consider removing this custom event_loop fixture if pytest-asyncio
+# is installed and you haven't configured a specific asyncio_mode that requires it.
+# @pytest.fixture(scope="session")
+# def event_loop():
+#     """Create an instance of the default event loop for each test case."""
+#     try:
+#         loop = asyncio.get_event_loop()
+#     except RuntimeError:
+#         loop = asyncio.new_event_loop()
+#     asyncio.set_event_loop(loop)
+#     yield loop
+#     loop.close()
+print(f"Available tables in metadata: {Base.metadata.tables.keys()}")
+
+
+@pytest.fixture
 async def setup_db():
-    """Automatically setup and cleanup database for every test"""
+    """Setup and teardown the database"""
     async with test_engine.begin() as conn:
+        await conn.run_sync(Base.metadata.drop_all)
         await conn.run_sync(Base.metadata.create_all)
+
     yield
     async with test_engine.begin() as conn:
         await conn.run_sync(Base.metadata.drop_all)
 
 
 @pytest.fixture
-async def db_session() -> AsyncGenerator:
-    """Create a fresh database session for each test"""
+async def db_session(setup_db) -> AsyncGenerator[AsyncSession, None]:
+    """Create a function-scoped database session"""
     async with TestingSessionLocal() as session:
         try:
             yield session
-            await session.rollback()  # Rollback any changes made during the test
         finally:
+            await session.rollback()
             await session.close()
 
 
 @pytest.fixture
-async def async_client(db_session: AsyncSession) -> AsyncGenerator:
-    """Async client for testing async endpoints"""
+async def async_client(db_session: AsyncSession) -> AsyncGenerator[AsyncClient, None]:
+    """Create a function-scoped async client"""
 
     async def override_get_db():
         yield db_session
 
     app.dependency_overrides[get_db] = override_get_db
 
-    base_url = "http://localhost:8000"  # or settings.API_URL if configured
-
-    async with AsyncClient(base_url=base_url) as ac:
-        yield ac
-
-    app.dependency_overrides.clear()
-
-
-@pytest.fixture
-def test_client(db_session: AsyncSession) -> Generator:
-    """Sync client for testing sync endpoints"""
-
-    async def override_get_db():
-        yield db_session
-
-    app.dependency_overrides[get_db] = override_get_db
-    with TestClient(app) as client:
+    async with AsyncClient(
+        transport=ASGITransport(app=app),
+        base_url="http://localhost:8000",
+    ) as client:
         yield client
     app.dependency_overrides.clear()
 
 
-@pytest.fixture
-def test_users() -> List[Dict]:
-    """Different user types for testing"""
-    return [
-        {
-            "email": "customer@gmail.com",
-            "password": "@Ttring12",
-            "user_type": "customer",
-        },
-        {
+@pytest.fixture(scope="session")
+# Changed str to Any for user_type enum
+def test_user_data() -> Dict[str, Dict[str, Any]]:
+    """Provides data for different user types for testing."""
+    common_password = "@TestPassword123"
+    return {
+        "customer": {
             "email": "customer@example.com",
-            "password": "@Testpass123",
-            "user_type": "customer",
+            "password": common_password,
+            "user_type": UserType.CUSTOMER
         },
-        {
+        "vendor": {
+            "email": "vendor@example.com",
+            "password": common_password,
+            "user_type": UserType.VENDOR
+        },
+        "dispatch": {
             "email": "dispatch@example.com",
-            "password": "@Testpass123",
-            "user_type": "dispatch",
+            "password": common_password,
+            "user_type": UserType.DISPATCH
         },
-    ]
+        "admin": {
+            "email": "admin@example.com",
+            "password": common_password,
+            "user_type": UserType.ADMIN
+        },
+    }
+
+
+async def _create_user_in_db(db: AsyncSession, user_details: Dict[str, Any]) -> User:
+    """Helper function to create a user in the database for tests."""
+    # Instantiate User and set attributes separately to avoid __init__ issues
+    # revealed by TypeError: 'is_active' is an invalid keyword argument for User()
+    user = User()
+    user.email = user_details["email"]
+    user.password = hash_password(user_details["password"])
+    # Directly assign the enum member
+    user.user_type = user_details["user_type"]
+    user.is_verified = True
+    user.account_status = AccountStatus.CONFIRMED
+
+    db.add(user)
+    await db.flush()  # To get user.id for wallet or other relations
+
+    if user.user_type != UserType.RIDER:
+        wallet_exists = await db.execute(select(Wallet).where(Wallet.id == user.id))
+        if not wallet_exists.scalar_one_or_none():
+            wallet = Wallet(id=user.id, balance=0, escrow_balance=0)
+            db.add(wallet)
+
+    await db.commit()
+    await db.refresh(user)
+    return user
 
 
 @pytest.fixture
-def vendor_token(test_users: List[Dict]) -> str:
-    return create_access_token({"sub": test_users[0]["email"]})
+async def customer_user_and_token(db_session: AsyncSession, test_user_data: Dict[str, Dict[str, Any]]) -> Tuple[User, str]:
+    user_details = test_user_data["customer"]
+    user = await _create_user_in_db(db_session, user_details)
+    token = create_access_token({"sub": user.email})
+    return user, token
 
 
 @pytest.fixture
-def customer_token(test_users: List[Dict]) -> str:
-    return create_access_token({"sub": test_users[1]["email"]})
+async def vendor_user_and_token(db_session: AsyncSession, test_user_data: Dict[str, Dict[str, Any]]) -> Tuple[User, str]:
+    user_details = test_user_data["vendor"]
+    user = await _create_user_in_db(db_session, user_details)
+    token = create_access_token({"sub": user.email})
+    return user, token
 
 
 @pytest.fixture
-def admin_token(test_users: List[Dict]) -> str:
-    return create_access_token({"sub": test_users[2]["email"]})
+async def dispatch_user_and_token(db_session: AsyncSession, test_user_data: Dict[str, Dict[str, Any]]) -> Tuple[User, str]:
+    user_details = test_user_data["dispatch"]
+    user = await _create_user_in_db(db_session, user_details)
+    token = create_access_token({"sub": user.email})
+    return user, token
 
 
 @pytest.fixture
-async def authorized_vendor_client(async_client: AsyncClient, vendor_token: str):
+async def admin_user_and_token(db_session: AsyncSession, test_user_data: Dict[str, Dict[str, Any]]) -> Tuple[User, str]:
+    user_details = test_user_data["admin"]
+    user = await _create_user_in_db(db_session, user_details)
+    token = create_access_token({"sub": user.email})
+    return user, token
+
+
+@pytest.fixture
+async def authorized_customer_client(async_client: AsyncClient, customer_user_and_token: Tuple[User, str]):
+    _, token = customer_user_and_token
     async_client.headers = {
         **async_client.headers,
-        "Authorization": f"Bearer {vendor_token}",
+        "Authorization": f"Bearer {token}",
     }
     return async_client
 
 
 @pytest.fixture
-def authorized_customer_client(test_client, customer_token: str):
-    test_client.headers = {
-        **test_client.headers,
-        "Authorization": f"Bearer {customer_token}",
+async def authorized_vendor_client(async_client: AsyncClient, vendor_user_and_token: Tuple[User, str]):
+    _, token = vendor_user_and_token
+    async_client.headers = {
+        **async_client.headers,
+        "Authorization": f"Bearer {token}",
     }
-    return test_client
+    return async_client
 
 
 @pytest.fixture
-def authorized_admin_client(test_client, admin_token: str):
-    test_client.headers = {
-        **test_client.headers,
-        "Authorization": f"Bearer {admin_token}",
+async def authorized_dispatch_client(async_client: AsyncClient, dispatch_user_and_token: Tuple[User, str]):
+    _, token = dispatch_user_and_token
+    async_client.headers = {
+        **async_client.headers,
+        "Authorization": f"Bearer {token}",
     }
-    return test_client
+    return async_client
 
 
 @pytest.fixture
-def unauthorized_client(test_client):
-    """Client without authorization token"""
-    return test_client
+async def authorized_admin_client(async_client: AsyncClient, admin_user_and_token: Tuple[User, str]):
+    _, token = admin_user_and_token
+    async_client.headers = {
+        **async_client.headers,
+        "Authorization": f"Bearer {token}",
+    }
+    return async_client
+
+# The `async_client` fixture can be used directly for unauthorized async requests.
+# The `sync_test_client` fixture can be used directly for unauthorized sync requests.
+
+
+@pytest.fixture
+def unauthorized_sync_client(sync_test_client: TestClient) -> TestClient:
+    """Explicitly named sync client without authorization token for clarity if preferred."""
+    return sync_test_client

@@ -46,7 +46,8 @@ async def verify_transaction_tx_ref(tx_ref: str):
 
         return link
     except httpx.HTTPStatusError as e:
-        raise HTTPException(status_code=502, detail=f"Payment gateway error: {str(e)}")
+        raise HTTPException(
+            status_code=502, detail=f"Payment gateway error: {str(e)}")
     except Exception as e:
         raise HTTPException(
             status_code=500, detail=f"Failed to verify transaction reference: {str(e)}"
@@ -77,7 +78,8 @@ async def get_payment_link(id: UUID, amount: Decimal, current_user: User):
 
         return link
     except httpx.HTTPStatusError as e:
-        raise HTTPException(status_code=502, detail=f"Payment gateway error: {str(e)}")
+        raise HTTPException(
+            status_code=502, detail=f"Payment gateway error: {str(e)}")
     except Exception as e:
         raise HTTPException(
             status_code=500, detail=f"Failed to generate payment link: {str(e)}"
@@ -107,7 +109,8 @@ async def get_fund_wallet_payment_link(id: UUID, amount: Decimal, current_user: 
 
         return link
     except httpx.HTTPStatusError as e:
-        raise HTTPException(status_code=502, detail=f"Payment gateway error: {str(e)}")
+        raise HTTPException(
+            status_code=502, detail=f"Payment gateway error: {str(e)}")
     except Exception as e:
         raise HTTPException(
             status_code=500, detail=f"Failed to generate payment link: {str(e)}"
@@ -230,3 +233,160 @@ def generate_secure_token(length: int = 32) -> str:
 def generate_expiry(hours: int = 24) -> datetime:
     """Generate token expiry timestamp"""
     return datetime.utcnow() + timedelta(hours=hours)
+
+
+# SMS
+# def send_sms(phone_number, message):
+#     api_key = settings.SMS_API_KEY
+#     termii_url = "https://api.ng.termii.com/api/sms/send"
+#     payload = {
+#         "to": f"{phone_number}",
+#         "from": "QuickPickUp",
+#         "sms": f"{message}",
+#         "type": "plain",
+#         "channel": "generic",
+#         "api_key": f"{api_key}",
+#     }
+#     headers = {
+#         "Content-Type": "application/json",
+#     }
+#     response = httpx.post(
+#         "POST", termii_url, headers=headers, json=payload)
+
+#     return response
+
+async def send_sms(phone_number: str, message: str) -> dict:
+    """
+    Send SMS using Termii API with httpx async client
+
+    Args:
+        phone_number: Recipient's phone number
+        message: SMS content
+
+    Returns:
+        dict: API response
+    """
+    api_key = settings.SMS_API_KEY
+    termii_url = "https://api.ng.termii.com/api/sms/send"
+
+    payload = {
+        "to": phone_number,
+        "from": "QuickPickUp",
+        "sms": message,
+        "type": "plain",
+        "channel": "generic",
+        "api_key": api_key
+    }
+
+    headers = {
+        "Content-Type": "application/json"
+    }
+
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.post(
+                termii_url,
+                json=payload,
+                headers=headers
+            )
+            response.raise_for_status()
+            return response.json()
+
+    except httpx.HTTPStatusError as e:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"SMS gateway error: {str(e)}"
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to send SMS: {str(e)}"
+        )
+
+
+def transfer_money_to_user_account(
+    bank_code: str,
+    account_number: str,
+    amount: str,
+    narration: str,
+    reference: str,
+    beneficiary_name: str,
+    charge: ChargeAndCommission,
+):
+    headers = {"Authorization": f"Bearer {os.getenv('FLW_SECRET_KEY')}"}
+    payload = {
+        "account_bank": bank_code,
+        "account_number": account_number,
+        # "amount": amount,
+        "amount": (
+            f"{Decimal(amount) - (charge.payout_charge_transaction_upto_5000_naira * charge.value_added_tax + charge.payout_charge_transaction_upto_5000_naira)}"
+            if Decimal(amount) <= Decimal(5000)
+            else (
+                f"{Decimal(amount) - (charge.payout_charge_transaction_from_5001_to_50_000_naira * charge.value_added_tax + charge.payout_charge_transaction_from_5001_to_50_000_naira)}"
+                if Decimal(amount) <= Decimal(50000)
+                else (
+                    f"{Decimal(amount) - (charge.payout_charge_transaction_above_50_000_naira * charge.value_added_tax + charge.payout_charge_transaction_above_50_000_naira)}"
+                )
+            )
+        ),
+        "narration": narration,
+        "currency": "NGN",
+        "reference": reference,
+        "callback_url": f"{quick_pickup_base_url}/withdrawals/callback",
+        "debit_currency": "NGN",
+        "beneficiary_name": beneficiary_name,
+    }
+
+
+   try:
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        response = await client.post(
+            f"{flutterwave_base_url}/transfers", json=payload, headers=headers,
+            json=payload,
+            headers=headers
+        )
+
+        response_data = response.json()
+
+        if response_data.get("status") == "success":
+            return response_data
+
+        else:
+            retry_response = requests.post(
+                f"{flutterwave_base_url}/transfers/{response_data.get('data')['id']}/retries",
+                json=payload,
+                headers=headers,
+            )
+            if retry_response.json().get("status") == "success":
+                return response_data
+            else:
+                return {
+                    "status": "failed",
+                    "message": retry_response.json().get("message"),
+                    "amount": retry_response.json().get("data").get("amount"),
+                    "created_at": retry_response.json().get("data").get("created_at"),
+                }
+
+    except httpx.HTTPStatusError as e:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Payment gateway error: {str(e)}"
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to withdraw: {str(e)}"
+        )
+
+
+# async def send_welcome_email(subject: str, email_to: EmailStr, body: dict, temp_name: str):
+#     message = MessageSchema(
+#         subject=subject,
+#         recipients=[email_to],
+#         template_body=body,
+#         subtype="html",
+#     )
+
+#     mail = FastMail(connection_config)
+#     await mail.send_message(message=message, template_name=temp_name)
+#     return JSONResponse(status_code=200, content={"message": "email has been sent"})

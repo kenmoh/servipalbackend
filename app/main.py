@@ -22,6 +22,8 @@ from app.config.config import redis_client
 
 # scheduler = BlockingScheduler()
 
+templates = Jinja2Templates(directory="templates")
+
 
 @asynccontextmanager
 async def lifespan(application: FastAPI):

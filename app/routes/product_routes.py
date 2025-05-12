@@ -39,7 +39,7 @@ async def create_new_product(
     """
     # The service function handles checking category existence and creation logic
     product = await product_service.create_product(
-        db=db, product_data=product_in, seller=current_user
+        db=db, product_data=product_in, seller=current_user, images=images
     )
 
     return product

@@ -41,11 +41,6 @@ logging.basicConfig(level=logging.INFO)
 logging.getLogger("sqlalchemy.engine").setLevel(logging.INFO)
 
 
-# def generate_order_number():
-#     characters = string.ascii_uppercase + string.digits
-#     return "".join(random.choice(characters) for _ in range(10))
-
-
 def generate_order_number():
     date_part = datetime.now().strftime("%Y%m%d")
     random_part = secrets.token_hex(3).upper()[:5]
@@ -126,9 +121,7 @@ class User(Base):
     deliveries_as_sender: Mapped[list["Delivery"]] = relationship(
         back_populates="sender", foreign_keys="Delivery.sender_id"
     )
-    # products_listed: Mapped[list["Product"]] = relationship(
-    #     back_populates="seller", foreign_keys="Product.seller_id"
-    # )
+ 
     refresh_tokens = relationship(
         "RefreshToken", back_populates="user", cascade="all, delete-orphan"
     )
@@ -286,7 +279,6 @@ class Category(Base):
     created_at: Mapped[datetime] = mapped_column(default=datetime.now)
 
     items: Mapped[list["Item"]] = relationship(back_populates="category")
-    # products: Mapped[list["Product"]] = relationship(back_populates="category")
 
 
 class Item(Base):
@@ -339,6 +331,7 @@ class ItemImage(Base):
     item: Mapped["Item"] = relationship(back_populates="images")
 
 
+
 class Order(Base):
     __tablename__ = "orders"
 
@@ -355,7 +348,6 @@ class Order(Base):
     total_price: Mapped[Decimal] = mapped_column(default=0.00)
     amount_due_vendor: Mapped[Decimal] = mapped_column(nullable=False)
     payment_link: Mapped[str] = mapped_column(nullable=True)
-    # additional_info: Mapped[str] = mapped_column(nullable=True)
     order_payment_status: Mapped[PaymentStatus] = mapped_column(
         default=PaymentStatus.PENDING
     )
@@ -388,6 +380,9 @@ class OrderItem(Base):
     order_id: Mapped[UUID] = mapped_column(ForeignKey("orders.id"), primary_key=True)
     item_id: Mapped[UUID] = mapped_column(ForeignKey("items.id"), primary_key=True)
     quantity: Mapped[int] = mapped_column(default=1)
+    additional_info: Mapped[str] = mapped_column(nullable=True)
+    sizes: Mapped[str] = mapped_column(ARRAY(String), nullable=True)
+    colors: Mapped[list[str]] = mapped_column(ARRAY(String), nullable=True)
     created_at: Mapped[datetime] = mapped_column(default=datetime.now)
 
     order: Mapped["Order"] = relationship(back_populates="order_items")
@@ -450,3 +445,14 @@ class ChargeAndCommission(Base):
     product_commission_percentage: Mapped[Decimal]
     created_at: Mapped[datetime] = mapped_column(default=datetime.today)
     updated_at: Mapped[datetime] = mapped_column(default=datetime.today)
+
+
+class FailedPayment(Base):
+    __tablename__ = "failed_payments"
+
+    transaction_id: Mapped[str] = mapped_column(primary_key=True, unique=True)
+    item_id: Mapped[str]
+    status: Mapped[str]
+    item_name: Mapped[str]
+    total_cost: Mapped[Decimal]
+    date: Mapped[datetime]
