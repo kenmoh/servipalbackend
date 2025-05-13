@@ -38,7 +38,10 @@ async def filter_deliveries_by_type(
     limit: int = 20,
     current_user: User = Depends(get_current_user),
 ) -> list[DeliveryResponse]:
-    return await order_service.filter_deliveries_by_type(delivery_type=delivery_type, db=db, skip=skip, limit=limit)
+    return await order_service.filter_deliveries_by_type(
+        delivery_type=delivery_type, db=db, skip=skip, limit=limit
+    )
+
 
 @router.post(
     "/send-item",

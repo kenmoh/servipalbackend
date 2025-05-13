@@ -59,7 +59,11 @@ class Settings(BaseSettings):
     SMS_API_KEY: str = os.getenv("SMS_API_KEY")
 
     # Redis
-    REDIS_HOST: str = "localhost" if os.getenv('ENVIRONMENT') == 'development' else os.getenv('REDIS_HOST')
+    REDIS_HOST: str = (
+        "localhost"
+        if os.getenv("ENVIRONMENT") == "development"
+        else os.getenv("REDIS_HOST")
+    )
     REDIS_PORT: int = 6379
     REDIS_DB: int = 0
     REDIS_EX: int = 3600
@@ -75,7 +79,11 @@ class Settings(BaseSettings):
 settings = Settings()
 
 
-redis_url = "redis://localhost" if settings.ENVIRONMENT == 'development' else settings.REDIS_HOST
+redis_url = (
+    "redis://localhost"
+    if settings.ENVIRONMENT == "development"
+    else settings.REDIS_HOST
+)
 
 redis_client = redis.Redis(
     host=settings.REDIS_HOST,

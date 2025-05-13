@@ -16,7 +16,6 @@ from app.schemas.user_schemas import (
     WalletSchema,
     VendorUserResponse,
     ProfileImageResponseSchema,
-
 )
 from app.services import user_service
 from app.utils.s3_service import add_profile_image, update_image
@@ -105,7 +104,7 @@ async def get_user_details(
 async def get_restaurants(
     category_id: UUID | None = None,
     current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
 ) -> list[VendorUserResponse]:
     """
     Get  all restaurant users, optionally filtered by category.
@@ -114,17 +113,22 @@ async def get_restaurants(
         return await user_service.get_users_by_food_category(db, category_id)
     except Exception as e:
         raise HTTPException(
-            status_code=500,
-            detail=f"Failed to retrieve food vendors: {str(e)}"
+            status_code=500, detail=f"Failed to retrieve food vendors: {str(e)}"
         )
 
-@router.get("/laundry-vendors", response_model=list[VendorUserResponse], status_code=status.HTTP_200_OK)
-async def get_laundry_vendors(db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
+
+@router.get(
+    "/laundry-vendors",
+    response_model=list[VendorUserResponse],
+    status_code=status.HTTP_200_OK,
+)
+async def get_laundry_vendors(
+    db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)
+):
     """
     Get users who provide laundry services.
     """
     return await user_service.get_users_by_laundry_services(db)
-
 
 
 @router.post("/upload-image", status_code=status.HTTP_201_CREATED)
@@ -134,5 +138,9 @@ async def upload_profile_image(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> ProfileImageResponseSchema:
-
-    return await user_service.upload_image_profile(db=db, current_user=current_user, data=data)
+    return await user_service.upload_image_profile(
+        db=db,
+        current_user=current_user,
+        backdrop_image_url=backdrop_image_url,
+        profile_image_url=profile_image_url,
+    )

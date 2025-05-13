@@ -75,7 +75,9 @@ async def create_user(
     return await auth_service.create_user(db=db, user_data=user_data)
 
 
-@router.post("/register-rider", include_in_schema=False, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/register-rider", include_in_schema=False, status_code=status.HTTP_201_CREATED
+)
 async def create_user(
     data: RiderCreate,
     db: AsyncSession = Depends(get_db),
@@ -98,7 +100,11 @@ async def list_sessions(
     return await auth_service.get_user_sessions(db, current_user, active_only)
 
 
-@router.get("/admin/sessions", include_in_schema=False, response_model=list[AdminSessionResponse])
+@router.get(
+    "/admin/sessions",
+    include_in_schema=False,
+    response_model=list[AdminSessionResponse],
+)
 async def list_all_sessions(
     user_id: UUID = Query(None, description="Filter by user ID"),
     active_only: bool = Query(False, description="Show only active sessions"),
@@ -113,7 +119,11 @@ async def list_all_sessions(
     )
 
 
-@router.delete("/sessions/{session_id}", include_in_schema=False, status_code=status.HTTP_204_NO_CONTENT)
+@router.delete(
+    "/sessions/{session_id}",
+    include_in_schema=False,
+    status_code=status.HTTP_204_NO_CONTENT,
+)
 async def terminate_session(
     session_id: UUID,
     current_user: User = Depends(get_current_user),

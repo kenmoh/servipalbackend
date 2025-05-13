@@ -54,8 +54,7 @@ async def logged_suspend_users():
         await suspend_user_with_order_cancel_count_equal_3()
         logger.info("User suspension check job completed successfully")
     except Exception as e:
-        logger.error(
-            f"Error in suspend_user_with_order_cancel_count_equal_3: {str(e)}")
+        logger.error(f"Error in suspend_user_with_order_cancel_count_equal_3: {str(e)}")
 
 
 def run_async(loop, coro):
@@ -74,13 +73,13 @@ loop = asyncio.get_event_loop()
 scheduler.add_job(
     partial(run_async, loop, reset_user_suspension()),
     trigger=trigger,
-    id='reset_suspension'
+    id="reset_suspension",
 )
 
 scheduler.add_job(
     partial(run_async, loop, suspend_user_with_order_cancel_count_equal_3()),
     trigger=trigger,
-    id='suspend_users'
+    id="suspend_users",
 )
 
 scheduler.start()
@@ -111,6 +110,7 @@ templates = Jinja2Templates(directory="templates")
 #     finally:
 #         print("Shutting down...")
 #         await db.close()
+
 
 @asynccontextmanager
 async def lifespan(application: FastAPI):
@@ -145,6 +145,7 @@ async def lifespan(application: FastAPI):
         logger.info("Cleaning up resources...")
         await db.close()
         logger.info("Cleanup complete")
+
 
 app = FastAPI(
     title="ServiPal",

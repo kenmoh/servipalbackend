@@ -18,7 +18,7 @@ from sqlalchemy import (
     Identity,
     Integer,
     UniqueConstraint,
-    Text
+    Text,
 )
 from sqlalchemy.schema import Sequence
 from sqlalchemy.dialects.postgresql import CHAR
@@ -131,13 +131,17 @@ class User(Base):
     refresh_tokens = relationship(
         "RefreshToken", back_populates="user", cascade="all, delete-orphan"
     )
-    reviews_written: Mapped[list["Review"]] = relationship(back_populates="reviewer", cascade="all, delete-orphan")
+    reviews_written: Mapped[list["Review"]] = relationship(
+        back_populates="reviewer", cascade="all, delete-orphan"
+    )
 
 
 class Profile(Base):
     __tablename__ = "profile"
 
-    user_id: Mapped[UUID] = mapped_column(ForeignKey("users.id"), unique=True, primary_key=True)
+    user_id: Mapped[UUID] = mapped_column(
+        ForeignKey("users.id"), unique=True, primary_key=True
+    )
     business_name: Mapped[str] = mapped_column(nullable=True)
     bank_name: Mapped[str] = mapped_column(nullable=True)
     bank_account_number: Mapped[str] = mapped_column(nullable=True)
@@ -297,7 +301,9 @@ class Item(Base):
         lazy="selectin",
         uselist=True,
     )
-    reviews: Mapped[list["Review"]] = relationship(back_populates="item", cascade="all, delete-orphan")
+    reviews: Mapped[list["Review"]] = relationship(
+        back_populates="item", cascade="all, delete-orphan"
+    )
     __table_args__ = (UniqueConstraint("name", "user_id", name="uq_name_item"),)
 
 
@@ -416,17 +422,17 @@ class ChargeAndCommission(Base):
     __tablename__ = "charges"
 
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
-    payment_gate_way_fee: Mapped[Decimal] # 0.014
-    value_added_tax: Mapped[Decimal] # 0.075
-    payout_charge_transaction_upto_5000_naira: Mapped[Decimal] # 10
-    payout_charge_transaction_from_5001_to_50_000_naira: Mapped[Decimal] # 25
-    payout_charge_transaction_above_50_000_naira: Mapped[Decimal] # 50
-    stamp_duty: Mapped[Decimal] # 50
-    base_delivery_fee: Mapped[Decimal] # 550
-    delivery_fee_per_km: Mapped[Decimal] # 250
-    delivery_commission_percentage: Mapped[Decimal] # 0.18
-    food_laundry_commission_percentage: Mapped[Decimal] # 0.15
-    product_commission_percentage: Mapped[Decimal] # 0.15
+    payment_gate_way_fee: Mapped[Decimal]  # 0.014
+    value_added_tax: Mapped[Decimal]  # 0.075
+    payout_charge_transaction_upto_5000_naira: Mapped[Decimal]  # 10
+    payout_charge_transaction_from_5001_to_50_000_naira: Mapped[Decimal]  # 25
+    payout_charge_transaction_above_50_000_naira: Mapped[Decimal]  # 50
+    stamp_duty: Mapped[Decimal]  # 50
+    base_delivery_fee: Mapped[Decimal]  # 550
+    delivery_fee_per_km: Mapped[Decimal]  # 250
+    delivery_commission_percentage: Mapped[Decimal]  # 0.18
+    food_laundry_commission_percentage: Mapped[Decimal]  # 0.15
+    product_commission_percentage: Mapped[Decimal]  # 0.15
     created_at: Mapped[datetime] = mapped_column(default=datetime.today)
     updated_at: Mapped[datetime] = mapped_column(default=datetime.today)
 
@@ -440,7 +446,9 @@ class Review(Base):
     rating: Mapped[int] = mapped_column(Integer, nullable=False)  # e.g., 1 to 5
     comment: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(default=datetime.now)
-    updated_at: Mapped[datetime] = mapped_column(default=datetime.now, onupdate=datetime.now)
+    updated_at: Mapped[datetime] = mapped_column(
+        default=datetime.now, onupdate=datetime.now
+    )
 
     # Relationships
     reviewer: Mapped["User"] = relationship(back_populates="reviews_written")

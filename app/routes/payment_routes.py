@@ -11,14 +11,18 @@ from app.services import transaction_service
 router = APIRouter(prefix="/api/payment", tags=["Payments"])
 
 
-@router.get("/order-payment-callback", include_in_schema=False, status_code=status.HTTP_200_OK)
+@router.get(
+    "/order-payment-callback", include_in_schema=False, status_code=status.HTTP_200_OK
+)
 async def order_payment_callback(
     request: Request, db: AsyncSession = Depends(get_db)
 ) -> dict[str, str]:
     return await transaction_service.order_payment_callback(request=request, db=db)
 
 
-@router.get("/fund-wallet-callback", include_in_schema=False, status_code=status.HTTP_200_OK)
+@router.get(
+    "/fund-wallet-callback", include_in_schema=False, status_code=status.HTTP_200_OK
+)
 async def fund_wallet_payment_callback(
     request: Request, db: AsyncSession = Depends(get_db)
 ) -> dict[str, str]:

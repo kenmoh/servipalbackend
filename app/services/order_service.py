@@ -2,6 +2,7 @@ from datetime import timedelta, datetime
 from logging import Logger
 from typing import Optional
 from sqlalchemy import or_, select, update, insert
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import joinedload, selectinload
 from app.models.models import (
     ChargeAndCommission,
@@ -9,6 +10,7 @@ from app.models.models import (
     Item,
     Order,
     OrderItem,
+    Review,
     Transaction,
     User,
     Wallet,
@@ -21,24 +23,21 @@ from uuid import UUID
 
 from fastapi import HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
+from app.schemas.schemas import ReviewSchema
 from app.schemas.status_schema import OrderStatus, TransactionType
 
 from app.schemas.order_schema import (
     PaymentStatus,
     OrderItemResponseSchema,
-    OrderResponseSchema,
     OrderItemCreate,
     PackageCreate,
-    WalletTransactionType,
     DeliveryStatusUpdateSchema,
-    ItemImageSchema,
     OrderAndDeliverySchema,
 )
 from app.schemas.delivery_schemas import (
     DeliveryResponse,
     DeliveryType,
     DeliveryStatus,
-    DeliverySchema,
 )
 from app.schemas.item_schemas import ItemType
 
@@ -50,8 +49,9 @@ from app.utils.utils import (
 )
 from app.config.config import redis_client
 
-async def filter_delivery_by_delivery_type(delivery_type: DeliveryType,
-    db: AsyncSession, skip: int = 0, limit: int = 20
+
+async def filter_delivery_by_delivery_type(
+    delivery_type: DeliveryType, db: AsyncSession, skip: int = 0, limit: int = 20
 ) -> list[DeliveryResponse]:
     """
     Get all deliveries by delivery type with pagination and caching
@@ -69,7 +69,8 @@ async def filter_delivery_by_delivery_type(delivery_type: DeliveryType,
         .options(
             joinedload(Delivery.order).options(
                 selectinload(Order.order_items).options(
-                    joinedload(OrderItem.item).options(selectinload(Item.images))
+                    joinedload(OrderItem.item).options(
+                        selectinload(Item.images))
                 ),
                 joinedload(Order.delivery),
             )
@@ -95,7 +96,6 @@ async def filter_delivery_by_delivery_type(delivery_type: DeliveryType,
     )
 
     return delivery_responses
-
 
 
 async def get_delivery_by_id(db: AsyncSession, delivery_id: UUID) -> DeliveryResponse:
@@ -157,7 +157,8 @@ async def get_all_deliveries(
         .options(
             joinedload(Delivery.order).options(
                 selectinload(Order.order_items).options(
-                    joinedload(OrderItem.item).options(selectinload(Item.images))
+                    joinedload(OrderItem.item).options(
+                        selectinload(Item.images))
                 ),
                 joinedload(Order.delivery),
             )
@@ -332,7 +333,8 @@ async def create_package_order(
             .where(Order.id == delivery_data.order_id)
             .options(
                 selectinload(Order.order_items).options(
-                    joinedload(OrderItem.item).options(selectinload(Item.images))
+                    joinedload(OrderItem.item).options(
+                        selectinload(Item.images))
                 )
             )
         )
@@ -499,13 +501,15 @@ async def order_food_or_request_laundy_service(
                 .where(Order.id == delivery_data.order_id)
                 .options(
                     selectinload(Order.order_items).options(
-                        joinedload(OrderItem.item).options(selectinload(Item.images))
+                        joinedload(OrderItem.item).options(
+                            selectinload(Item.images))
                     )
                 )
             )
             order = (await db.execute(stmt)).scalar_one()
 
-            delivery_stmt = select(Delivery).where(Delivery.id == delivery_data.id)
+            delivery_stmt = select(Delivery).where(
+                Delivery.id == delivery_data.id)
             delivery = (await db.execute(delivery_stmt)).scalar_one()
 
             return format_delivery_response(order, delivery)
@@ -601,7 +605,8 @@ async def confirm_delivery_received(
         raise HTTPException(status_code=403, detail="Unauthorized.")
 
     if delivery.delivery_status != DeliveryStatus.DELIVERED:
-        raise HTTPException(status_code=400, detail="Delivery is not yet completed.")
+        raise HTTPException(
+            status_code=400, detail="Delivery is not yet completed.")
 
     try:
         delivery.delivery_status = DeliveryStatus.RECEIVED
@@ -646,7 +651,8 @@ async def confirm_delivery_received(
         return DeliveryStatusUpdateSchema(delivery_status=delivery.delivery_status)
     except Exception as e:
         await db.rollback()
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
 
 async def cancel_delivery(
@@ -838,6 +844,82 @@ async def admin_modify_delivery_status(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to update delivery status: {e}",
+        )
+
+
+# <<<<< ---------- ITEM REVIEWS ---------- >>>>>
+async def create_review(
+    db: AsyncSession, current_user: User, order_id: UUID, data: ReviewSchema
+) -> Review:
+    """
+    Create a review for an item by a user.
+
+    Args:
+        db: The database session.
+        current_user: The UUID of the reviewer.
+        item_id: The UUID of the item.
+        rating: The rating (1-5).
+        comment: Optional review comment.
+
+    Returns:
+        The created Review object.
+
+    Raises:
+        HTTPException: If the user or item is not found, or if the rating is invalid.
+    """
+
+    order_item_ids = []
+
+    user = await db.get(User, current_user.id)
+    result = await db.execute(
+        select(Order).join(Order.order_items).where(Order.id == order_id)
+    )
+
+    order = result.scalar_one_or_none()
+
+    for item in order.order_items:
+        order_item_ids.append(item.item_id, item.user_id)
+
+    for user_id in order_item_ids:
+        if current_user.id == user_id:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN,
+                                detail="You cannot review your own item")
+
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+
+    if not order:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Order not found")
+
+    # Validate rating
+    if not 1 <= data.rating <= 5:
+        raise HTTPException(
+            status_code=400, detail="Rating must be between 1 and 5")
+
+    try:
+
+        for item_id in order_item_ids:
+            review = Review(
+                user_id=current_user.id,
+                item_id=item_id,
+                rating=data.rating,
+                comment=data.comment,
+            )
+        db.add(review)
+        await db.commit()
+        await db.refresh(review)
+        return review
+
+    except IntegrityError as e:
+        await db.rollback()
+        if "uq_user_item_review" in str(e):
+            raise HTTPException(
+                status_code=400, detail="You have already reviewed this item"
+            )
+        raise HTTPException(
+            status_code=500, detail=f"Failed to create review: {str(e)}"
         )
 
 

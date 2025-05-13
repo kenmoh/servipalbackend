@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 
-from app.models.models import Order, User, Wallet, Transaction, OrderItem
+from app.models.models import ChargeAndCommission, Order, User, Wallet, Transaction, OrderItem
 from app.schemas.marketplace_schemas import TopUpRequestSchema
 from app.schemas.order_schema import OrderResponseSchema
 from app.schemas.status_schema import PaymentStatus, TransactionType
@@ -386,10 +386,7 @@ async def make_withdrawal(db: AsyncSession, current_user: User) -> dict:
         # Load user with profile and wallet in a single query
         stmt = (
             select(User)
-            .options(
-                selectinload(User.profile),
-                selectinload(User.wallet)
-            )
+            .options(selectinload(User.profile), selectinload(User.wallet))
             .where(User.id == current_user.id)
             .with_for_update()
         )
@@ -400,33 +397,36 @@ async def make_withdrawal(db: AsyncSession, current_user: User) -> dict:
 
         charge = await result.scalars().fetchone()
 
-
         if not user:
             raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="User not found"
+                status_code=status.HTTP_404_NOT_FOUND, detail="User not found"
             )
 
         if user.is_bloccked or user.rider_is_suspended_for_order_cancel:
-            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED,
-                                detail="Your account is suspended. Please contact support.")
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Your account is suspended. Please contact support.",
+            )
 
-        if not user.profile or not user.profile.bank_account_number or not user.profile.bank_name:
+        if (
+            not user.profile
+            or not user.profile.bank_account_number
+            or not user.profile.bank_name
+        ):
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Please update your profile with bank account details"
+                detail="Please update your profile with bank account details",
             )
 
         if not user.wallet:
             raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Wallet not found"
+                status_code=status.HTTP_404_NOT_FOUND, detail="Wallet not found"
             )
 
         if user.wallet.balance <= 0:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Insufficient funds in wallet"
+                detail="Insufficient funds in wallet",
             )
 
         try:
@@ -438,7 +438,7 @@ async def make_withdrawal(db: AsyncSession, current_user: User) -> dict:
                 payment_status=PaymentStatus.PENDING,
                 transaction_type=TransactionType.DEBIT,
                 charge=charge,
-                description=f"Withdrawal to {user.profile.bank_name} - {user.profile.bank_account_number}"
+                description=f"Withdrawal to {user.profile.bank_name} - {user.profile.bank_account_number}",
             )
             db.add(withdrawal)
             await db.flush()
@@ -453,7 +453,7 @@ async def make_withdrawal(db: AsyncSession, current_user: User) -> dict:
                 narration=f"Wallet withdrawal of ₦{previous_balance:,.2f}",
                 reference=str(withdrawal.id),
                 account_number=user.profile.bank_account_number,
-                beneficiary_name=user.profile.account_holder_name
+                beneficiary_name=user.profile.account_holder_name,
             )
 
             if transfer_response.get("status") == "success":
@@ -470,14 +470,16 @@ async def make_withdrawal(db: AsyncSession, current_user: User) -> dict:
                     "amount": previous_balance,
                     "bank_name": user.profile.bank_name,
                     "account_number": user.profile.bank_account_number,
-                    "beneficiary": user.profile.full_name if user.profile.full_name else user.profile.business_name,
-                    "timestamp": withdrawal.created_at
+                    "beneficiary": user.profile.full_name
+                    if user.profile.full_name
+                    else user.profile.business_name,
+                    "timestamp": withdrawal.created_at,
                 }
-            elif transfer_response.get('status') in ['cancel', 'failed']:   
+            elif transfer_response.get("status") in ["cancel", "failed"]:
                 await db.rollback()
                 raise HTTPException(
                     status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                    detail=f"Bank transfer failed: {transfer_response.get('message', 'Unknown error occured')}"
+                    detail=f"Bank transfer failed: {transfer_response.get('message', 'Unknown error occured')}",
                 )
 
         except Exception as e:
@@ -485,8 +487,9 @@ async def make_withdrawal(db: AsyncSession, current_user: User) -> dict:
             logger.error(f"Withdrawal failed: {str(e)}")
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Failed to process withdrawal"
+                detail="Failed to process withdrawal",
             )
+
 
 # def make_withdrawal(db: Session, user: User):
 #     wallet = db.query(Wallet).filter(Wallet.user_id == user["id"]).first()

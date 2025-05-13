@@ -152,7 +152,8 @@ async def delete_s3_object(file_url: str) -> bool:
 
 
 async def update_image(
-    new_image: UploadFile, old_image_url: str,
+    new_image: UploadFile,
+    old_image_url: str,
 ) -> str:
     """
     Update an image by deleting the old one and uploading the new one

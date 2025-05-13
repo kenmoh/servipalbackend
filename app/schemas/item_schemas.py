@@ -1,3 +1,4 @@
+import datetime
 from decimal import Decimal
 from enum import Enum
 from fastapi import Form
@@ -36,7 +37,15 @@ class ItemImageSchema(BaseModel):
     url: str
 
 
+class ReviewResponseSchema(BaseModel):
+    item_id: UUID
+    rating: int
+    comment: str | None = None
+    created_at: datetime
+
+
 class ItemResponse(ItemCreate):
     id: UUID
     user_id: UUID
     images: list[ItemImageSchema]
+    reviews: list[ReviewResponseSchema]

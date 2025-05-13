@@ -19,7 +19,7 @@ async def suspend_user_with_order_cancel_count_equal_3():
             result = await session.execute(
                 select(User).where(
                     User.order_cancel_count == 3,
-                    User.rider_is_suspended_for_order_cancel == False
+                    User.rider_is_suspended_for_order_cancel == False,
                 )
             )
             users = result.scalars().all()
@@ -36,13 +36,12 @@ async def suspend_user_with_order_cancel_count_equal_3():
                 .where(User.id.in_([user.id for user in users]))
                 .values(
                     rider_is_suspended_for_order_cancel=True,
-                    rider_is_suspension_until=suspension_until
+                    rider_is_suspension_until=suspension_until,
                 )
             )
 
             await session.commit()
-            logger.info(
-                f"Suspended {len(users)} users until {suspension_until}")
+            logger.info(f"Suspended {len(users)} users until {suspension_until}")
 
         except Exception as e:
             await session.rollback()
@@ -62,7 +61,7 @@ async def reset_user_suspension():
             result = await session.execute(
                 select(User).where(
                     User.rider_is_suspended_for_order_cancel == True,
-                    User.rider_is_suspension_until <= now
+                    User.rider_is_suspension_until <= now,
                 )
             )
             users = result.scalars().all()
@@ -78,7 +77,7 @@ async def reset_user_suspension():
                 .values(
                     rider_is_suspended_for_order_cancel=False,
                     rider_is_suspension_until=None,
-                    order_cancel_count=0
+                    order_cancel_count=0,
                 )
             )
 

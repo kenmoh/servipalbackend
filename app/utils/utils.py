@@ -46,8 +46,7 @@ async def verify_transaction_tx_ref(tx_ref: str):
 
         return link
     except httpx.HTTPStatusError as e:
-        raise HTTPException(
-            status_code=502, detail=f"Payment gateway error: {str(e)}")
+        raise HTTPException(status_code=502, detail=f"Payment gateway error: {str(e)}")
     except Exception as e:
         raise HTTPException(
             status_code=500, detail=f"Failed to verify transaction reference: {str(e)}"
@@ -78,8 +77,7 @@ async def get_payment_link(id: UUID, amount: Decimal, current_user: User):
 
         return link
     except httpx.HTTPStatusError as e:
-        raise HTTPException(
-            status_code=502, detail=f"Payment gateway error: {str(e)}")
+        raise HTTPException(status_code=502, detail=f"Payment gateway error: {str(e)}")
     except Exception as e:
         raise HTTPException(
             status_code=500, detail=f"Failed to generate payment link: {str(e)}"
@@ -109,8 +107,7 @@ async def get_fund_wallet_payment_link(id: UUID, amount: Decimal, current_user: 
 
         return link
     except httpx.HTTPStatusError as e:
-        raise HTTPException(
-            status_code=502, detail=f"Payment gateway error: {str(e)}")
+        raise HTTPException(status_code=502, detail=f"Payment gateway error: {str(e)}")
     except Exception as e:
         raise HTTPException(
             status_code=500, detail=f"Failed to generate payment link: {str(e)}"
@@ -284,7 +281,7 @@ async def get_bank_code(bank_name: str):
     try:
         async with httpx.AsyncClient(timeout=30.0) as client:
             response = await client.get(banks_url, headers=headers)
-            data = response.json()['data']
+            data = response.json()["data"]
             for bank in data:
                 if bank.get("name") == bank_name:
                     return bank["code"]

@@ -3,10 +3,10 @@ from uuid import UUID
 import json
 from fastapi import HTTPException, UploadFile, status
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import joinedload
+from sqlalchemy.orm import joinedload, selectinload
 from sqlalchemy import select, delete, update
 
-from app.models.models import Item, Category, ItemImage, User, Review
+from app.models.models import Item, Category, ItemImage, User
 from app.schemas.item_schemas import (
     CategoryCreate,
     CategoryResponse,
@@ -201,7 +201,7 @@ async def get_items_by_user_id(db: AsyncSession, user_id: UUID) -> list[ItemResp
     if cached_items:
         return json.loads(cached_items)
 
-    stmt = select(Item).where(Item.user_id == user_id)
+    stmt = select(Item).where(Item.user_id == user_id).join(Item.reviews)
     result = await db.execute(stmt)
     items = result.scalars().all()
 
@@ -231,7 +231,8 @@ async def get_item_by_id(db: AsyncSession, item_id: UUID) -> ItemResponse:
         return ItemResponse(**json.loads(cached_item))
 
     # Query database
-    stmt = select(Item).where(Item.id == item_id).options(joinedload(Item.images))
+    stmt = select(Item).where(Item.id == item_id).options(
+        selectinload(Item.images), selectinload(Item.reviews))
     result = await db.execute(stmt)
     item = result.unique().scalar_one_or_none()
 
@@ -241,25 +242,27 @@ async def get_item_by_id(db: AsyncSession, item_id: UUID) -> ItemResponse:
         )
 
     # Prepare dict for caching and response
-    item_dict = {
-        "name": item.name,
-        "description": item.description,
-        "price": item.price,
-        "item_type": item.item_type,
-        "category_id": item.category_id,
-        "id": item.id,
-        "user_id": item.user_id,
-        "images": [
-            {"id": img.id, "url": img.url, "item_id": img.item_id}
-            for img in item.images
-        ],
-    }
+    # item_dict = {
+    #     "name": item.name,
+    #     "description": item.description,
+    #     "price": item.price,
+    #     "item_type": item.item_type,
+    #     "category_id": item.category_id,
+    #     "id": item.id,
+    #     "user_id": item.user_id,
+    #     "images": [
+    #         {"id": img.id, "url": img.url, "item_id": img.item_id}
+    #         for img in item.images
+    #     ],
+    #     "revies": []
+    # }
 
     # Cache the serialized item
-    redis_client.setex(cache_key, CACHE_TTL, json.dumps(item_dict, default=str))
+    redis_client.setex(cache_key, CACHE_TTL,
+                       json.dumps(item, default=str))
 
     # Return response model
-    return ItemResponse(**item_dict)
+    return ItemResponse(**item)
 
 
 async def update_item(
@@ -357,7 +360,8 @@ async def delete_item(db: AsyncSession, current_user: User, item_id: UUID) -> No
         item_images = image_result.scalars().all()
 
         # Delete item (this will cascade delete ItemImage records due to FK constraint)
-        stmt = delete(Item).where(Item.id == item_id, Item.user_id == current_user.id)
+        stmt = delete(Item).where(Item.id == item_id,
+                                  Item.user_id == current_user.id)
         await db.execute(stmt)
 
         # Delete images from S3
@@ -380,58 +384,14 @@ async def delete_item(db: AsyncSession, current_user: User, item_id: UUID) -> No
         )
 
 
+async def get_item_reviews(item_id: UUID, db: AsyncSession):
 
-# <<<<< ---------- ITEM REVIEWS ---------- >>>>>
-async def create_review(
-    db: AsyncSession,
-    current_user: UUID,
-    item_id: UUID,
-    rating: int,
-    comment: str = None
-) -> Review:
-    """
-    Create a review for an item by a user.
+    stmt = select(Item).join(Item.reviews).where(Item.id == item_id)
+    result = await db.execute(stmt)
 
-    Args:
-        db: The database session.
-        current_user: The UUID of the reviewer.
-        item_id: The UUID of the item.
-        rating: The rating (1-5).
-        comment: Optional review comment.
+    reviews = result.scalar_one_or_none()
 
-    Returns:
-        The created Review object.
-
-    Raises:
-        HTTPException: If the user or item is not found, or if the rating is invalid.
-    """
-    # Validate user
-    user = await db.get(User, current_user.id)
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found")
-
-    # Validate item
-    item = await db.get(Item, item_id)
-    if not item:
-        raise HTTPException(status_code=404, detail="Item not found")
-
-    # Validate rating
-    if not 1 <= rating <= 5:
-        raise HTTPException(status_code=400, detail="Rating must be between 1 and 5")
-
-    try:
-        review = Review(user_id=user_id, item_id=item_id, rating=rating, comment=comment)
-        db.add(review)
-        await db.commit()
-        await db.refresh(review)
-        return review
-    except IntegrityError as e:
-        await db.rollback()
-        if 'uq_user_item_review' in str(e):
-            raise HTTPException(status_code=400, detail="You have already reviewed this item")
-        raise HTTPException(status_code=500, detail=f"Failed to create review: {str(e)}")
-
-
+    return reviews
 
 # <<<<< ---------- CACHE UTILITY FOR ITEM ---------- >>>>>
 CACHE_TTL = 3600
@@ -469,12 +429,11 @@ def set_cached_categories(categories: list) -> None:
         {"id": category.id, "name": category.name} for category in categories
     ]
     redis_client.setex(
-        "all_categories", CACHE_TTL, json.dumps(categories_dict_list, default=str)
+        "all_categories", CACHE_TTL, json.dumps(
+            categories_dict_list, default=str)
     )
 
 
 def invalidate_categories_cache() -> None:
     """Invalidate categories cache"""
     redis_client.delete("all_categories")
-
-
