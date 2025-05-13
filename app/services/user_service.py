@@ -62,7 +62,7 @@ async def get_users(db: AsyncSession) -> list[UserResponse]:
     # Cache the users
     # redis_client.set("all_users", json.dumps(users, default=str), ex=CACHE_TTL)
     # Convert SQLAlchemy -> Pydantic -> dict
-    user_responses = [UserResponse.all_users(user) for user in users]
+    user_responses = [UserResponse.model_validate(user) for user in users]
     users_dict = [user.dict() for user in user_responses]
 
     redis_client.set("all_users", json.dumps(users_dict, default=str), ex=CACHE_TTL)

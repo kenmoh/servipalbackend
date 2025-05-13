@@ -184,7 +184,7 @@ async def create_new_rider(
     if not user.profile.business_registration_number and riders > 1:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Please add company registration number to add more than one rider.",
+            detail="Please update your company registration number to add more than one rider.",
         )
     if not user.user_type == UserType.DISPATCH:
         raise HTTPException(
@@ -235,6 +235,8 @@ async def create_new_rider(
             "user_type": new_rider.user_type,
             "email": new_rider.email,
         }
+
+        redis_client.delete('all_users')
 
         return UserBase(**rider_dict)
     except IntegrityError as e:
