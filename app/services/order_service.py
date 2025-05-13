@@ -662,16 +662,16 @@ async def cancel_delivery(
     cancel delivery(Owner/Rider/Dispatch)
     """
 
-    if current_user.user_type not in [
-        UserType.RIDER,
-        UserType.DISPATCH,
-        UserType.CUSTOMER,
-    ]:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN, detail="Permission denied"
-        )
+    # if current_user.user_type not in [
+    #     UserType.RIDER,
+    #     UserType.DISPATCH,
+    #     UserType.CUSTOMER,
+    # ]:
+    #     raise HTTPException(
+    #         status_code=status.HTTP_403_FORBIDDEN, detail="Permission denied"
+    #     )
 
-    if current_user.user_type == UserType.CUSTOMER:
+    if current_user.user_type in [UserType.CUSTOMER, UserType.VENDOR]:
         result = await db.execute(
             select(Delivery)
             .where(Delivery.id == delivery_id)
@@ -707,6 +707,7 @@ async def cancel_delivery(
                 )
             )
         )
+
         delivery = result.scalar_one_or_none()
 
         if delivery.delivery_status == DeliveryStatus.IN_TRANSIT:
@@ -910,6 +911,7 @@ async def create_review(
         db.add(review)
         await db.commit()
         await db.refresh(review)
+
         return review
 
     except IntegrityError as e:

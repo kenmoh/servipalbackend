@@ -15,6 +15,7 @@ from app.schemas.order_schema import (
     DeliveryStatusUpdateSchema,
 )
 from app.schemas.delivery_schemas import DeliveryStatus, DeliveryType
+from app.schemas.schemas import ReviewSchema
 from app.services import order_service
 
 router = APIRouter(prefix="/api/orders", tags=["Orders"])
@@ -105,7 +106,8 @@ async def confirm_delivery_received(
             delivery_id=delivery_id,
         )
     except Exception as e:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
 
 @router.put(
@@ -121,7 +123,8 @@ async def rider_update_delivery_status(
             db=db, current_user=current_user, delivery_id=delivery_id
         )
     except Exception as e:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
 
 @router.put(
@@ -139,7 +142,8 @@ async def admin_modify_delivery_status(
         )
 
     except Exception as e:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
 
 @router.put(
@@ -157,4 +161,25 @@ async def cancel_delivery(
         )
 
     except Exception as e:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+
+
+@router.post(
+    "/{order_id}/review",
+    status_code=status.HTTP_201_CREATED,
+)
+async def add_review(
+    order_id: UUID,
+    data: ReviewSchema,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> ReviewSchema:
+    try:
+        return await order_service.create_review(
+            db=db, current_user=current_user, order_id=order_id, data=data
+        )
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
