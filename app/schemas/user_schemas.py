@@ -2,7 +2,7 @@ from datetime import datetime, time
 from dataclasses import dataclass
 from decimal import Decimal
 from uuid import UUID
-from fastapi import Depends
+from fastapi import Depends, Form
 from pydantic import EmailStr, BaseModel, Field, constr
 from app.schemas.status_schema import AccountStatus, TransactionType, UserType
 
@@ -418,7 +418,12 @@ class VendorUserResponse(BaseModel):
     phone_number: str
     profile_image: str | None = None
     location: str | None = None
-    company_background_image: str | None = None
+    backdrop_image_url: str | None = None
     opening_hour: time | None = None
     closing_hour: time | None = None
     rating: RatingSchema
+
+
+class ProfileImageResponseSchema(BaseModel):
+    profile_image_url: str 
+    backdrop_image_url: str | None = None

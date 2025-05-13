@@ -396,6 +396,11 @@ async def make_withdrawal(db: AsyncSession, current_user: User) -> dict:
         result = await db.execute(stmt)
         user = result.unique().scalar_one_or_none()
 
+        result = await db.execute(select(ChargeAndCommission))
+
+        charge = await result.scalars().fetchone()
+
+
         if not user:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
@@ -432,6 +437,7 @@ async def make_withdrawal(db: AsyncSession, current_user: User) -> dict:
                 amount=user.wallet.balance,
                 payment_status=PaymentStatus.PENDING,
                 transaction_type=TransactionType.DEBIT,
+                charge=charge,
                 description=f"Withdrawal to {user.profile.bank_name} - {user.profile.bank_account_number}"
             )
             db.add(withdrawal)
@@ -467,12 +473,12 @@ async def make_withdrawal(db: AsyncSession, current_user: User) -> dict:
                     "beneficiary": user.profile.full_name if user.profile.full_name else user.profile.business_name,
                     "timestamp": withdrawal.created_at
                 }
-
-            await db.rollback()
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"Bank transfer failed: {transfer_response.get('message', 'Unknown error occured')}"
-            )
+            elif transfer_response.get('status') in ['cancel', 'failed']:   
+                await db.rollback()
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail=f"Bank transfer failed: {transfer_response.get('message', 'Unknown error occured')}"
+                )
 
         except Exception as e:
             await db.rollback()

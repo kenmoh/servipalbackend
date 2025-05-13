@@ -36,7 +36,7 @@ from app.config.config import redis_client
 logger = setup_logger()
 
 scheduler = BackgroundScheduler()
-trigger = IntervalTrigger(minutes=5)
+trigger = IntervalTrigger(hours=8)
 
 
 async def logged_reset_user_suspension():

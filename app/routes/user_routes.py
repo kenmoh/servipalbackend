@@ -14,7 +14,9 @@ from app.schemas.user_schemas import (
     UserResponse,
     WalletRespose,
     WalletSchema,
-    VendorUserResponse
+    VendorUserResponse,
+    ProfileImageResponseSchema,
+
 )
 from app.services import user_service
 from app.utils.s3_service import add_profile_image, update_image
@@ -30,7 +32,7 @@ async def get_users(
     return await user_service.get_users(db=db)
 
 
-@router.get("/wallets", status_code=status.HTTP_200_OK)
+@router.get("/wallets", include_in_schema=True, status_code=status.HTTP_200_OK)
 async def get_user_wallets(
     db: AsyncSession = Depends(get_db),
 ) -> list[WalletSchema]:
@@ -48,35 +50,35 @@ async def create_user_profile(
     )
 
 
-@router.post("/upload-image", status_code=status.HTTP_201_CREATED)
-async def upload_profile_image(
-    image: UploadFile = File(...),
-    current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
-):
-    """Upload profile image"""
-    try:
-        url = await add_profile_image(image, folder=f"profiles/{current_user.id}")
+# @router.post("/upload-image", status_code=status.HTTP_201_CREATED)
+# async def upload_profile_image(
+#     image: UploadFile = File(...),
+#     current_user: User = Depends(get_current_user),
+#     db: AsyncSession = Depends(get_db),
+# ):
+#     """Upload profile image"""
+#     try:
+#         url = await add_profile_image(image, folder=f"profiles/{current_user.id}")
 
-        # Update user profile
-        profile = await db.get(Profile, current_user.id)
-        if profile and profile.profile_image:
-            # Update existing image
-            url = await update_image(
-                image, profile.profile_image.url, folder=f"profiles/{current_user.id}"
-            )
+#         # Update user profile
+#         profile = await db.get(Profile, current_user.id)
+#         if profile and profile.profile_image:
+#             # Update existing image
+#             url = await update_image(
+#                 image, profile.profile_image.url, folder=f"profiles/{current_user.id}"
+#             )
 
-        profile_image = ProfileImage(url=url, profile_id=profile.id)
-        db.add(profile_image)
-        await db.commit()
+#         profile_image = ProfileImage(url=url, profile_id=profile.id)
+#         db.add(profile_image)
+#         await db.commit()
 
-        return {"url": url}
+#         return {"url": url}
 
-    except Exception as e:
-        await db.rollback()
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e)
-        )
+#     except Exception as e:
+#         await db.rollback()
+#         raise HTTPException(
+#             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e)
+#         )
 
 
 @router.put("/profile", status_code=status.HTTP_202_ACCEPTED)
@@ -99,12 +101,12 @@ async def get_user_details(
     return await user_service.get_user_with_profile(db=db, user_id=user_id)
 
 
-@router.get("/restaurants")
+@router.get("/restaurants", status_code=status.HTTP_200_OK)
 async def get_restaurants(
-    category_id: Optional[UUID] = None,
+    category_id: UUID | None = None,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
-) -> List[VendorUserResponse]:
+) -> list[VendorUserResponse]:
     """
     Get  all restaurant users, optionally filtered by category.
     """
@@ -116,9 +118,21 @@ async def get_restaurants(
             detail=f"Failed to retrieve food vendors: {str(e)}"
         )
 
-@router.get("/laundry-vendors", response_model=List[VendorUserResponse])
-async def get_laundry_vendors(db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)) -> List[dict]:
+@router.get("/laundry-vendors", response_model=list[VendorUserResponse], status_code=status.HTTP_200_OK)
+async def get_laundry_vendors(db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
     """
     Get users who provide laundry services.
     """
     return await user_service.get_users_by_laundry_services(db)
+
+
+
+@router.post("/upload-image", status_code=status.HTTP_201_CREATED)
+async def upload_profile_image(
+    profile_image_url: UploadFile = File(...),
+    backdrop_image_url: UploadFile = File(None),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> ProfileImageResponseSchema:
+
+    return await user_service.upload_image_profile(db=db, current_user=current_user, data=data)

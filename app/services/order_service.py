@@ -50,6 +50,53 @@ from app.utils.utils import (
 )
 from app.config.config import redis_client
 
+async def filter_delivery_by_delivery_type(delivery_type: DeliveryType,
+    db: AsyncSession, skip: int = 0, limit: int = 20
+) -> list[DeliveryResponse]:
+    """
+    Get all deliveries by delivery type with pagination and caching
+    """
+    cache_key = f"all_deliveries_by_type"
+
+    # Try cache first
+    cached_deliveries = redis_client.get(cache_key)
+    if cached_deliveries:
+        return [DeliveryResponse(**d) for d in json.loads(cached_deliveries)]
+
+    stmt = (
+        select(Delivery)
+        .where(Delivery.delivery_type == delivery_type)
+        .options(
+            joinedload(Delivery.order).options(
+                selectinload(Order.order_items).options(
+                    joinedload(OrderItem.item).options(selectinload(Item.images))
+                ),
+                joinedload(Order.delivery),
+            )
+        )
+        .offset(skip)
+        .limit(limit)
+        .order_by(Delivery.created_at.desc())
+    )
+
+    result = await db.execute(stmt)
+    deliveries = result.unique().scalars().all()
+
+    # Format responses
+    delivery_responses = [
+        format_delivery_response(delivery.order, delivery) for delivery in deliveries
+    ]
+
+    # Cache the formatted responses
+    redis_client.setex(
+        cache_key,
+        timedelta(seconds=CACHE_TTL),
+        json.dumps([d.model_dump() for d in delivery_responses], default=str),
+    )
+
+    return delivery_responses
+
+
 
 async def get_delivery_by_id(db: AsyncSession, delivery_id: UUID) -> DeliveryResponse:
     """

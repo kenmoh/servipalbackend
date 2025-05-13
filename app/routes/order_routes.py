@@ -14,7 +14,7 @@ from app.schemas.order_schema import (
     PackageCreate,
     DeliveryStatusUpdateSchema,
 )
-from app.schemas.delivery_schemas import DeliveryStatus
+from app.schemas.delivery_schemas import DeliveryStatus, DeliveryType
 from app.services import order_service
 
 router = APIRouter(prefix="/api/orders", tags=["Orders"])
@@ -29,6 +29,16 @@ async def get_deliveries(
 ) -> list[DeliveryResponse]:
     return await order_service.get_all_deliveries(db=db, skip=skip, limit=limit)
 
+
+@router.get("/delivery-by-type", status_code=status.HTTP_200_OK)
+async def filter_deliveries_by_type(
+    delivery_type: DeliveryType,
+    db: AsyncSession = Depends(get_db),
+    skip: int = 0,
+    limit: int = 20,
+    current_user: User = Depends(get_current_user),
+) -> list[DeliveryResponse]:
+    return await order_service.filter_deliveries_by_type(delivery_type=delivery_type, db=db, skip=skip, limit=limit)
 
 @router.post(
     "/send-item",

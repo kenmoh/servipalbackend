@@ -235,27 +235,6 @@ def generate_expiry(hours: int = 24) -> datetime:
     return datetime.now() + timedelta(hours=hours)
 
 
-# SMS
-# def send_sms(phone_number, message):
-#     api_key = settings.SMS_API_KEY
-#     termii_url = "https://api.ng.termii.com/api/sms/send"
-#     payload = {
-#         "to": f"{phone_number}",
-#         "from": "QuickPickUp",
-#         "sms": f"{message}",
-#         "type": "plain",
-#         "channel": "generic",
-#         "api_key": f"{api_key}",
-#     }
-#     headers = {
-#         "Content-Type": "application/json",
-#     }
-#     response = httpx.post(
-#         "POST", termii_url, headers=headers, json=payload)
-
-#     return response
-
-
 async def send_sms(phone_number: str, message: str) -> dict:
     """
     Send SMS using Termii API with httpx async client

@@ -47,7 +47,7 @@ async def login_user(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
 
-@router.post("/logout", status_code=status.HTTP_200_OK)
+@router.post("/logout", include_in_schema=False, status_code=status.HTTP_200_OK)
 async def logout(
     refresh_token: str,
     db: AsyncSession = Depends(get_db),
@@ -75,7 +75,7 @@ async def create_user(
     return await auth_service.create_user(db=db, user_data=user_data)
 
 
-@router.post("/register-rider", status_code=status.HTTP_201_CREATED)
+@router.post("/register-rider", include_in_schema=False, status_code=status.HTTP_201_CREATED)
 async def create_user(
     data: RiderCreate,
     db: AsyncSession = Depends(get_db),
@@ -88,7 +88,7 @@ async def create_user(
     )
 
 
-@router.get("/sessions", response_model=list[SessionResponse])
+@router.get("/sessions", include_in_schema=False, response_model=list[SessionResponse])
 async def list_sessions(
     active_only: bool = Query(False, description="Show only active sessions"),
     current_user: User = Depends(get_current_user),
@@ -98,7 +98,7 @@ async def list_sessions(
     return await auth_service.get_user_sessions(db, current_user, active_only)
 
 
-@router.get("/admin/sessions", response_model=list[AdminSessionResponse])
+@router.get("/admin/sessions", include_in_schema=False, response_model=list[AdminSessionResponse])
 async def list_all_sessions(
     user_id: UUID = Query(None, description="Filter by user ID"),
     active_only: bool = Query(False, description="Show only active sessions"),
@@ -113,7 +113,7 @@ async def list_all_sessions(
     )
 
 
-@router.delete("/sessions/{session_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/sessions/{session_id}", include_in_schema=False, status_code=status.HTTP_204_NO_CONTENT)
 async def terminate_session(
     session_id: UUID,
     current_user: User = Depends(get_current_user),
@@ -185,7 +185,7 @@ async def update_password(
     return await auth_service.change_password(current_user, password_data, db)
 
 
-@router.post("/logout", status_code=status.HTTP_200_OK)
+@router.post("/logout", include_in_schema=False, status_code=status.HTTP_200_OK)
 async def logout_all(
     current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)
 ) -> dict[str, str]:

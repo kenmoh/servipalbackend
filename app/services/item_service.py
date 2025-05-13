@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload
 from sqlalchemy import select, delete, update
 
-from app.models.models import Item, Category, ItemImage, User
+from app.models.models import Item, Category, ItemImage, User, Review
 from app.schemas.item_schemas import (
     CategoryCreate,
     CategoryResponse,
@@ -380,6 +380,59 @@ async def delete_item(db: AsyncSession, current_user: User, item_id: UUID) -> No
         )
 
 
+
+# <<<<< ---------- ITEM REVIEWS ---------- >>>>>
+async def create_review(
+    db: AsyncSession,
+    current_user: UUID,
+    item_id: UUID,
+    rating: int,
+    comment: str = None
+) -> Review:
+    """
+    Create a review for an item by a user.
+
+    Args:
+        db: The database session.
+        current_user: The UUID of the reviewer.
+        item_id: The UUID of the item.
+        rating: The rating (1-5).
+        comment: Optional review comment.
+
+    Returns:
+        The created Review object.
+
+    Raises:
+        HTTPException: If the user or item is not found, or if the rating is invalid.
+    """
+    # Validate user
+    user = await db.get(User, current_user.id)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    # Validate item
+    item = await db.get(Item, item_id)
+    if not item:
+        raise HTTPException(status_code=404, detail="Item not found")
+
+    # Validate rating
+    if not 1 <= rating <= 5:
+        raise HTTPException(status_code=400, detail="Rating must be between 1 and 5")
+
+    try:
+        review = Review(user_id=user_id, item_id=item_id, rating=rating, comment=comment)
+        db.add(review)
+        await db.commit()
+        await db.refresh(review)
+        return review
+    except IntegrityError as e:
+        await db.rollback()
+        if 'uq_user_item_review' in str(e):
+            raise HTTPException(status_code=400, detail="You have already reviewed this item")
+        raise HTTPException(status_code=500, detail=f"Failed to create review: {str(e)}")
+
+
+
 # <<<<< ---------- CACHE UTILITY FOR ITEM ---------- >>>>>
 CACHE_TTL = 3600
 
@@ -423,3 +476,5 @@ def set_cached_categories(categories: list) -> None:
 def invalidate_categories_cache() -> None:
     """Invalidate categories cache"""
     redis_client.delete("all_categories")
+
+

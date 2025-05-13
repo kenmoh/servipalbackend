@@ -1,19 +1,21 @@
 from uuid import UUID
 import json
-from fastapi import HTTPException, status
+from fastapi import HTTPException, status, UploadFile
 
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import or_, select
 from sqlalchemy.orm import selectinload, joinedload
 
+from app.utils.s3_service import add_profile_image, update_image
 from app.config.config import redis_client
-from app.models.models import User, Wallet, Profile
+from app.models.models import User, Wallet, Profile, ProfileImage
 from app.schemas.user_schemas import (
     ProfileSchema,
     UserProfileResponse,
     UserResponse,
     WalletSchema,
-    VendorUserResponse
+    VendorUserResponse,
+    ProfileImageResponseSchema
 )
 
 CACHE_TTL = 3600
@@ -271,15 +273,56 @@ async def get_users_by_food_category(
             "company_name": user.profile.business_name if user.profile else None,
             "email": user.email,
             "phone_number": user.profile.phone_number if user.profile else None,
-            "profile_image": user.profile.profile_image.url if user.profile and user.profile.profile_image else None,
+            "profile_image": user.profile.profile_image_url if user.profile and user.profile.profile_image_url else None,
             "location": user.profile.business_address if user.profile else None,
-            "company_background_image": user.profile.backdrop.url if user.profile.backdrop else None,
+            "backdrop_image": user.profile.backdrop_image_url if user.profile.backdrop_image_url else None,
             "opening_hour": user.profile.opening_hours if user.profile else None,
             "closing_hour": user.profile.closing_hours if user.profile else None,
             # "rating": await get_vendor_average_rating(user.id, db),
         })
 
     return response
+
+async def upload_image_profile(current_user: User, profile_image_url: UploadFile, backdrop_image_url: UploadFile, db: AsyncSession) -> ProfileImageResponseSchema:
+
+    result = await db.execute(select(Profile).json(Profile.profile_image).where(Profile.user_id==current_user.id))
+
+    profile = await result.scalar_one_or_none()
+
+    if not profile:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail='User not found!')
+
+    try:
+
+        if profile.profile_image:
+
+            await update_image(profile.profile_image.profile_image_url)
+            await update_image(profile.profile_image.backdrop_image_url)
+
+            profile.profile_image.profile_image_url = add_profile_image(profile_image_url)
+            profile.profile_image.backdrop_image_url = add_profile_image(backdrop_image_url)
+
+            await db.commit()
+            await db.refresh()
+            
+        else:
+
+            profile_image_url = add_profile_image(data.profile_image_url)
+            backdrop_image_url = add_profile_image(data.backdrop_image_url)
+
+            profile_image = ProfileImage(profile_id=profile.id,profile_image_url=profile_image_url, backdrop_image_url=backdrop_image_url)
+
+            db.add(profile_image)
+            await db.commit()
+            await db.refresh(backdrop_image_url)
+
+        return profile.profile_image
+
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f'Something went wrong! {e}')
+
+
 
 # <<<<< --------- GET LAUNDRY SERVICE PROVIDERS ---------- >>>>>
 async def get_users_by_laundry_services(db: AsyncSession) -> List[VendorUserResponse]:

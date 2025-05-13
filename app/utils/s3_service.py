@@ -125,59 +125,6 @@ async def add_profile_image(image: UploadFile, folder: str) -> str:
         )
 
 
-async def upload_multiple_images1(files: list[UploadFile]) -> list[str]:
-    """
-    Upload multiple images to S3
-    Args:
-        files: List of image files
-        folder: S3 folder path
-    Returns:
-        List of image URLs
-    """
-    if not files:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="At least one image is required",
-        )
-
-    if len(files) > 4:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail="Maximum 4 images allowed"
-        )
-
-    urls = []
-    for file in files:
-        if not file.content_type.startswith("image/"):
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"File {file.filename} is not an image",
-            )
-
-        try:
-            file_key = f"{uuid4()}-{file.filename}"
-            # bucket = s3.Bucket(aws_bucket_name)
-            # bucket.upload_fileobj(
-            #     file.file,
-            #     settings.S3_BUCKET_NAME,
-            #     file_key,
-
-            # )
-            response = s3_client.upload_file(file_key, aws_bucket_name, file.filename)
-
-            print(file_key, file.filename, "===============================")
-
-            url = f"https://{settings.S3_BUCKET_NAME}.s3.amazonaws.com/{file_key}"
-            urls.append(url)
-
-        except ClientError as e:
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"Failed to upload image: {str(e)}",
-            )
-
-    return urls
-
-
 # DELETE IMAGE FROM AWS
 
 
@@ -205,7 +152,7 @@ async def delete_s3_object(file_url: str) -> bool:
 
 
 async def update_image(
-    new_image: UploadFile, old_image_url: str, folder: str = "misc"
+    new_image: UploadFile, old_image_url: str,
 ) -> str:
     """
     Update an image by deleting the old one and uploading the new one
@@ -221,7 +168,7 @@ async def update_image(
         await delete_s3_object(old_image_url)
 
     # Upload new image
-    return await add_profile_image(new_image, folder)
+    return await add_profile_image(new_image)
 
 
 async def update_multiple_images(
