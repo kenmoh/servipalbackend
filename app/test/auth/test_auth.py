@@ -16,13 +16,11 @@ async def test_user_registration(async_client: AsyncClient):
     test_user = {
         "email": "test@example.com",
         "password": "Test@password123",
-        "user_type": UserType.CUSTOMER
+        "user_type": UserType.CUSTOMER,
     }
 
     response = await async_client.post(
-        f"{BASE_URL}/auth/register",
-        json=test_user,
-        timeout=30.0
+        f"{BASE_URL}/auth/register", json=test_user, timeout=30.0
     )
 
     assert response.status_code == status.HTTP_201_CREATED
@@ -33,7 +31,11 @@ async def test_user_registration(async_client: AsyncClient):
 
 
 @pytest.mark.asyncio
-async def test_user_login(async_client: AsyncClient, customer_user_and_token, test_user_data: Dict[str, Dict[str, str]]):
+async def test_user_login(
+    async_client: AsyncClient,
+    customer_user_and_token,
+    test_user_data: Dict[str, Dict[str, str]],
+):
     """Test user login with a pre-existing user."""
     # The customer_user_and_token fixture ensures the user is already created in the DB.
     # We use test_user_data for the login credentials.
@@ -53,7 +55,11 @@ async def test_user_login(async_client: AsyncClient, customer_user_and_token, te
 
 
 @pytest.mark.asyncio
-async def test_invalid_login(async_client: AsyncClient, customer_user_and_token, test_user_data: Dict[str, Dict[str, str]]):
+async def test_invalid_login(
+    async_client: AsyncClient,
+    customer_user_and_token,
+    test_user_data: Dict[str, Dict[str, str]],
+):
     """Test invalid login attempt for an existing user."""
     # The customer_user_and_token fixture ensures the user is already created.
     customer_login_data = test_user_data["customer"]
@@ -61,8 +67,7 @@ async def test_invalid_login(async_client: AsyncClient, customer_user_and_token,
     # Try logging in with wrong password
     response = await async_client.post(
         f"{BASE_URL}/auth/login",
-        data={"username": customer_login_data["email"],
-              "password": "wrongpassword"},
+        data={"username": customer_login_data["email"], "password": "wrongpassword"},
     )
     assert response.status_code == status.HTTP_401_UNAUTHORIZED
 
@@ -77,7 +82,9 @@ async def test_password_hashing():
 
 @pytest.mark.asyncio
 async def test_protected_route(
-    async_client: AsyncClient, authorized_customer_client: AsyncClient, test_user_data: Dict[str, Dict[str, str]]
+    async_client: AsyncClient,
+    authorized_customer_client: AsyncClient,
+    test_user_data: Dict[str, Dict[str, str]],
 ):
     """Test accessing a protected route with and without a valid token."""
     # The authorized_customer_client fixture handles token generation and user creation.
@@ -102,7 +109,9 @@ async def test_invalid_token(async_client: AsyncClient):
 
 
 @pytest.mark.asyncio
-async def test_registration_validation(async_client: AsyncClient, test_user_data: Dict[str, Dict[str, str]]):
+async def test_registration_validation(
+    async_client: AsyncClient, test_user_data: Dict[str, Dict[str, str]]
+):
     # Test invalid email test
     invalid_user = {
         "email": "invalid_email",

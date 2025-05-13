@@ -1,4 +1,5 @@
 import asyncio
+import datetime
 from uuid import UUID
 import logging
 from fastapi import BackgroundTasks, HTTPException, Request, status
@@ -12,11 +13,16 @@ from app.models.models import Order, User, Wallet, Transaction, OrderItem
 from app.schemas.marketplace_schemas import TopUpRequestSchema
 from app.schemas.order_schema import OrderResponseSchema
 from app.schemas.status_schema import PaymentStatus, TransactionType
+from app.utils.logger_config import setup_logger
 from app.utils.utils import (
+    get_bank_code,
     get_fund_wallet_payment_link,
+    transfer_money_to_user_account,
     verify_transaction_tx_ref,
 )
 from app.config.config import settings
+
+logger = setup_logger()
 
 
 async def get_wallet(wallet_id, db: AsyncSession):
@@ -348,7 +354,8 @@ async def pay_with_wallet(
 
         # Update the vendor's escrow balance
         seller_wallet_stmt = (
-            select(Wallet).where(Wallet.id == order.vendor_id).with_for_update()
+            select(Wallet).where(Wallet.id ==
+                                 order.vendor_id).with_for_update()
         )
         seller_wallet_result = await db.execute(seller_wallet_stmt)
         seller_wallet = seller_wallet_result.scalar_one_or_none()
@@ -370,3 +377,171 @@ async def pay_with_wallet(
 
         await db.refresh(order)
         return order
+
+
+async def make_withdrawal(db: AsyncSession, current_user: User) -> dict:
+    """Process withdrawal of entire wallet balance"""
+
+    async with db.begin():
+        # Load user with profile and wallet in a single query
+        stmt = (
+            select(User)
+            .options(
+                selectinload(User.profile),
+                selectinload(User.wallet)
+            )
+            .where(User.id == current_user.id)
+            .with_for_update()
+        )
+        result = await db.execute(stmt)
+        user = result.unique().scalar_one_or_none()
+
+        if not user:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="User not found"
+            )
+
+        if user.is_bloccked or user.rider_is_suspended_for_order_cancel:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED,
+                                detail="Your account is suspended. Please contact support.")
+
+        if not user.profile or not user.profile.bank_account_number or not user.profile.bank_name:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Please update your profile with bank account details"
+            )
+
+        if not user.wallet:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Wallet not found"
+            )
+
+        if user.wallet.balance <= 0:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Insufficient funds in wallet"
+            )
+
+        try:
+            # Create withdrawal transaction
+            withdrawal = Transaction(
+                user_id=user.id,
+                wallet_id=user.wallet.id,
+                amount=user.wallet.balance,
+                payment_status=PaymentStatus.PENDING,
+                transaction_type=TransactionType.DEBIT,
+                description=f"Withdrawal to {user.profile.bank_name} - {user.profile.bank_account_number}"
+            )
+            db.add(withdrawal)
+            await db.flush()
+
+            # Get bank code and initiate transfer
+            bank_code = await get_bank_code(user.profile.bank_name)
+            previous_balance = user.wallet.balance
+
+            transfer_response = await transfer_money_to_user_account(
+                bank_code=bank_code,
+                amount=str(previous_balance),
+                narration=f"Wallet withdrawal of ₦{previous_balance:,.2f}",
+                reference=str(withdrawal.id),
+                account_number=user.profile.bank_account_number,
+                beneficiary_name=user.profile.account_holder_name
+            )
+
+            if transfer_response.get("status") == "success":
+                # Update wallet balance
+                user.wallet.balance = 0
+                withdrawal.payment_status = PaymentStatus.PAID
+
+                await db.commit()
+
+                return {
+                    "status": "success",
+                    "message": "Withdrawal processed successfully",
+                    "transaction_id": withdrawal.id,
+                    "amount": previous_balance,
+                    "bank_name": user.profile.bank_name,
+                    "account_number": user.profile.bank_account_number,
+                    "beneficiary": user.profile.full_name if user.profile.full_name else user.profile.business_name,
+                    "timestamp": withdrawal.created_at
+                }
+
+            await db.rollback()
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Bank transfer failed: {transfer_response.get('message', 'Unknown error occured')}"
+            )
+
+        except Exception as e:
+            await db.rollback()
+            logger.error(f"Withdrawal failed: {str(e)}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to process withdrawal"
+            )
+
+# def make_withdrawal(db: Session, user: User):
+#     wallet = db.query(Wallet).filter(Wallet.user_id == user["id"]).first()
+#     charge = db.query(ChargeAndCommission).first()
+#     if wallet.balance <= 0:
+#         raise HTTPException(
+#             status_code=status.HTTP_400_BAD_REQUEST, detail="Insufficient fund")
+
+#     if user["is_suspended"]:
+#         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED,
+#                            detail="Your account is suspended. Please contact support.")
+#     if not user["bank_account_number"]:
+#         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
+#                             detail="Please update your profile with your account number.")
+
+#     withdrawal = Transaction(
+#         user_id=user["id"],
+#         wallet_id=user["wallet_id"],
+#         name=user["company_name"] if user["company_name"] else user["username"],
+#         amount=wallet.balance,
+#         status=PaymentStatus.PENDING,
+#         transaction_type=TransactionType.DEBIT,
+#         created_at=datetime.now(),
+#     )
+#     db.add(withdrawal)
+#     db.flush()
+
+#     wallet.user_id = user["id"]
+#     wallet.company_name = user["company_name"] or None
+#     wallet.username = user["username"] or None
+#     wallet.balance -= withdrawal.amount
+
+#     db.add(withdrawal)
+#     db.commit()
+#     db.refresh(withdrawal)
+
+#     db.refresh(wallet)
+
+#     bank_code = get_bank_code(user["bank_name"])
+#     response = transfer_money_to_user_account(
+#         bank_code=bank_code,
+#         charge=charge,
+#         amount=str(wallet.balance),
+#         narration=f"Withdrawal of ₦ {wallet.balance} from your wallet was successful.",
+#         reference=user["wallet_id"],
+#         account_number=user["bank_account_number"],
+#         beneficiary_name=(
+#             user["account_holder_name"]
+#             if user["account_holder_name"]
+#             else user["company_name"]
+#         ),
+#     )
+
+#     if response.get("status") == "success":
+#         withdrawal.status = PaymentStatus.SUCCESSFUL
+#         db.commit()
+#         db.refresh(withdrawal)
+
+#     return {
+#         "status": response.get("status"),
+#         "message": response.get("message"),
+#         "amount": response.get("data").get("amount"),
+#         "created_at": response.get("data").get("created_at"),
+#     }

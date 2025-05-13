@@ -59,6 +59,11 @@ class User(Base):
     password: Mapped[str]
     is_blocked: Mapped[bool] = mapped_column(default=False)
     is_verified: Mapped[bool] = mapped_column(default=False)
+    rider_is_suspended_for_order_cancel: Mapped[bool] = mapped_column(
+        nullable=True, default=False
+    )
+    rider_is_suspension_until: Mapped[datetime] = mapped_column(nullable=True)
+    order_cancel_count: Mapped[int] = mapped_column(nullable=True, default=0)
     reset_token: Mapped[Optional[str]] = mapped_column(nullable=True, unique=True)
     reset_token_expires: Mapped[Optional[datetime]] = mapped_column(nullable=True)
     user_type: Mapped[str] = mapped_column(  # make it a UserType Enum
@@ -121,7 +126,7 @@ class User(Base):
     deliveries_as_sender: Mapped[list["Delivery"]] = relationship(
         back_populates="sender", foreign_keys="Delivery.sender_id"
     )
- 
+
     refresh_tokens = relationship(
         "RefreshToken", back_populates="user", cascade="all, delete-orphan"
     )
@@ -331,7 +336,6 @@ class ItemImage(Base):
     item: Mapped["Item"] = relationship(back_populates="images")
 
 
-
 class Order(Base):
     __tablename__ = "orders"
 
@@ -445,14 +449,3 @@ class ChargeAndCommission(Base):
     product_commission_percentage: Mapped[Decimal]
     created_at: Mapped[datetime] = mapped_column(default=datetime.today)
     updated_at: Mapped[datetime] = mapped_column(default=datetime.today)
-
-
-class FailedPayment(Base):
-    __tablename__ = "failed_payments"
-
-    transaction_id: Mapped[str] = mapped_column(primary_key=True, unique=True)
-    item_id: Mapped[str]
-    status: Mapped[str]
-    item_name: Mapped[str]
-    total_cost: Mapped[Decimal]
-    date: Mapped[datetime]

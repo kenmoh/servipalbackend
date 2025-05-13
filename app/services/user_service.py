@@ -13,6 +13,7 @@ from app.schemas.user_schemas import (
     UserProfileResponse,
     UserResponse,
     WalletSchema,
+    VendorUserResponse
 )
 
 CACHE_TTL = 3600
@@ -203,3 +204,133 @@ async def get_user_with_profile(db: AsyncSession, user_id: UUID) -> UserProfileR
         # Cache the user data
         await set_cached_user(user_id, user.dict())
     return user
+
+
+# <<<<< --------- GET USER BY FOOD CATEGORY ---------- >>>>>
+from uuid import UUID
+from typing import List, Optional
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
+from sqlalchemy.orm import selectinload
+from app.models.models import User, Item, Category
+from app.schemas.item_schemas import ItemType
+
+async def get_users_by_food_category(
+    db: AsyncSession, category_id: Optional[UUID] = None
+) -> List[VendorUserResponse]:
+    """
+    Retrieve users who have items with item_type='food' in a specific category.
+    If no users are found for the category, return all users with food items.
+    If category_id is None, return all users with food items.
+
+    Args:
+        db: The database session.
+        category_id: Optional UUID of the category to filter by.
+
+    Returns:
+        List of dictionaries containing user details.
+    """
+    # Base query to get users with food items
+    stmt = (
+        select(User)
+        .join(Item, Item.user_id == User.id)
+        .where(Item.item_type == ItemType.FOOD)
+        .options(
+            selectinload(User.profile).selectinload(Profile.profile_image),
+            selectinload(User.profile).selectinload(Profile.backdrop)
+        )
+    )
+
+    # Add category filter if provided
+    if category_id:
+        stmt = stmt.where(Item.category_id == category_id)
+
+    # Execute query
+    result = await db.execute(stmt)
+    users = result.scalars().unique().all()
+
+    # If no users found for the specific category, fall back to all food items
+    if not users and category_id:
+        stmt = (
+            select(User)
+            .join(Item, Item.user_id == User.id)
+            .where(Item.item_type == ItemType.FOOD.value)
+            .options(
+                selectinload(User.profile).selectinload(Profile.profile_image),
+                selectinload(User.profile).selectinload(Profile.backdrop)
+            )
+        )
+        result = await db.execute(stmt)
+        users = result.scalars().unique().all()
+
+    # Format the response
+    response = []
+    for user in users:
+        response.append({
+            "id": user.id,
+            "company_name": user.profile.business_name if user.profile else None,
+            "email": user.email,
+            "phone_number": user.profile.phone_number if user.profile else None,
+            "profile_image": user.profile.profile_image.url if user.profile and user.profile.profile_image else None,
+            "location": user.profile.business_address if user.profile else None,
+            "company_background_image": user.profile.backdrop.url if user.profile.backdrop else None,
+            "opening_hour": user.profile.opening_hours if user.profile else None,
+            "closing_hour": user.profile.closing_hours if user.profile else None,
+            # "rating": await get_vendor_average_rating(user.id, db),
+        })
+
+    return response
+
+# <<<<< --------- GET LAUNDRY SERVICE PROVIDERS ---------- >>>>>
+async def get_users_by_laundry_services(db: AsyncSession) -> List[VendorUserResponse]:
+    """
+    Retrieve users who have items with item_type='laundry'.
+
+    Args:
+        db: The database session.
+
+    Returns:
+        List of dictionaries containing user details in the specified format.
+
+    Raises:
+        HTTPException: If an error occurs during the database query.
+    """
+    try:
+        # Query to get users with laundry items
+        stmt = (
+            select(User)
+            .join(Item, Item.user_id == User.id)
+            .where(Item.item_type == ItemType.LAUNDRY.value)
+            .options(
+                selectinload(User.profile).selectinload(Profile.profile_image),
+                selectinload(User.profile).selectinload(Profile.backdrop)
+            )
+        )
+
+        # Execute query
+        result = await db.execute(stmt)
+        users = result.scalars().unique().all()
+
+        # Format the response
+        response = []
+        for user in users:
+            response.append({
+                "id": user.id,
+                "company_name": user.profile.business_name if user.profile else None,
+                "email": user.email,
+                "phone_number": user.profile.phone_number if user.profile else None,
+                "profile_image": user.profile.profile_image.url if user.profile and user.profile.profile_image else None,
+                "location": user.profile.business_address if user.profile else None,
+                "company_background_image": user.profile.backdrop.url if user.profile.backdrop else None,
+                "opening_hour": user.profile.opening_hours if user.profile else None,
+                "closing_hour": user.profile.closing_hours if user.profile else None,
+                "rating": await get_vendor_average_rating(user.id, db),
+            })
+
+        return response
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to retrieve laundry service providers: {str(e)}"
+        )

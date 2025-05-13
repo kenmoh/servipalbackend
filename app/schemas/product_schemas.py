@@ -13,7 +13,7 @@ class ProductBase(BaseModel):
     price: Decimal = Form(...)
     stock: int = Form(...)
     category_id: UUID
-    sizes: Optional[str] = Form(None)
+    sizes: Optional[str]
     colors: Optional[List[str]] = Form(None)
     in_stock: Optional[bool] = True
 
@@ -31,8 +31,8 @@ class ProductUpdate(ProductBase):
 # Schema for representing a product in responses (output)
 class ProductResponse(ProductBase):
     id: UUID
-    seller_id: UUID = Field(alias='user_id')
-    total_sold: int  = 0
+    seller_id: UUID = Field(alias="user_id")
+    total_sold: int = 0
     created_at: datetime
     updated_at: datetime
 

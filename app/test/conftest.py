@@ -97,22 +97,22 @@ def test_user_data() -> Dict[str, Dict[str, Any]]:
         "customer": {
             "email": "customer@example.com",
             "password": common_password,
-            "user_type": UserType.CUSTOMER
+            "user_type": UserType.CUSTOMER,
         },
         "vendor": {
             "email": "vendor@example.com",
             "password": common_password,
-            "user_type": UserType.VENDOR
+            "user_type": UserType.VENDOR,
         },
         "dispatch": {
             "email": "dispatch@example.com",
             "password": common_password,
-            "user_type": UserType.DISPATCH
+            "user_type": UserType.DISPATCH,
         },
         "admin": {
             "email": "admin@example.com",
             "password": common_password,
-            "user_type": UserType.ADMIN
+            "user_type": UserType.ADMIN,
         },
     }
 
@@ -144,7 +144,9 @@ async def _create_user_in_db(db: AsyncSession, user_details: Dict[str, Any]) -> 
 
 
 @pytest.fixture
-async def customer_user_and_token(db_session: AsyncSession, test_user_data: Dict[str, Dict[str, Any]]) -> Tuple[User, str]:
+async def customer_user_and_token(
+    db_session: AsyncSession, test_user_data: Dict[str, Dict[str, Any]]
+) -> Tuple[User, str]:
     user_details = test_user_data["customer"]
     user = await _create_user_in_db(db_session, user_details)
     token = create_access_token({"sub": user.email})
@@ -152,7 +154,9 @@ async def customer_user_and_token(db_session: AsyncSession, test_user_data: Dict
 
 
 @pytest.fixture
-async def vendor_user_and_token(db_session: AsyncSession, test_user_data: Dict[str, Dict[str, Any]]) -> Tuple[User, str]:
+async def vendor_user_and_token(
+    db_session: AsyncSession, test_user_data: Dict[str, Dict[str, Any]]
+) -> Tuple[User, str]:
     user_details = test_user_data["vendor"]
     user = await _create_user_in_db(db_session, user_details)
     token = create_access_token({"sub": user.email})
@@ -160,7 +164,9 @@ async def vendor_user_and_token(db_session: AsyncSession, test_user_data: Dict[s
 
 
 @pytest.fixture
-async def dispatch_user_and_token(db_session: AsyncSession, test_user_data: Dict[str, Dict[str, Any]]) -> Tuple[User, str]:
+async def dispatch_user_and_token(
+    db_session: AsyncSession, test_user_data: Dict[str, Dict[str, Any]]
+) -> Tuple[User, str]:
     user_details = test_user_data["dispatch"]
     user = await _create_user_in_db(db_session, user_details)
     token = create_access_token({"sub": user.email})
@@ -168,7 +174,9 @@ async def dispatch_user_and_token(db_session: AsyncSession, test_user_data: Dict
 
 
 @pytest.fixture
-async def admin_user_and_token(db_session: AsyncSession, test_user_data: Dict[str, Dict[str, Any]]) -> Tuple[User, str]:
+async def admin_user_and_token(
+    db_session: AsyncSession, test_user_data: Dict[str, Dict[str, Any]]
+) -> Tuple[User, str]:
     user_details = test_user_data["admin"]
     user = await _create_user_in_db(db_session, user_details)
     token = create_access_token({"sub": user.email})
@@ -176,7 +184,9 @@ async def admin_user_and_token(db_session: AsyncSession, test_user_data: Dict[st
 
 
 @pytest.fixture
-async def authorized_customer_client(async_client: AsyncClient, customer_user_and_token: Tuple[User, str]):
+async def authorized_customer_client(
+    async_client: AsyncClient, customer_user_and_token: Tuple[User, str]
+):
     _, token = customer_user_and_token
     async_client.headers = {
         **async_client.headers,
@@ -186,7 +196,9 @@ async def authorized_customer_client(async_client: AsyncClient, customer_user_an
 
 
 @pytest.fixture
-async def authorized_vendor_client(async_client: AsyncClient, vendor_user_and_token: Tuple[User, str]):
+async def authorized_vendor_client(
+    async_client: AsyncClient, vendor_user_and_token: Tuple[User, str]
+):
     _, token = vendor_user_and_token
     async_client.headers = {
         **async_client.headers,
@@ -196,7 +208,9 @@ async def authorized_vendor_client(async_client: AsyncClient, vendor_user_and_to
 
 
 @pytest.fixture
-async def authorized_dispatch_client(async_client: AsyncClient, dispatch_user_and_token: Tuple[User, str]):
+async def authorized_dispatch_client(
+    async_client: AsyncClient, dispatch_user_and_token: Tuple[User, str]
+):
     _, token = dispatch_user_and_token
     async_client.headers = {
         **async_client.headers,
@@ -206,13 +220,16 @@ async def authorized_dispatch_client(async_client: AsyncClient, dispatch_user_an
 
 
 @pytest.fixture
-async def authorized_admin_client(async_client: AsyncClient, admin_user_and_token: Tuple[User, str]):
+async def authorized_admin_client(
+    async_client: AsyncClient, admin_user_and_token: Tuple[User, str]
+):
     _, token = admin_user_and_token
     async_client.headers = {
         **async_client.headers,
         "Authorization": f"Bearer {token}",
     }
     return async_client
+
 
 # The `async_client` fixture can be used directly for unauthorized async requests.
 # The `sync_test_client` fixture can be used directly for unauthorized sync requests.

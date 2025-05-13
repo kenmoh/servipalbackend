@@ -409,3 +409,16 @@ class AdminSessionResponse(BaseModel):
 class VerificationSchema(BaseModel):
     email_code: str
     phone_code: str
+
+
+class VendorUserResponse(BaseModel):
+    id: str
+    company_name: str | None = None
+    email: str
+    phone_number: str
+    profile_image: str | None = None
+    location: str | None = None
+    company_background_image: str | None = None
+    opening_hour: time | None = None
+    closing_hour: time | None = None
+    rating: RatingSchema

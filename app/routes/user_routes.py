@@ -14,6 +14,7 @@ from app.schemas.user_schemas import (
     UserResponse,
     WalletRespose,
     WalletSchema,
+    VendorUserResponse
 )
 from app.services import user_service
 from app.utils.s3_service import add_profile_image, update_image
@@ -96,3 +97,28 @@ async def get_user_details(
     db: AsyncSession = Depends(get_db),
 ) -> UserProfileResponse:
     return await user_service.get_user_with_profile(db=db, user_id=user_id)
+
+
+@router.get("/restaurants")
+async def get_restaurants(
+    category_id: Optional[UUID] = None,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+) -> List[VendorUserResponse]:
+    """
+    Get  all restaurant users, optionally filtered by category.
+    """
+    try:
+        return await user_service.get_users_by_food_category(db, category_id)
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to retrieve food vendors: {str(e)}"
+        )
+
+@router.get("/laundry-vendors", response_model=List[VendorUserResponse])
+async def get_laundry_vendors(db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)) -> List[dict]:
+    """
+    Get users who provide laundry services.
+    """
+    return await user_service.get_users_by_laundry_services(db)

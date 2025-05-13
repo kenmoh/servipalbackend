@@ -28,7 +28,7 @@ router = APIRouter(prefix="/products", tags=["Products"])
     description="Allows an authenticated user to list a new product for sale.",
 )
 async def create_new_product(
-    product_in: ProductCreate=Depends(),
+    product_in: ProductCreate = Depends(),
     images: list[UploadFile] = File(...),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),

@@ -8,7 +8,7 @@ import uuid
 from fastapi import HTTPException, status
 import httpx
 from redis import Redis
-from app.models.models import User
+from app.models.models import ChargeAndCommission, User
 from app.schemas.status_schema import UserType
 from app.config.config import settings, redis_client
 
@@ -232,7 +232,7 @@ def generate_secure_token(length: int = 32) -> str:
 
 def generate_expiry(hours: int = 24) -> datetime:
     """Generate token expiry timestamp"""
-    return datetime.utcnow() + timedelta(hours=hours)
+    return datetime.now() + timedelta(hours=hours)
 
 
 # SMS
@@ -255,6 +255,7 @@ def generate_expiry(hours: int = 24) -> datetime:
 
 #     return response
 
+
 async def send_sms(phone_number: str, message: str) -> dict:
     """
     Send SMS using Termii API with httpx async client
@@ -275,36 +276,54 @@ async def send_sms(phone_number: str, message: str) -> dict:
         "sms": message,
         "type": "plain",
         "channel": "generic",
-        "api_key": api_key
+        "api_key": api_key,
     }
 
-    headers = {
-        "Content-Type": "application/json"
-    }
+    headers = {"Content-Type": "application/json"}
 
     try:
         async with httpx.AsyncClient(timeout=30.0) as client:
-            response = await client.post(
-                termii_url,
-                json=payload,
-                headers=headers
-            )
+            response = await client.post(termii_url, json=payload, headers=headers)
             response.raise_for_status()
             return response.json()
 
     except httpx.HTTPStatusError as e:
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=f"SMS gateway error: {str(e)}"
+            detail=f"SMS gateway error: {str(e)}",
         )
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to send SMS: {str(e)}"
+            detail=f"Failed to send SMS: {str(e)}",
         )
 
 
-def transfer_money_to_user_account(
+async def get_bank_code(bank_name: str):
+    headers = {"Authorization": f"Bearer {settings.FLW_SECRET_KEY}"}
+
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.get(banks_url, headers=headers)
+            data = response.json()['data']
+            for bank in data:
+                if bank.get("name") == bank_name:
+                    return bank["code"]
+                return None
+
+    except httpx.HTTPStatusError as e:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Payment gateway error: {str(e)}",
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to retrieve banl code: {str(e)}",
+        )
+
+
+async def transfer_money_to_user_account(
     bank_code: str,
     account_number: str,
     amount: str,
@@ -313,7 +332,7 @@ def transfer_money_to_user_account(
     beneficiary_name: str,
     charge: ChargeAndCommission,
 ):
-    headers = {"Authorization": f"Bearer {os.getenv('FLW_SECRET_KEY')}"}
+    headers = {"Authorization": f"Bearer {settings.FLW_SECRET_KEY}"}
     payload = {
         "account_bank": bank_code,
         "account_number": account_number,
@@ -337,45 +356,44 @@ def transfer_money_to_user_account(
         "beneficiary_name": beneficiary_name,
     }
 
-
-   try:
-    async with httpx.AsyncClient(timeout=30.0) as client:
-        response = await client.post(
-            f"{flutterwave_base_url}/transfers", json=payload, headers=headers,
-            json=payload,
-            headers=headers
-        )
-
-        response_data = response.json()
-
-        if response_data.get("status") == "success":
-            return response_data
-
-        else:
-            retry_response = requests.post(
-                f"{flutterwave_base_url}/transfers/{response_data.get('data')['id']}/retries",
-                json=payload,
-                headers=headers,
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.post(
+                f"{flutterwave_base_url}/transfers", json=payload, headers=headers
             )
-            if retry_response.json().get("status") == "success":
+
+            response_data = response.json()
+
+            if response_data.get("status") == "success":
                 return response_data
+
             else:
-                return {
-                    "status": "failed",
-                    "message": retry_response.json().get("message"),
-                    "amount": retry_response.json().get("data").get("amount"),
-                    "created_at": retry_response.json().get("data").get("created_at"),
-                }
+                retry_response = client.post(
+                    f"{flutterwave_base_url}/transfers/{response_data.get('data')['id']}/retries",
+                    json=payload,
+                    headers=headers,
+                )
+                if retry_response.json().get("status") == "success":
+                    return response_data
+                else:
+                    return {
+                        "status": "failed",
+                        "message": retry_response.json().get("message"),
+                        "amount": retry_response.json().get("data").get("amount"),
+                        "created_at": retry_response.json()
+                        .get("data")
+                        .get("created_at"),
+                    }
 
     except httpx.HTTPStatusError as e:
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=f"Payment gateway error: {str(e)}"
+            detail=f"Payment gateway error: {str(e)}",
         )
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to withdraw: {str(e)}"
+            detail=f"Failed to withdraw: {str(e)}",
         )
 
 

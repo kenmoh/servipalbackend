@@ -19,7 +19,7 @@ class ItemType(str, Enum):
     FOOD = "food"
     PACKAGE = "package"
     LAUNDRY = "laundry"
-    PRODUCT = 'product'
+    PRODUCT = "product"
 
 
 class ItemCreate(BaseModel):

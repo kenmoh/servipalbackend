@@ -17,7 +17,10 @@ from app.utils.s3_service import upload_multiple_images
 
 
 async def create_product(
-    db: AsyncSession, product_data: ProductCreate, seller: User, images: list[UploadFile]
+    db: AsyncSession,
+    product_data: ProductCreate,
+    seller: User,
+    images: list[UploadFile],
 ) -> ProductResponse:
     """
     Creates a new product listing for the given seller.
@@ -41,10 +44,11 @@ async def create_product(
             detail=f"Category with id {product_data.category_id} not found.",
         )
 
-
     try:
         # Create product first
-        new_product = Item(**product_data.model_dump(), user_id=seller.id, item_type=ItemType.PRODUCT)
+        new_product = Item(
+            **product_data.model_dump(), user_id=seller.id, item_type=ItemType.PRODUCT
+        )
         db.add(new_product)
         await db.flush()
 
@@ -68,11 +72,11 @@ async def create_product(
         print
         await db.rollback()
         # Check if the error is due to the unique constraint violation
-        if isinstance(e.orig, UniqueViolationError) and 'uq_name_item' in str(e.orig):
-            raise HTTPException(status_code=status.HTTP_409_CONFLICT,
-                detail=f"You already have an item with this name {item_data['name']}"
+        if isinstance(e.orig, UniqueViolationError) and "uq_name_item" in str(e.orig):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"You already have an item with this name {product_data['name']}",
             )
-        raise  
     except Exception as e:
         await db.rollback()
         # Log the error e

@@ -1,11 +1,16 @@
 from contextlib import asynccontextmanager
-from functools import lru_cache
+import logging
+import asyncio
+from functools import partial
+
 
 from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
+from apscheduler.schedulers.background import BackgroundScheduler
+from apscheduler.triggers.interval import IntervalTrigger
 from app.database.database import async_session, get_db
 from app.routes import (
     auth_routes,
@@ -16,20 +21,103 @@ from app.routes import (
     product_routes,
     marketplace_routes,
 )
+
+from app.utils.cron_job import (
+    reset_user_suspension,
+    suspend_user_with_order_cancel_count_equal_3,
+)
+from app.utils.logger_config import setup_logger
 from app.utils.utils import get_all_banks
 from app.config.config import redis_client
 
+# Configure logging
+# logging.basicConfig(level=logging.INFO)
+# logger = logging.getLogger(__name__)
+logger = setup_logger()
 
-# scheduler = BlockingScheduler()
+scheduler = BackgroundScheduler()
+trigger = IntervalTrigger(minutes=5)
+
+
+async def logged_reset_user_suspension():
+    logger.info("Starting user suspension reset job...")
+    try:
+        await reset_user_suspension()
+        logger.info("User suspension reset job completed successfully")
+    except Exception as e:
+        logger.error(f"Error in reset_user_suspension: {str(e)}")
+
+
+async def logged_suspend_users():
+    logger.info("Starting user suspension check job...")
+    try:
+        await suspend_user_with_order_cancel_count_equal_3()
+        logger.info("User suspension check job completed successfully")
+    except Exception as e:
+        logger.error(
+            f"Error in suspend_user_with_order_cancel_count_equal_3: {str(e)}")
+
+
+def run_async(loop, coro):
+    """Run coroutine in the given event loop"""
+    asyncio.run_coroutine_threadsafe(coro, loop)
+
+
+# Get event loop for async operations
+loop = asyncio.get_event_loop()
+
+
+# scheduler.add_job(reset_user_suspension, trigger=trigger)
+# scheduler.add_job(
+#     suspend_user_with_order_cancel_count_equal_3, trigger=trigger)
+
+scheduler.add_job(
+    partial(run_async, loop, reset_user_suspension()),
+    trigger=trigger,
+    id='reset_suspension'
+)
+
+scheduler.add_job(
+    partial(run_async, loop, suspend_user_with_order_cancel_count_equal_3()),
+    trigger=trigger,
+    id='suspend_users'
+)
+
+scheduler.start()
 
 templates = Jinja2Templates(directory="templates")
 
 
+# @asynccontextmanager
+# async def lifespan(application: FastAPI):
+#     try:
+#         print("Starting up...")
+#         async with async_session() as db:
+#             await db.execute(text("SELECT 1"))
+#             await db.execute(
+#                 text(
+#                     "CREATE SEQUENCE IF NOT EXISTS order_number_seq START WITH 1000 INCREMENT BY 1"
+#                 )
+#             )
+#         print("Database connection successful.")
+#         # Check Redis connection
+#         redis_client.ping()
+#         print("Redis connection successful.")
+
+#         yield
+#         print('Scheduler started...')
+#         scheduler.shutdown()
+
+#     finally:
+#         print("Shutting down...")
+#         await db.close()
+
 @asynccontextmanager
 async def lifespan(application: FastAPI):
-    # db = async_session()
     try:
         print("Starting up...")
+        logger.info("Initializing application...")
+
         async with async_session() as db:
             await db.execute(text("SELECT 1"))
             await db.execute(
@@ -37,19 +125,26 @@ async def lifespan(application: FastAPI):
                     "CREATE SEQUENCE IF NOT EXISTS order_number_seq START WITH 1000 INCREMENT BY 1"
                 )
             )
+        logger.info("Database connection successful")
 
-        print("Database connection successful.")
         # Check Redis connection
         redis_client.ping()
-        print("Redis connection successful.")
+        logger.info("Redis connection successful")
+
+        # Log scheduler status
+        logger.info(f"Scheduler running: {scheduler.running}")
+        logger.info(f"Scheduled jobs: {scheduler.get_jobs()}")
 
         yield
-        # scheduler.start()
-        # scheduler.add_job(poll_for_failed_tranx, "interval", minutes=30)
-    finally:
-        print("Shutting down...")
-        await db.close()
 
+        logger.info("Shutting down scheduler...")
+        scheduler.shutdown()
+        logger.info("Scheduler shutdown complete")
+
+    finally:
+        logger.info("Cleaning up resources...")
+        await db.close()
+        logger.info("Cleanup complete")
 
 app = FastAPI(
     title="ServiPal",

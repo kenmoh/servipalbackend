@@ -17,6 +17,8 @@ class PaymentMethod(str, Enum):
 
 class ProductBuyRequest(BaseModel):
     quantity: int = Field(1, gt=0, description="Number of units to purchase")
+    colors: list[str] = []
+    sizes: list[str] = []
 
 
 class TopUpRequestSchema(BaseModel):
