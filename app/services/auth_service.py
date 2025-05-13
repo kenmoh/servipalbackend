@@ -113,6 +113,9 @@ async def create_user(db: AsyncSession, user_data: UserCreate) -> UserBase:
 
         await db.refresh(user)
 
+        redis_client.delete('all_users')
+
+
         # # Generate and send verification codes
         # email_code, phone_code = await generate_verification_codes(user, db)
         # await send_verification_codes(user, email_code, phone_code, db)

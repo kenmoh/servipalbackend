@@ -48,7 +48,8 @@ def invalidate_user_cache(user_id: UUID) -> None:
 async def get_users(db: AsyncSession) -> list[UserResponse]:
     cached_users = redis_client.get("all_users")
     if cached_users:
-        return json.loads(cached_users)
+        users_data = json.loads(cached_users)
+        return [UserResponse.model_validate(user_data) for user_data in users_data]
 
     stmt = select(User).options(
         selectinload(User.profile),
@@ -59,9 +60,14 @@ async def get_users(db: AsyncSession) -> list[UserResponse]:
     users = result.scalars().all()
 
     # Cache the users
-    redis_client.set("all_users", json.dumps(users, default=str), ex=CACHE_TTL)
+    # redis_client.set("all_users", json.dumps(users, default=str), ex=CACHE_TTL)
+    # Convert SQLAlchemy -> Pydantic -> dict
+    user_responses = [UserResponse.all_users(user) for user in users]
+    users_dict = [user.dict() for user in user_responses]
 
-    return users
+    redis_client.set("all_users", json.dumps(users_dict, default=str), ex=CACHE_TTL)
+
+    return user_responses
 
 
 # async def get_user_wallets(db: AsyncSession) -> list[WalletRespose]:
