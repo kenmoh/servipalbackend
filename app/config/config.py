@@ -75,16 +75,20 @@ class Settings(BaseSettings):
 settings = Settings()
 
 
-redis_url = "redis://localhost"
+# redis_url = "redis://localhost"
 
-redis_client = redis.Redis(
-    host=settings.REDIS_HOST,
-    port=settings.REDIS_PORT,
-    db=settings.REDIS_DB,
-    password=settings.REDIS_PASSWORD,
-    decode_responses=True,
-    ssl=True
-)
+redis_url = "rediss://red-d0hplaq4d50c73dc3cmg:LIimjEyTIacx9gSwjpGYcX9CNFfvmKZB@oregon-keyvalue.render.com:6379"
+
+redis_client = redis.Redis.from_url(redis_url, decode_responses=True)
+
+# redis_client = redis.Redis(
+#     host=settings.REDIS_HOST,
+#     port=settings.REDIS_PORT,
+#     db=settings.REDIS_DB,
+#     password=settings.REDIS_PASSWORD,
+#     decode_responses=True,
+#     ssl=True
+# )
 
 
 email_conf = ConnectionConfig(
