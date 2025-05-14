@@ -103,7 +103,7 @@ class OrderAndDeliverySchema(BaseModel):
     dropoff_coordinates: Tuple[float, float]
     distance: Decimal
     require_delivery: RequireDeliverySchema
-    # duration: Decimal
+    duration: Decimal
     additional_info: str | None = None
 
 

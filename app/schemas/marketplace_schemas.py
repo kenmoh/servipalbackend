@@ -19,10 +19,12 @@ class ProductBuyRequest(BaseModel):
     quantity: int = Field(1, gt=0, description="Number of units to purchase")
     colors: list[str] = []
     sizes: list[str] = []
+    additional_info: str | None = None
 
 
 class TopUpRequestSchema(BaseModel):
-    amount: Decimal = Field(1, ge=1000, le=100000, description="Amount to top up")
+    amount: Decimal = Field(1, ge=1000, le=100000,
+                            description="Amount to top up")
 
 
 class TransactionResponse(BaseModel):

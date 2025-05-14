@@ -103,6 +103,7 @@ async def buy_product(
             quantity=buy_request.quantity,
             colors=buy_request.colors,
             sizes=buy_request.sizes,
+            additional_info=buy_request.additional_info,
         )
         db.add(order_item)
         await db.flush()
@@ -257,7 +258,8 @@ def get_cached_order(order_id: UUID) -> Optional[dict]:
 def set_cached_order(order_id: UUID, order_data: dict) -> None:
     """Set order in cache"""
     redis_client.setex(
-        f"order:{str(order_id)}", CACHE_TTL, json.dumps(order_data, default=str)
+        f"order:{str(order_id)}", CACHE_TTL, json.dumps(
+            order_data, default=str)
     )
 
 
