@@ -18,6 +18,7 @@ from app.schemas.user_schemas import (
     UserBase,
     UserCreate,
     VerificationSchema,
+    CreateUserSchema
 )
 from app.services import auth_service
 
@@ -67,7 +68,7 @@ async def logout(
 
 @router.post("/register", status_code=status.HTTP_201_CREATED)
 async def create_user(
-    user_data: UserCreate,
+    user_data: CreateUserSchema,
     db: AsyncSession = Depends(get_db),
 ) -> UserBase:
     """Logout user by revoking their refresh token"""

@@ -3,7 +3,7 @@ from dataclasses import dataclass
 from decimal import Decimal
 from uuid import UUID
 from fastapi import Depends, Form
-from pydantic import EmailStr, BaseModel, Field, constr
+from pydantic import EmailStr, BaseModel, Field, constr, ConfigDict
 from app.schemas.status_schema import AccountStatus, TransactionType, UserType
 
 
@@ -314,9 +314,11 @@ class UserBase(BaseModel):
     email: EmailStr
     user_type: UserType
 
+    model_config = ConfigDict(from_attributes=True)
+
 
 class ProfileSchema(BaseModel):
-    phone_number: str | None = None
+    phone_number: str
     bike_number: str | None = None
     bank_account_number: str | None = None
     bank_name: str | None = None
@@ -327,6 +329,8 @@ class ProfileSchema(BaseModel):
     closing_hours: datetime | None = None
     opening_hours: datetime | None = None
 
+    model_config = ConfigDict(from_attributes=True)
+
 
 class TransactionSchema(BaseModel):
     id: UUID
@@ -335,12 +339,16 @@ class TransactionSchema(BaseModel):
     transaction_type: TransactionType
     created_at: datetime
 
+    model_config = ConfigDict(from_attributes=True)
+
 
 class WalletSchema(BaseModel):
     id: UUID
     balance: Decimal
     escrow_balance: Decimal
     transactions: list[TransactionSchema] = []
+
+    model_config = ConfigDict(from_attributes=True)
 
 
 class UserResponse(UserBase):

@@ -20,6 +20,7 @@ from app.schemas.user_schemas import (
     UserBase,
     UserCreate,
     UserLogin,
+    CreateUserSchema
 )
 from app.models.models import Profile, Session, User, RefreshToken, Wallet
 from app.config.config import settings, email_conf
@@ -73,7 +74,7 @@ async def login_user(db: AsyncSession, login_data: UserLogin) -> User:
     return user
 
 
-async def create_user(db: AsyncSession, user_data: UserCreate) -> UserBase:
+async def create_user(db: AsyncSession, user_data: CreateUserSchema) -> UserBase:
     """
     Create a new user in the database.
 
@@ -103,14 +104,21 @@ async def create_user(db: AsyncSession, user_data: UserCreate) -> UserBase:
 
         # Add user to database
         db.add(user)
-        await db.commit()
+        await db.flush()
+
+        profile = Profile(user_id=user.id, phone_number=user_data.phone_number)
+        db.add(profile)
+        
 
         if user.user_type != UserType.RIDER:
             # Create user wallet
             wallet = Wallet(id=user.id, balance=0, escrow_balance=0)
             db.add(wallet)
-            await db.commit()
+            # await db.commit()
 
+
+        await db.commit()
+        await db.refresh(profile)
         await db.refresh(user)
 
         redis_client.delete('all_users')

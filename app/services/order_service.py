@@ -1,5 +1,4 @@
 from datetime import timedelta, datetime
-from logging import Logger
 from typing import Optional
 from sqlalchemy import or_, select, update, insert
 from sqlalchemy.exc import IntegrityError
@@ -42,7 +41,7 @@ from app.schemas.delivery_schemas import (
 from app.schemas.item_schemas import ItemType
 
 from app.schemas.status_schema import RequireDeliverySchema
-from app.schemas.user_schemas import TransactionSchema, UserType, WalletRespose
+from app.schemas.user_schemas import UserType, WalletRespose
 from app.utils.utils import (
     get_dispatch_id,
     get_payment_link,
@@ -686,6 +685,24 @@ async def cancel_delivery(
             DeliveryStatus.RECEIVED,
             DeliveryStatus.LAUNDRY_DELIVERES_TO_VENDORR,
         ]:
+
+            # vendor_wallet = await fetch_wallet(db, delivery.vendor_id)
+            # vendor_escrow = vendor_wallet.escrow_balance or 0
+
+            # # Vendor payment
+            # vendor_tx = await create_wallet_transaction(
+            #     db,
+            #     vendor_wallet.id,
+            #     delivery.delivery_fee or 0,
+            #     TransactionType.CREDIT,
+            # )
+            # await update_wallet_balance(
+            #     db,
+            #     wallet_id=vendor_wallet.id,
+            #     new_balance=vendor_wallet.balance + vendor_tx.amount,
+            #     escrow_balance=vendor_escrow,
+            # )
+
             result = await db.execute(
                 update(Delivery)
                 .where(Delivery.id == delivery_id)
@@ -693,6 +710,7 @@ async def cancel_delivery(
                 .values(delivery_status=DeliveryStatus.CANCELLED)
             )
             await db.commit()
+            # UPDATE USER WALLET HERE
             delivery_result = result.scalar_one_or_none()
             invalidate_delivery_cache(delivery_result.id)
             return
@@ -724,6 +742,8 @@ async def cancel_delivery(
             )
 
             current_user.order_cancel_count += 1
+
+            # UPDATE RIDER ESCROW BALANCE HERE
             await db.commit()
 
             delivery_result = result.scalar_one_or_none()
