@@ -2,7 +2,7 @@ from datetime import datetime, timedelta
 import secrets
 from uuid import UUID
 from datetime import datetime
-from fastapi import HTTPException, Request, status
+from fastapi import BackgroundTasks, HTTPException, Request, status
 
 # from psycopg2 import IntegrityError
 from fastapi_mail import FastMail, MessageSchema
@@ -27,6 +27,7 @@ from app.config.config import settings, email_conf
 from app.utils.utils import (
     check_login_attempts,
     record_failed_attempt,
+    send_sms,
     validate_password,
 )
 from app.config.config import redis_client
@@ -74,7 +75,7 @@ async def login_user(db: AsyncSession, login_data: UserLogin) -> User:
     return user
 
 
-async def create_user(db: AsyncSession, user_data: CreateUserSchema) -> UserBase:
+async def create_user(db: AsyncSession, user_data: CreateUserSchema, background_tasks: BackgroundTasks) -> UserBase:
     """
     Create a new user in the database.
 
@@ -108,7 +109,6 @@ async def create_user(db: AsyncSession, user_data: CreateUserSchema) -> UserBase
 
         profile = Profile(user_id=user.id, phone_number=user_data.phone_number)
         db.add(profile)
-        
 
         if user.user_type != UserType.RIDER:
             # Create user wallet
@@ -116,17 +116,18 @@ async def create_user(db: AsyncSession, user_data: CreateUserSchema) -> UserBase
             db.add(wallet)
             # await db.commit()
 
-
         await db.commit()
         await db.refresh(profile)
         await db.refresh(user)
 
         redis_client.delete('all_users')
 
+        # Generate and send verification codes
+        email_code, phone_code = await generate_verification_codes(user, db)
 
-        # # Generate and send verification codes
-        # email_code, phone_code = await generate_verification_codes(user, db)
-        # await send_verification_codes(user, email_code, phone_code, db)
+        # Send verification code to phone and email
+        background_tasks.add_task(
+            send_verification_codes, user, email_code, phone_code, db)
 
         return user
     except IntegrityError as e:
@@ -140,7 +141,7 @@ async def create_user(db: AsyncSession, user_data: CreateUserSchema) -> UserBase
 
 
 async def create_new_rider(
-    data: RiderCreate, db: AsyncSession, current_user: User
+    data: RiderCreate, db: AsyncSession, current_user: User, background_tasks: BackgroundTasks
 ) -> UserBase:
     """
     Creates a new rider user and assigns them to the current dispatch user.
@@ -159,7 +160,8 @@ async def create_new_rider(
     validate_password(data.password)
 
     stmt = (
-        select(User).where(User.id == current_user.id).options(joinedload(User.profile))
+        select(User).where(User.id == current_user.id).options(
+            joinedload(User.profile))
     )
     result = await db.execute(stmt)
     user = result.scalar_one_or_none()
@@ -245,6 +247,13 @@ async def create_new_rider(
         }
 
         redis_client.delete('all_users')
+
+        # Generate and send verification codes
+        email_code, phone_code = await generate_verification_codes(user, db)
+
+        # Send verification code to phone and email
+        background_tasks.add_task(
+            send_verification_codes, user, email_code, phone_code, db)
 
         return UserBase(**rider_dict)
     except IntegrityError as e:
@@ -651,10 +660,10 @@ async def generate_verification_codes(user: User, db: AsyncSession) -> tuple[str
     email_code = f"{secrets.randbelow(1000000):06d}"
     phone_code = f"{secrets.randbelow(1000000):06d}"
 
-    # Set expiration
+    # Set expiration time (10 minutes from now)
     expires = datetime.now() + timedelta(minutes=10)
 
-    # Update user record
+    # Update user record with codes and expiration
     user.email_verification_code = email_code
     user.phone_verification_code = phone_code
     user.email_verification_expires = expires
@@ -666,15 +675,15 @@ async def generate_verification_codes(user: User, db: AsyncSession) -> tuple[str
 
 
 async def send_verification_codes(
-    user: User, email_code: str, phone_code: str, db: AsyncSession
+    email_code: str, phone_code: str, db: AsyncSession
 ) -> dict:
     """Send verification codes via email and SMS"""
 
     stmt = select(User).options(joinedload(User.profile))
     result = await db.execute(stmt)
-    user_with_profile = result.scalars().first()
+    user = result.scalars().first()
 
-    if not user_with_profile.profile.phone_number:
+    if not user.profile.phone_number:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail="User profile not found"
         )
@@ -690,12 +699,11 @@ async def send_verification_codes(
     fm = FastMail(email_conf)
     await fm.send_message(message, template_name="verify_email.html")
 
-    # Send SMS code (using your SMS service)
-    # Example using Twilio:
-    # await send_sms(
-    #     to=user.profile.phone_number,
-    #     message=f"Your verification code is: {phone_code}"
-    # )
+    # Send SMS code (using Termii)
+    await send_sms(
+        to=user.profile.phone_number,
+        message=f"Your verification code is: {phone_code}. This code will expire in 10 minutes."
+    )
 
     return {"message": "Verification codes sent to your email and phone"}
 
@@ -753,3 +761,23 @@ async def verify_user_contact(
     await db.commit()
 
     return {"message": "Email and phone verified successfully"}
+
+
+# async def verify_email_and_phone_number(db: AsyncSession, email_code: str, phone_code: str):
+#     result = await db.execute(select(User).options(selectinload(User.profile))
+#                               .where(User.email_verification_code == email_code, User.phone_verification_code == phone_code))
+
+#     user = result.scalar_one_or_none()
+
+#     if not user:
+#         raise HTTPException(
+#             status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+
+#     if user.email_verification_code == email_code and user.phone_verification_code == phone_code:
+#         user.is_email_verified = True
+#         user.account_status = AccountStatus.CONFIRMED
+#         user.profile.is_phone_verified = True
+#         await db.commit()
+#         await db.refresh(user)
+
+#     return user

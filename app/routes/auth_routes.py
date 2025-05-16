@@ -1,5 +1,5 @@
 from uuid import UUID
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from fastapi import APIRouter, Depends, BackgroundTasks, HTTPException, Query, Request, status
 from fastapi.security import OAuth2PasswordRequestForm
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -35,17 +35,20 @@ async def login_user(
     try:
         user = await auth_service.login_user(login_data=user_credentials, db=db)
 
-        token = await create_tokens(user_id=user.id, user_type=user.user_type, db=db)
+        token = await create_tokens(user_id=user.id, account_status=user.account_status,
+                                    user_type=user.user_type, db=db)
         if user:
             await auth_service.create_session(db, user.id, request)
         return TokenResponse(
             refresh_token=token.refresh_token,
             user_type=token.user_type,
+            account_status=token.account_status,
             access_token=token.access_token,
         )
 
     except Exception as e:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
 
 @router.post("/logout", include_in_schema=False, status_code=status.HTTP_200_OK)
@@ -63,17 +66,19 @@ async def logout(
         return {"message": "Successfully logged out"}
 
     except Exception as e:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
 
 @router.post("/register", status_code=status.HTTP_201_CREATED)
 async def create_user(
     user_data: CreateUserSchema,
+    background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
 ) -> UserBase:
     """Logout user by revoking their refresh token"""
 
-    return await auth_service.create_user(db=db, user_data=user_data)
+    return await auth_service.create_user(db=db, user_data=user_data, background_tasks=background_tasks)
 
 
 @router.post(
@@ -81,13 +86,14 @@ async def create_user(
 )
 async def create_user(
     data: RiderCreate,
+    background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> UserBase:
     """Logout user by revoking their refresh token"""
 
     return await auth_service.create_new_rider(
-        db=db, data=data, current_user=current_user
+        db=db, data=data, current_user=current_user, background_tasks=background_tasks
     )
 
 
@@ -145,25 +151,24 @@ async def verify_token(token: str, db: AsyncSession = Depends(get_db)):
 @router.post("/verify-contacts")
 async def verify_user_contacts(
     verification_data: VerificationSchema,
-    current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> dict:
     """Verify user's email and phone"""
     return await auth_service.verify_user_contact(
-        current_user, verification_data.email_code, verification_data.phone_code, db
+        verification_data.email_code, verification_data.phone_code, db
     )
 
 
 @router.post("/resend-verification")
 async def resend_verification_codes(
-    current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db)
 ) -> dict:
     """Resend verification codes"""
     email_code, phone_code = await auth_service.generate_verification_codes(
-        current_user, db
+        db
     )
     return await auth_service.send_verification_codes(
-        current_user, email_code, phone_code, db
+        email_code, phone_code, db
     )
 
 

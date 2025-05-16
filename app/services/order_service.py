@@ -428,6 +428,7 @@ async def order_food_or_request_laundy_service(
                     "order_payment_status": PaymentStatus.PENDING,
                     "order_status": OrderStatus.PENDING,
                     "amount_due_vendor": amount_due_vendor,
+                    "additional_info": order_item.additional_info
                 }
             )
             .returning(

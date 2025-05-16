@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import or_, select
 from sqlalchemy.orm import selectinload, joinedload
 
+from app.schemas.status_schema import AccountStatus
 from app.utils.s3_service import add_profile_image, update_image
 from app.config.config import redis_client
 from app.models.models import User, Wallet, Profile, ProfileImage
@@ -56,7 +57,7 @@ async def get_users(db: AsyncSession) -> list[UserResponse]:
         selectinload(User.wallet),
         selectinload(User.wallet, Wallet.transactions),
     )
-    
+
     result = await db.execute(stmt)
     users = result.scalars().all()
 
@@ -64,7 +65,8 @@ async def get_users(db: AsyncSession) -> list[UserResponse]:
     users_dict = [user.dict() for user in user_responses]
 
     # Cache the users
-    redis_client.set("all_users", json.dumps(users_dict, default=str), ex=CACHE_TTL)
+    redis_client.set("all_users", json.dumps(
+        users_dict, default=str), ex=CACHE_TTL)
 
     return user_responses
 

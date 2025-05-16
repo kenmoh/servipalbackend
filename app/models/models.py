@@ -1,5 +1,5 @@
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
-import secrets
+import random
 from uuid import UUID, uuid4
 import uuid
 from datetime import datetime
@@ -42,10 +42,8 @@ logging.basicConfig(level=logging.INFO)
 logging.getLogger("sqlalchemy.engine").setLevel(logging.INFO)
 
 
-def generate_order_number():
-    date_part = datetime.now().strftime("%Y%m%d")
-    random_part = secrets.token_hex(3).upper()[:5]
-    return f"ORD-{date_part}-{random_part}"
+def generate_6_digit_code():
+    return str(random.randint(0, 1000000)).zfill(6)
 
 
 class Base(DeclarativeBase):
@@ -75,7 +73,8 @@ class User(Base):
 
     is_email_verified: Mapped[bool] = mapped_column(
         default=False, nullable=True)
-    email_verification_code: Mapped[str] = mapped_column(nullable=True)
+    email_verification_code: Mapped[str] = mapped_column(
+        nullable=True)
     email_verification_expires: Mapped[datetime] = mapped_column(nullable=True)
     account_status: Mapped[AccountStatus] = mapped_column(
         default=AccountStatus.PENDING)
@@ -158,7 +157,8 @@ class Profile(Base):
     bike_number: Mapped[str] = mapped_column(unique=True, nullable=True)
     is_phone_verified: Mapped[bool] = mapped_column(
         default=False, nullable=True)
-    phone_verification_code: Mapped[str] = mapped_column(nullable=True)
+    phone_verification_code: Mapped[str] = mapped_column(
+        nullable=True)
     phone_verification_expires: Mapped[datetime] = mapped_column(nullable=True)
     created_at: Mapped[datetime] = mapped_column(default=datetime.now)
     updated_at: Mapped[datetime] = mapped_column(
@@ -249,6 +249,8 @@ class RefreshToken(Base):
         primary_key=True, nullable=False, default=uuid.uuid1, index=True
     )
     token: Mapped[str] = mapped_column(unique=True, index=True, nullable=False)
+    account_status: Mapped[AccountStatus] = mapped_column(
+        default=AccountStatus.PENDING, nullable=True)  # TODO: remove nullable
     user_type: Mapped[str] = mapped_column(
         nullable=True)  # TODO: change to False
     expires_at: Mapped[datetime] = mapped_column(
@@ -348,6 +350,7 @@ class Order(Base):
     total_price: Mapped[Decimal] = mapped_column(default=0.00)
     amount_due_vendor: Mapped[Decimal] = mapped_column(nullable=False)
     payment_link: Mapped[str] = mapped_column(nullable=True)
+    additional_info: Mapped[str] = mapped_column(nullable=True)
     order_payment_status: Mapped[PaymentStatus] = mapped_column(
         default=PaymentStatus.PENDING
     )
@@ -382,7 +385,6 @@ class OrderItem(Base):
     item_id: Mapped[UUID] = mapped_column(
         ForeignKey("items.id"), primary_key=True)
     quantity: Mapped[int] = mapped_column(default=1)
-    additional_info: Mapped[str] = mapped_column(nullable=True)
     sizes: Mapped[str] = mapped_column(ARRAY(String), nullable=True)
     colors: Mapped[list[str]] = mapped_column(ARRAY(String), nullable=True)
     created_at: Mapped[datetime] = mapped_column(default=datetime.now)
