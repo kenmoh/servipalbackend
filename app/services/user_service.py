@@ -46,22 +46,23 @@ def invalidate_user_cache(user_id: UUID) -> None:
     redis_client.delete(f"user:{user_id}")
 
 
-async def get_users(db: AsyncSession) -> list[UserResponse]:
+async def get_users(db: AsyncSession) -> list[UserProfileResponse]:
     cached_users = redis_client.get("all_users")
     if cached_users:
         users_data = json.loads(cached_users)
         return [UserResponse.model_validate(user_data) for user_data in users_data]
 
-    stmt = select(User).options(
-        selectinload(User.profile),
-        selectinload(User.wallet),
-        selectinload(User.wallet, Wallet.transactions),
-    )
+   
+
+    stmt = (
+        select(User)
+        .options(joinedload(User.profile))  # Eagerly load the profile
+        )
 
     result = await db.execute(stmt)
     users = result.scalars().all()
 
-    user_responses = [UserResponse.model_validate(user) for user in users]
+    user_responses = [UserProfileResponse.model_validate(user) for user in users]
     users_dict = [user.dict() for user in user_responses]
 
     # Cache the users
@@ -70,11 +71,6 @@ async def get_users(db: AsyncSession) -> list[UserResponse]:
 
     return user_responses
 
-
-# async def get_user_wallets(db: AsyncSession) -> list[WalletRespose]:
-#     stmt = select(Wallet)
-#     result = await db.execute(stmt)
-#     return result.scalars().all()
 
 
 async def get_user_wallets(db: AsyncSession) -> list[WalletSchema]:
@@ -191,7 +187,7 @@ async def update_profile(
         return profile
 
 
-async def get_user_with_profile(db: AsyncSession, user_id: UUID) -> UserProfileResponse:
+async def get_user_with_profile(db: AsyncSession, current_user: User) -> UserResponse:
     """
     Retrieves a user and their associated profile by user ID.
 
@@ -202,17 +198,22 @@ async def get_user_with_profile(db: AsyncSession, user_id: UUID) -> UserProfileR
     Returns:
         A User object with the profile loaded, or None if not found.
     """
-    cached_user = await get_cached_user(user_id)
+    cached_user = await get_cached_user(current_user.id)
     if cached_user:
-        return UserProfileResponse(**cached_user)
+        return UserResponse(**cached_user)
 
-    query = (
-        select(User)
-        .options(joinedload(User.profile))  # Eagerly load the profile
-        .where(User.id == user_id)
+    stmt = select(User).where(User.id == current_user.id).options(
+        selectinload(User.profile),
+        selectinload(User.wallet),
+        selectinload(User.wallet, Wallet.transactions),
     )
+    # query = (
+    #     select(User)
+    #     .options(joinedload(User.profile))  # Eagerly load the profile
+    #     .where(User.id == user_id)
+    # )
 
-    result = await db.execute(query)
+    result = await db.execute(stmt)
     user = result.scalar_one_or_none()
 
     if user:
