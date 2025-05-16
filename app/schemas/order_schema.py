@@ -75,7 +75,9 @@ class PackageCreate(BaseModel):
     description: str
     image_urls: list[str]
     distance: Decimal
-    # duration: Decimal
+    origin: str
+    destination: str
+    duration: Decimal
     pickup_coordinates: Tuple[float, float]
     dropoff_coordinates: Tuple[float, float]
 

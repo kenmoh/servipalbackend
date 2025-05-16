@@ -31,9 +31,10 @@ async def get_users(
     return await user_service.get_users(db=db)
 
 
-@router.get("/wallets", include_in_schema=True, status_code=status.HTTP_200_OK)
+@router.get("/wallets", include_in_schema=False, status_code=status.HTTP_200_OK)
 async def get_user_wallets(
     db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ) -> list[WalletSchema]:
     return await user_service.get_user_wallets(db=db)
 

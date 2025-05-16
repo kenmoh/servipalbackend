@@ -415,6 +415,8 @@ class Delivery(Base):
     delivery_fee: Mapped[Decimal] = mapped_column(nullable=False)
     distance: Mapped[Decimal] = mapped_column(nullable=True)
     duration: Mapped[Decimal] = mapped_column(nullable=True)
+    origin: Mapped[Decimal] = mapped_column(nullable=True)
+    destination: Mapped[Decimal] = mapped_column(nullable=True)
 
     delivery_status: Mapped[DelivertyStatus] = mapped_column(
         default=DelivertyStatus.PENDING

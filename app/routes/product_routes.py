@@ -17,7 +17,7 @@ from app.schemas.product_schemas import (
 # Assuming the service functions are correctly defined in app/services/product_service.py
 from app.services import product_service
 
-router = APIRouter(prefix="/products", tags=["Products"])
+router = APIRouter(prefix="/api/products", tags=["Products"])
 
 
 @router.post(

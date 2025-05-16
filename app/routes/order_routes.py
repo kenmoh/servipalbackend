@@ -26,6 +26,7 @@ async def get_deliveries(
     db: AsyncSession = Depends(get_db),
     skip: int = 0,
     limit: int = 20,
+    delivery_type: DeliveryType = None,
     current_user: User = Depends(get_current_user),
 ) -> list[DeliveryResponse]:
     return await order_service.get_all_deliveries(db=db, skip=skip, limit=limit)

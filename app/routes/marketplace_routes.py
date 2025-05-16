@@ -14,7 +14,7 @@ router = APIRouter(prefix="/marketplace", tags=["Marketplace"])
 
 
 @router.post(
-    "/products/{product_id}/buy",
+    "/{product_id}/buy",
     response_model=OrderResponseSchema,
     status_code=status.HTTP_200_OK,  # 200 OK for successful purchase
     summary="Buy a product",
@@ -44,11 +44,10 @@ async def buy_listed_product(
 
 
 @router.put(
-    "/orders/{order_id}/status",
+    "/{order_id}/status",
     response_model=OrderResponseSchema,
     status_code=status.HTTP_200_OK,
     summary="Update order status",
-    description="Allows buyer or vendor to update the order status based on predefined rules.",
 )
 async def update_order_status(
     order_id: UUID,

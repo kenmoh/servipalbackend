@@ -219,6 +219,12 @@ async def create_package_order(
                     "item_type": ItemType.PACKAGE,
                     "name": data.name,
                     "description": data.description,
+                    "duration": data.duration,
+                    "pickup_coordinates": data.pickup_coordinates,
+                    "dropoff_coordinates":data.dropoff_coordinates,
+                    "distance": data.distance,
+                    "origin":data.origin,
+                    "destination":data.destination
                 }
             )
             .returning(Item.name, Item.id, Item.user_id)
