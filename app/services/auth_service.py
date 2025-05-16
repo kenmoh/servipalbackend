@@ -133,7 +133,7 @@ async def create_user(db: AsyncSession, user_data: CreateUserSchema, background_
     except IntegrityError as e:
         await db.rollback()
         raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT, detail=f"Email already registered {e}"
+            status_code=status.HTTP_409_CONFLICT, detail=f"Email or phone number already registered"
         )
 
 
