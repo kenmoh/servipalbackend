@@ -93,18 +93,13 @@ async def create_user(db: AsyncSession, user_data: CreateUserSchema, background_
     # email_exists = await db.execute(select(User).where(User.email == user_data.email))
     user_exists_result = await db.execute(select(User).options(joinedload(User.profile)).where(User.email==user_data.email))
 
-    user_exists = user_exists_result.scalar().first()
+    user_exists = user_exists_result.scalar_one_or_none()
 
     # if email_exists.scalar_one_or_none():
     #     raise HTTPException(
     #         status_code=status.HTTP_409_CONFLICT, detail="Email already registered"
     #     )
-    if user_exists.email:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT, detail="Email or phone number already registered"
-        )
-
-    if user_exists.profile.phone_number:
+    if user_exists.email or user_exists.profile.phone_number:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT, detail="Email or phone number already registered"
         )
@@ -183,7 +178,7 @@ async def create_new_rider(
 
     stmt = (
         select(func.count())
-        .select_from(User.__table__)
+        .select_from(User)
         .where(User.dispatcher_id == current_user.id)
     )
     riders = await db.execute(stmt)
@@ -209,7 +204,7 @@ async def create_new_rider(
     if not user.profile.business_registration_number and riders > 1:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Please update your company registration number to add more than one rider.",
+            detail="Please update your company registration number to add more riders.",
         )
     if not user.user_type == UserType.DISPATCH:
         raise HTTPException(
@@ -223,10 +218,12 @@ async def create_new_rider(
             detail="Please update your profile with your company name and phone number.",
         )
 
-    email_exists = await db.execute(select(User.email).options(joinedload(User.profile)).where(User.email == data.email))
-    if email_exists.scalar_one_or_none():
+    result = await db.execute(select(User.email).options(joinedload(User.profile)).where(User.email == data.email))
+    email_exists = result.scalar().first()
+
+    if email_exists.email or email_exists.profile.phone_number:
         raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT, detail="Email already registered"
+            status_code=status.HTTP_409_CONFLICT, detail="Email or phone number already registered"
         )
 
 
