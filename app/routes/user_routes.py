@@ -27,7 +27,7 @@ router = APIRouter(prefix="/api/users", tags=["Users"])
 @router.get("", status_code=status.HTTP_200_OK)
 async def get_users(
     db: AsyncSession = Depends(get_db),
-) -> list[UserResponse]:
+) -> list[UserProfileResponse]:
     return await user_service.get_users(db=db)
 
 
@@ -95,7 +95,7 @@ async def update_user_profile(
 async def get_user_details(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
-) -> UserProfileResponse:
+) -> UserResponse:
     return await user_service.get_user_with_profile(db=db, current_user=current_user)
 
 
