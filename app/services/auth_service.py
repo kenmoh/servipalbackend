@@ -88,12 +88,27 @@ async def create_user(db: AsyncSession, user_data: CreateUserSchema, background_
     """
     # validate password
     validate_password(user_data.password)
+
     # Check if email already exists
-    email_exists = await db.execute(select(User).where(User.email == user_data.email))
-    if email_exists.scalar_one_or_none():
+    # email_exists = await db.execute(select(User).where(User.email == user_data.email))
+    user_exists_result = await db.execute(select(User).options(joinedload(User.profile)).where(User.email==user_data.email))
+
+    user_exists = user_exists_result.scalar().first()
+
+    # if email_exists.scalar_one_or_none():
+    #     raise HTTPException(
+    #         status_code=status.HTTP_409_CONFLICT, detail="Email already registered"
+    #     )
+    if user_exists.email:
         raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT, detail="Email already registered"
+            status_code=status.HTTP_409_CONFLICT, detail="Email or phone number already registered"
         )
+
+    if user_exists.profile.phone_number:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT, detail="Email or phone number already registered"
+        )
+
     try:
         # Create the user
         user = User(
@@ -208,11 +223,12 @@ async def create_new_rider(
             detail="Please update your profile with your company name and phone number.",
         )
 
-    email_exists = await db.execute(select(User.email).where(User.email == data.email))
+    email_exists = await db.execute(select(User.email).options(joinedload(User.profile)).where(User.email == data.email))
     if email_exists.scalar_one_or_none():
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT, detail="Email already registered"
         )
+
 
     # Create new rider and assign to current dispatch
     try:
