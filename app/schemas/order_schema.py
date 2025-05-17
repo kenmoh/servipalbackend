@@ -74,11 +74,10 @@ class OrderIssueResponse(OrderIssueCreate):
 class PackageCreate(BaseModel):
     name: str 
     description: str
-    # image_url: UploadFile = File()
     distance: Decimal
     origin: str
     destination: str
-    duration: Decimal
+    duration: str
     pickup_coordinates: list[float]
     dropoff_coordinates: list[float]
 
@@ -89,7 +88,7 @@ class PackageResponse(BaseModel):
     description: str
     url: list[str]
     distance: Decimal
-    duration: Decimal
+    duration: str
     pickup_coordinates: list[float]
     dropoff_coordinates: list[float]
 
@@ -106,7 +105,7 @@ class OrderAndDeliverySchema(BaseModel):
     dropoff_coordinates: list[float]
     distance: Decimal
     require_delivery: RequireDeliverySchema
-    duration: Decimal
+    duration: str
     additional_info: str | None = None
 
 
