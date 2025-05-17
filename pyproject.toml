@@ -12,6 +12,7 @@ dependencies = [
     "fastapi-mail>=1.4.2",
     "fastapi[standard]>=0.115.12",
     "httpx>=0.28.1",
+    "logfire[fastapi,sqlalchemy]>=3.16.0",
     "passlib",
     "psycopg2-binary>=2.9.10",
     "pydantic-settings>=2.9.1",

@@ -2,6 +2,8 @@ from contextlib import asynccontextmanager
 import logging
 import asyncio
 from functools import partial
+import logfire
+# from opentelemetry.instrumentation.sqlalchemy import SQLAlchemyInstrumentor
 
 
 from fastapi import Depends, FastAPI
@@ -29,10 +31,9 @@ from app.utils.cron_job import (
 from app.utils.logger_config import setup_logger
 from app.utils.utils import get_all_banks
 from app.config.config import redis_client
+from app.database.database import engine
 
-# Configure logging
-# logging.basicConfig(level=logging.INFO)
-# logger = logging.getLogger(__name__)
+
 logger = setup_logger()
 
 scheduler = BackgroundScheduler()
@@ -159,6 +160,13 @@ app = FastAPI(
         "email": "kenneth.aremoh@gmail.com",
     },
 )
+
+logfire.configure(project_name="ServiPal", service_name="ServiPal")
+logfire.debug("App Debug mode on")
+logfire.instrument_fastapi(app=app)
+logfire.instrument_sqlalchemy(engine=engine)
+
+# SQLAlchemyInstrumentor().instrument(engine=engine)
 
 origins = ["http://localhost:3000", "https://servipal-admin.vercel.app"]
 
