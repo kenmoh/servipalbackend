@@ -232,16 +232,14 @@ async def create_package_order(
 
         package_data = package_insert_result.fetchone()
 
-        if hasattr(data, "image_urls") and data.image_urls:
-            image_payloads = [
-                {
+        if hasattr(data, "image_url") and data.image_url:
+            image_payloads = {
                     "item_id": package_data.id,
-                    "url": image_url,
+                    "url": data.image_url,
                     "created_at": datetime.now(),
                     "updated_at": datetime.now(),
                 }
-                for image_url in data.image_urls
-            ]
+              
 
             if image_payloads:
                 await db.execute(insert(ItemImage).values(image_payloads))

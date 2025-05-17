@@ -73,7 +73,7 @@ class OrderIssueResponse(OrderIssueCreate):
 class PackageCreate(BaseModel):
     name: str
     description: str
-    image_urls: list[str]
+    image_url: str
     distance: Decimal
     origin: str
     destination: str
