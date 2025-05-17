@@ -74,7 +74,7 @@ async def send_item(
     distance: Decimal = Form(...),
     origin: str = Form(...),
     destination: str = Form(...),
-    duration: Decimal = Form(...),
+    duration: str = Form(...),
     pickup_coordinates: str = Form(...),  # "6.45,3.40"
     dropoff_coordinates: str = Form(...), # "6.50,3.41"
     image_url: UploadFile = File(...),
