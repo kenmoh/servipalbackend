@@ -1,6 +1,7 @@
 from datetime import timedelta, datetime
 from typing import Optional
 from sqlalchemy import or_, select, update, insert
+from fastapi import UploadFile
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import joinedload, selectinload
 from app.models.models import (
@@ -25,6 +26,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.schemas.schemas import ReviewSchema
 from app.schemas.status_schema import OrderStatus, TransactionType
 
+
 from app.schemas.order_schema import (
     PaymentStatus,
     OrderItemResponseSchema,
@@ -47,6 +49,7 @@ from app.utils.utils import (
     get_payment_link,
 )
 from app.config.config import redis_client
+from app.utils.s3_service import add_image
 
 
 async def filter_delivery_by_delivery_type(
@@ -186,8 +189,10 @@ async def get_all_deliveries(
 
 
 async def create_package_order(
-    db: AsyncSession, data: PackageCreate, current_user: User
+    db: AsyncSession, data: PackageCreate, image: UploadFile, current_user: User
 ) -> DeliveryResponse:
+
+
     if current_user.user_type == UserType.CUSTOMER and not (
         current_user.profile.full_name or current_user.profile.phone_number
     ):
@@ -219,12 +224,7 @@ async def create_package_order(
                     "item_type": ItemType.PACKAGE,
                     "name": data.name,
                     "description": data.description,
-                    "duration": data.duration,
-                    "pickup_coordinates": data.pickup_coordinates,
-                    "dropoff_coordinates":data.dropoff_coordinates,
-                    "distance": data.distance,
-                    "origin":data.origin,
-                    "destination":data.destination
+                   
                 }
             )
             .returning(Item.name, Item.id, Item.user_id)
@@ -232,17 +232,23 @@ async def create_package_order(
 
         package_data = package_insert_result.fetchone()
 
-        if hasattr(data, "image_url") and data.image_url:
-            image_payloads = {
-                    "item_id": package_data.id,
-                    "url": data.image_url,
-                    "created_at": datetime.now(),
-                    "updated_at": datetime.now(),
-                }
+        image_url = await add_image(image)
+        # if image_url:
+
+        item_image = ItemImage(item_id=package_data.id, url=image_url)
+        db.add(item_image)
+
+        # if hasattr(data, "image_url") and data.image_url:
+        #     image_payloads = {
+        #             "item_id": package_data.id,
+        #             "url": data.image_url,
+        #             "created_at": datetime.now(),
+        #             "updated_at": datetime.now(),
+        #         }
               
 
-            if image_payloads:
-                await db.execute(insert(ItemImage).values(image_payloads))
+        #     if image_payloads:
+        #         await db.execute(insert(ItemImage).values(image_payloads))
 
         order_insert_result = await db.execute(
             insert(Order)
@@ -278,6 +284,7 @@ async def create_package_order(
 
         # --- 4. Insert into 'deliveries' table ---
 
+
         delivery_insert_result = await db.execute(
             insert(Delivery)
             .values(
@@ -292,6 +299,8 @@ async def create_package_order(
                     "delivery_fee": delivery_fee,
                     "amount_due_dispatch": amount_due_dispatch,
                     "distance": data.distance,
+                    "duration": data.duration,
+                    
                 }
             )
             .returning(
@@ -1121,6 +1130,9 @@ def format_delivery_response(
             "distance": delivery.distance,
             "delivery_fee": delivery.delivery_fee,
             "amount_due_dispatch": delivery.amount_due_dispatch,
+            'pickup_coordinates': delivery.pickup_coordinates,
+            'dropoff_coordinates': delivery.dropoff_coordinates,
+            'duration': delivery.duration,
             "created_at": delivery.created_at.isoformat(),
         }
 

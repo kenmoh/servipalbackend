@@ -1,7 +1,8 @@
 from uuid import UUID
+import json
+from decimal import Decimal
 
-
-from fastapi import APIRouter, Depends, status, HTTPException
+from fastapi import APIRouter, Depends, status, HTTPException, UploadFile, File, Form
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.auth import get_db, get_current_user
@@ -45,18 +46,68 @@ async def filter_deliveries_by_type(
     )
 
 
-@router.post(
-    "/send-item",
-    response_model=DeliveryResponse,
-    status_code=status.HTTP_201_CREATED,
-)
+# @router.post(
+#     "/send-item",
+#     response_model=DeliveryResponse,
+#     status_code=status.HTTP_201_CREATED,
+# )
+# async def send_item(
+#     data: PackageCreate = Form(..., media_type='multipart/form-data'),
+#     # image: UploadFile = File(...),
+#     db: AsyncSession = Depends(get_db),
+#     current_user: User = Depends(get_current_user),
+# ) -> DeliveryResponse:
+
+    
+#     parsed_data = json.loads(data)
+#     return await order_service.create_package_order(
+#         db=db, current_user=current_user, data=data
+#     )
+
+
+from fastapi import Form, File, UploadFile, HTTPException
+
+@router.post("/send-item", response_model=DeliveryResponse, status_code=status.HTTP_201_CREATED)
 async def send_item(
-    data: PackageCreate,
+    name: str = Form(...),
+    description: str = Form(...),
+    distance: Decimal = Form(...),
+    origin: str = Form(...),
+    destination: str = Form(...),
+    duration: Decimal = Form(...),
+    pickup_coordinates: str = Form(...),  # "6.45,3.40"
+    dropoff_coordinates: str = Form(...), # "6.50,3.41"
+    image_url: UploadFile = File(...),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
-) -> DeliveryResponse:
+):
+    try:
+        pickup_coords = [float(x.strip()) for x in pickup_coordinates.split(",")]
+        dropoff_coords = [float(x.strip()) for x in dropoff_coordinates.split(",")]
+
+        if len(pickup_coords) != 2 or len(dropoff_coords) != 2:
+            raise ValueError
+
+    except Exception:
+        raise HTTPException(
+            status_code=422,
+            detail="Coordinates must be two comma-separated floats like '6.45,3.40'",
+        )
+
+
+    form_data = PackageCreate(
+        name=name,
+        description=description,
+        distance=distance,
+        origin=origin,
+        destination=destination,
+        duration=duration,
+        pickup_coordinates=pickup_coords,
+        dropoff_coordinates=dropoff_coords,
+    )
+
     return await order_service.create_package_order(
-        db=db, current_user=current_user, data=data
+        db=db, current_user=current_user, data=form_data, image=image_url
     )
 
 

@@ -5,6 +5,7 @@ from decimal import Decimal
 from uuid import UUID
 from decimal import Decimal
 from pydantic import BaseModel, Field
+from fastapi import Form, UploadFile, File
 
 from app.schemas.item_schemas import ItemResponse
 from app.schemas.status_schema import OrderStatus
@@ -71,15 +72,15 @@ class OrderIssueResponse(OrderIssueCreate):
 
 
 class PackageCreate(BaseModel):
-    name: str
+    name: str 
     description: str
-    image_url: str
+    # image_url: UploadFile = File()
     distance: Decimal
     origin: str
     destination: str
     duration: Decimal
-    pickup_coordinates: Tuple[float, float]
-    dropoff_coordinates: Tuple[float, float]
+    pickup_coordinates: list[float]
+    dropoff_coordinates: list[float]
 
 
 class PackageResponse(BaseModel):
@@ -88,9 +89,9 @@ class PackageResponse(BaseModel):
     description: str
     url: list[str]
     distance: Decimal
-    # duration: Decimal
-    pickup_coordinates: Tuple[float, float]
-    dropoff_coordinates: Tuple[float, float]
+    duration: Decimal
+    pickup_coordinates: list[float]
+    dropoff_coordinates: list[float]
 
 
 class OrderItemCreate(BaseModel):
@@ -101,8 +102,8 @@ class OrderItemCreate(BaseModel):
 
 class OrderAndDeliverySchema(BaseModel):
     order_items: list[OrderItemCreate]
-    pickup_coordinates: Tuple[float, float]
-    dropoff_coordinates: Tuple[float, float]
+    pickup_coordinates: list[float]
+    dropoff_coordinates: list[float]
     distance: Decimal
     require_delivery: RequireDeliverySchema
     duration: Decimal

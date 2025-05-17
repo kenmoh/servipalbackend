@@ -43,7 +43,9 @@ class DeliverySchema(BaseModel):
     dispatch_id: UUID | None = None
     rider_id: UUID | None = None
     distance: Decimal
-    # duration: Decimal
+    duration: Decimal
+    pickup_coordinates: list[float]
+    dropoff_coordinates: list[float]
     delivery_fee: Decimal
     amount_due_dispatch: Decimal
     created_at: datetime

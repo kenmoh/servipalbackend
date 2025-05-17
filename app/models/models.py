@@ -18,6 +18,7 @@ from sqlalchemy import (
     Identity,
     Integer,
     UniqueConstraint,
+    Index,
     Text,
 )
 from sqlalchemy.schema import Sequence
@@ -314,8 +315,18 @@ class Item(Base):
     reviews: Mapped[list["Review"]] = relationship(
         back_populates="item", cascade="all, delete-orphan"
     )
-    __table_args__ = (UniqueConstraint(
-        "name", "user_id", name="uq_name_item"),)
+    # __table_args__ = (UniqueConstraint(
+    #     "name", "user_id", name="uq_name_item"),)
+
+    __table_args__ = (
+        Index(
+            "uq_name_user_non_package",
+            "name",
+            "user_id",
+            unique=True,
+            postgresql_where=text("item_type != 'PACKAGE'")
+        ),
+    )
 
 
 class ItemImage(Base):
