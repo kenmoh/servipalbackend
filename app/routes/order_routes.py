@@ -75,8 +75,8 @@ async def send_item(
     origin: str = Form(...),
     destination: str = Form(...),
     duration: str = Form(...),
-    pickup_coordinates: str = Form(...),  # "6.45,3.40"
-    dropoff_coordinates: str = Form(...), # "6.50,3.41"
+    pickup_coordinates: str = Form(...),  
+    dropoff_coordinates: str = Form(...),
     image_url: UploadFile = File(...),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),

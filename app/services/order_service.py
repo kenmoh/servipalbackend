@@ -300,6 +300,8 @@ async def create_package_order(
                     "amount_due_dispatch": amount_due_dispatch,
                     "distance": data.distance,
                     "duration": data.duration,
+                    "origin": data.origin,
+                    "destination": data.destination
                     
                 }
             )
@@ -1132,6 +1134,8 @@ def format_delivery_response(
             "amount_due_dispatch": delivery.amount_due_dispatch,
             'pickup_coordinates': delivery.pickup_coordinates,
             'dropoff_coordinates': delivery.dropoff_coordinates,
+            "origin": delivery.origin,
+            "destination": delivery.destination,
             'duration': delivery.duration,
             "created_at": delivery.created_at.isoformat(),
         }
