@@ -231,7 +231,7 @@ async def order_payment_callback(request: Request, db: AsyncSession):
 
     stmt = select(Order).where(Order.id == tx_ref)
     result = await db.execute(stmt)
-    db_order = result.scalar().fetchone()
+    db_order = result.first()
 
     verify_tranx = await verify_transaction_tx_ref(tx_ref)
 
