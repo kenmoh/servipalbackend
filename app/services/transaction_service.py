@@ -128,11 +128,11 @@ async def handle_payment_webhook(
 
     db_order = await db.query(Order).filter(Order.id == payload["txRef"]).first()
 
-    db_tranx = (
-        await db.query(Transaction).filter(Transaction.id == payload["txRef"]).first()
-    )
+    result = await db.execute(select(Order).where*Order.id == payload["txRef"])
 
-    if db_order:
+    db_tranx = result.scalar_one_or_none()
+
+    if db_order is not None:
         try:
             if (
                 payload["status"] == "successful"
@@ -156,28 +156,7 @@ async def handle_payment_webhook(
             )
         return {"message": "Failed"}
 
-    elif db_tranx:
-        try:
-            if (
-                payload["status"] == "successful"
-                and payload["amount"] == db_tranx.total_cost
-                and payload["amount"] == db_tranx.amount
-                and payload["currency"] == "NGN"
-                and verify_transaction_tx_ref(payload["txRef"])
-                .get("data")
-                .get("status")
-                == "successful"
-                and db_tranx.payment_status != PaymentStatus.PAID
-            ):
-                background_task.add_task(update_database, db_tranx, db)
-                return {"message": "Success"}
-        except Exception as e:
-            logging.error(f"Error processing webhook: {e}")
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="INTERNAL_SERVER_ERROR",
-            )
-        return {"message": "Failed"}
+
 
 
 async def fund_wallet_callback(request: Request, db: AsyncSession):

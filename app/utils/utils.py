@@ -14,7 +14,7 @@ from app.config.config import settings, redis_client
 
 
 flutterwave_base_url = "https://api.flutterwave.com/v3"
-quick_pickup_base_url = "https://servipalbackend.onrender.com/api"
+servipal_base_url = "https://servipalbackend.onrender.com/api"
 banks_url = "https://api.flutterwave.com/v3/banks/NG"
 
 
@@ -61,7 +61,7 @@ async def get_payment_link(id: UUID, amount: Decimal, current_user: User):
             "tx_ref": unique_id(id),
             "amount": str(amount),
             "currency": "NGN",
-            "redirect_url": f"{quick_pickup_base_url}/payment/order-payment-callback",
+            "redirect_url": f"{servipal_base_url}/payment/order-payment-callback",
             "customer": {
                 "email": current_user.email,
             },
@@ -91,7 +91,7 @@ async def get_fund_wallet_payment_link(id: UUID, amount: Decimal, current_user: 
             "tx_ref": unique_id(id),
             "amount": str(amount),
             "currency": "NGN",
-            "redirect_url": f"{quick_pickup_base_url}/payment/fund-wallet-callback",
+            "redirect_url": f"{servipal_base_url}/payment/fund-wallet-callback",
             "customer": {
                 "email": current_user.email,
             },
@@ -248,7 +248,7 @@ async def send_sms(phone_number: str, message: str) -> dict:
 
     payload = {
         "to": phone_number,
-        "from": "QuickPickUp",
+        "from": "ServiPal",
         "sms": message,
         "type": "plain",
         "channel": "generic",
@@ -327,7 +327,7 @@ async def transfer_money_to_user_account(
         "narration": narration,
         "currency": "NGN",
         "reference": reference,
-        "callback_url": f"{quick_pickup_base_url}/withdrawals/callback",
+        "callback_url": f"{servipal_base_url}/withdrawals/callback",
         "debit_currency": "NGN",
         "beneficiary_name": beneficiary_name,
     }
