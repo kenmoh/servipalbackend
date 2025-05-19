@@ -26,24 +26,22 @@ router = APIRouter(prefix="/api/orders", tags=["Orders"])
 async def get_deliveries(
     db: AsyncSession = Depends(get_db),
     skip: int = 0,
-    limit: int = 20,
-    delivery_type: DeliveryType = None,
+    limit: int = 35,
     current_user: User = Depends(get_current_user),
 ) -> list[DeliveryResponse]:
     return await order_service.get_all_deliveries(db=db, skip=skip, limit=limit)
 
 
-@router.get("/delivery-by-type", status_code=status.HTTP_200_OK)
-async def filter_deliveries_by_type(
-    delivery_type: DeliveryType,
-    db: AsyncSession = Depends(get_db),
-    skip: int = 0,
-    limit: int = 20,
-    current_user: User = Depends(get_current_user),
-) -> list[DeliveryResponse]:
-    return await order_service.filter_deliveries_by_type(
-        delivery_type=delivery_type, db=db, skip=skip, limit=limit
-    )
+# @router.get("/delivery-by-type", status_code=status.HTTP_200_OK)
+# async def filter_deliveries_by_type(
+#     delivery_type: DeliveryType,
+#     db: AsyncSession = Depends(get_db),
+#     skip: int = 0,
+#     limit: int = 20,
+#     current_user: User = Depends(get_current_user),
+# ) -> list[DeliveryResponse]:
+#     return await order_service.filter_deliveries_by_type(
+#         delivery_type=delivery_type, db=db, skip=skip, limit=limit )
 
 
 # @router.post(
@@ -127,13 +125,13 @@ async def order_food_or_request_laundy_service(
     )
 
 
-@router.get("/{order_id}/summary", status_code=status.HTTP_200_OK)
-async def get_order_details(
-    order_id: UUID,
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-) -> OrderResponseSchema:
-    return await order_service.get_order_with_items(db, order_id)
+# @router.get("/{order_id}/summary", status_code=status.HTTP_200_OK)
+# async def get_order_details(
+#     order_id: UUID,
+#     db: AsyncSession = Depends(get_db),
+#     current_user: User = Depends(get_current_user),
+# ) -> OrderResponseSchema:
+#     return await order_service.get_order_with_items(db, order_id)
 
 
 @router.get("/{delivery_id}", status_code=status.HTTP_200_OK)
