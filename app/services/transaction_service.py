@@ -235,7 +235,7 @@ async def order_payment_callback(request: Request, db: AsyncSession):
 
     if (
         tx_status == "successful"
-        and verify_transaction_tx_ref(tx_ref).get("data").get("status") == "successful"
+        and await verify_transaction_tx_ref(tx_ref).get("data").get("status") == "successful"
     ):
         db_order.payment_status = PaymentStatus.PAID
         await db.commit()
