@@ -14,7 +14,7 @@ from app.config.config import settings, redis_client
 
 
 flutterwave_base_url = "https://api.flutterwave.com/v3"
-quick_pickup_base_url = "https://quickpickup.onrender.com/api"
+quick_pickup_base_url = "https://servipalbackend.onrender.com/api"
 banks_url = "https://api.flutterwave.com/v3/banks/NG"
 
 
