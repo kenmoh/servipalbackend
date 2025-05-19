@@ -226,8 +226,8 @@ async def fund_wallet_callback(request: Request, db: AsyncSession):
 
 
 async def order_payment_callback(request: Request, db: AsyncSession):
-    tx_ref = await request.query_params["tx_ref"]
-    tx_status = await request.query_params["status"]
+    tx_ref = request.query_params["tx_ref"]
+    tx_status = request.query_params["status"]
 
     stmt = select(Order).where(Order.id == tx_ref)
     result = await db.execute(stmt)
