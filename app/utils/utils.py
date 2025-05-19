@@ -42,7 +42,6 @@ async def verify_transaction_tx_ref(tx_ref: str):
             )
 
             response_data = response.json()
-            print('==============================',response_data, '==========================')
             return response_data
 
         return response_data

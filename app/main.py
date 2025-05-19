@@ -32,6 +32,7 @@ from app.utils.logger_config import setup_logger
 from app.utils.utils import get_all_banks
 from app.config.config import redis_client
 from app.database.database import engine
+from app.utils.utils import verify_transaction_tx_ref
 
 
 logger = setup_logger()
@@ -214,6 +215,8 @@ def api_health_check() -> dict:
 @app.get("/api/list-of-banks", response_model=list[str], tags=["Get Banks"])
 async def get_banks() -> list:
     """Get list of all supported bank(Nigeria)"""
+    tranx = await verify_transaction_tx_ref('3e7e2914e5e14697856b6fe809d86066')
+
     return await get_all_banks()
 
 

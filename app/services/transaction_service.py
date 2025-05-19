@@ -233,9 +233,11 @@ async def order_payment_callback(request: Request, db: AsyncSession):
     result = await db.execute(stmt)
     db_order = result.scalar_one_or_none()
 
+    verify_tranx = await verify_transaction_tx_ref(tx_ref)
+
     if (
         tx_status == "successful"
-        and await verify_transaction_tx_ref(tx_ref).get("data").get("status") == "successful"
+        and verify_tranx.get('data').get('status')  == "successful"
     ):
         db_order.payment_status = PaymentStatus.PAID
         await db.commit()
