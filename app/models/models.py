@@ -361,8 +361,6 @@ class Order(Base):
     total_price: Mapped[Decimal] = mapped_column(default=0.00)
     amount_due_vendor: Mapped[Decimal] = mapped_column(nullable=False)
     payment_link: Mapped[str] = mapped_column(nullable=True)
-    payment_status: Mapped[PaymentStatus] = mapped_column(
-        default=PaymentStatus.PENDING, nullable=True)
     additional_info: Mapped[str] = mapped_column(nullable=True)
     order_payment_status: Mapped[PaymentStatus] = mapped_column(
         default=PaymentStatus.PENDING
