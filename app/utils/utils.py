@@ -45,7 +45,7 @@ async def verify_transaction_tx_ref(tx_ref: str):
             print('==============================',response_data, '==========================')
             return response_data
 
-        return link
+        return response_data
     except httpx.HTTPStatusError as e:
         raise HTTPException(status_code=502, detail=f"Payment gateway error: {str(e)}")
     except Exception as e:
