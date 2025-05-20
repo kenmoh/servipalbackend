@@ -51,6 +51,9 @@ from app.utils.utils import (
 from app.config.config import redis_client
 from app.utils.s3_service import add_image
 
+def user_stats(db: AsyncSession, current_user: User):
+    db.execute(select(func.count()).select_from(User))
+
 
 async def filter_delivery_by_delivery_type(
     delivery_type: DeliveryType, db: AsyncSession, skip: int = 0, limit: int = 20
