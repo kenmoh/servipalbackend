@@ -40,17 +40,15 @@ async def verify_transaction_tx_ref(tx_ref: str):
                 f"{flutterwave_base_url}/transactions/verify_by_reference?tx_ref={tx_ref}",
                 headers=headers,
             )
-
             response_data = response.json()
             return response_data
-
-        return response_data
     except httpx.HTTPStatusError as e:
         raise HTTPException(status_code=502, detail=f"Payment gateway error: {str(e)}")
     except Exception as e:
         raise HTTPException(
             status_code=500, detail=f"Failed to verify transaction reference: {str(e)}"
         )
+        
 
 
 # GET PAYMENT LINK
