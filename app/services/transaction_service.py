@@ -380,7 +380,7 @@ async def order_payment_callback(request: Request, db: AsyncSession):
     # Update only the payment status and return it
     stmt = (
         update(Order)
-        .where(Order.id == order_id)
+        .where(Order.id == tx_ref)
         .values(order_payment_status=new_status)
         .returning(Order.order_payment_status)
     )
