@@ -4,7 +4,7 @@ from uuid import UUID
 import logging
 from fastapi import BackgroundTasks, HTTPException, Request, status
 
-from sqlalchemy import insert, select
+from sqlalchemy import insert, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
