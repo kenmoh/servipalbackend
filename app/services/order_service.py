@@ -241,18 +241,6 @@ async def create_package_order(
         item_image = ItemImage(item_id=package_data.id, url=image_url)
         db.add(item_image)
 
-        # if hasattr(data, "image_url") and data.image_url:
-        #     image_payloads = {
-        #             "item_id": package_data.id,
-        #             "url": data.image_url,
-        #             "created_at": datetime.now(),
-        #             "updated_at": datetime.now(),
-        #         }
-              
-
-        #     if image_payloads:
-        #         await db.execute(insert(ItemImage).values(image_payloads))
-
         order_insert_result = await db.execute(
             insert(Order)
             .values(
@@ -322,7 +310,7 @@ async def create_package_order(
         total_amount_due = delivery_data.delivery_fee
 
         payment_link = await get_payment_link(
-            id=delivery_data.id,
+            id=delivery_data.order_id,
             amount=delivery_data.delivery_fee,
             current_user=current_user,
         )

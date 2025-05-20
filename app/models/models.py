@@ -27,6 +27,7 @@ from sqlalchemy.orm import mapped_column, Mapped, relationship
 from sqlalchemy.types import TypeDecorator
 
 from app.database.database import Base
+from app.utils.ustils import unique_id
 from app.schemas.delivery_schemas import DeliveryType
 from app.schemas.item_schemas import ItemType
 from app.schemas.status_schema import (
@@ -361,6 +362,7 @@ class Order(Base):
     total_price: Mapped[Decimal] = mapped_column(default=0.00)
     amount_due_vendor: Mapped[Decimal] = mapped_column(nullable=False)
     payment_link: Mapped[str] = mapped_column(nullable=True)
+    # fw_tx_ref: : Mapped[str] = mapped_column(nullable=True, default=unique_id) # Flutterwave transaction reference
     additional_info: Mapped[str] = mapped_column(nullable=True)
     order_payment_status: Mapped[PaymentStatus] = mapped_column(
         default=PaymentStatus.PENDING
