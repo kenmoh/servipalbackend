@@ -239,17 +239,18 @@ async def order_payment_callback(request: Request, db: AsyncSession):
         tx_status == "successful"
         and verify_tranx.get('data').get('status')  == "successful"
     ):
-       order_payment_status = PaymentStatus.PAID
+
+        order_payment_status = PaymentStatus.PAID
         await db.commit()
         return {"order_payment_status":order_payment_status}
 
     if tx_status == "cancelled":
-       order_payment_status = PaymentStatus.CANCELLED
+        order_payment_status = PaymentStatus.CANCELLED
         await db.commit()
         return {"order_payment_status":order_payment_status}
 
     else:
-       order_payment_status = PaymentStatus.FAILED
+        order_payment_status = PaymentStatus.FAILED
         await db.commit()
         return {"order_payment_status":order_payment_status}
 
