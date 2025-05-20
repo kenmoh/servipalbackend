@@ -27,7 +27,7 @@ from sqlalchemy.orm import mapped_column, Mapped, relationship
 from sqlalchemy.types import TypeDecorator
 
 from app.database.database import Base
-from app.utils.ustils import unique_id
+
 from app.schemas.delivery_schemas import DeliveryType
 from app.schemas.item_schemas import ItemType
 from app.schemas.status_schema import (
