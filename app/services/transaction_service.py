@@ -228,32 +228,33 @@ async def fund_wallet_callback(request: Request, db: AsyncSession):
 async def order_payment_callback(request: Request, db: AsyncSession):
     tx_ref = request.query_params["tx_ref"]
     tx_status = request.query_params["status"]
-
-    stmt = select(Order.order_payment_status).where(Order.id == tx_ref)
-    result = await db.execute(stmt)
-    order_payment_status = result.scalar_or_none()
-
+    
+    # Ccheck if the transaction was successful
     verify_tranx = await verify_transaction_tx_ref(tx_ref)
-
-    if (
-        tx_status == "successful"
-        and verify_tranx.get('data').get('status')  == "successful"
-    ):
-
-        order_payment_status = PaymentStatus.PAID
-        await db.commit()
-        
-        return {"order_payment_status":order_payment_status}
-
-    if tx_status == "cancelled":
-        order_payment_status = PaymentStatus.CANCELLED
-        await db.commit()
-        return {"order_payment_status":order_payment_status}
-
+    
+    # Determine the appropriate payment status
+    if (tx_status == "successful" and verify_tranx.get('data', {}).get('status') == "successful"):
+        new_status = PaymentStatus.PAID
+    elif tx_status == "cancelled":
+        new_status = PaymentStatus.CANCELLED
     else:
-        order_payment_status = PaymentStatus.FAILED
-        await db.commit()
-        return {"order_payment_status":order_payment_status}
+        new_status = PaymentStatus.FAILED
+    
+    # Update only the payment status and return it
+    stmt = (
+        update(Order)
+        .where(Order.id == UUID(tx_ref))
+        .values(order_payment_status=new_status)
+        .returning(Order.order_payment_status)
+    )
+    
+    result = await db.execute(stmt)
+    await db.commit()
+    
+    # Get the updated status directly
+    updated_status = result.scalar_one()
+    
+    return {"order_payment_status": updated_status}
 
 
 async def pay_with_wallet(

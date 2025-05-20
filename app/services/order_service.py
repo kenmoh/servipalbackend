@@ -1154,6 +1154,7 @@ def format_delivery_response(
         "order_status": order.order_status.value if order.order_status else None,
         "amount_due_vendor": str(order.amount_due_vendor),
         "payment_link": order.payment_link or "",
+        "order_items": order_items
         
     }
 
