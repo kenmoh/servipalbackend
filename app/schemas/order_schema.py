@@ -136,7 +136,6 @@ class OrderResponseSchema(BaseModel):
     order_number: int | None = None
     amount_due_vendor: Decimal
     payment_link: str
-    payment_status:PaymentStatus
     order_items: list[OrderItemResponseSchema]
 
 
