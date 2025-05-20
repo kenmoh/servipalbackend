@@ -364,10 +364,7 @@ async def order_payment_callback(request: Request, db: AsyncSession):
     # Ccheck if the transaction was successful
     verify_tranx = await verify_transaction_tx_ref(tx_ref)
 
-    try:
-        order_id = UUID(tx_ref)
-    except (ValueError, TypeError):
-        order_id = tx_ref
+
     
     # Determine the appropriate payment status
     if (tx_status == "successful" and verify_tranx.get('data', {}).get('status') == "successful"):
@@ -380,7 +377,7 @@ async def order_payment_callback(request: Request, db: AsyncSession):
     # Update only the payment status and return it
     stmt = (
         update(Order)
-        .where(Order.id == tx_ref)
+        .where(str(Order.id) == tx_ref)
         .values(order_payment_status=new_status)
         .returning(Order.order_payment_status)
     )
