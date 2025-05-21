@@ -75,35 +75,111 @@ async def login_user(db: AsyncSession, login_data: UserLogin) -> User:
     return user
 
 
+# async def create_user(db: AsyncSession, user_data: CreateUserSchema, background_tasks: BackgroundTasks) -> UserBase:
+#     """
+#     Create a new user in the database.
+
+#     Args:
+#         db: Database session
+#         user_data: User data from request
+
+#     Returns:
+#         The newly created user
+#     """
+#     # validate password
+#     validate_password(user_data.password)
+
+#     # Check if email already exists
+#     # email_exists = await db.execute(select(User).where(User.email == user_data.email))
+#     user_exists_result = await db.execute(select(User).options(joinedload(User.profile)).where(User.email==user_data.email))
+
+#     user_exists = user_exists_result.scalar_one_or_none()
+
+#     # if email_exists.scalar_one_or_none():
+#     #     raise HTTPException(
+#     #         status_code=status.HTTP_409_CONFLICT, detail="Email already registered"
+#     #     )
+#     if user_exists.email or user_exists.profile.phone_number:
+#         raise HTTPException(
+#             status_code=status.HTTP_409_CONFLICT, detail="Email or phone number already registered"
+#         )
+
+#     try:
+#         # Create the user
+#         user = User(
+#             email=user_data.email,
+#             password=hash_password(user_data.password),  # Hash password
+#             user_type=user_data.user_type,
+#             updated_at=datetime.now(),
+#         )
+
+#         # Add user to database
+#         db.add(user)
+#         await db.flush()
+
+#         profile = Profile(user_id=user.id, phone_number=user_data.phone_number)
+#         db.add(profile)
+
+#         if user.user_type != UserType.RIDER:
+#             # Create user wallet
+#             wallet = Wallet(id=user.id, balance=0, escrow_balance=0)
+#             db.add(wallet)
+#             # await db.commit()
+
+#         await db.commit()
+#         await db.refresh(profile)
+#         await db.refresh(user)
+
+#         redis_client.delete('all_users')
+
+#         # Generate and send verification codes
+#         email_code, phone_code = await generate_verification_codes(user, db)
+
+#         # Send verification code to phone and email
+#         background_tasks.add_task(
+#             send_verification_codes, user, email_code, phone_code, db)
+
+#         return user
+#     except IntegrityError as e:
+#         await db.rollback()
+#         raise HTTPException(
+#             status_code=status.HTTP_409_CONFLICT, detail=f"Email or phone number already registered"
+#         )
+
+
 async def create_user(db: AsyncSession, user_data: CreateUserSchema, background_tasks: BackgroundTasks) -> UserBase:
     """
     Create a new user in the database.
-
     Args:
         db: Database session
         user_data: User data from request
-
     Returns:
         The newly created user
     """
     # validate password
     validate_password(user_data.password)
-
+    
     # Check if email already exists
-    # email_exists = await db.execute(select(User).where(User.email == user_data.email))
     user_exists_result = await db.execute(select(User).options(joinedload(User.profile)).where(User.email==user_data.email))
-
     user_exists = user_exists_result.scalar_one_or_none()
-
-    # if email_exists.scalar_one_or_none():
-    #     raise HTTPException(
-    #         status_code=status.HTTP_409_CONFLICT, detail="Email already registered"
-    #     )
-    if user_exists.email or user_exists.profile.phone_number:
+    
+    # If user exists, check if email or phone number is already registered
+    if user_exists:
         raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT, detail="Email or phone number already registered"
+            status_code=status.HTTP_409_CONFLICT, detail="Email already registered"
         )
-
+    
+    # Check if phone number is already registered
+    phone_exists_result = await db.execute(
+        select(Profile).where(Profile.phone_number == user_data.phone_number)
+    )
+    phone_exists = phone_exists_result.scalar_one_or_none()
+    
+    if phone_exists:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT, detail="Phone number already registered"
+        )
+    
     try:
         # Create the user
         user = User(
@@ -112,40 +188,38 @@ async def create_user(db: AsyncSession, user_data: CreateUserSchema, background_
             user_type=user_data.user_type,
             updated_at=datetime.now(),
         )
-
+        
         # Add user to database
         db.add(user)
         await db.flush()
-
+        
         profile = Profile(user_id=user.id, phone_number=user_data.phone_number)
         db.add(profile)
-
+        
         if user.user_type != UserType.RIDER:
             # Create user wallet
             wallet = Wallet(id=user.id, balance=0, escrow_balance=0)
             db.add(wallet)
-            # await db.commit()
-
+        
         await db.commit()
         await db.refresh(profile)
         await db.refresh(user)
-
+        
         redis_client.delete('all_users')
-
+        
         # Generate and send verification codes
         email_code, phone_code = await generate_verification_codes(user, db)
-
+        
         # Send verification code to phone and email
         background_tasks.add_task(
             send_verification_codes, user, email_code, phone_code, db)
-
+        
         return user
     except IntegrityError as e:
         await db.rollback()
         raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT, detail=f"Email or phone number already registered"
+            status_code=status.HTTP_409_CONFLICT, detail="Email or phone number already registered"
         )
-
 
 # CREATE RIDER
 
