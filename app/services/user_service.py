@@ -187,6 +187,73 @@ async def update_profile(
         return profile
 
 
+
+
+# async def get_user_with_profile(db: AsyncSession, current_user: User) -> UserResponse:
+#     """
+#     Retrieves a user with their profile, wallet, and recent transactions.
+    
+#     Args:
+#         db: Async database session.
+#         current_user: The current authenticated user.
+        
+#     Returns:
+#         UserResponse object with all related data.
+        
+#     Note:
+#         Uses Redis caching to improve performance for frequent requests.
+#     """
+#     # Try to get from cache first
+#     user_id = current_user.id
+#     cached_user = await get_cached_user(user_id)
+    
+#     if cached_user:
+#         return UserResponse(**cached_user)
+    
+#     # If not in cache, query from database
+#     try:
+#         # Build optimized query with selective loading
+#         stmt = (
+#             select(User)
+#             .where(User.id == user_id)
+#             .options(
+#                 selectinload(User.profile),
+#                 selectinload(User.wallet),
+#                 # Only load recent transactions (last 10) to avoid excessive data
+#                 selectinload(
+#                     User.wallet
+#                 ).selectinload(
+#                     Wallet.transactions.limit(10).order_by(Transaction.created_at.desc())
+#                 )
+#             )
+#         )
+        
+#         result = await db.execute(stmt)
+#         user = result.scalar_one_or_none()
+        
+#         if not user:
+#             raise HTTPException(
+#                 status_code=status.HTTP_404_NOT_FOUND,
+#                 detail="User not found"
+#             )
+        
+#         # Convert to dict for caching, handling SQLAlchemy objects properly
+#         user_data = user_to_dict(user)
+        
+#         # Cache the user data with expiration (e.g., 5 minutes)
+#         await set_cached_user(user_id, user_data, expiry=300)
+        
+#         # Return the user response
+#         return UserResponse(**user_data)
+        
+#     except Exception as e:
+#         logging.error(f"Error retrieving user with profile: {str(e)}", exc_info=True)
+#         raise HTTPException(
+#             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+#             detail=f"Failed to retrieve user data: {str(e)}"
+#         )
+
+
 async def get_user_with_profile(db: AsyncSession, current_user: User) -> UserResponse:
     """
     Retrieves a user and their associated profile by user ID.
@@ -202,16 +269,32 @@ async def get_user_with_profile(db: AsyncSession, current_user: User) -> UserRes
     if cached_user:
         return UserResponse(**cached_user)
 
-    stmt = select(User).where(User.id == current_user.id).options(
-        selectinload(User.profile),
-        selectinload(User.wallet),
-        selectinload(User.wallet, Wallet.transactions),
-    )
+    # stmt = select(User).where(User.id == current_user.id).options(
+    #     selectinload(User.profile),
+    #     selectinload(User.wallet),
+    #     selectinload(User.wallet, Wallet.transactions),
+    # )
     # query = (
     #     select(User)
     #     .options(joinedload(User.profile))  # Eagerly load the profile
     #     .where(User.id == user_id)
     # )
+            # Build optimized query with selective loading
+    stmt = (
+        select(User)
+        .where(User.id == current_user.id)
+        .options(
+            selectinload(User.profile),
+            selectinload(User.wallet),
+            # Only load recent transactions (last 10) to avoid excessive data
+            selectinload(
+                User.wallet
+            ).selectinload(
+                Wallet.transactions.limit(10).order_by(Transaction.created_at.desc())
+            )
+        )
+    )
+    
 
     result = await db.execute(stmt)
     user = result.scalar_one_or_none()

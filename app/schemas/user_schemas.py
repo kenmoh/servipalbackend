@@ -434,5 +434,5 @@ class VendorUserResponse(BaseModel):
 
 
 class ProfileImageResponseSchema(BaseModel):
-    profile_image_url: str
+    profile_image_url: str | None = None
     backdrop_image_url: str | None = None
