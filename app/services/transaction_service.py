@@ -41,72 +41,157 @@ async def update_database(order, db: AsyncSession):
             print(f"Error updating database: {e}")
             await asyncio.sleep(1)
 
-
 async def top_up_wallet(
     db: AsyncSession, current_user: User, topup_data: TopUpRequestSchema
 ) -> TopUpRequestSchema:
     """
-    Initiates a wallet top-up transaction.
-
+    Initiates a wallet top-up transaction with improved error handling and efficiency.
+    
     Args:
         db: The database session.
         current_user: The user initiating the top-up.
         topup_data: The top-up request data (amount).
-
+        
     Returns:
         Details of the initiated transaction, including the payment link.
-
+        
     Raises:
-        HTTPException: If the user's wallet is not found.
+        HTTPException: If wallet creation fails or payment link generation fails.
     """
-    # 1. Get user's wallet (Wallet ID is same as User ID in your model)
-    wallet = await db.get(Wallet, current_user.id)
-    if not wallet:
-        try:
-            # Consider creating a wallet automatically if it doesn't exist,
-            wallet = Wallet(id=current_user.id, balance=0, escrow_balance=0)
-            db.add(wallet)
-            await db.commit()
-            await db.refresh(wallet)
-        except Exception as e:
+    try:
+        async with db.begin():
+            # Get or create wallet in a single operation
+            wallet = await db.get(Wallet, current_user.id)
+            if not wallet:
+                wallet = Wallet(
+                    id=current_user.id,
+                    balance=0,
+                    escrow_balance=0,
+                    created_at=datetime.utcnow(),
+                    updated_at=datetime.utcnow()
+                )
+                db.add(wallet)
+                            
+            # Create the transaction record
+            transaction = Transaction(
+                wallet_id=wallet.id,
+                amount=topup_data.amount,
+                transaction_type=TransactionType.CREDIT,
+                status=PaymentStatus.PENDING,
+                created_at=datetime.utcnow(),
+                updated_at=datetime.utcnow()
+            )
+            db.add(transaction)
+            
+            # Fush to get the transaction ID for the payment link
+            await db.flush()
+            
+            # Generate payment link
+            payment_link = await get_fund_wallet_payment_link(
+                id=transaction.id,
+                amount=transaction.amount,
+                current_user=current_user
+            )
+            
+            # Update transaction with payment link
+            transaction.payment_link = payment_link
+            
+            # Transaction will be automatically committed when the context manager exits
+            
+        # Get fresh transaction data outside the transaction for better performance
+        # and to avoid potential issues with the session
+        refreshed_transaction = await db.get(Transaction, transaction.id)
+        
+        # Convert to response schema
+        return TopUpRequestSchema.model_validate(refreshed_transaction)
+            
+    except Exception as e:
+        # Log error for debugging
+        logging.error(f"Failed to top up wallet: {str(e)}", exc_info=True)
+        
+        # Map different error types to appropriate HTTP responses
+        if "wallet" in str(e).lower():
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Failed to create a wallet for the user. {e}",
+                detail=f"Failed to create or access wallet: {str(e)}"
+            )
+        elif "payment link" in str(e).lower() or "fund" in str(e).lower():
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail=f"Payment gateway error: {str(e)}"
+            )
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Failed to process wallet top-up: {str(e)}"
             )
 
-    # 3. Create the transaction record
-    transaction = Transaction(
-        wallet_id=wallet.id,
-        amount=topup_data.amount,
-        transaction_type=TransactionType.CREDIT,
-        payment_status=PaymentStatus.PENDING,
-    )
-    db.add(transaction)
-    await db.flush(transaction)
 
-    try:
-        # Generate payment link *after* flushing to get the transaction ID
-        payment_link = await get_fund_wallet_payment_link(
-            id=transaction.id, amount=transaction.amount, current_user=current_user
-        )
-        transaction.payment_link = payment_link
+# async def top_up_wallet(
+#     db: AsyncSession, current_user: User, topup_data: TopUpRequestSchema
+# ) -> TopUpRequestSchema:
+#     """
+#     Initiates a wallet top-up transaction.
 
-        # 4. Save transaction with payment link
-        await db.commit()
-        await db.refresh(transaction)
-    except Exception as e:
-        # If payment link generation fails, rollback the transaction creation
-        await db.rollback()
-        # Log the error e
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to generate payment link: {e}",
-        )
-    # 4. Save to DB
-    await db.commit()
-    await db.refresh(transaction)
+#     Args:
+#         db: The database session.
+#         current_user: The user initiating the top-up.
+#         topup_data: The top-up request data (amount).
 
-    return TopUpRequestSchema.model_validate(transaction)
+#     Returns:
+#         Details of the initiated transaction, including the payment link.
+
+#     Raises:
+#         HTTPException: If the user's wallet is not found.
+#     """
+#     # 1. Get user's wallet (Wallet ID is same as User ID in your model)
+#     wallet = await db.get(Wallet, current_user.id)
+#     if not wallet:
+#         try:
+#             # Consider creating a wallet automatically if it doesn't exist,
+#             wallet = Wallet(id=current_user.id, balance=0, escrow_balance=0)
+#             db.add(wallet)
+#             await db.commit()
+#             await db.refresh(wallet)
+#         except Exception as e:
+#             raise HTTPException(
+#                 status_code=status.HTTP_404_NOT_FOUND,
+#                 detail=f"Failed to create a wallet for the user. {e}",
+#             )
+
+#     # 3. Create the transaction record
+#     transaction = Transaction(
+#         wallet_id=wallet.id,
+#         amount=topup_data.amount,
+#         transaction_type=TransactionType.CREDIT,
+#         payment_status=PaymentStatus.PENDING,
+#     )
+#     db.add(transaction)
+#     await db.flush(transaction)
+
+#     try:
+#         # Generate payment link *after* flushing to get the transaction ID
+#         payment_link = await get_fund_wallet_payment_link(
+#             id=transaction.id, amount=transaction.amount, current_user=current_user
+#         )
+#         transaction.payment_link = payment_link
+
+#         # 4. Save transaction with payment link
+#         await db.commit()
+#         await db.refresh(transaction)
+#     except Exception as e:
+#         # If payment link generation fails, rollback the transaction creation
+#         await db.rollback()
+#         # Log the error e
+#         raise HTTPException(
+#             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+#             detail=f"Failed to generate payment link: {e}",
+#         )
+#     # 4. Save to DB
+#     await db.commit()
+#     await db.refresh(transaction)
+
+#     return TopUpRequestSchema.model_validate(transaction)
 
 
 # --- Webhook Handler ---
@@ -493,32 +578,30 @@ async def pay_with_wallet(
         transaction_values = [
             # Buyer transaction (DEBIT)
             {
-                "id": uuid4(),
                 "wallet_id": buyer_wallet.id,
                 "amount": order.total_price,
                 "transaction_type": TransactionType.DEBIT,
                 "status": PaymentStatus.PAID,
                 "created_at": current_time,
                 "updated_at": current_time,
-                "reference": f"ORDER-{order_id}-BUY"
+                # "reference": f"ORDER-{order_id}-BUY"
             },
             # Seller transaction (CREDIT)
             {
-                "id": uuid4(),
                 "wallet_id": seller_wallet.id,
                 "amount": order.total_price,
                 "transaction_type": TransactionType.CREDIT,
                 "status": PaymentStatus.PAID,
                 "created_at": current_time,
                 "updated_at": current_time,
-                "reference": f"ORDER-{order_id}-SELL"
+                # "reference": f"ORDER-{order_id}-SELL"
             }
         ]
         
         await db.execute(insert(Transaction), transaction_values)
         
         # Update order status
-        order.order_payment_status = PaymentStatus.COMPLETED
+        order.order_payment_status = PaymentStatus.PAID
         
         # No need to call commit explicitly within the async with db.begin() block
         # as it will automatically commit when the block exits

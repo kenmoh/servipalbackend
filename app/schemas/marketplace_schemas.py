@@ -23,7 +23,7 @@ class ProductBuyRequest(BaseModel):
 
 
 class TopUpRequestSchema(BaseModel):
-    amount: Decimal = Field(1, ge=1000, le=100000,
+    amount: Decimal = Field(ge=1000, le=100000,
                             description="Amount to top up")
 
 
