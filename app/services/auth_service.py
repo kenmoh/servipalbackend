@@ -898,7 +898,7 @@ async def generate_verification_codes(user: User, db: AsyncSession) -> tuple[str
     # Update user record with codes and expiration
     user.email_verification_code = email_code
     user.profile.phone_verification_code = phone_code
-    
+
     user.email_verification_expires = expires
     user.profile.phone_verification_expires = expires
 
@@ -985,7 +985,7 @@ async def verify_user_contact(
 
     # Update verification status
     user.is_email_verified = True
-    user.is_phone_verified = True
+    user.profile.is_phone_verified = True
     user.email_verification_code = None
     user.phone_verification_code = None
     user.email_verification_expires = None
