@@ -960,24 +960,24 @@ async def verify_user_contact(
         )
 
     # Check if codes are expired
-    if (
-        user.email_verification_expires < now
-        or user.profile.phone_verification_expires < now
-    ):
+    email_expired = user.email_verification_expires is not None and user.email_verification_expires < now
+    phone_expired = user.profile.phone_verification_expires is not None and user.profile.phone_verification_expires < now
+
+    if email_expired or phone_expired:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Verification codes have expired",
         )
 
     # Verify email code
-    if str(email_code) != user.email_verification_code:
+    if email_code != user.email_verification_code:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Invalid email verification code",
         )
 
     # Verify phone code
-    if str(phone_code) != user.profile.phone_verification_code:
+    if phone_code != user.profile.phone_verification_code:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Invalid phone verification code",
