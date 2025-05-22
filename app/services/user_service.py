@@ -12,6 +12,7 @@ from fastapi import HTTPException, status, UploadFile
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import or_, select
 from sqlalchemy.orm import selectinload
+from app.schemas.delivery_schemas import DeliveryStatus
 
 from app.schemas.schemas import DispatchRiderSchema
 from app.schemas.status_schema import AccountStatus, UserType
@@ -659,6 +660,7 @@ async def get_dispatcher_riders(
     cached_data = redis_client.get(cache_key)
 
     if cached_data:
+       
         logger.info(f"Cache hit for {cache_key}")
         return [DispatchRiderSchema(**rider) for rider in json.loads(cached_data)]
 
@@ -669,11 +671,11 @@ async def get_dispatcher_riders(
                 User,
                 Profile,
                 func.count(Delivery.id).filter(
-                    Delivery.delivery_status != 'COMPLETED'
+                    Delivery.delivery_status != DeliveryStatus.RECEIVED
                 ).label('pending_deliveries'),
                 func.count(Delivery.id).label('total_deliveries'),
                 func.count(Delivery.id).filter(
-                    Delivery.delivery_status == 'COMPLETED'
+                    Delivery.delivery_status == DeliveryStatus.RECEIVED
                 ).label('completed_deliveries')
             )
             .join(Profile)
@@ -711,7 +713,7 @@ async def get_dispatcher_riders(
         redis_client.setex(
             cache_key,
             CACHE_TTL,
-            json.dumps(riders)
+            json.dumps(riders, default=str)
         )
 
         return [DispatchRiderSchema(**rider) for rider in riders]
