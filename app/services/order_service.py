@@ -1,6 +1,6 @@
 from datetime import timedelta, datetime
 from typing import Optional
-from sqlalchemy import or_, select, update, insert
+from sqlalchemy import func, or_, select, update, insert
 from fastapi import UploadFile
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import joinedload, selectinload
@@ -44,6 +44,7 @@ from app.schemas.item_schemas import ItemType
 
 from app.schemas.status_schema import RequireDeliverySchema
 from app.schemas.user_schemas import UserType, WalletRespose
+from app.services.auth_service import invalidate_rider_cache
 from app.utils.utils import (
     get_dispatch_id,
     get_payment_link,
@@ -51,8 +52,8 @@ from app.utils.utils import (
 from app.config.config import redis_client
 from app.utils.s3_service import add_image
 
-def user_stats(db: AsyncSession, current_user: User):
-    db.execute(select(func.count()).select_from(User))
+# def user_stats(db: AsyncSession, current_user: User):
+#     db.execute(select(func.count()).select_from(User))
 
 
 async def filter_delivery_by_delivery_type(
@@ -195,7 +196,6 @@ async def create_package_order(
     db: AsyncSession, data: PackageCreate, image: UploadFile, current_user: User
 ) -> DeliveryResponse:
 
-
     if current_user.user_type == UserType.CUSTOMER and not (
         current_user.profile.full_name or current_user.profile.phone_number
     ):
@@ -227,7 +227,7 @@ async def create_package_order(
                     "item_type": ItemType.PACKAGE,
                     "name": data.name,
                     "description": data.description,
-                   
+
                 }
             )
             .returning(Item.name, Item.id, Item.user_id)
@@ -275,7 +275,6 @@ async def create_package_order(
 
         # --- 4. Insert into 'deliveries' table ---
 
-
         delivery_insert_result = await db.execute(
             insert(Delivery)
             .values(
@@ -293,7 +292,7 @@ async def create_package_order(
                     "duration": data.duration,
                     "origin": data.origin,
                     "destination": data.destination
-                    
+
                 }
             )
             .returning(
@@ -813,8 +812,10 @@ async def rider_update_delivery_status(
     redis_client.delete(f"user_orders:{delivery.sender_id}")
     if delivery.dispatch_id:
         redis_client.delete(f"dispatch_deliveries:{delivery.dispatch_id}")
+        invalidate_rider_cache(delivery.delivery_id)
     if delivery.rider_id:
         redis_client.delete(f"rider_deliveries:{delivery.rider_id}")
+        invalidate_rider_cache(delivery.rider_id)
 
     return DeliveryStatusUpdateSchema(delivery_status=delivery.delivery_status)
 
@@ -1143,7 +1144,7 @@ def format_delivery_response(
         "amount_due_vendor": str(order.amount_due_vendor),
         "payment_link": order.payment_link or "",
         "order_items": order_items
-        
+
     }
 
     return DeliveryResponse(delivery=delivery_data, order=order_data)

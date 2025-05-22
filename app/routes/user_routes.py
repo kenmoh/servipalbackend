@@ -1,5 +1,5 @@
 from uuid import UUID
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
 
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -8,6 +8,8 @@ from app.auth.auth import create_tokens, get_current_user
 from app.database.database import get_db
 from app.models.models import ProfileImage, User, Profile
 
+from app.schemas.schemas import DispatchRiderSchema
+from app.schemas.status_schema import UserType
 from app.schemas.user_schemas import (
     ProfileSchema,
     UserProfileResponse,
@@ -37,48 +39,6 @@ async def get_user_wallets(
     current_user: User = Depends(get_current_user)
 ) -> list[WalletSchema]:
     return await user_service.get_user_wallets(db=db)
-
-
-# @router.post("/profile", status_code=status.HTTP_201_CREATED)
-# async def create_user_profile(
-#     profile_data: ProfileSchema,
-#     current_user: User = Depends(get_current_user),
-#     db: AsyncSession = Depends(get_db),
-# ) -> ProfileSchema:
-#     return await user_service.create_pofile(
-#         profile_data=profile_data, db=db, current_user=current_user
-#     )
-
-
-# @router.post("/upload-image", status_code=status.HTTP_201_CREATED)
-# async def upload_profile_image(
-#     image: UploadFile = File(...),
-#     current_user: User = Depends(get_current_user),
-#     db: AsyncSession = Depends(get_db),
-# ):
-#     """Upload profile image"""
-#     try:
-#         url = await add_profile_image(image, folder=f"profiles/{current_user.id}")
-
-#         # Update user profile
-#         profile = await db.get(Profile, current_user.id)
-#         if profile and profile.profile_image:
-#             # Update existing image
-#             url = await update_image(
-#                 image, profile.profile_image.url, folder=f"profiles/{current_user.id}"
-#             )
-
-#         profile_image = ProfileImage(url=url, profile_id=profile.id)
-#         db.add(profile_image)
-#         await db.commit()
-
-#         return {"url": url}
-
-#     except Exception as e:
-#         await db.rollback()
-#         raise HTTPException(
-#             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e)
-#         )
 
 
 @router.put("/profile", status_code=status.HTTP_202_ACCEPTED)
@@ -144,3 +104,20 @@ async def upload_profile_image(
         backdrop_image_url=backdrop_image_url,
         profile_image_url=profile_image_url,
     )
+
+
+@router.get("/riders", response_model=list[DispatchRiderSchema])
+async def get_riders(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    skip: int = Query(0, ge=0),
+    limit: int = Query(10, ge=1, le=100)
+):
+    """Get all riders for a dispatch company"""
+    if current_user.user_type != UserType.DISPATCH:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only dispatch companies can access this endpoint"
+        )
+
+    return await user_service.get_dispatcher_riders(db, current_user.id, skip, limit)

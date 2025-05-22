@@ -1,3 +1,5 @@
+import datetime
+from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field, EmailStr
 
 
@@ -22,3 +24,21 @@ class UserBase(BaseModel):
 class ReviewSchema(BaseModel):
     rating: int = Field(ge=1, le=5)
     comment: str | None = None
+
+
+class RiderStatsSchema(BaseModel):
+    total_deliveries: int
+    pending_deliveries: int
+    completed_deliveries: int
+
+
+class DispatchRiderSchema(BaseModel):
+    id: UUID
+    full_name: str | None
+    email: str
+    bike_number: str | None
+    stats: RiderStatsSchema
+    created_at: datetime
+
+    class Config:
+        from_attributes = True

@@ -158,28 +158,28 @@ async def create_user(db: AsyncSession, user_data: CreateUserSchema, background_
     """
     # validate password
     validate_password(user_data.password)
-    
+
     # Check if email already exists
-    user_exists_result = await db.execute(select(User).options(joinedload(User.profile)).where(User.email==user_data.email))
+    user_exists_result = await db.execute(select(User).options(joinedload(User.profile)).where(User.email == user_data.email))
     user_exists = user_exists_result.scalar_one_or_none()
-    
+
     # If user exists, check if email or phone number is already registered
     if user_exists:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT, detail="Email already registered"
         )
-    
+
     # Check if phone number is already registered
     phone_exists_result = await db.execute(
         select(Profile).where(Profile.phone_number == user_data.phone_number)
     )
     phone_exists = phone_exists_result.scalar_one_or_none()
-    
+
     if phone_exists:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT, detail="Phone number already registered"
         )
-    
+
     try:
         # Create the user
         user = User(
@@ -188,32 +188,33 @@ async def create_user(db: AsyncSession, user_data: CreateUserSchema, background_
             user_type=user_data.user_type,
             updated_at=datetime.now(),
         )
-        
+
         # Add user to database
         db.add(user)
         await db.flush()
-        
-        profile = Profile(user_id=user.id, phone_number=f"234{user_data.phone_number[1:] if user_data.phone_number.startswith(str(0)) else user_data.phone_number}")
+
+        profile = Profile(
+            user_id=user.id, phone_number=f"234{user_data.phone_number[1:] if user_data.phone_number.startswith(str(0)) else user_data.phone_number}")
         db.add(profile)
-        
+
         if user.user_type != UserType.RIDER:
             # Create user wallet
             wallet = Wallet(id=user.id, balance=0, escrow_balance=0)
             db.add(wallet)
-        
+
         await db.commit()
         await db.refresh(profile)
         await db.refresh(user)
-        
+
         redis_client.delete('all_users')
-        
+
         # Generate and send verification codes
         email_code, phone_code = await generate_verification_codes(user, db)
-        
+
         # Send verification code to phone and email
         background_tasks.add_task(
             send_verification_codes, user, email_code, phone_code, db)
-        
+
         return user
     except IntegrityError as e:
         await db.rollback()
@@ -222,6 +223,7 @@ async def create_user(db: AsyncSession, user_data: CreateUserSchema, background_
         )
 
 # CREATE RIDER
+
 
 async def create_new_rider(
     data: RiderCreate, db: AsyncSession, current_user: User, background_tasks: BackgroundTasks
@@ -300,7 +302,8 @@ async def create_new_rider(
 
     # Check if email already exists
     email_result = await db.execute(
-        select(User).options(joinedload(User.profile)).where(User.email == data.email)
+        select(User).options(joinedload(User.profile)).where(
+            User.email == data.email)
     )
     email_exists = email_result.scalar_one_or_none()
 
@@ -360,7 +363,7 @@ async def create_new_rider(
         # Send verification code to phone and email
         background_tasks.add_task(
             send_verification_codes, new_rider, email_code, phone_code, db)
-
+        invalidate_rider_cache(current_user.id)
         return UserBase(**rider_dict)
     except IntegrityError as e:
         await db.rollback()
@@ -986,6 +989,7 @@ async def verify_user_contact(
     # Update verification status
     user.is_email_verified = True
     user.profile.is_phone_verified = True
+    user.account_status = AccountStatus.CONFIRMED
     user.email_verification_code = None
     user.phone_verification_code = None
     user.email_verification_expires = None
@@ -994,6 +998,16 @@ async def verify_user_contact(
     await db.commit()
 
     return {"message": "Email and phone verified successfully"}
+
+
+# Function to invalidate cache when rider data changes
+def invalidate_rider_cache(dispatcher_id: UUID):
+    """Invalidate rider cache when data changes"""
+    pattern = f"dispatcher:{dispatcher_id}:riders:*"
+    keys = redis_client.keys(pattern)
+    if keys:
+        redis_client.delete(*keys)
+        # logger.info(f"Cache invalidated for pattern: {pattern}")
 
 
 # async def verify_email_and_phone_number(db: AsyncSession, email_code: str, phone_code: str):
