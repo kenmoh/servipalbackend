@@ -303,76 +303,172 @@ async def get_user_with_profile(db: AsyncSession, current_user: User) -> UserRes
 
 
 async def get_users_by_food_category(
-    db: AsyncSession, category_id: Optional[UUID] = None
+    db: AsyncSession,
+    category_id: Optional[UUID] = None
 ) -> List[VendorUserResponse]:
     """
-    Retrieve users who have items with item_type='food' in a specific category.
-    If no users are found for the category, return all users with food items.
-    If category_id is None, return all users with food items.
+    Get restaurant vendors filtered by food category
 
     Args:
-        db: The database session.
-        category_id: Optional UUID of the category to filter by.
+        db: Database session
+        category_id: Optional category ID to filter vendors
 
     Returns:
-        List of dictionaries containing user details.
+        List of vendors with their details and ratings
     """
-    # Base query to get users with food items
-    stmt = (
-        select(User)
-        .join(Item, Item.user_id == User.id)
-        .where(Item.item_type == ItemType.FOOD)
-        .options(
-            selectinload(User.profile).selectinload(Profile.profile_image),
-            # selectinload(User.profile).selectinload(Profile.profile_image),
-        )
-    )
+    # Check cache first
+    cache_key = f"food_vendors:{category_id if category_id else 'all'}"
+    cached_data = await redis_client.get(cache_key)
 
-    # Add category filter if provided
-    if category_id:
-        stmt = stmt.where(Item.category_id == category_id)
+    if cached_data:
+        logger.info(f"Cache hit for {cache_key}")
+        return [VendorUserResponse(**vendor) for vendor in json.loads(cached_data)]
 
-    # Execute query
-    result = await db.execute(stmt)
-    users = result.scalars().unique().all()
-
-    # If no users found for the specific category, fall back to all food items
-    if not users and category_id:
+    try:
+        # Base query with all necessary joins and filters
         stmt = (
-            select(User)
-            .join(Item, Item.user_id == User.id)
-            .where(Item.item_type == ItemType.FOOD.value)
-            .options(
-                selectinload(User.profile).selectinload(Profile.profile_image),
-                selectinload(User.profile).selectinload(Profile.backdrop),
+            select(
+                User,
+                Profile,
+                ProfileImage,
+                func.count(Item.id).label('item_count')
             )
+            .join(Profile, User.id == Profile.user_id)
+            .outerjoin(ProfileImage, Profile.user_id == ProfileImage.profile_id)
+            .join(Item, User.id == Item.user_id)
+            .where(
+                Item.item_type == ItemType.FOOD,
+                User.user_type == UserType.VENDOR,
+                # User.is_verified == True,
+                # User.account_status == AccountStatus.CONFIRMED
+            )
+            .group_by(User.id, Profile.user_id, ProfileImage.profile_id)
         )
+
+        # Add category filter if provided
+        if category_id:
+            stmt = stmt.where(Item.category_id == category_id)
+
+        # Execute query
         result = await db.execute(stmt)
-        users = result.scalars().unique().all()
+        vendors = result.unique().all()
 
-    # Format the response
-    response = []
-    for user in users:
-        response.append(
-            {
-                "id": user.id,
-                "company_name": user.profile.business_name if user.profile else None,
-                "email": user.email,
-                "phone_number": user.profile.phone_number if user.profile else None,
-                "profile_image": user.profile.profile_image_url
-                if user.profile and user.profile.profile_image_url
-                else None,
-                "location": user.profile.business_address if user.profile else None,
-                "backdrop_image": user.profile.backdrop_image_url
-                if user.profile.backdrop_image_url
-                else None,
-                "opening_hour": user.profile.opening_hours if user.profile else None,
-                "closing_hour": user.profile.closing_hours if user.profile else None,
-                "rating": await get_vendor_average_rating(user.id, db),
-            }
+        # Format response
+        response = []
+        for user, profile, profile_image, item_count in vendors:
+            if item_count > 0:  # Only include vendors with items
+                vendor_data = {
+                    "id": str(user.id),
+                    "company_name": profile.business_name,
+                    "email": user.email,
+                    "phone_number": profile.phone_number,
+                    "profile_image": profile_image.profile_image_url if profile_image else None,
+                    "location": profile.business_address,
+                    "backdrop_image": profile_image.backdrop_image_url if profile_image else None,
+                    "opening_hour": profile.opening_hours.strftime("%H:%M") if profile.opening_hours else None,
+                    "closing_hour": profile.closing_hours.strftime("%H:%M") if profile.closing_hours else None,
+                    "rating": await get_vendor_average_rating(user.id, db),
+                    "total_items": item_count
+                }
+                response.append(vendor_data)
+
+        # Cache the results
+        await redis_client.setex(
+            cache_key,
+            CACHE_TTL,
+            json.dumps(response, default=str)
         )
 
-    return response
+        return response
+
+    except Exception as e:
+        logger.error(f"Error fetching food vendors: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to fetch food vendors"
+        )
+
+# Add function to invalidate vendor cache
+
+
+# async def invalidate_vendor_cache(category_id: Optional[UUID] = None):
+#     """Invalidate vendor cache when data changes"""
+#     if category_id:
+#         await redis_client.delete(f"food_vendors:{category_id}")
+#     await redis_client.delete("food_vendors:all")
+
+
+# async def get_users_by_food_category(
+#     db: AsyncSession, category_id: Optional[UUID] = None
+# ) -> List[VendorUserResponse]:
+#     """
+#     Retrieve users who have items with item_type='food' in a specific category.
+#     If no users are found for the category, return all users with food items.
+#     If category_id is None, return all users with food items.
+
+#     Args:
+#         db: The database session.
+#         category_id: Optional UUID of the category to filter by.
+
+#     Returns:
+#         List of dictionaries containing user details.
+#     """
+#     # Base query to get users with food items
+#     stmt = (
+#         select(User)
+#         .join(Item, Item.user_id == User.id)
+#         .where(Item.item_type == ItemType.FOOD)
+#         .options(
+#             selectinload(User.profile).selectinload(Profile.profile_image),
+#             # selectinload(User.profile).selectinload(Profile.profile_image),
+#         )
+#     )
+
+#     # Add category filter if provided
+#     if category_id:
+#         stmt = stmt.where(Item.category_id == category_id)
+
+#     # Execute query
+#     result = await db.execute(stmt)
+#     users = result.scalars().unique().all()
+
+#     # If no users found for the specific category, fall back to all food items
+#     if not users and category_id:
+#         stmt = (
+#             select(User)
+#             .join(Item, Item.user_id == User.id)
+#             .where(Item.item_type == ItemType.FOOD.value)
+#             .options(
+#                 selectinload(User.profile).selectinload(Profile.profile_image),
+#                 selectinload(User.profile).selectinload(Profile.backdrop),
+#             )
+#         )
+#         result = await db.execute(stmt)
+#         users = result.scalars().unique().all()
+
+#     # Format the response
+#     response = []
+#     for user in users:
+#         response.append(
+#             {
+#                 "id": user.id,
+#                 "company_name": user.profile.business_name if user.profile else None,
+#                 "email": user.email,
+#                 "phone_number": user.profile.phone_number if user.profile else None,
+#                 "profile_image": user.profile.profile_image_url
+#                 if user.profile and user.profile.profile_image_url
+#                 else None,
+#                 "location": user.profile.business_address if user.profile else None,
+#                 "backdrop_image": user.profile.backdrop_image_url
+#                 if user.profile.backdrop_image_url
+#                 else None,
+#                 "opening_hour": user.profile.opening_hours if user.profile else None,
+#                 "closing_hour": user.profile.closing_hours if user.profile else None,
+#                 "rating": await get_vendor_average_rating(user.id, db),
+#             }
+#         )
+
+#     return response
 
 
 async def upload_image_profile(
@@ -479,7 +575,7 @@ async def get_users_by_laundry_services(db: AsyncSession) -> List[VendorUserResp
         stmt = (
             select(User)
             .join(Item, Item.user_id == User.id)
-            .where(Item.item_type == ItemType.LAUNDRY.value)
+            .where(Item.item_type == ItemType.LAUNDRY)
             .options(
                 selectinload(User.profile).selectinload(Profile.profile_image),
                 selectinload(User.profile).selectinload(Profile.backdrop),
