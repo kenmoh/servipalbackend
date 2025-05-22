@@ -24,15 +24,34 @@ s3_client = boto3.client("s3")
 # UPLOAD IMAGE TO AWS
 
 
-async def add_image(image: UploadFile):
-    token_name = secrets.token_hex(12)
-    file_name = f"{token_name}{image.filename}"
+# async def add_image(image: UploadFile):
+#     token_name = secrets.token_hex(12)
+#     file_name = f"{token_name}{image.filename}"
 
+#     bucket = s3.Bucket(aws_bucket_name)
+#     bucket.upload_fileobj(image.file, file_name)
+
+#     image_url = f"https://{aws_bucket_name}.s3.amazonaws.com/{file_name}"
+
+#     return image_url
+
+async def add_image(image: UploadFile) -> str:
+    """
+    Upload an image to S3 and return its URL.
+
+    Args:
+        image: UploadFile object to upload
+
+    Returns:
+        str: URL of the uploaded image, or None if image is None
+    """
+    if not image:
+        return None
+    token_name = secrets.token_hex(12)
+    file_name = f"{token_name}-{image.filename}"
     bucket = s3.Bucket(aws_bucket_name)
     bucket.upload_fileobj(image.file, file_name)
-
     image_url = f"https://{aws_bucket_name}.s3.amazonaws.com/{file_name}"
-
     return image_url
 
 
@@ -75,12 +94,12 @@ async def upload_multiple_images(images: list[UploadFile]):
     return urls
 
 
-async def add_profile_image(image: UploadFile, folder: str) -> str:
+async def add_profile_image(image: UploadFile) -> str:
     """
     Upload a single image to S3
     Args:
         image: UploadFile object
-        folder: S3 folder path (default: 'misc')
+        
     Returns:
         str: Image URL
     """
@@ -92,7 +111,7 @@ async def add_profile_image(image: UploadFile, folder: str) -> str:
 
     try:
         # Generate unique file name
-        file_key = f"{folder}/{uuid4()}-{image.filename}"
+        file_key = f"{uuid4()}-{image.filename}"
 
         # Upload to S3
         bucket = s3.Bucket(aws_bucket_name)
@@ -151,25 +170,42 @@ async def delete_s3_object(file_url: str) -> bool:
         return False
 
 
-async def update_image(
-    new_image: UploadFile,
-    old_image_url: str,
-) -> str:
+async def update_image(new_image: UploadFile, old_image_url: str) -> str:
     """
-    Update an image by deleting the old one and uploading the new one
+    Update an image by deleting the old one and uploading the new one.
+
     Args:
         new_image: New image to upload
         old_image_url: URL of image to replace
-        folder: S3 folder path
+
     Returns:
-        str: New image URL
+        str: New image URL, or None if new_image is None
     """
-    # Delete old image
     if old_image_url:
         await delete_s3_object(old_image_url)
+    if not new_image:
+        return None
+    return await add_image(new_image)
 
-    # Upload new image
-    return await add_profile_image(new_image)
+# async def update_image(
+#     new_image: UploadFile,
+#     old_image_url: str,
+# ) -> str:
+#     """
+#     Update an image by deleting the old one and uploading the new one
+#     Args:
+#         new_image: New image to upload
+#         old_image_url: URL of image to replace
+#         folder: S3 folder path
+#     Returns:
+#         str: New image URL
+#     """
+#     # Delete old image
+#     if old_image_url:
+#         await delete_s3_object(old_image_url)
+
+#     # Upload new image
+#     return await add_image(new_image)
 
 
 async def update_multiple_images(

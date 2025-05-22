@@ -133,7 +133,7 @@ async def get_laundry_vendors(
 
 @router.post("/upload-image", status_code=status.HTTP_201_CREATED)
 async def upload_profile_image(
-    profile_image_url: UploadFile = File(...),
+    profile_image_url: UploadFile = File(None),
     backdrop_image_url: UploadFile = File(None),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),

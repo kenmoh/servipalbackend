@@ -13,9 +13,9 @@ from sqlalchemy import or_, select
 from sqlalchemy.orm import selectinload, joinedload
 
 from app.schemas.status_schema import AccountStatus
-from app.utils.s3_service import add_profile_image, update_image
+from app.utils.s3_service import add_image, update_image,delete_s3_object
 from app.config.config import redis_client
-from app.models.models import User, Wallet, Profile, ProfileImage
+from app.models.models import User, Wallet, Profile, ProfileImage, Transaction
 from app.schemas.user_schemas import (
     ProfileSchema,
     UserProfileResponse,
@@ -46,30 +46,104 @@ def invalidate_user_cache(user_id: UUID) -> None:
     redis_client.delete(f"user:{user_id}")
 
 
-async def get_users(db: AsyncSession) -> list[UserProfileResponse]:
-    cached_users = redis_client.get("all_users")
-    if cached_users:
-        users_data = json.loads(cached_users)
-        return [UserResponse.model_validate(user_data) for user_data in users_data]
+# async def get_users(db: AsyncSession) -> list[UserProfileResponse]:
+#     cached_users = redis_client.get("all_users")
+#     if cached_users:
+#         users_data = json.loads(cached_users)
+#         return [UserResponse.model_validate(user_data) for user_data in users_data]
 
    
 
-    stmt = (
-        select(User)
-        .options(joinedload(User.profile))  # Eagerly load the profile
+#     stmt = (
+#         select(User)
+#         .options(joinedload(User.profile))  # Eagerly load the profile
+#         )
+
+#     result = await db.execute(stmt)
+#     users = result.scalars().all()
+
+#     user_responses = [UserProfileResponse.model_validate(user) for user in users]
+#     users_dict = [user.dict() for user in user_responses]
+
+#     # Cache the users
+#     redis_client.set("all_users", json.dumps(
+#         users_dict, default=str), ex=CACHE_TTL)
+
+#     return user_responses
+
+
+async def get_users(db: AsyncSession) -> list[UserProfileResponse]:
+    """
+    Retrieves all users with their profiles.
+    
+    Args:
+        db: Async database session.
+        
+    Returns:
+        List of UserProfileResponse objects with user and profile data.
+    """
+    # Try to get from cache first
+    cached_users = redis_client.get("all_users")
+    if cached_users:
+        users_data = json.loads(cached_users)
+        return [UserProfileResponse(**user_data) for user_data in users_data]
+    
+    try:
+        # Build optimized query to get users with profiles
+        stmt = (
+            select(User)
+            .options(selectinload(User.profile)) 
+            .order_by(User.created_at.desc()) 
         )
-
-    result = await db.execute(stmt)
-    users = result.scalars().all()
-
-    user_responses = [UserProfileResponse.model_validate(user) for user in users]
-    users_dict = [user.dict() for user in user_responses]
-
-    # Cache the users
-    redis_client.set("all_users", json.dumps(
-        users_dict, default=str), ex=CACHE_TTL)
-
-    return user_responses
+        
+        result = await db.execute(stmt)
+        users = result.scalars().all()
+        
+        if not users:
+            # Cache empty result to avoid repeated DB queries
+            redis_client.set("all_users", json.dumps([], default=str), ex=CACHE_TTL)
+            return []
+        
+        # Convert to your exact response format
+        users_data = []
+        for user in users:
+            user_data = {
+                "email": user.email,
+                "user_type": getattr(user, 'user_type', 'customer'),
+                "id": str(user.id),
+            }
+            
+            # Add profile if exists
+            if user.profile:
+                user_data["profile"] = {
+                    "phone_number": user.profile.phone_number,
+                    "bike_number": getattr(user.profile, 'bike_number', None),
+                    "bank_account_number": getattr(user.profile, 'bank_account_number', None),
+                    "bank_name": getattr(user.profile, 'bank_name', None),
+                    "full_name": user.profile.full_name,
+                    "business_name": getattr(user.profile, 'business_name', None),
+                    "business_address": getattr(user.profile, 'business_address', None),
+                    "business_registration_number": getattr(user.profile, 'business_registration_number', None),
+                    "closing_hours": user.profile.closing_hours.isoformat() if getattr(user.profile, 'closing_hours', None) else None,
+                    "opening_hours": user.profile.opening_hours.isoformat() if getattr(user.profile, 'opening_hours', None) else None,
+                }
+            else:
+                user_data["profile"] = None
+            
+            users_data.append(user_data)
+        
+        # Cache the users data
+        redis_client.set("all_users", json.dumps(users_data, default=str), ex=CACHE_TTL)
+        
+        # Convert to response objects
+        return [UserProfileResponse(**user_data) for user_data in users_data]
+        
+    except Exception as e:
+        logging.error(f"Error retrieving users: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to retrieve users: {str(e)}"
+        )
 
 
 
@@ -187,122 +261,115 @@ async def update_profile(
         return profile
 
 
-
-
-# async def get_user_with_profile(db: AsyncSession, current_user: User) -> UserResponse:
-#     """
-#     Retrieves a user with their profile, wallet, and recent transactions.
-    
-#     Args:
-#         db: Async database session.
-#         current_user: The current authenticated user.
-        
-#     Returns:
-#         UserResponse object with all related data.
-        
-#     Note:
-#         Uses Redis caching to improve performance for frequent requests.
-#     """
-#     # Try to get from cache first
-#     user_id = current_user.id
-#     cached_user = await get_cached_user(user_id)
-    
-#     if cached_user:
-#         return UserResponse(**cached_user)
-    
-#     # If not in cache, query from database
-#     try:
-#         # Build optimized query with selective loading
-#         stmt = (
-#             select(User)
-#             .where(User.id == user_id)
-#             .options(
-#                 selectinload(User.profile),
-#                 selectinload(User.wallet),
-#                 # Only load recent transactions (last 10) to avoid excessive data
-#                 selectinload(
-#                     User.wallet
-#                 ).selectinload(
-#                     Wallet.transactions.limit(10).order_by(Transaction.created_at.desc())
-#                 )
-#             )
-#         )
-        
-#         result = await db.execute(stmt)
-#         user = result.scalar_one_or_none()
-        
-#         if not user:
-#             raise HTTPException(
-#                 status_code=status.HTTP_404_NOT_FOUND,
-#                 detail="User not found"
-#             )
-        
-#         # Convert to dict for caching, handling SQLAlchemy objects properly
-#         user_data = user_to_dict(user)
-        
-#         # Cache the user data with expiration (e.g., 5 minutes)
-#         await set_cached_user(user_id, user_data, expiry=300)
-        
-#         # Return the user response
-#         return UserResponse(**user_data)
-        
-#     except Exception as e:
-#         logging.error(f"Error retrieving user with profile: {str(e)}", exc_info=True)
-#         raise HTTPException(
-#             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-#             detail=f"Failed to retrieve user data: {str(e)}"
-#         )
-
-
 async def get_user_with_profile(db: AsyncSession, current_user: User) -> UserResponse:
     """
-    Retrieves a user and their associated profile by user ID.
-
+    Retrieves a user with their profile, wallet, and recent transactions.
+    
     Args:
         db: Async database session.
-        user_id: ID of the user to retrieve.
-
+        current_user: The current authenticated user.
+        
     Returns:
-        A User object with the profile loaded, or None if not found.
+        UserResponse object with all related data.
     """
-    cached_user = await get_cached_user(current_user.id)
+    user_id = current_user.id
+    
+    # Try to get from cache first
+    cached_user = get_cached_user(user_id)
     if cached_user:
         return UserResponse(**cached_user)
-
-    # stmt = select(User).where(User.id == current_user.id).options(
-    #     selectinload(User.profile),
-    #     selectinload(User.wallet),
-    #     selectinload(User.wallet, Wallet.transactions),
-    # )
-    # query = (
-    #     select(User)
-    #     .options(joinedload(User.profile))  # Eagerly load the profile
-    #     .where(User.id == user_id)
-    # )
-            # Build optimized query with selective loading
-    stmt = (
-        select(User)
-        .where(User.id == current_user.id)
-        .options(
-            selectinload(User.profile),
-            selectinload(User.wallet),
-            # Only load recent transactions (last 10) to avoid excessive data
-            selectinload(
-                User.wallet
-            ).selectinload(
-                Wallet.transactions.limit(10).order_by(Transaction.created_at.desc())
+    
+    try:
+        # Build optimized query - load user with profile and wallet
+        stmt = (
+            select(User)
+            .where(User.id == user_id)
+            .options(
+                selectinload(User.profile),
+                selectinload(User.wallet)
             )
         )
-    )
-    
+        
+        result = await db.execute(stmt)
+        user = result.scalar_one_or_none()
+        
+        if not user:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="User not found"
+            )
+        
+        # If user has a wallet, get recent transactions separately
+        recent_transactions = []
+        if user.wallet:
+            tx_stmt = (
+                select(Transaction)
+                .where(Transaction.wallet_id == user.wallet.id)
+                .order_by(Transaction.created_at.desc())
+                .limit(10)
+            )
+            tx_result = await db.execute(tx_stmt)
+            recent_transactions = tx_result.scalars().all()
+        
+        # Convert to exact response format
+        user_data = {
+            "email": user.email,
+            "user_type": getattr(user, 'user_type'),
+            "id": user.id,
+        }
+        
+        # Add profile if exists
+        if user.profile:
+            user_data["profile"] = {
+                "phone_number": user.profile.phone_number,
+                "bike_number": getattr(user.profile, 'bike_number', None),
+                "bank_account_number": getattr(user.profile, 'bank_account_number', None),
+                "bank_name": getattr(user.profile, 'bank_name', None),
+                "full_name": user.profile.full_name,
+                "business_name": getattr(user.profile, 'business_name', None),
+                "business_address": getattr(user.profile, 'business_address', None),
+                "business_registration_number": getattr(user.profile, 'business_registration_number', None),
+                "closing_hours": user.profile.closing_hours.isoformat() if getattr(user.profile, 'closing_hours', None) else None,
+                "opening_hours": user.profile.opening_hours.isoformat() if getattr(user.profile, 'opening_hours', None) else None,
+            }
+        else:
+            user_data["profile"] = None
+        
+        # Add wallet if exists
+        if user.wallet:
+            user_data["wallet"] = {
+                "id": user.wallet.id,
+                "balance": user.wallet.balance,
+                "escrow_balance": user.wallet.escrow_balance,
+                "transactions": [
+                    {
+                        "id": tx.id,
+                        "wallet_id": tx.wallet_id,
+                        "amount": tx.amount,
+                        "transaction_type": tx.transaction_type,
+                        "created_at": tx.created_at.isoformat() if tx.created_at else None,
+                    }
+                    for tx in recent_transactions
+                ]
+            }
+        else:
+            user_data["wallet"] = None
+        
+        # Cache the user data using your existing function
+        set_cached_user(user_id, user_data)
+        
+        return UserResponse(**user_data)
+        
+    except HTTPException:
+        # Re-raise HTTP exceptions as-is
+        raise
+    except Exception as e:
+        # logging.error(f"Error retrieving user with profile: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to retrieve user data: {str(e)}"
+        )
 
-    result = await db.execute(stmt)
-    user = result.scalar_one_or_none()
-
-    if user:
-        # Cache the user data
-        await set_cached_user(user_id, user.dict())
-    return user
 
 
 # <<<<< --------- GET USER BY FOOD CATEGORY ---------- >>>>>
@@ -330,7 +397,7 @@ async def get_users_by_food_category(
         .where(Item.item_type == ItemType.FOOD)
         .options(
             selectinload(User.profile).selectinload(Profile.profile_image),
-            selectinload(User.profile).selectinload(Profile.backdrop),
+            # selectinload(User.profile).selectinload(Profile.profile_image),
         )
     )
 
@@ -383,52 +450,79 @@ async def get_users_by_food_category(
 
 async def upload_image_profile(
     current_user: User,
-    profile_image_url: UploadFile,
-    backdrop_image_url: UploadFile,
+    profile_image_url: Optional[UploadFile],
+    backdrop_image_url: Optional[UploadFile],
     db: AsyncSession,
 ) -> ProfileImageResponseSchema:
     result = await db.execute(
         select(Profile)
-        .json(Profile.profile_image)
-        .where(Profile.user_id == current_user.id)
+        .where(Profile.user_id == current_user.id).options(selectinload(Profile.profile_image))
+        
+        
     )
 
-    profile = await result.scalar_one_or_none()
+    profile = result.scalar_one_or_none()
 
     if not profile:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="User not found!"
         )
 
+    # Process image uploads
+    new_profile_image_url = None
+    new_backdrop_image_url = None
+
+    if profile_image_url:
+        new_profile_image_url = await add_image(profile_image_url)
+        if not new_profile_image_url:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Failed to upload profile image"
+            )
+
+    if backdrop_image_url:
+        new_backdrop_image_url = await add_image(backdrop_image_url)
+        if not new_backdrop_image_url:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Failed to upload backdrop image"
+            )
+
     try:
+
         if profile.profile_image:
-            await update_image(profile.profile_image.profile_image_url)
-            await update_image(profile.profile_image.backdrop_image_url)
+                # Update existing profile image
+                old_profile_url = profile.profile_image.profile_image_url
+                old_backdrop_url = profile.profile_image.backdrop_image_url
 
-            profile.profile_image.profile_image_url = add_profile_image(
-                profile_image_url
-            )
-            profile.profile_image.backdrop_image_url = add_profile_image(
-                backdrop_image_url
-            )
+                if new_profile_image_url:
+                    if old_profile_url and old_profile_url != new_profile_image_url:
+                        await delete_s3_object(old_profile_url)  # Delete old image
+                    profile.profile_image.profile_image_url = new_profile_image_url
 
-            await db.commit()
-            await db.refresh()
+                if new_backdrop_image_url:
+                    if old_backdrop_url and old_backdrop_url != new_backdrop_image_url:
+                        await delete_s3_object(old_backdrop_url)  # Delete old image
+                    profile.profile_image.backdrop_image_url = new_backdrop_image_url
 
         else:
-            profile_image_url = add_profile_image(profile_image_url)
-            backdrop_image_url = add_profile_image(backdrop_image_url)
+            # Create new profile image record
+            if not new_profile_image_url:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Profile image URL is required for new profile image"
+                )
 
             profile_image = ProfileImage(
-                profile_id=profile.id,
-                profile_image_url=profile_image_url,
-                backdrop_image_url=backdrop_image_url,
+                profile_id=profile.user_id,
+                profile_image_url=new_profile_image_url,
+                backdrop_image_url=new_backdrop_image_url,
+              
             )
-
             db.add(profile_image)
-            await db.commit()
-            await db.refresh(backdrop_image_url)
-
+            await db.flush()
+            profile.profile_image = profile_image
+        
         return profile.profile_image
 
     except Exception as e:
@@ -436,6 +530,8 @@ async def upload_image_profile(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail=f"Something went wrong! {e}"
         )
+
+
 
 
 # <<<<< --------- GET LAUNDRY SERVICE PROVIDERS ---------- >>>>>
