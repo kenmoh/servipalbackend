@@ -452,7 +452,7 @@ async def order_food_or_request_laundy_service(
                 "order_id": order_inserted.id,
                 "item_id": item.item_id,
                 "quantity": item.quantity,
-                "additional_info": order_item.additional_info,
+                # "additional_info": order_item.additional_info,
             }
             for item in order_item.order_items
         ]
@@ -475,9 +475,11 @@ async def order_food_or_request_laundy_service(
                         "pickup_coordinates": order_item.pickup_coordinates,
                         "dropoff_coordinates": order_item.dropoff_coordinates,
                         "distance": Decimal(order_item.distance),
-                        "duration": Decimal(order_item.duration),
+                        "duration": order_item.duration,
                         "delivery_fee": delivery_fee,
                         "amount_due_dispatch": amount_due_dispatch,
+                        "origin": order_item.origin,
+                        "destination": order_item.destination
                     }
                 )
                 .returning(Delivery.id, Delivery.order_id, Delivery.vendor_id)

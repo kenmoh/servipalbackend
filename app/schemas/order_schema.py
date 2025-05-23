@@ -106,6 +106,8 @@ class OrderAndDeliverySchema(BaseModel):
     distance: Decimal
     require_delivery: RequireDeliverySchema
     duration: str
+    origin: str
+    destination: str
     additional_info: str | None = None
 
 

@@ -2,7 +2,7 @@ from decimal import Decimal
 from app.schemas.item_schemas import ItemType
 from app.models.models import Delivery, User, Item, Category
 from sqlalchemy.orm import selectinload
-from sqlalchemy import func, select
+from sqlalchemy import func, select, distinct
 from typing import List, Optional
 from uuid import UUID
 import json
@@ -18,7 +18,7 @@ from app.schemas.schemas import DispatchRiderSchema
 from app.schemas.status_schema import AccountStatus, UserType
 from app.utils.s3_service import add_image, update_image, delete_s3_object
 from app.config.config import redis_client
-from app.models.models import User, Wallet, Profile, ProfileImage, Transaction
+from app.models.models import User, Wallet, Profile, ProfileImage, Transaction, Review
 from app.schemas.user_schemas import (
     ProfileSchema,
     UserProfileResponse,
@@ -26,6 +26,8 @@ from app.schemas.user_schemas import (
     WalletSchema,
     VendorUserResponse,
     ProfileImageResponseSchema,
+    RatingSchema,
+    CreateReviewSchema
 )
 
 CACHE_TTL = 3600
@@ -303,93 +305,187 @@ async def get_user_with_profile(db: AsyncSession, current_user: User) -> UserRes
 # <<<<< --------- GET USER BY FOOD CATEGORY ---------- >>>>>
 
 
-async def get_users_by_food_category(
+async def get_restaurant_vendors(
     db: AsyncSession,
     category_id: Optional[UUID] = None
 ) -> List[VendorUserResponse]:
     """
-    Get restaurant vendors filtered by food category
-
-    Args:
-        db: Database session
-        category_id: Optional category ID to filter vendors
-
-    Returns:
-        List of vendors with their details and ratings
+    Get restaurant vendors filtered by food category with their ratings.
+    This is for the main restaurant listing page.
     """
-    # Check cache first
-    cache_key = f"food_vendors:{category_id if category_id else 'all'}"
-    cached_data = await redis_client.get(cache_key)
-
+    cache_key = f"restaurant_vendors:{category_id if category_id else 'all'}"
+    cached_data = redis_client.get(cache_key)
     if cached_data:
         logger.info(f"Cache hit for {cache_key}")
-        return [VendorUserResponse(**vendor) for vendor in json.loads(cached_data)]
-
+        cached_vendors = json.loads(cached_data)
+        # Convert cached data back to proper format
+        result = []
+        for vendor in cached_vendors:
+            vendor["rating"] = RatingSchema(**vendor["rating"])
+            result.append(VendorUserResponse(**vendor))
+        return result
+    
     try:
-        # Base query with all necessary joins and filters
+        # Subquery to calculate review statistics per vendor
+        review_stats_subquery = (
+            select(
+                Item.user_id.label('vendor_id'),
+                func.avg(Review.rating).label('avg_rating'),
+                func.count(Review.id).label('review_count')
+            )
+            .select_from(Item)
+            .join(Review, Item.id == Review.item_id)
+            .where(Item.item_type == ItemType.FOOD)
+            .group_by(Item.user_id)
+        ).subquery()
+        
+        # Main query to get vendors with their statistics
         stmt = (
             select(
                 User,
                 Profile,
                 ProfileImage,
-                func.count(Item.id).label('item_count')
+                func.count(distinct(Item.id)).label('item_count'),
+                func.coalesce(review_stats_subquery.c.avg_rating, 0).label('avg_rating'),
+                func.coalesce(review_stats_subquery.c.review_count, 0).label('review_count')
             )
             .join(Profile, User.id == Profile.user_id)
             .outerjoin(ProfileImage, Profile.user_id == ProfileImage.profile_id)
             .join(Item, User.id == Item.user_id)
+            .outerjoin(review_stats_subquery, User.id == review_stats_subquery.c.vendor_id)
             .where(
                 Item.item_type == ItemType.FOOD,
-                User.user_type == UserType.VENDOR,
-                # User.is_verified == True,
-                # User.account_status == AccountStatus.CONFIRMED
+                User.user_type == UserType.VENDOR.value,
+                # User.is_verified == True,  # Uncomment if needed
+                # User.account_status == AccountStatus.CONFIRMED  # Uncomment if needed
             )
-            .group_by(User.id, Profile.user_id, ProfileImage.profile_id)
+            .group_by(
+                User.id, 
+                Profile.user_id, 
+                ProfileImage.profile_id,
+                review_stats_subquery.c.avg_rating,
+                review_stats_subquery.c.review_count
+            )
         )
-
+        
         # Add category filter if provided
         if category_id:
             stmt = stmt.where(Item.category_id == category_id)
-
+        
         # Execute query
         result = await db.execute(stmt)
-        vendors = result.unique().all()
-
+        vendors = result.all()
+        
         # Format response
         response = []
-        for user, profile, profile_image, item_count in vendors:
-            if item_count > 0:  # Only include vendors with items
-                vendor_data = {
-                    "id": str(user.id),
-                    "company_name": profile.business_name,
-                    "email": user.email,
-                    "phone_number": profile.phone_number,
-                    "profile_image": profile_image.profile_image_url if profile_image else None,
-                    "location": profile.business_address,
-                    "backdrop_image": profile_image.backdrop_image_url if profile_image else None,
-                    "opening_hour": profile.opening_hours.strftime("%H:%M") if profile.opening_hours else None,
-                    "closing_hour": profile.closing_hours.strftime("%H:%M") if profile.closing_hours else None,
-                    "rating": await get_vendor_average_rating(user.id, db),
-                    "total_items": item_count
-                }
+        for row in vendors:
+            user, profile, profile_image, item_count, avg_rating, review_count = row
+            
+            if item_count > 0:  # Only include vendors with menu items
+                # Create rating schema object
+                rating_data = RatingSchema(
+                    average_rating=Decimal(str(round(float(avg_rating), 2))) if avg_rating else Decimal('0.00'),
+                    number_of_ratings=int(review_count) if review_count else 0,
+                    reviews=[]  # Empty for listing page, populated separately when needed
+                )
+                
+                vendor_data = VendorUserResponse(
+                    id=str(user.id),
+                    company_name=profile.business_name,
+                    email=user.email,
+                    phone_number=profile.phone_number,
+                    profile_image=profile_image.profile_image_url if profile_image else None,
+                    location=profile.business_address,
+                    backdrop_image_url=profile_image.backdrop_image_url if profile_image else None,
+                    opening_hour=profile.opening_hours.strftime("%H:%M") if profile.opening_hours else None,
+                    closing_hour=profile.closing_hours.strftime("%H:%M") if profile.closing_hours else None,
+                    rating=rating_data,
+                    total_items=item_count
+                )
                 response.append(vendor_data)
-
+        
         # Cache the results
-        await redis_client.setex(
+        serializable_response = []
+        for vendor in response:
+            vendor_dict = vendor.model_dump()
+            vendor_dict["rating"] = {
+                "average_rating": str(vendor.rating.average_rating) if vendor.rating.average_rating else "0.00",
+                "number_of_ratings": vendor.rating.number_of_ratings,
+                "reviews": []
+            }
+            serializable_response.append(vendor_dict)
+        
+        redis_client.setex(
             cache_key,
             CACHE_TTL,
-            json.dumps(response, default=str)
+            json.dumps(serializable_response, default=str)
         )
-
+        
         return response
-
+        
     except Exception as e:
-        logger.error(f"Error fetching food vendors: {str(e)}")
+        logger.error(f"Error fetching restaurant vendors: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to fetch food vendors"
+            detail="Failed to fetch restaurant vendors"
         )
 
-# Add function to invalidate vendor cache
+
+async def get_vendor_reviews(
+    db: AsyncSession,
+    vendor_id: UUID,
+    limit: int = 20,
+    offset: int = 0
+) -> List[CreateReviewSchema]:
+    """
+    Get all reviews for a specific restaurant (from all their menu items).
+    This is for the restaurant reviews page.
+    """
+    try:
+        reviews_query = (
+            select(
+                Review,
+                Item.name.label('item_name'),
+                User.email.label('reviewer_email'),  # or first_name, last_name if available
+                User.id.label('reviewer_id')
+            )
+            .join(Item, Review.item_id == Item.id)
+            .join(User, Review.user_id == User.id)  # Join with reviewer
+            .where(
+                Item.user_id == vendor_id,
+                Item.item_type == ItemType.FOOD
+            )
+            .order_by(Review.created_at.desc())
+            .offset(offset)
+            .limit(limit)
+        )
+        
+        result = await db.execute(reviews_query)
+        reviews_data = result.all()
+        
+        # Convert to schema
+        reviews = []
+        for review, item_name, reviewer_email, reviewer_id in reviews_data:
+            reviews.append(
+                CreateReviewSchema(
+                    id=str(review.id),
+                    rating=review.rating,
+                    comment=review.comment,
+                    created_at=review.created_at,
+                    reviewer_name=reviewer_email,  # You might want to use actual name if available
+                    item_name=item_name
+                )
+            )
+        
+        return reviews
+        
+    except Exception as e:
+        logger.error(f"Error fetching restaurant reviews for vendor {vendor_id}: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to fetch restaurant reviews"
+        )
+
 
 
 # async def invalidate_vendor_cache(category_id: Optional[UUID] = None):
@@ -399,77 +495,6 @@ async def get_users_by_food_category(
 #     await redis_client.delete("food_vendors:all")
 
 
-# async def get_users_by_food_category(
-#     db: AsyncSession, category_id: Optional[UUID] = None
-# ) -> List[VendorUserResponse]:
-#     """
-#     Retrieve users who have items with item_type='food' in a specific category.
-#     If no users are found for the category, return all users with food items.
-#     If category_id is None, return all users with food items.
-
-#     Args:
-#         db: The database session.
-#         category_id: Optional UUID of the category to filter by.
-
-#     Returns:
-#         List of dictionaries containing user details.
-#     """
-#     # Base query to get users with food items
-#     stmt = (
-#         select(User)
-#         .join(Item, Item.user_id == User.id)
-#         .where(Item.item_type == ItemType.FOOD)
-#         .options(
-#             selectinload(User.profile).selectinload(Profile.profile_image),
-#             # selectinload(User.profile).selectinload(Profile.profile_image),
-#         )
-#     )
-
-#     # Add category filter if provided
-#     if category_id:
-#         stmt = stmt.where(Item.category_id == category_id)
-
-#     # Execute query
-#     result = await db.execute(stmt)
-#     users = result.scalars().unique().all()
-
-#     # If no users found for the specific category, fall back to all food items
-#     if not users and category_id:
-#         stmt = (
-#             select(User)
-#             .join(Item, Item.user_id == User.id)
-#             .where(Item.item_type == ItemType.FOOD.value)
-#             .options(
-#                 selectinload(User.profile).selectinload(Profile.profile_image),
-#                 selectinload(User.profile).selectinload(Profile.backdrop),
-#             )
-#         )
-#         result = await db.execute(stmt)
-#         users = result.scalars().unique().all()
-
-#     # Format the response
-#     response = []
-#     for user in users:
-#         response.append(
-#             {
-#                 "id": user.id,
-#                 "company_name": user.profile.business_name if user.profile else None,
-#                 "email": user.email,
-#                 "phone_number": user.profile.phone_number if user.profile else None,
-#                 "profile_image": user.profile.profile_image_url
-#                 if user.profile and user.profile.profile_image_url
-#                 else None,
-#                 "location": user.profile.business_address if user.profile else None,
-#                 "backdrop_image": user.profile.backdrop_image_url
-#                 if user.profile.backdrop_image_url
-#                 else None,
-#                 "opening_hour": user.profile.opening_hours if user.profile else None,
-#                 "closing_hour": user.profile.closing_hours if user.profile else None,
-#                 "rating": await get_vendor_average_rating(user.id, db),
-#             }
-#         )
-
-#     return response
 
 
 async def upload_image_profile(
@@ -579,7 +604,7 @@ async def get_users_by_laundry_services(db: AsyncSession) -> List[VendorUserResp
             .where(Item.item_type == ItemType.LAUNDRY)
             .options(
                 selectinload(User.profile).selectinload(Profile.profile_image),
-                selectinload(User.profile).selectinload(Profile.backdrop),
+                # selectinload(User.profile).selectinload(Profile.profile_image),
             )
         )
 
@@ -660,7 +685,7 @@ async def get_dispatcher_riders(
     cached_data = redis_client.get(cache_key)
 
     if cached_data:
-       
+
         logger.info(f"Cache hit for {cache_key}")
         return [DispatchRiderSchema(**rider) for rider in json.loads(cached_data)]
 

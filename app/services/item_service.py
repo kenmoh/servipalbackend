@@ -12,6 +12,8 @@ from app.schemas.item_schemas import (
     CategoryResponse,
     ItemCreate,
     ItemResponse,
+    MenuWithReviewResponseSchema
+    
 )
 from app.schemas.status_schema import AccountStatus, UserType
 from app.config.config import redis_client
@@ -213,6 +215,78 @@ async def get_items_by_user_id(db: AsyncSession, user_id: UUID) -> list[ItemResp
             json.dumps([item.dict() for item in items], default=str),
         )
     return items
+
+
+async def get_restaurant_menu_with_reviews(
+    db: AsyncSession,
+    vendor_id: UUID
+) -> MenuWithReviewResponseSchema:
+    """
+    Get restaurant menu items with their individual reviews.
+    This is for when customer visits a specific restaurant.
+    """
+    try:
+        # Get menu items with their reviews
+        menu_query = (
+            select(Item)
+            .where(
+                Item.user_id == vendor_id,
+                Item.item_type == ItemType.FOOD
+            )
+            .options(
+                selectinload(Item.reviews).selectinload(Review.reviewer)
+            )
+            .order_by(Item.name)
+        )
+        
+        result = await db.execute(menu_query)
+        menu_items = result.scalars().all()
+        
+        # Format menu with reviews
+        menu_with_reviews = []
+        for item in menu_items:
+            item_reviews = []
+            total_rating = 0
+            review_count = 0
+            
+            for review in item.reviews:
+                item_reviews.append({
+                    "id": str(review.id),
+                    "rating": review.rating,
+                    "comment": review.comment,
+                    "created_at": review.created_at,
+                    "reviewer_name": review.reviewer.email  # or actual name
+                })
+                total_rating += review.rating
+                review_count += 1
+            
+            avg_rating = round(total_rating / review_count, 2) if review_count > 0 else 0
+            
+            menu_with_reviews.append({
+                "id": str(item.id),
+                "name": item.name,
+                "description": item.description,
+                "price": str(item.price),
+                "image_url": item.image_url,
+                "average_rating": avg_rating,
+                "review_count": review_count,
+                "reviews": item_reviews[:5]  # Show only first 5 reviews
+            })
+        
+        return {
+            "vendor_id": str(vendor_id),
+            "menu_item": menu_with_reviews,
+            "total_items": len(menu_with_reviews)
+        }
+        
+    except Exception as e:
+        logger.error(f"Error fetching menu with reviews for vendor {vendor_id}: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to fetch restaurant menu"
+        )
+
+
 
 
 async def get_item_by_id(db: AsyncSession, item_id: UUID) -> ItemResponse:

@@ -100,7 +100,7 @@ class CreateReviewSchema(BaseModel):
 class RatingSchema(BaseModel):
     average_rating: Decimal | None = None
     number_of_ratings: int | None = None
-    reviews: list[CreateReviewSchema]
+    reviews: list[CreateReviewSchema] = []
 
 
 class UserReviewResponse(BaseModel):

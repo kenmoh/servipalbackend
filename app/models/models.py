@@ -314,7 +314,7 @@ class Item(Base):
         uselist=True,
     )
     reviews: Mapped[list["Review"]] = relationship(
-        back_populates="item", cascade="all, delete-orphan"
+        back_populates="item", cascade="all, delete-orphan", lazy="selectin"
     )
     # __table_args__ = (UniqueConstraint(
     #     "name", "user_id", name="uq_name_item"),)

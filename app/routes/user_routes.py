@@ -18,8 +18,10 @@ from app.schemas.user_schemas import (
     WalletSchema,
     VendorUserResponse,
     ProfileImageResponseSchema,
+    CreateReviewSchema,
 )
 from app.services import user_service
+from app.schemas.item_schemas import MenuWithReviewResponseSchema
 from app.utils.s3_service import add_profile_image, update_image
 
 
@@ -70,7 +72,7 @@ async def get_restaurants(
     Get  all restaurant users, optionally filtered by category.
     """
     try:
-        return await user_service.get_users_by_food_category(db, category_id)
+        return await user_service.get_restaurant_vendors(db, category_id)
     except Exception as e:
         raise HTTPException(
             status_code=500, detail=f"Failed to retrieve food vendors: {str(e)}"
@@ -121,3 +123,31 @@ async def get_riders(
         )
 
     return await user_service.get_dispatcher_riders(db, current_user.id, skip, limit)
+
+
+@router.get("/restaurants/{vendor_id}/reviews", status_code=status.HTTP_200_OK)
+async def get_restaurant_reviews_endpoint(
+    vendor_id: UUID,
+    limit: int = 20,
+    offset: int = 0,
+    db: AsyncSession = Depends(get_db),
+     current_user: User = Depends(get_current_user)
+) -> list[CreateReviewSchema]:
+    """
+    Get all reviews for a specific restaurant.
+    Used for the restaurant reviews page.
+    """
+    return await user_service.get_restaurant_reviews(db, vendor_id, limit, offset)
+
+
+@router.get("/restaurants/{vendor_id}/menu", status_code=status.HTTP_200_OK)
+async def get_restaurant_menu(
+    vendor_id: UUID,
+    db: AsyncSession = Depends(get_db),
+     current_user: User = Depends(get_current_user)
+)-> MenuWithReviewResponseSchema:
+    """
+    Get restaurant menu with individual item reviews.
+    Used when customer visits a specific restaurant.
+    """
+    return await user_service.get_restaurant_menu_with_reviews(db, vendor_id)
