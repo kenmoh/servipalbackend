@@ -303,6 +303,7 @@ class TokenResponse(BaseModel):
     refresh_token: str
     token_type: str = "bearer"
     user_type: str
+    email: EmailStr
     account_status: AccountStatus
 
 

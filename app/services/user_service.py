@@ -575,11 +575,6 @@ async def upload_image_profile(
 
         else:
             # Create new profile image record
-            if not new_profile_image_url:
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="Profile image URL is required for new profile image"
-                )
 
             profile_image = ProfileImage(
                 profile_id=profile.user_id,
