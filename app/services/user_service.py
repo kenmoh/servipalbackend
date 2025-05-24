@@ -208,7 +208,7 @@ async def get_user_with_profile(db: AsyncSession, user_id: UUID) -> ProfileSchem
     # Try to get from cache first
     cached_user = get_cached_user(user_id)
     if cached_user:
-        return UserResponse(**cached_user)
+        return ProfileSchema(**cached_user)
 
     try:
         # Build optimized query - load user with profile and wallet
@@ -307,7 +307,7 @@ async def get_user_with_profile(db: AsyncSession, user_id: UUID) -> ProfileSchem
         # Cache the user data using your existing function
         set_cached_user(user_id, user_data)
 
-        return UserResponse(**user_data)
+        return ProfileSchema(**user_data)
 
     except HTTPException:
         # Re-raise HTTP exceptions as-is
