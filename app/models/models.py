@@ -2,7 +2,7 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 import random
 from uuid import UUID, uuid4
 import uuid
-from datetime import datetime
+from datetime import datetime, time
 from decimal import Decimal
 import logging
 from typing import Optional, Tuple
@@ -152,8 +152,8 @@ class Profile(Base):
     bank_account_number: Mapped[str] = mapped_column(nullable=True)
     business_address: Mapped[str] = mapped_column(nullable=True)
     business_registration_number: Mapped[str] = mapped_column(nullable=True)
-    opening_hours: Mapped[datetime] = mapped_column(nullable=True)
-    closing_hours: Mapped[datetime] = mapped_column(nullable=True)
+    opening_hours: Mapped[time] = mapped_column(nullable=True)
+    closing_hours: Mapped[time] = mapped_column(nullable=True)
     full_name: Mapped[str] = mapped_column(nullable=True)
     phone_number: Mapped[str] = mapped_column(unique=True, nullable=False)
     bike_number: Mapped[str] = mapped_column(unique=True, nullable=True)

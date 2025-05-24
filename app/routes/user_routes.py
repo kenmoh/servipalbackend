@@ -58,7 +58,7 @@ async def update_user_profile(
 async def get_user_details(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
-) -> UserResponse:
+) -> ProfileSchema:
     return await user_service.get_user_with_profile(db=db, current_user=current_user)
 
 

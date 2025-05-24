@@ -327,8 +327,8 @@ class ProfileSchema(BaseModel):
     business_name: str | None = None
     business_address: str | None = None
     business_registration_number: str | None = None
-    closing_hours: datetime | None = None
-    opening_hours: datetime | None = None
+    closing_hours: time | None = None
+    opening_hours: time | None = None
 
     model_config = ConfigDict(from_attributes=True)
 

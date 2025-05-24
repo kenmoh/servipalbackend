@@ -27,7 +27,8 @@ from app.schemas.user_schemas import (
     VendorUserResponse,
     ProfileImageResponseSchema,
     RatingSchema,
-    CreateReviewSchema
+    CreateReviewSchema,
+    ProfileSchema
 )
 
 CACHE_TTL = 3600
@@ -192,7 +193,7 @@ async def update_profile(
         return profile
 
 
-async def get_user_with_profile(db: AsyncSession, current_user: User) -> UserResponse:
+async def get_user_with_profile(db: AsyncSession, current_user: User) -> ProfileSchema:
     """
     Retrieves a user with their profile, wallet, and recent transactions.
 
@@ -212,79 +213,96 @@ async def get_user_with_profile(db: AsyncSession, current_user: User) -> UserRes
 
     try:
         # Build optimized query - load user with profile and wallet
-        stmt = (
-            select(User)
-            .where(User.id == user_id)
-            .options(
-                selectinload(User.profile),
-                selectinload(User.wallet)
-            )
-        )
+        # stmt = (
+        #     select(User)
+        #     .where(User.id == user_id)
+        #     .options(
+        #         selectinload(User.profile),
+        #         selectinload(User.wallet)
+        #     )
+        # )
 
-        result = await db.execute(stmt)
-        user = result.scalar_one_or_none()
+        # result = await db.execute(stmt)
+        # user = result.scalar_one_or_none()
 
-        if not user:
+        result = await db.execute(select(Profile).where(Profile.user_id == current_user.id))
+        profile = result.scalar_one_or_none()
+
+        if not profile:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail="User not found"
+                detail="Profile not found"
             )
 
         # If user has a wallet, get recent transactions separately
         recent_transactions = []
-        if user.wallet:
-            tx_stmt = (
-                select(Transaction)
-                .where(Transaction.wallet_id == user.wallet.id)
-                .order_by(Transaction.created_at.desc())
-                .limit(10)
-            )
-            tx_result = await db.execute(tx_stmt)
-            recent_transactions = tx_result.scalars().all()
+        # if user.wallet:
+        #     tx_stmt = (
+        #         select(Transaction)
+        #         .where(Transaction.wallet_id == user.wallet.id)
+        #         .order_by(Transaction.created_at.desc())
+        #         .limit(10)
+        #     )
+        #     tx_result = await db.execute(tx_stmt)
+        #     recent_transactions = tx_result.scalars().all()
 
-        # Convert to exact response format
+        # # Convert to exact response format
+        # user_data = {
+        #     "email": user.email,
+        #     "user_type": getattr(user, 'user_type'),
+        #     "id": user.id,
+        # }
+
+        # # Add profile if exists
+        # if user.profile:
+        #     user_data["profile"] = {
+        #         "phone_number": user.profile.phone_number,
+        #         "bike_number": getattr(user.profile, 'bike_number', None),
+        #         "bank_account_number": getattr(user.profile, 'bank_account_number', None),
+        #         "bank_name": getattr(user.profile, 'bank_name', None),
+        #         "full_name": user.profile.full_name,
+        #         "business_name": getattr(user.profile, 'business_name', None),
+        #         "business_address": getattr(user.profile, 'business_address', None),
+        #         "business_registration_number": getattr(user.profile, 'business_registration_number', None),
+        #         "closing_hours": user.profile.closing_hours.isoformat() if getattr(user.profile, 'closing_hours', None) else None,
+        #         "opening_hours": user.profile.opening_hours.isoformat() if getattr(user.profile, 'opening_hours', None) else None,
+        #     }
+        # else:
+        #     user_data["profile"] = None
+
+        # # Add wallet if exists
+        # if user.wallet:
+        #     user_data["wallet"] = {
+        #         "id": user.wallet.id,
+        #         "balance": user.wallet.balance,
+        #         "escrow_balance": user.wallet.escrow_balance,
+        #         "transactions": [
+        #             {
+        #                 "id": tx.id,
+        #                 "wallet_id": tx.wallet_id,
+        #                 "amount": tx.amount,
+        #                 "transaction_type": tx.transaction_type,
+        #                 "created_at": tx.created_at.isoformat() if tx.created_at else None,
+        #             }
+        #             for tx in recent_transactions
+        #         ]
+        #     }
+        # else:
+        #     user_data["wallet"] = None
+
+
         user_data = {
-            "email": user.email,
-            "user_type": getattr(user, 'user_type'),
-            "id": user.id,
-        }
-
-        # Add profile if exists
-        if user.profile:
-            user_data["profile"] = {
-                "phone_number": user.profile.phone_number,
-                "bike_number": getattr(user.profile, 'bike_number', None),
-                "bank_account_number": getattr(user.profile, 'bank_account_number', None),
-                "bank_name": getattr(user.profile, 'bank_name', None),
-                "full_name": user.profile.full_name,
-                "business_name": getattr(user.profile, 'business_name', None),
-                "business_address": getattr(user.profile, 'business_address', None),
-                "business_registration_number": getattr(user.profile, 'business_registration_number', None),
-                "closing_hours": user.profile.closing_hours.isoformat() if getattr(user.profile, 'closing_hours', None) else None,
-                "opening_hours": user.profile.opening_hours.isoformat() if getattr(user.profile, 'opening_hours', None) else None,
-            }
-        else:
-            user_data["profile"] = None
-
-        # Add wallet if exists
-        if user.wallet:
-            user_data["wallet"] = {
-                "id": user.wallet.id,
-                "balance": user.wallet.balance,
-                "escrow_balance": user.wallet.escrow_balance,
-                "transactions": [
-                    {
-                        "id": tx.id,
-                        "wallet_id": tx.wallet_id,
-                        "amount": tx.amount,
-                        "transaction_type": tx.transaction_type,
-                        "created_at": tx.created_at.isoformat() if tx.created_at else None,
-                    }
-                    for tx in recent_transactions
-                ]
-            }
-        else:
-            user_data["wallet"] = None
+                "phone_number": profile.phone_number,
+                "bike_number": profile.bike_number or None,
+                "bank_account_number": profile.bank_account_number or None,
+                "bank_name": profile.bank_name or None,
+                "full_name": profile.full_name or None,
+                "business_name": profile.business_name or None,
+                "business_address": profile.business_address or None,
+                "business_registration_number": profile.business_registration_number or None,
+                "closing_hours": profile.closing_hours or None,
+                "opening_hours": profile.opening_hours or None,
+         }
 
         # Cache the user data using your existing function
         set_cached_user(user_id, user_data)
