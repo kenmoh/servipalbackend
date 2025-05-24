@@ -319,7 +319,7 @@ class UserBase(BaseModel):
 
 
 class ProfileSchema(BaseModel):
-    user_id: UUID
+    user_id: UUID | None = None
     phone_number: str
     bike_number: str | None = None
     bank_account_number: str | None = None
