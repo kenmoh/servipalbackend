@@ -193,7 +193,7 @@ async def update_profile(
         return profile
 
 
-async def get_user_with_profile(db: AsyncSession, current_user: User) -> ProfileSchema:
+async def get_user_with_profile(db: AsyncSession, user_id: UUID) -> ProfileSchema:
     """
     Retrieves a user with their profile, wallet, and recent transactions.
 
@@ -204,7 +204,6 @@ async def get_user_with_profile(db: AsyncSession, current_user: User) -> Profile
     Returns:
         UserResponse object with all related data.
     """
-    user_id = current_user.id
 
     # Try to get from cache first
     cached_user = get_cached_user(user_id)
@@ -225,7 +224,7 @@ async def get_user_with_profile(db: AsyncSession, current_user: User) -> Profile
         # result = await db.execute(stmt)
         # user = result.scalar_one_or_none()
 
-        result = await db.execute(select(Profile).where(Profile.user_id == current_user.id))
+        result = await db.execute(select(Profile).where(Profile.user_id == user_id))
         profile = result.scalar_one_or_none()
 
         if not profile:
@@ -292,6 +291,7 @@ async def get_user_with_profile(db: AsyncSession, current_user: User) -> Profile
 
 
         user_data = {
+                "user_id": profile.user_id,
                 "phone_number": profile.phone_number,
                 "bike_number": profile.bike_number or None,
                 "bank_account_number": profile.bank_account_number or None,
