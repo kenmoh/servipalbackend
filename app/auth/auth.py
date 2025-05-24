@@ -6,6 +6,7 @@ from jose import JWTError, jwt
 from datetime import datetime, timedelta
 from sqlalchemy import select
 from sqlalchemy.orm import joinedload
+from pydantic import EmailStr
 
 from app.models.models import User, RefreshToken
 from app.schemas.status_schema import AccountStatus
@@ -26,12 +27,12 @@ def create_access_token(data: dict) -> str:
     return encoded_jwt
 
 
-async def create_refresh_token(user_id: str, user_type: str, account_status: AccountStatus, db: AsyncSession) -> str:
+async def create_refresh_token(user_id: str, user_type: str, email: EmailStr, account_status: AccountStatus, db: AsyncSession) -> str:
     token = str(uuid.uuid4())
     expires_at = datetime.now() + timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS)
 
     refresh_token = RefreshToken(
-        token=token, user_id=user_id, user_type=user_type, account_status=account_status, expires_at=expires_at
+        token=token, user_id=user_id, user_type=user_type, email=email, account_status=account_status, expires_at=expires_at
     )
 
     db.add(refresh_token)
@@ -41,16 +42,17 @@ async def create_refresh_token(user_id: str, user_type: str, account_status: Acc
 
 
 async def create_tokens(
-    user_id: str, user_type: str, account_status: AccountStatus, db: AsyncSession
+    user_id: str, user_type: str, email: EmailStr,  account_status: AccountStatus, db: AsyncSession
 ) -> TokenResponse:
     access_token = create_access_token(
-        {"sub": str(user_id), "user_type": user_type, "account_status": account_status})
-    refresh_token = await create_refresh_token(user_id, user_type, account_status, db)
+        {"sub": str(user_id), "user_type": user_type, "email": email, "account_status": account_status})
+    refresh_token = await create_refresh_token(user_id, email, user_type, account_status, db)
 
     return TokenResponse(
         access_token=access_token,
         refresh_token=refresh_token,
         user_type=user_type,
+        email=email,
         account_status=account_status,
         token_type="bearer",
     )
@@ -93,9 +95,7 @@ async def get_current_user(
     except JWTError:
         raise credentials_exception
 
-    # Eagerly load the profile when fetching the user
-    query = select(User).options(joinedload(
-        User.profile)).where(User.id == user_id)
+    query = select(User).where(User.id == user_id)
     result = await db.execute(query)
     user = result.scalar_one_or_none()
 
@@ -153,7 +153,7 @@ async def refresh_access_token(refresh_token: str, db: AsyncSession) -> dict:
         # Create new access token
         access_token = create_access_token(
             data={"user_id": str(token.user_id),
-                  "user_type": token.user.user_type, "account_status": token.user.account_status}
+                  "user_type": token.user.user_type, "email": token.user.email, "account_status": token.user.account_status}
         )
 
         # Create new refresh token
@@ -164,6 +164,7 @@ async def refresh_access_token(refresh_token: str, db: AsyncSession) -> dict:
             token=new_refresh_token,
             user_id=token.user_id,
             user_type=token.user.user_type,
+            email=token.user.email,
             account_status=token.user.account_status,
             expires_at=datetime.now() + timedelta(days=7),
         )
@@ -186,36 +187,3 @@ async def refresh_access_token(refresh_token: str, db: AsyncSession) -> dict:
             status_code=status.HTTP_401_UNAUTHORIZED, detail=str(e))
 
 
-"""
-
-async def create_tokens(
-    user_id: str,
-    user_type: str,
-    db: AsyncSession,
-    allowed_routes: list[str] | None = None
-) -> TokenResponse:
-    if allowed_routes is None:
-        allowed_routes = []
-
-    access_token = create_access_token({
-        "sub": str(user_id),
-        "user_type": user_type,
-        "allowed_routes": allowed_routes
-    })
-
-    refresh_token = await create_refresh_token(
-        user_id=user_id,
-        user_type=user_type,
-        db=db,
-        allowed_routes=allowed_routes
-    )
-
-    return TokenResponse(
-        access_token=access_token,
-        refresh_token=refresh_token,
-        user_type=user_type,
-        token_type="bearer",
-        allowed_routes=allowed_routes
-    )
-
-"""

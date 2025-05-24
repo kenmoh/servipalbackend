@@ -35,7 +35,7 @@ async def login_user(
     try:
         user = await auth_service.login_user(login_data=user_credentials, db=db)
 
-        token = await create_tokens(user_id=user.id, account_status=user.account_status,
+        token = await create_tokens(user_id=user.id, email=user.email, account_status=user.account_status,
                                     user_type=user.user_type, db=db)
         if user:
             await auth_service.create_session(db, user.id, request)
