@@ -182,7 +182,7 @@ class ProfileImage(Base):
     profile_id: Mapped[UUID] = mapped_column(
         ForeignKey("profile.user_id", ondelete="CASCADE"), primary_key=True, unique=True
     )
-    profile_image_url: Mapped[str]
+    profile_image_url: Mapped[str] = mapped_column(nullable=True)
     backdrop_image_url: Mapped[str] = mapped_column(nullable=True)
     created_at: Mapped[datetime] = mapped_column(default=datetime.now)
     updated_at: Mapped[datetime] = mapped_column(
@@ -255,9 +255,12 @@ class RefreshToken(Base):
         default=AccountStatus.PENDING, nullable=True)  # TODO: remove nullable
     user_type: Mapped[str] = mapped_column(
         nullable=True)  # TODO: change to False
+    email: Mapped[str] = mapped_column(
+        nullable=True)  # TODO: change to False
     expires_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False
     )
+
     is_revoked: Mapped[bool] = mapped_column(default=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
