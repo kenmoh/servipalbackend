@@ -45,11 +45,11 @@ async def create_new_category(
     description="Allows VENDOR users to create a new item associated with their account and a category.",
 )
 async def create_new_item(
-    name: str = Form(...)
-    description: str = Form(...)
-    price: Decimal = Form(...)
-    item_type: ItemType = Form(...)
-    category_id: UUID = Form(...)
+    name: str = Form(...),
+    description: str = Form(...),
+    price: Decimal = Form(...),
+    item_type: ItemType = Form(...),
+    category_id: UUID = Form(...),
     # item_data: ItemCreate = Depends(),
     images: List[UploadFile] = File(...),
     db: AsyncSession = Depends(get_db),
