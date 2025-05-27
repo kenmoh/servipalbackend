@@ -11,6 +11,7 @@ from app.schemas.item_schemas import (
     CategoryResponse,
     ItemCreate,
     ItemResponse,
+    ItemType
 )
 from app.services import item_service
 
@@ -44,7 +45,12 @@ async def create_new_category(
     description="Allows VENDOR users to create a new item associated with their account and a category.",
 )
 async def create_new_item(
-    item_data: ItemCreate = Depends(),
+    name: str = Form(...)
+    description: str = Form(...)
+    price: Decimal = Form(...)
+    item_type: ItemType = Form(...)
+    category_id: UUID = Form(...)
+    # item_data: ItemCreate = Depends(),
     images: List[UploadFile] = File(...),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -54,6 +60,16 @@ async def create_new_item(
     - Requires authenticated VENDOR user.
     - The specified category_id must exist.
     """
+
+    item_data = ItemCreate(
+
+        name=name,
+        description=description,
+        price=price,
+        item_type=item_type,
+        images=images,
+        category_id=category_id
+        )
 
     return await item_service.create_item(
         db=db, current_user=current_user, item_data=item_data, images=images

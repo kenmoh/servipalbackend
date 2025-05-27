@@ -24,11 +24,11 @@ class ItemType(str, Enum):
 
 
 class ItemCreate(BaseModel):
-    name: str = (Form(...),)
-    description: str = (Form(...),)
-    price: Decimal = (Form(...),)
-    item_type: ItemType = (Form(...),)
-    category_id: UUID = (Form(...),)
+    name: str 
+    description: str 
+    price: Decimal 
+    item_type: ItemType 
+    category_id: UUID
 
 
 
