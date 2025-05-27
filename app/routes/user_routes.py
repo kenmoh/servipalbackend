@@ -1,5 +1,5 @@
 from uuid import UUID
-from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status, BackgroundTasks
 
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -94,8 +94,9 @@ async def get_laundry_vendors(
     return await user_service.get_users_by_laundry_services(db)
 
 
-@router.put("/upload-image", status_code=status.HTTP_201_CREATED)
+@router.put("/upload-image", status_code=status.HTTP_202_ACCEPTED)
 async def upload_profile_image(
+    background_task: BackgroundTasks,
     profile_image_url: UploadFile = File(None),
     backdrop_image_url: UploadFile = File(None),
     db: AsyncSession = Depends(get_db),
@@ -106,6 +107,7 @@ async def upload_profile_image(
         current_user=current_user,
         backdrop_image_url=backdrop_image_url,
         profile_image_url=profile_image_url,
+        background_task=background_task
     )
 
 

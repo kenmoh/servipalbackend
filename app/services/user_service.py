@@ -1,4 +1,5 @@
 from decimal import Decimal
+from datetime import datetime
 from app.schemas.item_schemas import ItemType
 from app.models.models import Delivery, User, Item, Category
 from sqlalchemy.orm import selectinload
@@ -7,7 +8,7 @@ from typing import List, Optional
 from uuid import UUID
 import json
 import logging
-from fastapi import HTTPException, status, UploadFile
+from fastapi import HTTPException, status, UploadFile, BackgroundTasks
 
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import or_, select
@@ -374,8 +375,6 @@ async def get_restaurant_vendors(
             .where(
                 Item.item_type == ItemType.FOOD,
                 User.user_type == UserType.VENDOR.value,
-                # User.is_verified == True,  # Uncomment if needed
-                # User.account_status == AccountStatus.CONFIRMED  # Uncomment if needed
             )
             .group_by(
                 User.id, 
@@ -515,85 +514,228 @@ async def get_vendor_reviews(
 
 
 
+# async def upload_image_profile(
+#     current_user: User,
+#     profile_image_url: Optional[UploadFile],
+#     backdrop_image_url: Optional[UploadFile],
+#     db: AsyncSession,
+# ) -> ProfileImageResponseSchema:
+#     result = await db.execute(
+#         select(Profile)
+#         .where(Profile.user_id == current_user.id).options(selectinload(Profile.profile_image))
+
+
+#     )
+
+#     profile = result.scalar_one_or_none()
+
+#     if not profile:
+#         raise HTTPException(
+#             status_code=status.HTTP_404_NOT_FOUND, detail="User not found!"
+#         )
+
+#     # Process image uploads
+#     new_profile_image_url = None
+#     new_backdrop_image_url = None
+
+#     if profile_image_url:
+#         new_profile_image_url = await add_image(profile_image_url)
+#         if not new_profile_image_url:
+#             raise HTTPException(
+#                 status_code=status.HTTP_400_BAD_REQUEST,
+#                 detail="Failed to upload profile image"
+#             )
+
+#     if backdrop_image_url:
+#         new_backdrop_image_url = await add_image(backdrop_image_url)
+#         if not new_backdrop_image_url:
+#             raise HTTPException(
+#                 status_code=status.HTTP_400_BAD_REQUEST,
+#                 detail="Failed to upload backdrop image"
+#             )
+
+#     try:
+
+#         if profile.profile_image:
+#             # Update existing profile image
+#             old_profile_url = profile.profile_image.profile_image_url
+#             old_backdrop_url = profile.profile_image.backdrop_image_url
+
+#             if new_profile_image_url:
+#                 if old_profile_url and old_profile_url != new_profile_image_url:
+#                     await delete_s3_object(old_profile_url)  # Delete old image
+#                 profile.profile_image.profile_image_url = new_profile_image_url
+
+#             if new_backdrop_image_url:
+#                 if old_backdrop_url and old_backdrop_url != new_backdrop_image_url:
+#                     # Delete old image
+#                     await delete_s3_object(old_backdrop_url)
+#                 profile.profile_image.backdrop_image_url = new_backdrop_image_url
+
+#         else:
+#             # Create new profile image record
+
+#             profile_image = ProfileImage(
+#                 profile_id=profile.user_id,
+#                 profile_image_url=new_profile_image_url,
+#                 backdrop_image_url=new_backdrop_image_url,
+
+#             )
+#             db.add(profile_image)
+#             await db.flush()
+#             profile.profile_image = profile_image
+
+#         return profile.profile_image
+
+#     except Exception as e:
+#         db.rollback()
+#         raise HTTPException(
+#             status_code=status.HTTP_400_BAD_REQUEST, detail=f"Something went wrong! {e}"
+#         )
+
 async def upload_image_profile(
     current_user: User,
     profile_image_url: Optional[UploadFile],
     backdrop_image_url: Optional[UploadFile],
+    background_task: BackgroundTasks,
     db: AsyncSession,
 ) -> ProfileImageResponseSchema:
-    result = await db.execute(
-        select(Profile)
-        .where(Profile.user_id == current_user.id).options(selectinload(Profile.profile_image))
-
-
-    )
-
-    profile = result.scalar_one_or_none()
-
-    if not profile:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="User not found!"
-        )
-
-    # Process image uploads
-    new_profile_image_url = None
-    new_backdrop_image_url = None
-
-    if profile_image_url:
-        new_profile_image_url = await add_image(profile_image_url)
-        if not new_profile_image_url:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Failed to upload profile image"
-            )
-
-    if backdrop_image_url:
-        new_backdrop_image_url = await add_image(backdrop_image_url)
-        if not new_backdrop_image_url:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Failed to upload backdrop image"
-            )
-
+    """
+    Enhanced version with better logging and error handling
+    """
+    logger.info(f"Starting image upload for user {current_user.id}")
+    
     try:
+        # Get profile with profile_image relationship loaded
+        result = await db.execute(
+            select(Profile)
+            .where(Profile.user_id == current_user.id)
+            .options(selectinload(Profile.profile_image))
+        )
+        profile = result.scalar_one_or_none()
+        
+        if not profile:
+            logger.error(f"Profile not found for user {current_user.id}")
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, 
+                detail="User profile not found!"
+            )
 
+        logger.info(f"Profile found. Existing profile_image: {profile.profile_image is not None}")
+
+        # Process image uploads
+        new_profile_image_url = None
+        new_backdrop_image_url = None
+        old_profile_url = None
+        old_backdrop_url = None
+        
+        # Store old URLs for cleanup
         if profile.profile_image:
-            # Update existing profile image
             old_profile_url = profile.profile_image.profile_image_url
             old_backdrop_url = profile.profile_image.backdrop_image_url
+            logger.info(f"Existing URLs - Profile: {old_profile_url}, Backdrop: {old_backdrop_url}")
+        
+        if profile_image_url:
+            logger.info("Uploading new profile image")
+            new_profile_image_url = await add_image(profile_image_url)
+            if not new_profile_image_url:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Failed to upload profile image"
+                )
+            logger.info(f"New profile image uploaded: {new_profile_image_url}")
+        
+        if backdrop_image_url:
+            logger.info("Uploading new backdrop image")
+            new_backdrop_image_url = await add_image(backdrop_image_url)
+            if not new_backdrop_image_url:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Failed to upload backdrop image"
+                )
+            logger.info(f"New backdrop image uploaded: {new_backdrop_image_url}")
 
+        # Handle profile image creation/update
+        if profile.profile_image:
+            logger.info("Updating existing profile image record")
+            
+            # Update profile image URL if new one provided
             if new_profile_image_url:
-                if old_profile_url and old_profile_url != new_profile_image_url:
-                    await delete_s3_object(old_profile_url)  # Delete old image
                 profile.profile_image.profile_image_url = new_profile_image_url
-
+                logger.info("Updated profile_image_url")
+            
+            # Update backdrop image URL if new one provided
             if new_backdrop_image_url:
-                if old_backdrop_url and old_backdrop_url != new_backdrop_image_url:
-                    # Delete old image
-                    await delete_s3_object(old_backdrop_url)
                 profile.profile_image.backdrop_image_url = new_backdrop_image_url
-
+                logger.info("Updated backdrop_image_url")
+                
+            # Update timestamp
+            profile.profile_image.updated_at = datetime.now()
+            
         else:
-            # Create new profile image record
-
+            logger.info("Creating new profile image record")
             profile_image = ProfileImage(
                 profile_id=profile.user_id,
                 profile_image_url=new_profile_image_url,
                 backdrop_image_url=new_backdrop_image_url,
-
             )
             db.add(profile_image)
-            await db.flush()
+            await db.flush()  # Flush to get the ID
             profile.profile_image = profile_image
+            logger.info(f"Created new ProfileImage with profile_id: {profile_image.profile_id}")
 
-        return profile.profile_image
-
+        # Commit the transaction
+        logger.info("Committing transaction")
+        await db.commit()
+        logger.info("Transaction committed successfully")
+        
+        # Clean up old images AFTER successful commit
+        if old_profile_url and new_profile_image_url and old_profile_url != new_profile_image_url:
+            logger.info(f"Scheduling deletion of old profile image: {old_profile_url}")
+            background_task.add_task(delete_s3_object, old_profile_url)
+            
+        if old_backdrop_url and new_backdrop_image_url and old_backdrop_url != new_backdrop_image_url:
+            logger.info(f"Scheduling deletion of old backdrop image: {old_backdrop_url}")
+            background_task.add_task(delete_s3_object, old_backdrop_url)
+        
+        # Refresh to get the latest data
+        await db.refresh(profile)
+        if profile.profile_image:
+            await db.refresh(profile.profile_image)
+        
+        # Verify the data was saved
+        final_profile_url = profile.profile_image.profile_image_url if profile.profile_image else None
+        final_backdrop_url = profile.profile_image.backdrop_image_url if profile.profile_image else None
+        
+        logger.info(f"Final URLs - Profile: {final_profile_url}, Backdrop: {final_backdrop_url}")
+        
+        # Return the response
+        if profile.profile_image:
+            return ProfileImageResponseSchema(
+                profile_image_url=profile.profile_image.profile_image_url,
+                backdrop_image_url=profile.profile_image.backdrop_image_url
+            )
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to create/update profile image"
+            )
+            
+    except HTTPException:
+        # Re-raise HTTP exceptions
+        await db.rollback()
+        raise
     except Exception as e:
-        db.rollback()
+        # Handle unexpected errors
+        await db.rollback()
+        logger.error(f"Error in upload_image_profile: {str(e)}")
+        logger.error(f"Error type: {type(e)}")
+        import traceback
+        logger.error(f"Traceback: {traceback.format_exc()}")
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail=f"Something went wrong! {e}"
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, 
+            detail=f"Something went wrong: {str(e)}"
         )
-
 
 # <<<<< --------- GET LAUNDRY SERVICE PROVIDERS ---------- >>>>>
 async def get_users_by_laundry_services(db: AsyncSession) -> List[VendorUserResponse]:

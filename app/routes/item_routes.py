@@ -1,5 +1,6 @@
 from uuid import UUID
 from typing import List, Annotated
+from decimal import Decimal
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status, Form
 from sqlalchemy.ext.asyncio import AsyncSession
