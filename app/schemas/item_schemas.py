@@ -62,6 +62,9 @@ class ItemResponse(ItemCreateResponse):
     images: list[ItemImageSchema]
     reviews: list[ReviewResponseSchema] = []
 
+    class Config:
+        from_attributes = True
+
 class MenuWithReviewSchema(BaseModel):
 
     id: UUID

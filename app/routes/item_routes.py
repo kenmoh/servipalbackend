@@ -51,7 +51,6 @@ async def create_new_item(
     price: Decimal = Form(...),
     item_type: ItemType = Form(...),
     category_id: UUID = Form(...),
-    # item_data: ItemCreate = Depends(),
     images: List[UploadFile] = File(...),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -119,6 +118,8 @@ async def read_vendor_items(
     """
     Endpoint to get all items for the logged-in VENDOR user.
     """
+
+    
     return await item_service.get_items_by_user_id(db=db, user_id=vendor_id)
 
 
