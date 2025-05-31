@@ -134,6 +134,7 @@ class OrderResponseSchema(BaseModel):
     order_type: str
     total_price: Decimal
     order_payment_status: str
+    require_delivery: str
     order_status: OrderStatus | None = None
     order_number: int | None = None
     amount_due_vendor: Decimal
