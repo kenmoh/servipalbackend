@@ -135,6 +135,11 @@ async def get_user_wallets(db: AsyncSession) -> list[WalletSchema]:
     return result.scalars().all()
 
 
+async def get_user_wallet(db: AsyncSession, current_user: User) -> WalletSchema:
+    stmt = select(Wallet).where(Wallet.id == current_user.id).options(selectinload(Wallet.transactions))
+    result = await db.execute(stmt)
+    return result.scalar_one_or_none()
+
 async def update_profile(
     db: AsyncSession, profile_data: ProfileSchema, current_user: User
 ) -> ProfileSchema:

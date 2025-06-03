@@ -49,6 +49,24 @@ class CreateUserResponseSchema(BaseModel):
     class Config:
         from_attributes = True
 
+class TransactionSchema(BaseModel):
+    id: UUID
+    wallet_id: UUID
+    amount: Decimal
+    transaction_type: TransactionType
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class WalletSchema(BaseModel):
+    id: UUID
+    balance: Decimal
+    escrow_balance: Decimal
+    transactions: list[TransactionSchema] = []
+
+    model_config = ConfigDict(from_attributes=True)
+
 
 class CreateVendorSchema(BaseModel):
     email: EmailStr
@@ -83,10 +101,10 @@ class AccountStatusSchema(BaseModel):
     account_status: AccountStatus
 
 
-class WalletSchema(BaseModel):
-    id: str
-    user_id: str
-    balance: Decimal
+# class WalletSchema(BaseModel):
+#     id: str
+#     user_id: str
+#     balance: Decimal
 
 
 class CreateReviewSchema(BaseModel):
@@ -331,25 +349,6 @@ class ProfileSchema(BaseModel):
     business_registration_number: str | None = None
     closing_hours: time | None = None
     opening_hours: time | None = None
-
-    model_config = ConfigDict(from_attributes=True)
-
-
-class TransactionSchema(BaseModel):
-    id: UUID
-    wallet_id: UUID
-    amount: Decimal
-    transaction_type: TransactionType
-    created_at: datetime
-
-    model_config = ConfigDict(from_attributes=True)
-
-
-class WalletSchema(BaseModel):
-    id: UUID
-    balance: Decimal
-    escrow_balance: Decimal
-    transactions: list[TransactionSchema] = []
 
     model_config = ConfigDict(from_attributes=True)
 

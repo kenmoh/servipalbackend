@@ -42,6 +42,12 @@ async def get_user_wallets(
 ) -> list[WalletSchema]:
     return await user_service.get_user_wallets(db=db)
 
+@router.get("/user-wallet", include_in_schema=False, status_code=status.HTTP_200_OK)
+async def get_user_wallet(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+) -> WalletSchema:
+    return await user_service.get_user_wallet(db=db, current_user=current_user)
 
 @router.put("/profile", status_code=status.HTTP_202_ACCEPTED)
 async def update_user_profile(
