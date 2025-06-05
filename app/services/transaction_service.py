@@ -576,9 +576,10 @@ async def initiate_bank_transfer(
             
 
             result = response.json()
+            message = result['message']
          
             if result['status'] != 'success':
-                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f'{result['message']}')
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f'{message}')
             auth_data = result["meta"]["authorization"]
 
             return {
