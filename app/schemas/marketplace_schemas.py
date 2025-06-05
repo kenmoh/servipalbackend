@@ -1,4 +1,5 @@
 from enum import Enum
+from datetime import datetime
 from pydantic import BaseModel, Field
 from uuid import UUID
 from datetime import datetime
@@ -39,6 +40,11 @@ class TransactionResponse(BaseModel):
     updated_at: datetime
 
 
+class BankCode(BaseModel):
+    bank_code: str
+   
+
+
 class TransferDetailResponseSchema(BaseModel):
     status: str
     message: str
@@ -49,3 +55,13 @@ class TransferDetailResponseSchema(BaseModel):
     transfer_note: str
     transfer_amount: str
     mode: str
+
+class WithdrawalShema(BaseModel):
+    status: str
+    message: str
+    transaction_id: UUID
+    amount: Decimal
+    bank_name: str
+    account_number: str
+    beneficiary: str
+    timestamp: datetime

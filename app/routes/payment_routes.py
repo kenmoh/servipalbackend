@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.auth.auth import get_current_user
 from app.database.database import get_db
 from app.models.models import User
-from app.schemas.marketplace_schemas import TopUpRequestSchema, TransferDetailResponseSchema
+from app.schemas.marketplace_schemas import TopUpRequestSchema, TransferDetailResponseSchema, BankCode, WithdrawalShema
 from app.services import transaction_service
 
 
@@ -30,6 +30,17 @@ async def fund_wallet_payment_callback(
     request: Request, db: AsyncSession = Depends(get_db)
 ) -> dict[str, str]:
     return await transaction_service.fund_wallet_callback(request=request, db=db)
+
+
+@router.post(
+    "/withdraw-funds", include_in_schema=True, status_code=status.HTTP_200_OK
+)
+async def withdraw_funds(
+    bank_code: BankCode,
+    current_user: User = Depends(get_current_user), 
+    db: AsyncSession = Depends(get_db)
+) -> WithdrawalShema:
+    return await transaction_service.make_withdrawal(request=request, db=db, bank_code=bank_code)
 
 
 @router.post("/webhook", include_in_schema=False, status_code=status.HTTP_200_OK)

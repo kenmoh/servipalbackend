@@ -11,7 +11,7 @@ from sqlalchemy.orm import selectinload
 from pydantic import EmailStr
 
 from app.models.models import ChargeAndCommission, Order, User, Wallet, Transaction, OrderItem
-from app.schemas.marketplace_schemas import TopUpRequestSchema,TransferDetailResponseSchema
+from app.schemas.marketplace_schemas import TopUpRequestSchema,TransferDetailResponseSchema, BankCode, WithdrawalShema
 from app.schemas.order_schema import OrderResponseSchema
 from app.schemas.status_schema import PaymentStatus, TransactionType
 from app.utils.logger_config import setup_logger
@@ -25,6 +25,9 @@ from app.utils.utils import (
 from app.config.config import settings
 
 logger = setup_logger()
+
+
+
 
 
 async def get_wallet(wallet_id, db: AsyncSession):
@@ -602,7 +605,7 @@ async def initiate_bank_transfer(
             raise
 
 
-async def make_withdrawal(db: AsyncSession, current_user: User, bank_code: str) -> dict:
+async def make_withdrawal(db: AsyncSession, current_user: User, bank_code: BankCode) -> WithdrawalShema:
     """Process withdrawal of entire wallet balance"""
 
     # Load user with profile and wallet in a single query
@@ -670,7 +673,7 @@ async def make_withdrawal(db: AsyncSession, current_user: User, bank_code: str) 
             )
 
         transfer_response = await transfer_money_to_user_account(
-            bank_code=bank_code,
+            bank_code=bank_code.bank_code,
             amount=str(user.wallet.balance),
             # narration=f"Wallet withdrawal of ₦ {previous_balance:,.2f}",
             # reference=str(withdrawal.id),
