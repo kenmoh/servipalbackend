@@ -109,11 +109,6 @@ class AccountStatusSchema(BaseModel):
     account_status: AccountStatus
 
 
-# class WalletSchema(BaseModel):
-#     id: str
-#     user_id: str
-#     balance: Decimal
-
 
 class CreateReviewSchema(BaseModel):
     rating: Decimal = Field(ge=1, le=5)
@@ -357,6 +352,7 @@ class ProfileSchema(BaseModel):
     business_registration_number: str | None = None
     closing_hours: time | None = None
     opening_hours: time | None = None
+    account_holder_name: str | None = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -446,3 +442,6 @@ class VendorUserResponse(BaseModel):
 class ProfileImageResponseSchema(BaseModel):
     profile_image_url: str | None = None
     backdrop_image_url: str | None = None
+
+
+

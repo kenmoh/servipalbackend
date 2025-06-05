@@ -1,15 +1,17 @@
 import asyncio
+from typing import Dict, Any
 import datetime
 from uuid import UUID
 import logging
 from fastapi import BackgroundTasks, HTTPException, Request, status
-
+import httpx
 from sqlalchemy import insert, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
+from pydantic import EmailStr
 
 from app.models.models import ChargeAndCommission, Order, User, Wallet, Transaction, OrderItem
-from app.schemas.marketplace_schemas import TopUpRequestSchema
+from app.schemas.marketplace_schemas import TopUpRequestSchema,TransferDetailResponseSchema
 from app.schemas.order_schema import OrderResponseSchema
 from app.schemas.status_schema import PaymentStatus, TransactionType
 from app.utils.logger_config import setup_logger
@@ -18,6 +20,7 @@ from app.utils.utils import (
     get_fund_wallet_payment_link,
     transfer_money_to_user_account,
     verify_transaction_tx_ref,
+    flutterwave_base_url
 )
 from app.config.config import settings
 
@@ -61,6 +64,8 @@ async def top_up_wallet(
     try:
         # Get or create wallet in a single operation
         wallet = await db.get(Wallet, current_user.id)
+
+
         if not wallet:
             wallet = Wallet(
                 id=current_user.id,
@@ -70,6 +75,9 @@ async def top_up_wallet(
                 updated_at=datetime.utcnow()
             )
             db.add(wallet)
+
+        if wallet.balance >= 1_00_000:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f'Wallet balance cannot be more than NGN 100000')
                         
         # Create the transaction record
         transaction = Transaction(
@@ -124,6 +132,116 @@ async def top_up_wallet(
 # --- Webhook Handler ---
 
 # SUCCESS WEBHOOK
+
+# async def handle_payment_webhook(
+#     request: Request,
+#     background_task: BackgroundTasks,
+#     db: AsyncSession,
+# ):
+#     """Handle webhooks for both normal payments and transfers"""
+    
+#     # Validate webhook signature
+#     signature = request.headers.get("verif-hash")
+#     if signature is None or signature != settings.FLW_SECRET_HASH:
+#         raise HTTPException(status_code=401, detail="Unauthorized")
+    
+#     # Get payload
+#     payload = await request.json()
+    
+#     try:
+#         # Determine webhook type and extract transaction reference
+#         # Transfer webhooks have 'event.type' field
+#         is_transfer = 'event.type' in payload
+        
+#         if is_transfer:
+#             # Handle transfer webhook (has 'event.type' field)
+#             tx_ref = payload.get('txRef')
+#             if not tx_ref:
+#                 logging.error(f"Missing txRef in transfer webhook payload: {payload}")
+#                 raise HTTPException(status_code=400, detail="Invalid transfer payload format")
+            
+#             # Validate transfer-specific required fields
+#             # For bank transfer webhooks, the data is at root level, not nested under 'data'
+#             required_fields = ["status", "amount", "currency", "txRef"]
+#             if not all(field in payload for field in required_fields):
+#                 logging.error(f"Missing required fields in transfer webhook payload: {payload}")
+#                 raise HTTPException(status_code=400, detail="Invalid transfer payload format")
+            
+#             status_value = payload.get("status")
+#             amount_value = payload.get("amount")
+#             currency_value = payload.get("currency")
+
+            
+#         else:
+#             # Handle normal payment webhook (no 'event.type' field)
+#             tx_ref = payload.get("txRef")
+#             if not tx_ref:
+#                 logging.error(f"Missing txRef in payment webhook payload: {payload}")
+#                 raise HTTPException(status_code=400, detail="Invalid payment payload format")
+            
+#             # Validate payment-specific required fields
+#             required_fields = ["status",  "amount", "currency"]
+#             if not all(field in payload for field in required_fields):
+#                 logging.error(f"Missing required fields in payment webhook payload: {payload}")
+#                 raise HTTPException(status_code=400, detail="Invalid payment payload format")
+            
+#             status_value = payload.get("status")
+#             amount_value = payload.get("amount")
+#             currency_value = payload.get("currency")
+        
+#         # Convert tx_ref to UUID if possible
+#         try:
+#             order_id = UUID(tx_ref)
+#         except (ValueError, TypeError):
+#             order_id = tx_ref
+        
+#         # Get order from database
+#         stmt = select(Order).where(Order.id == order_id)
+#         result = await db.execute(stmt)
+#         db_order = result.scalar_one_or_none()
+        
+#         if not db_order:
+#             logging.warning(f"Order not found for txRef: {tx_ref}")
+#             return {"message": "Order not found"}
+        
+#         # Validate payment/transfer details
+#         is_valid_payment = (
+#             status_value == "successful"
+#             and amount_value == db_order.total_price
+#             and currency_value == "NGN"
+#             and db_order.payment_status != PaymentStatus.PAID
+#         )
+        
+#         # For normal payments, also check total_price
+#         # if not is_transfer and payload.get("total_price") != db_order.total_price:
+#         #     is_valid_payment = False
+        
+#         if is_valid_payment:
+#             # Verify transaction with payment provider
+#             verify_result = await verify_transaction_tx_ref(tx_ref)
+#             if verify_result.get("data", {}).get("status") == "successful":
+#                 # Update the database in the background with retry mechanism
+#                 background_task.add_task(update_database, db_order, db)
+#                 logging.info(f"{'Transfer' if is_transfer else 'Payment'} webhook processed successfully for txRef: {tx_ref}")
+#                 return {"message": "Success"}
+#             else:
+#                 logging.warning(f"Transaction verification failed for txRef: {tx_ref}")
+#                 return {"message": "Transaction verification failed"}
+#         else:
+#             logging.warning(f"Payment validation failed for txRef: {tx_ref}. Status: {status_value}, Amount: {amount_value}, Currency: {currency_value}")
+#             return {"message": "Payment validation failed"}
+        
+#     except HTTPException:
+#         # Re-raise HTTP exceptions
+#         raise
+#     except Exception as e:
+#         logging.error(f"Error processing webhook: {e}", exc_info=True)
+#         raise HTTPException(
+#             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+#             detail="INTERNAL_SERVER_ERROR",
+#         )
+
+
 async def handle_payment_webhook(
     request: Request,
     background_task: BackgroundTasks,
@@ -164,7 +282,7 @@ async def handle_payment_webhook(
         if (
             payload["status"] == "successful"
             and payload["total_price"] == db_order.total_price
-            and payload["amount"] == db_order.total_cost
+            and payload["amount"] == db_order.total_price
             and payload["currency"] == "NGN"
             and db_order.payment_status != PaymentStatus.PAID
         ):
@@ -183,6 +301,7 @@ async def handle_payment_webhook(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="INTERNAL_SERVER_ERROR",
         )
+
 
 
 async def fund_wallet_callback(request: Request, db: AsyncSession):
@@ -406,6 +525,81 @@ async def pay_with_wallet(
     await db.refresh(order)
 
     return order.payment_status
+
+
+
+
+async def initiate_bank_transfer(
+  current_user: User,
+  order_id: UUID,
+  db: AsyncSession
+) -> TransferDetailResponseSchema:
+    """
+    Initiate a bank transfer charge using Flutterwave API
+    
+    Args:
+        amount: Amount to charge
+        email: Customer email
+        currency: Currency code (default: NGN)
+        tx_ref: Transaction reference (auto-generated if not provided)
+        
+    Returns:
+        Dict containing the API response
+        
+    Raises:
+        httpx.HTTPStatusError: If the API request fails
+        httpx.RequestError: If there's a network error
+    """
+
+    result = await db.execute(select(Order).where(Order.id == order_id))
+
+    order = result.scalar_one_or_none()
+
+
+    
+    payload = {
+        "amount": str(order.total_price),
+        "email": current_user.email,
+        "currency": 'NGN',
+        "tx_ref": str(order.id),
+    }
+    
+    headers = {
+        "accept": "application/json",
+        "Authorization": f"Bearer {settings.FLW_SECRET_KEY}",
+        "Content-Type": "application/json"
+    }
+    
+    async with httpx.AsyncClient() as client:
+        try:
+            response = await client.post(f"{flutterwave_base_url}/charges?type=bank_transfer", json=payload, headers=headers)
+            
+
+            result = response.json()
+         
+            if result['status'] != 'success':
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f'{result['message']}')
+            auth_data = result["meta"]["authorization"]
+
+            return {
+                "status": result["status"],
+                "message": result["message"],
+                "transfer_reference": auth_data["transfer_reference"],
+                "transfer_account": auth_data["transfer_account"],
+                "transfer_bank": auth_data["transfer_bank"],
+                "account_expiration": auth_data["account_expiration"],
+                "transfer_note": auth_data["transfer_note"],
+                "transfer_amount": auth_data["transfer_amount"],
+                "mode": auth_data["mode"]
+            }
+
+        except httpx.HTTPStatusError as e:
+            print(f"HTTP error occurred: {e.response.status_code} - {e.response.text}")
+            raise
+        except httpx.RequestError as e:
+            print(f"Request error occurred: {e}")
+            raise
+
 
 async def make_withdrawal(db: AsyncSession, current_user: User, bank_code: str) -> dict:
     """Process withdrawal of entire wallet balance"""

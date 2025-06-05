@@ -45,30 +45,17 @@ class OrderIssueResponse(OrderIssueCreate):
     status: IssueStatus
 
 
-# class DeliveryStatus(str, Enum):
-#     PENDING = "pending"
-#     IN_TRANSIT = "in_progress"
-#     COMPLETED = "completed"
-#     CANCELLED = "cancelled"
-#     RECEIVED = "received"
-#     LAUNDRY_DELIVERES_TO_VENDORR = "delivered-to-vendor"
+class BankTransferResponse(BaseModel):
 
-
-# class DeliveryType(str, Enum):
-#     MEAL = "meal"
-#     LAUNDRY = "laundry"
-#     PACKAGE = "package"
-
-
-# class DeliveryCreate(BaseModel):
-#     pickup_coordinates: Tuple[float, float]
-#     dropoff_coordinates: Tuple[float, float]
-#     distance: float
-
-
-# class Coordinate(BaseModel):
-#     latitude: float
-#     longitude: float
+    status: str
+    message: str
+    transfer_reference: str
+    transfer_account: str
+    transfer_bank: str
+    account_expiration: str
+    transfer_note: str
+    transfer_amount: str
+    mode: str
 
 
 class PackageCreate(BaseModel):

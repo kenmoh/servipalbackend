@@ -37,3 +37,15 @@ class TransactionResponse(BaseModel):
     payment_link: str | None = None
     created_at: datetime
     updated_at: datetime
+
+
+class TransferDetailResponseSchema(BaseModel):
+    status: str
+    message: str
+    transfer_reference: str
+    transfer_account: str
+    transfer_bank: str
+    account_expiration: str
+    transfer_note: str
+    transfer_amount: str
+    mode: str
