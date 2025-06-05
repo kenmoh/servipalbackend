@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta
+from typing import Dict, Any
 import secrets
 import re
 from decimal import Decimal
@@ -6,11 +7,13 @@ import json
 from uuid import UUID
 import uuid
 from fastapi import HTTPException, status
+from pydantic import EmailStr
 import httpx
 from redis import Redis
 from app.models.models import ChargeAndCommission, User
-from app.schemas.status_schema import UserType
+from app.schemas.status_schema import UserType, BankSchema
 from app.config.config import settings, redis_client
+from app.schemas.user_schemas import AccountDetails, AccountDetailResponse
 
 
 flutterwave_base_url = "https://api.flutterwave.com/v3"
@@ -112,27 +115,23 @@ async def get_fund_wallet_payment_link(id: UUID, amount: Decimal, current_user: 
         )
 
 
-async def get_all_banks():
+async def get_all_banks() -> list[BankSchema]:
     cache_key = "banks_list"
     cached_banks = redis_client.get(cache_key)
 
     if cached_banks:
-        print("Cache hit for banks list")
         return json.loads(cached_banks)
-    banks = []
     try:
         headers = {"Authorization": f"Bearer {settings.FLW_SECRET_KEY}"}
 
         async with httpx.AsyncClient(timeout=30.0) as client:
             response = await client.get(banks_url, headers=headers)
-            data = response.json()["data"]
+            banks = response.json()["data"]
 
-        for bank in data:
-            banks.append(bank["name"])
+            sorted_banks= sorted(banks, key=lambda bank: bank['name'])
 
-        banks.sort()
-        redis_client.set(cache_key, json.dumps(banks, default=str), ex=86400)
-        return banks
+            redis_client.set(cache_key, json.dumps(sorted_banks, default=str), ex=86400)
+            return sorted_banks
 
     except httpx.HTTPStatusError as e:
         raise HTTPException(
@@ -301,11 +300,13 @@ async def transfer_money_to_user_account(
     bank_code: str,
     account_number: str,
     amount: str,
-    narration: str,
-    reference: str,
+    # reference: str,
     beneficiary_name: str,
     charge: ChargeAndCommission,
 ):
+    reference = "ServiPal-" + datetime.now().strftime("%Y%d%m%H%M%S%f")
+   
+
     headers = {"Authorization": f"Bearer {settings.FLW_SECRET_KEY}"}
     payload = {
         "account_bank": bank_code,
@@ -322,9 +323,9 @@ async def transfer_money_to_user_account(
                 )
             )
         ),
-        "narration": narration,
+        "narration": f'Transfer of ₦{amount} to {account_number:,.2f} was successful!',
         "currency": "NGN",
-        "reference": reference,
+        "reference": '{reference',
         "callback_url": f"{servipal_base_url}/withdrawals/callback",
         "debit_currency": "NGN",
         "beneficiary_name": beneficiary_name,
@@ -369,6 +370,143 @@ async def transfer_money_to_user_account(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to withdraw: {str(e)}",
         )
+
+
+async def initiate_bank_transfer_charge(
+    amount: str,
+    email: EmailStr,
+    fullname: str,
+    phone_number: str,
+    id: UUID
+) -> Dict[str, Any]:
+    """
+    Initiate a bank transfer charge using Flutterwave API
+    
+    Args:
+        amount: Amount to charge
+        email: Customer email
+        fullname: Customer full name
+        phone_number: Customer phone number
+        currency: Currency code (default: NGN)
+        tx_ref: Transaction reference (auto-generated if not provided)
+        
+    Returns:
+        Dict containing the API response
+        
+    Raises:
+        httpx.HTTPStatusError: If the API request fails
+        httpx.RequestError: If there's a network error
+    """
+    
+    payload = {
+        "amount": amount,
+        "email": email,
+        "currency": 'NGN',
+        "tx_ref": str(id),
+        "fullname": fullname,
+        "phone_number": phone_number,
+    }
+    
+    headers = {
+        "accept": "application/json",
+        "Authorization": f"Bearer {settings.FLW_SECRET_KEY}",
+        "Content-Type": "application/json"
+    }
+    
+    async with httpx.AsyncClient() as client:
+        try:
+            response = await client.post(f"{flutterwave_base_url}/charges?type=bank_transfer", json=payload, headers=headers)
+            response.raise_for_status()
+
+            result = response.json()
+            auth_data = raw_response["meta"]["authorization"]
+
+            return {
+                "status": result["status"],
+                "message": result["message"],
+                "transfer_reference": auth_data["transfer_reference"],
+                "transfer_account": auth_data["transfer_account"],
+                "transfer_bank": auth_data["transfer_bank"],
+                "account_expiration": auth_data["account_expiration"],
+                "transfer_note": auth_data["transfer_note"],
+                "transfer_amount": auth_data["transfer_amount"],
+                "mode": auth_data["mode"]
+            }
+            
+        except httpx.HTTPStatusError as e:
+            print(f"HTTP error occurred: {e.response.status_code} - {e.response.text}")
+            raise
+        except httpx.RequestError as e:
+            print(f"Request error occurred: {e}")
+            raise
+
+
+async def resolve_account_details(
+    data: AccountDetails,
+
+) -> AccountDetailResponse:
+    """
+    Resolve bank account details using Flutterwave API
+    
+    Args:
+        account_number: Bank account number
+        account_bank: Bank code (e.g., "044" for Access Bank)
+        
+    Returns:
+        Dict containing account details in format:
+        {
+            "account_number": "0690000032",
+            "account_name": "Pastor Bright"
+        }
+        
+    Raises:
+        httpx.HTTPStatusError: If the API request fails
+        httpx.RequestError: If there's a network error
+    """
+    
+    payload = {
+        "account_number": data.account_number,
+        "account_bank": data.account_bank
+    }
+    
+    headers = {
+        "accept": "application/json",
+        "Authorization": f"Bearer {settings.FLW_SECRET_KEY}",
+        "Content-Type": "application/json"
+    }
+    
+    async with httpx.AsyncClient() as client:
+        try:
+            response = await client.post(f'{flutterwave_base_url}/accounts/resolve', json=payload, headers=headers)
+            
+
+            print('==================', response)
+            response.raise_for_status()
+            
+            # Get the raw response
+            raw_response = response.json()
+
+            
+            # Extract and flatten the required fields
+            if raw_response.get("status") == "success" and "data" in raw_response:
+                data = raw_response["data"]
+                
+                formatted_response = {
+                    "account_number": data["account_number"],
+                    "account_name": data["account_name"]
+                }
+                return formatted_response
+
+        except httpx.HTTPStatusError as e:
+            print(f"HTTP error occurred: {e.response.status_code} - {e.response.text}")
+            raise
+        except httpx.RequestError as e:
+            print(f"Request error occurred: {e}")
+            raise
+        except httpx.RequestError as e:
+            print(f"Request error occurred: {e}")
+            raise
+
 
 
 # async def send_welcome_email(subject: str, email_to: EmailStr, body: dict, temp_name: str):

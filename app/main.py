@@ -28,11 +28,12 @@ from app.utils.cron_job import (
     reset_user_suspension,
     suspend_user_with_order_cancel_count_equal_3,
 )
+from app.schemas.status_schema import BankSchema
 from app.utils.logger_config import setup_logger
-from app.utils.utils import get_all_banks
+from app.utils.utils import get_all_banks, resolve_account_details
 from app.config.config import redis_client
 from app.database.database import engine
-from app.utils.utils import verify_transaction_tx_ref
+from app.schemas.user_schemas import AccountDetails, AccountDetailResponse
 
 
 logger = setup_logger()
@@ -212,12 +213,18 @@ def api_health_check() -> dict:
     return {"status": "OK", "message": "API up and running"}
 
 
-@app.get("/api/list-of-banks", response_model=list[str], tags=["Get Banks"])
+@app.get("/api/list-of-banks", response_model=list[BankSchema], tags=["Get Banks"])
 async def get_banks() -> list:
     """Get list of all supported bank(Nigeria)"""
-    tranx = await verify_transaction_tx_ref('3e7e2914e5e14697856b6fe809d86066')
 
     return await get_all_banks()
+
+
+@app.post("/api/resolve-account-name", tags=["Account Name"])
+async def resolve_account_name(data: AccountDetails) -> AccountDetailResponse:
+    """Verify account name"""
+
+    return await resolve_account_details(data)
 
 
 app.include_router(auth_routes.router)

@@ -7,6 +7,14 @@ from pydantic import EmailStr, BaseModel, Field, constr, ConfigDict
 from app.schemas.status_schema import AccountStatus, TransactionType, UserType
 
 
+class AccountDetails(BaseModel):
+    account_number: str
+    account_bank: str
+
+class AccountDetailResponse(BaseModel):
+    account_number: str
+    account_name: str
+
 class PasswordChange(BaseModel):
     current_password: str
     new_password: str

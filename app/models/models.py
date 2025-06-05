@@ -152,6 +152,7 @@ class Profile(Base):
     bank_account_number: Mapped[str] = mapped_column(nullable=True)
     business_address: Mapped[str] = mapped_column(nullable=True)
     business_registration_number: Mapped[str] = mapped_column(nullable=True)
+    account_holder_name: Mapped[str] = mapped_column(nullable=True)
     opening_hours: Mapped[time] = mapped_column(nullable=True)
     closing_hours: Mapped[time] = mapped_column(nullable=True)
     full_name: Mapped[str] = mapped_column(nullable=True)
@@ -365,7 +366,6 @@ class Order(Base):
     total_price: Mapped[Decimal] = mapped_column(default=0.00)
     amount_due_vendor: Mapped[Decimal] = mapped_column(nullable=False)
     payment_link: Mapped[str] = mapped_column(nullable=True)
-    # fw_tx_ref: : Mapped[str] = mapped_column(nullable=True, default=unique_id) # Flutterwave transaction reference
     additional_info: Mapped[str] = mapped_column(nullable=True)
     order_payment_status: Mapped[PaymentStatus] = mapped_column(
         default=PaymentStatus.PENDING

@@ -6,6 +6,10 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+class BankSchema(BaseModel):
+    id: int
+    code: str
+    name: str
 
 class RequireDeliverySchema(str, Enum):
     PICKUP = "pickup"
