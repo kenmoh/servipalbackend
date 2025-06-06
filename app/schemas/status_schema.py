@@ -29,13 +29,15 @@ class UserType(str, Enum):
     ADMIN: str = os.getenv("ADMIN")
 
 
-class DelivertyStatus(str, Enum):
-    PENDING: str = "pending"
-    IN_TRANSIT: str = "in transit"
-    DELIVERED: str = "delivered"
-    RECEIVED: str = "received"
-    VENDOR_RECEIVED_LAUNDRY_ITEM: str = "laundry received"
-    CANCELLED: str = "canceled"
+class DeliveryStatus(str, Enum):
+    ACCEPT: str = 'accept' # Rider/Dispatch ops
+    PENDING: str = "pending" # Default
+    IN_TRANSIT: str = "in_transit" # Sender ops
+    DELIVERED: str = "delivered"  # Rider/Dispatch ops
+    RECEIVED: str = "received" #Sender ops
+    VENDOR_RECEIVED_LAUNDRY_ITEM: str = "laundry_received" # Vendor ops
+    CANCELLED: str = "canceled" # Vendor/Rider/Dispath ops
+
 
 
 class OrderStatus(str, Enum):

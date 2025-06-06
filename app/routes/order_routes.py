@@ -125,14 +125,6 @@ async def order_food_or_request_laundy_service(
     )
 
 
-# @router.get("/{order_id}/summary", status_code=status.HTTP_200_OK)
-# async def get_order_details(
-#     order_id: UUID,
-#     db: AsyncSession = Depends(get_db),
-#     current_user: User = Depends(get_current_user),
-# ) -> OrderResponseSchema:
-#     return await order_service.get_order_with_items(db, order_id)
-
 
 @router.get("/{delivery_id}", status_code=status.HTTP_200_OK)
 async def get_delivery_by_id(
@@ -144,13 +136,13 @@ async def get_delivery_by_id(
 
 
 @router.put("/{delivery_id}/confirm-delivery", status_code=status.HTTP_202_ACCEPTED)
-async def confirm_delivery_received(
+async def sender_confirm_delivery_received(
     delivery_id: UUID,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> DeliveryStatusUpdateSchema:
     try:
-        return await order_service.confirm_delivery_received(
+        return await order_service.sender_confirm_delivery_received(
             db=db,
             current_user=current_user,
             delivery_id=delivery_id,
@@ -161,15 +153,48 @@ async def confirm_delivery_received(
 
 
 @router.put(
-    "/{delivery_id}/update-delivery-status", status_code=status.HTTP_202_ACCEPTED
+    "/{delivery_id}/accept-delivery", status_code=status.HTTP_202_ACCEPTED
 )
-async def rider_update_delivery_status(
+async def rider_accept_delivery(
     delivery_id: UUID,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> DeliveryStatusUpdateSchema:
     try:
-        return await order_service.rider_update_delivery_status(
+        return await order_service.rider_accept_delivery_order(
+            db=db, current_user=current_user, delivery_id=delivery_id
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    
+@router.put(
+    "/{delivery_id}/in-transit", status_code=status.HTTP_202_ACCEPTED
+)
+async def sender_mark_delivery_in_transit(
+    delivery_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> DeliveryStatusUpdateSchema:
+    try:
+        return await order_service.sender_mark_delivery_in_transit(
+            db=db, current_user=current_user, delivery_id=delivery_id
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    
+
+@router.put(
+    "/{delivery_id}/delivered", status_code=status.HTTP_202_ACCEPTED
+)
+async def rider_mark_item_delivered(
+    delivery_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> DeliveryStatusUpdateSchema:
+    try:
+        return await order_service.rider_mark_delivered(
             db=db, current_user=current_user, delivery_id=delivery_id
         )
     except Exception as e:

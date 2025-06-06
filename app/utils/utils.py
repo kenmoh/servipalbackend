@@ -1,5 +1,4 @@
 from datetime import datetime, timedelta
-from typing import Dict, Any
 import secrets
 import re
 from decimal import Decimal
@@ -7,7 +6,6 @@ import json
 from uuid import UUID
 import uuid
 from fastapi import HTTPException, status
-from pydantic import EmailStr
 import httpx
 from redis import Redis
 from app.models.models import ChargeAndCommission, User

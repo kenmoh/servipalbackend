@@ -299,18 +299,7 @@ async def get_user_with_profile(db: AsyncSession, user_id: UUID) -> ProfileSchem
         return ProfileSchema(**cached_user)
 
     try:
-        # Build optimized query - load user with profile and wallet
-        # stmt = (
-        #     select(User)
-        #     .where(User.id == user_id)
-        #     .options(
-        #         selectinload(User.profile),
-        #         selectinload(User.wallet)
-        #     )
-        # )
-
-        # result = await db.execute(stmt)
-        # user = result.scalar_one_or_none()
+ 
 
         result = await db.execute(select(Profile).where(Profile.user_id == user_id))
         profile = result.scalar_one_or_none()
@@ -321,63 +310,7 @@ async def get_user_with_profile(db: AsyncSession, user_id: UUID) -> ProfileSchem
                 detail="Profile not found"
             )
 
-        # If user has a wallet, get recent transactions separately
-        # recent_transactions = []
-        # if user.wallet:
-        #     tx_stmt = (
-        #         select(Transaction)
-        #         .where(Transaction.wallet_id == user.wallet.id)
-        #         .order_by(Transaction.created_at.desc())
-        #         .limit(10)
-        #     )
-        #     tx_result = await db.execute(tx_stmt)
-        #     recent_transactions = tx_result.scalars().all()
-
-        # # Convert to exact response format
-        # user_data = {
-        #     "email": user.email,
-        #     "user_type": getattr(user, 'user_type'),
-        #     "id": user.id,
-        # }
-
-        # # Add profile if exists
-        # if user.profile:
-        #     user_data["profile"] = {
-        #         "phone_number": user.profile.phone_number,
-        #         "bike_number": getattr(user.profile, 'bike_number', None),
-        #         "bank_account_number": getattr(user.profile, 'bank_account_number', None),
-        #         "bank_name": getattr(user.profile, 'bank_name', None),
-        #         "full_name": user.profile.full_name,
-        #         "business_name": getattr(user.profile, 'business_name', None),
-        #         "business_address": getattr(user.profile, 'business_address', None),
-        #         "business_registration_number": getattr(user.profile, 'business_registration_number', None),
-        #         "closing_hours": user.profile.closing_hours.isoformat() if getattr(user.profile, 'closing_hours', None) else None,
-        #         "opening_hours": user.profile.opening_hours.isoformat() if getattr(user.profile, 'opening_hours', None) else None,
-        #     }
-        # else:
-        #     user_data["profile"] = None
-
-        # # Add wallet if exists
-        # if user.wallet:
-        #     user_data["wallet"] = {
-        #         "id": user.wallet.id,
-        #         "balance": user.wallet.balance,
-        #         "escrow_balance": user.wallet.escrow_balance,
-        #         "transactions": [
-        #             {
-        #                 "id": tx.id,
-        #                 "wallet_id": tx.wallet_id,
-        #                 "amount": tx.amount,
-        #                 "transaction_type": tx.transaction_type,
-        #                 "created_at": tx.created_at.isoformat() if tx.created_at else None,
-        #             }
-        #             for tx in recent_transactions
-        #         ]
-        #     }
-        # else:
-        #     user_data["wallet"] = None
-
-
+       
         user_data = {
                 "user_id": profile.user_id,
                 "phone_number": profile.phone_number,
@@ -592,93 +525,7 @@ async def get_vendor_reviews(
 
 
 
-# async def invalidate_vendor_cache(category_id: Optional[UUID] = None):
-#     """Invalidate vendor cache when data changes"""
-#     if category_id:
-#         await redis_client.delete(f"food_vendors:{category_id}")
-#     await redis_client.delete("food_vendors:all")
 
-
-
-
-# async def upload_image_profile(
-#     current_user: User,
-#     profile_image_url: Optional[UploadFile],
-#     backdrop_image_url: Optional[UploadFile],
-#     db: AsyncSession,
-# ) -> ProfileImageResponseSchema:
-#     result = await db.execute(
-#         select(Profile)
-#         .where(Profile.user_id == current_user.id).options(selectinload(Profile.profile_image))
-
-
-#     )
-
-#     profile = result.scalar_one_or_none()
-
-#     if not profile:
-#         raise HTTPException(
-#             status_code=status.HTTP_404_NOT_FOUND, detail="User not found!"
-#         )
-
-#     # Process image uploads
-#     new_profile_image_url = None
-#     new_backdrop_image_url = None
-
-#     if profile_image_url:
-#         new_profile_image_url = await add_image(profile_image_url)
-#         if not new_profile_image_url:
-#             raise HTTPException(
-#                 status_code=status.HTTP_400_BAD_REQUEST,
-#                 detail="Failed to upload profile image"
-#             )
-
-#     if backdrop_image_url:
-#         new_backdrop_image_url = await add_image(backdrop_image_url)
-#         if not new_backdrop_image_url:
-#             raise HTTPException(
-#                 status_code=status.HTTP_400_BAD_REQUEST,
-#                 detail="Failed to upload backdrop image"
-#             )
-
-#     try:
-
-#         if profile.profile_image:
-#             # Update existing profile image
-#             old_profile_url = profile.profile_image.profile_image_url
-#             old_backdrop_url = profile.profile_image.backdrop_image_url
-
-#             if new_profile_image_url:
-#                 if old_profile_url and old_profile_url != new_profile_image_url:
-#                     await delete_s3_object(old_profile_url)  # Delete old image
-#                 profile.profile_image.profile_image_url = new_profile_image_url
-
-#             if new_backdrop_image_url:
-#                 if old_backdrop_url and old_backdrop_url != new_backdrop_image_url:
-#                     # Delete old image
-#                     await delete_s3_object(old_backdrop_url)
-#                 profile.profile_image.backdrop_image_url = new_backdrop_image_url
-
-#         else:
-#             # Create new profile image record
-
-#             profile_image = ProfileImage(
-#                 profile_id=profile.user_id,
-#                 profile_image_url=new_profile_image_url,
-#                 backdrop_image_url=new_backdrop_image_url,
-
-#             )
-#             db.add(profile_image)
-#             await db.flush()
-#             profile.profile_image = profile_image
-
-#         return profile.profile_image
-
-#     except Exception as e:
-#         db.rollback()
-#         raise HTTPException(
-#             status_code=status.HTTP_400_BAD_REQUEST, detail=f"Something went wrong! {e}"
-#         )
 
 async def upload_image_profile(
     current_user: User,
