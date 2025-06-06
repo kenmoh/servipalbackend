@@ -46,7 +46,6 @@ class OrderIssueResponse(OrderIssueCreate):
 
 
 class BankTransferResponse(BaseModel):
-
     status: str
     message: str
     transfer_reference: str
@@ -59,7 +58,7 @@ class BankTransferResponse(BaseModel):
 
 
 class PackageCreate(BaseModel):
-    name: str 
+    name: str
     description: str
     distance: Decimal
     origin: str

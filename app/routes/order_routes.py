@@ -56,7 +56,7 @@ async def get_deliveries(
 #     current_user: User = Depends(get_current_user),
 # ) -> DeliveryResponse:
 
-    
+
 #     parsed_data = json.loads(data)
 #     return await order_service.create_package_order(
 #         db=db, current_user=current_user, data=data
@@ -65,7 +65,10 @@ async def get_deliveries(
 
 from fastapi import Form, File, UploadFile, HTTPException
 
-@router.post("/send-item", response_model=DeliveryResponse, status_code=status.HTTP_201_CREATED)
+
+@router.post(
+    "/send-item", response_model=DeliveryResponse, status_code=status.HTTP_201_CREATED
+)
 async def send_item(
     name: str = Form(...),
     description: str = Form(...),
@@ -73,7 +76,7 @@ async def send_item(
     origin: str = Form(...),
     destination: str = Form(...),
     duration: str = Form(...),
-    pickup_coordinates: str = Form(...),  
+    pickup_coordinates: str = Form(...),
     dropoff_coordinates: str = Form(...),
     image_url: UploadFile = File(...),
     db: AsyncSession = Depends(get_db),
@@ -91,7 +94,6 @@ async def send_item(
             status_code=422,
             detail="Coordinates must be two comma-separated floats like '6.45,3.40'",
         )
-
 
     form_data = PackageCreate(
         name=name,
@@ -125,7 +127,6 @@ async def order_food_or_request_laundy_service(
     )
 
 
-
 @router.get("/{delivery_id}", status_code=status.HTTP_200_OK)
 async def get_delivery_by_id(
     delivery_id: UUID,
@@ -148,13 +149,10 @@ async def sender_confirm_delivery_received(
             delivery_id=delivery_id,
         )
     except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
 
-@router.put(
-    "/{delivery_id}/accept-delivery", status_code=status.HTTP_202_ACCEPTED
-)
+@router.put("/{delivery_id}/accept-delivery", status_code=status.HTTP_202_ACCEPTED)
 async def rider_accept_delivery(
     delivery_id: UUID,
     db: AsyncSession = Depends(get_db),
@@ -165,12 +163,10 @@ async def rider_accept_delivery(
             db=db, current_user=current_user, delivery_id=delivery_id
         )
     except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
-    
-@router.put(
-    "/{delivery_id}/in-transit", status_code=status.HTTP_202_ACCEPTED
-)
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+
+
+@router.put("/{delivery_id}/in-transit", status_code=status.HTTP_202_ACCEPTED)
 async def sender_mark_delivery_in_transit(
     delivery_id: UUID,
     db: AsyncSession = Depends(get_db),
@@ -181,13 +177,10 @@ async def sender_mark_delivery_in_transit(
             db=db, current_user=current_user, delivery_id=delivery_id
         )
     except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
-    
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
-@router.put(
-    "/{delivery_id}/delivered", status_code=status.HTTP_202_ACCEPTED
-)
+
+@router.put("/{delivery_id}/delivered", status_code=status.HTTP_202_ACCEPTED)
 async def rider_mark_item_delivered(
     delivery_id: UUID,
     db: AsyncSession = Depends(get_db),
@@ -198,8 +191,7 @@ async def rider_mark_item_delivered(
             db=db, current_user=current_user, delivery_id=delivery_id
         )
     except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
 
 @router.put(
@@ -217,8 +209,7 @@ async def admin_modify_delivery_status(
         )
 
     except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
 
 @router.put(
@@ -236,8 +227,7 @@ async def cancel_delivery(
         )
 
     except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
 
 @router.post(
@@ -256,5 +246,4 @@ async def add_review(
         )
 
     except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))

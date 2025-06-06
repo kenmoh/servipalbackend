@@ -11,9 +11,11 @@ class AccountDetails(BaseModel):
     account_number: str
     account_bank: str
 
+
 class AccountDetailResponse(BaseModel):
     account_number: str
     account_name: str
+
 
 class PasswordChange(BaseModel):
     current_password: str
@@ -56,6 +58,7 @@ class CreateUserResponseSchema(BaseModel):
 
     class Config:
         from_attributes = True
+
 
 class TransactionSchema(BaseModel):
     id: UUID
@@ -107,7 +110,6 @@ class UserCount(BaseModel):
 
 class AccountStatusSchema(BaseModel):
     account_status: AccountStatus
-
 
 
 class CreateReviewSchema(BaseModel):
@@ -286,11 +288,11 @@ class RiderSchema(RiderBase):
     phone_number: str
     plate_number: str
 
+
 class UpdateRider(BaseModel):
     full_name: str
     phone_number: str
     bike_number: str
-
 
 
 class RiderResponseSchema(BaseModel):
@@ -451,6 +453,3 @@ class VendorUserResponse(BaseModel):
 class ProfileImageResponseSchema(BaseModel):
     profile_image_url: str | None = None
     backdrop_image_url: str | None = None
-
-
-

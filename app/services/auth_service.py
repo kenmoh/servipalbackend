@@ -20,7 +20,7 @@ from app.schemas.user_schemas import (
     UserBase,
     UserCreate,
     UserLogin,
-    CreateUserSchema
+    CreateUserSchema,
 )
 from app.models.models import Profile, Session, User, RefreshToken, Wallet
 from app.config.config import settings, email_conf
@@ -75,9 +75,9 @@ async def login_user(db: AsyncSession, login_data: UserLogin) -> User:
     return user
 
 
-
-
-async def create_user(db: AsyncSession, user_data: CreateUserSchema, background_tasks: BackgroundTasks) -> UserBase:
+async def create_user(
+    db: AsyncSession, user_data: CreateUserSchema, background_tasks: BackgroundTasks
+) -> UserBase:
     """
     Create a new user in the database.
     Args:
@@ -90,7 +90,11 @@ async def create_user(db: AsyncSession, user_data: CreateUserSchema, background_
     validate_password(user_data.password)
 
     # Check if email already exists
-    user_exists_result = await db.execute(select(User).options(joinedload(User.profile)).where(User.email == user_data.email))
+    user_exists_result = await db.execute(
+        select(User)
+        .options(joinedload(User.profile))
+        .where(User.email == user_data.email)
+    )
     user_exists = user_exists_result.scalar_one_or_none()
 
     # If user exists, check if email or phone number is already registered
@@ -107,7 +111,8 @@ async def create_user(db: AsyncSession, user_data: CreateUserSchema, background_
 
     if phone_exists:
         raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT, detail="Phone number already registered"
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Phone number already registered",
         )
 
     try:
@@ -124,7 +129,9 @@ async def create_user(db: AsyncSession, user_data: CreateUserSchema, background_
         await db.flush()
 
         profile = Profile(
-            user_id=user.id, phone_number=f"234{user_data.phone_number[1:] if user_data.phone_number.startswith(str(0)) else user_data.phone_number}")
+            user_id=user.id,
+            phone_number=f"234{user_data.phone_number[1:] if user_data.phone_number.startswith(str(0)) else user_data.phone_number}",
+        )
         db.add(profile)
 
         if user.user_type != UserType.RIDER:
@@ -136,27 +143,33 @@ async def create_user(db: AsyncSession, user_data: CreateUserSchema, background_
         await db.refresh(profile)
         await db.refresh(user)
 
-        redis_client.delete('all_users')
+        redis_client.delete("all_users")
 
         # Generate and send verification codes
         email_code, phone_code = await generate_verification_codes(user, db)
 
         # Send verification code to phone and email
         background_tasks.add_task(
-            send_verification_codes, user, email_code, phone_code, db)
+            send_verification_codes, user, email_code, phone_code, db
+        )
 
         return user
     except IntegrityError as e:
         await db.rollback()
         raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT, detail="Email or phone number already registered"
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Email or phone number already registered",
         )
+
 
 # CREATE RIDER
 
 
 async def create_new_rider(
-    data: RiderCreate, db: AsyncSession, current_user: User, background_tasks: BackgroundTasks
+    data: RiderCreate,
+    db: AsyncSession,
+    current_user: User,
+    background_tasks: BackgroundTasks,
 ) -> UserBase:
     """
     Creates a new rider user and assigns them to the current dispatch user.
@@ -175,8 +188,7 @@ async def create_new_rider(
 
     # Check current user's profile
     stmt = (
-        select(User).where(User.id == current_user.id).options(
-            joinedload(User.profile))
+        select(User).where(User.id == current_user.id).options(joinedload(User.profile))
     )
     result = await db.execute(stmt)
     user = result.scalar_one_or_none()
@@ -232,8 +244,7 @@ async def create_new_rider(
 
     # Check if email already exists
     email_result = await db.execute(
-        select(User).options(joinedload(User.profile)).where(
-            User.email == data.email)
+        select(User).options(joinedload(User.profile)).where(User.email == data.email)
     )
     email_exists = email_result.scalar_one_or_none()
 
@@ -250,7 +261,8 @@ async def create_new_rider(
 
     if phone_exists:
         raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT, detail="Phone number already registered"
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Phone number already registered",
         )
 
     # Create new rider and assign to current dispatch
@@ -285,14 +297,15 @@ async def create_new_rider(
             "email": new_rider.email,
         }
 
-        redis_client.delete('all_users')
+        redis_client.delete("all_users")
 
         # Generate and send verification codes
         email_code, phone_code = await generate_verification_codes(new_rider, db)
 
         # Send verification code to phone and email
         background_tasks.add_task(
-            send_verification_codes, new_rider, email_code, phone_code, db)
+            send_verification_codes, new_rider, email_code, phone_code, db
+        )
         invalidate_rider_cache(current_user.id)
         return UserBase(**rider_dict)
     except IntegrityError as e:
@@ -851,7 +864,8 @@ async def send_verification_codes(
 
     if not user.profile.phone_number:
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail="User phone number not found"
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="User phone number not found",
         )
 
     # Send email code
@@ -868,7 +882,7 @@ async def send_verification_codes(
     # Send SMS code (using Termii)
     await send_sms(
         to=user.profile.phone_number,
-        message=f"Your verification code is: {phone_code}. This code will expire in 10 minutes."
+        message=f"Your verification code is: {phone_code}. This code will expire in 10 minutes.",
     )
 
     return {"message": "Verification codes sent to your email and phone"}
@@ -893,8 +907,14 @@ async def verify_user_contact(
         )
 
     # Check if codes are expired
-    email_expired = user.email_verification_expires is not None and user.email_verification_expires < now
-    phone_expired = user.profile.phone_verification_expires is not None and user.profile.phone_verification_expires < now
+    email_expired = (
+        user.email_verification_expires is not None
+        and user.email_verification_expires < now
+    )
+    phone_expired = (
+        user.profile.phone_verification_expires is not None
+        and user.profile.phone_verification_expires < now
+    )
 
     if email_expired or phone_expired:
         raise HTTPException(

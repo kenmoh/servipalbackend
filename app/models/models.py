@@ -204,8 +204,7 @@ class User(Base):
     )
     rider_is_suspension_until: Mapped[datetime] = mapped_column(nullable=True)
     order_cancel_count: Mapped[int] = mapped_column(nullable=True, default=0)
-    reset_token: Mapped[Optional[str]] = mapped_column(
-        nullable=True, unique=True)
+    reset_token: Mapped[Optional[str]] = mapped_column(nullable=True, unique=True)
     reset_token_expires: Mapped[Optional[datetime]] = mapped_column(nullable=True)
     user_type: Mapped[str] = mapped_column(nullable=False)
 
@@ -213,10 +212,12 @@ class User(Base):
     email_verification_code: Mapped[str] = mapped_column(nullable=True)
     email_verification_expires: Mapped[datetime] = mapped_column(nullable=True)
     account_status: Mapped[AccountStatus] = mapped_column(default=AccountStatus.PENDING)
-    
+
     # Dispatcher-rider relationship with proper cascade
     dispatcher_id: Mapped[Optional[UUID]] = mapped_column(
-        ForeignKey("users.id", ondelete="SET NULL"),  # SET NULL when dispatcher is deleted
+        ForeignKey(
+            "users.id", ondelete="SET NULL"
+        ),  # SET NULL when dispatcher is deleted
         nullable=True,
     )
 
@@ -229,7 +230,7 @@ class User(Base):
         cascade="all, delete-orphan",  # This ensures proper cleanup
         passive_deletes=True,  # Let database handle the cascade
     )
-    
+
     # Rider-side
     dispatcher: Mapped[Optional["User"]] = relationship(
         "User",
@@ -238,7 +239,7 @@ class User(Base):
         remote_side=[id],
         lazy="joined",
     )
-    
+
     created_at: Mapped[datetime] = mapped_column(default=datetime.now)
     updated_at: Mapped[datetime] = mapped_column(
         default=datetime.now, onupdate=datetime.now
@@ -251,48 +252,45 @@ class User(Base):
         lazy="selectin",
         cascade="all, delete-orphan",  # Delete profile when user is deleted
     )
-    
+
     wallet: Mapped["Wallet"] = relationship(
         back_populates="user",
         uselist=False,
         lazy="selectin",
         cascade="all, delete-orphan",  # Delete wallet when user is deleted
     )
-    
+
     items: Mapped[list["Item"]] = relationship(
         back_populates="vendor",
         cascade="all, delete-orphan",  # Delete items when vendor is deleted
     )
-    
+
     orders_placed: Mapped[list["Order"]] = relationship(
-        back_populates="owner", 
+        back_populates="owner",
         foreign_keys="Order.owner_id",
     )
-    
+
     orders_received: Mapped[list["Order"]] = relationship(
-        back_populates="vendor", 
+        back_populates="vendor",
         foreign_keys="Order.vendor_id",
     )
-    
+
     deliveries_as_rider: Mapped[list["Delivery"]] = relationship(
-        back_populates="rider", 
+        back_populates="rider",
         foreign_keys="Delivery.rider_id",
     )
-    
+
     deliveries_as_sender: Mapped[list["Delivery"]] = relationship(
-        back_populates="sender", 
+        back_populates="sender",
         foreign_keys="Delivery.sender_id",
     )
 
     refresh_tokens = relationship(
-        "RefreshToken", 
-        back_populates="user", 
-        cascade="all, delete-orphan"
+        "RefreshToken", back_populates="user", cascade="all, delete-orphan"
     )
-    
+
     reviews_written: Mapped[list["Review"]] = relationship(
-        back_populates="reviewer", 
-        cascade="all, delete-orphan"
+        back_populates="reviewer", cascade="all, delete-orphan"
     )
 
 
@@ -300,9 +298,7 @@ class Profile(Base):
     __tablename__ = "profile"
 
     user_id: Mapped[UUID] = mapped_column(
-        ForeignKey("users.id", ondelete="CASCADE"), 
-        unique=True, 
-        primary_key=True
+        ForeignKey("users.id", ondelete="CASCADE"), unique=True, primary_key=True
     )
     business_name: Mapped[str] = mapped_column(nullable=True)
     bank_name: Mapped[str] = mapped_column(nullable=True)
@@ -336,9 +332,7 @@ class ProfileImage(Base):
     __tablename__ = "profile_images"
 
     profile_id: Mapped[UUID] = mapped_column(
-        ForeignKey("profile.user_id", ondelete="CASCADE"), 
-        primary_key=True, 
-        unique=True
+        ForeignKey("profile.user_id", ondelete="CASCADE"), primary_key=True, unique=True
     )
     profile_image_url: Mapped[str] = mapped_column(nullable=True)
     backdrop_image_url: Mapped[str] = mapped_column(nullable=True)
@@ -348,6 +342,7 @@ class ProfileImage(Base):
     )
 
     profile: Mapped["Profile"] = relationship(back_populates="profile_image")
+
 
 class Session(Base):
     __tablename__ = "sessions"
@@ -391,8 +386,7 @@ class Transaction(Base):
     wallet_id: Mapped[UUID] = mapped_column(ForeignKey("wallets.id"))
     amount: Mapped[Decimal] = mapped_column(default=0.00)
     transaction_type: Mapped[TransactionType]
-    payment_status: Mapped[PaymentStatus] = mapped_column(
-        default=PaymentStatus.PENDING)
+    payment_status: Mapped[PaymentStatus] = mapped_column(default=PaymentStatus.PENDING)
     payment_link: Mapped[str] = mapped_column(nullable=True)
     created_at: Mapped[datetime] = mapped_column(default=datetime.now)
     updated_at: Mapped[datetime] = mapped_column(
@@ -409,11 +403,10 @@ class RefreshToken(Base):
     )
     token: Mapped[str] = mapped_column(unique=True, index=True, nullable=False)
     account_status: Mapped[AccountStatus] = mapped_column(
-        default=AccountStatus.PENDING, nullable=True)  # TODO: remove nullable
-    user_type: Mapped[str] = mapped_column(
-        nullable=True)  # TODO: change to False
-    email: Mapped[str] = mapped_column(
-        nullable=True)  # TODO: change to False
+        default=AccountStatus.PENDING, nullable=True
+    )  # TODO: remove nullable
+    user_type: Mapped[str] = mapped_column(nullable=True)  # TODO: change to False
+    email: Mapped[str] = mapped_column(nullable=True)  # TODO: change to False
     expires_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False
     )
@@ -465,8 +458,7 @@ class Item(Base):
 
     vendor: Mapped["User"] = relationship(back_populates="items")
     category: Mapped["Category"] = relationship(back_populates="items")
-    order_items: Mapped[list["OrderItem"]
-                        ] = relationship(back_populates="item")
+    order_items: Mapped[list["OrderItem"]] = relationship(back_populates="item")
     images: Mapped[list["ItemImage"]] = relationship(
         back_populates="item",
         cascade="all, delete-orphan",
@@ -485,7 +477,7 @@ class Item(Base):
             "name",
             "user_id",
             unique=True,
-            postgresql_where=text("item_type != 'PACKAGE'")
+            postgresql_where=text("item_type != 'PACKAGE'"),
         ),
     )
 
@@ -494,8 +486,7 @@ class ItemImage(Base):
     __tablename__ = "item_images"
 
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
-    item_id: Mapped[UUID] = mapped_column(
-        ForeignKey("items.id", ondelete="CASCADE"))
+    item_id: Mapped[UUID] = mapped_column(ForeignKey("items.id", ondelete="CASCADE"))
     url: Mapped[str]
     # is_primary: Mapped[bool] = mapped_column(default=False)
     created_at: Mapped[datetime] = mapped_column(default=datetime.now)
@@ -552,10 +543,8 @@ class Order(Base):
 class OrderItem(Base):
     __tablename__ = "order_items"
 
-    order_id: Mapped[UUID] = mapped_column(
-        ForeignKey("orders.id"), primary_key=True)
-    item_id: Mapped[UUID] = mapped_column(
-        ForeignKey("items.id"), primary_key=True)
+    order_id: Mapped[UUID] = mapped_column(ForeignKey("orders.id"), primary_key=True)
+    item_id: Mapped[UUID] = mapped_column(ForeignKey("items.id"), primary_key=True)
     quantity: Mapped[int] = mapped_column(default=1)
     sizes: Mapped[str] = mapped_column(ARRAY(String), nullable=True)
     colors: Mapped[list[str]] = mapped_column(ARRAY(String), nullable=True)
@@ -571,18 +560,20 @@ class Delivery(Base):
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
     order_id: Mapped[UUID] = mapped_column(ForeignKey("orders.id"))
     rider_id: Mapped[UUID] = mapped_column(
-        ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
     dispatch_id: Mapped[UUID] = mapped_column(
-        ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
     vendor_id: Mapped[UUID] = mapped_column(
-        ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
     sender_id: Mapped[UUID] = mapped_column(
-        ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
     image_url: Mapped[str] = mapped_column(nullable=True)
-    pickup_coordinates: Mapped[Tuple[float, float]
-                               ] = mapped_column(ARRAY(Float))
-    dropoff_coordinates: Mapped[Tuple[float, float]
-                                ] = mapped_column(ARRAY(Float))
+    pickup_coordinates: Mapped[Tuple[float, float]] = mapped_column(ARRAY(Float))
+    dropoff_coordinates: Mapped[Tuple[float, float]] = mapped_column(ARRAY(Float))
     delivery_status: Mapped[str] = mapped_column(nullable=True)
     delivery_fee: Mapped[Decimal] = mapped_column(nullable=False)
     distance: Mapped[Decimal] = mapped_column(nullable=True)
@@ -635,12 +626,9 @@ class Review(Base):
     __tablename__ = "reviews"
 
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
-    user_id: Mapped[UUID] = mapped_column(
-        ForeignKey("users.id"), nullable=False)
-    item_id: Mapped[UUID] = mapped_column(
-        ForeignKey("items.id"), nullable=False)
-    rating: Mapped[int] = mapped_column(
-        Integer, nullable=False)  # e.g., 1 to 5
+    user_id: Mapped[UUID] = mapped_column(ForeignKey("users.id"), nullable=False)
+    item_id: Mapped[UUID] = mapped_column(ForeignKey("items.id"), nullable=False)
+    rating: Mapped[int] = mapped_column(Integer, nullable=False)  # e.g., 1 to 5
     comment: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(default=datetime.now)
     updated_at: Mapped[datetime] = mapped_column(

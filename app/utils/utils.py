@@ -49,7 +49,6 @@ async def verify_transaction_tx_ref(tx_ref: str):
         raise HTTPException(
             status_code=500, detail=f"Failed to verify transaction reference: {str(e)}"
         )
-        
 
 
 # GET PAYMENT LINK
@@ -126,7 +125,7 @@ async def get_all_banks() -> list[BankSchema]:
             response = await client.get(banks_url, headers=headers)
             banks = response.json()["data"]
 
-            sorted_banks= sorted(banks, key=lambda bank: bank['name'])
+            sorted_banks = sorted(banks, key=lambda bank: bank["name"])
 
             redis_client.set(cache_key, json.dumps(sorted_banks, default=str), ex=86400)
             return sorted_banks
@@ -303,7 +302,6 @@ async def transfer_money_to_user_account(
     charge: ChargeAndCommission,
 ):
     reference = "ServiPal-" + datetime.now().strftime("%Y%d%m%H%M%S%f")
-   
 
     headers = {"Authorization": f"Bearer {settings.FLW_SECRET_KEY}"}
     payload = {
@@ -321,9 +319,9 @@ async def transfer_money_to_user_account(
                 )
             )
         ),
-        "narration": f'Transfer of ₦{amount} to {account_number:,.2f} was successful!',
+        "narration": f"Transfer of ₦{amount} to {account_number:,.2f} was successful!",
         "currency": "NGN",
-        "reference": '{reference',
+        "reference": "{reference",
         "callback_url": f"{servipal_base_url}/withdrawals/callback",
         "debit_currency": "NGN",
         "beneficiary_name": beneficiary_name,
@@ -372,57 +370,55 @@ async def transfer_money_to_user_account(
 
 async def resolve_account_details(
     data: AccountDetails,
-
 ) -> AccountDetailResponse:
     """
     Resolve bank account details using Flutterwave API
-    
+
     Args:
         account_number: Bank account number
         account_bank: Bank code (e.g., "044" for Access Bank)
-        
+
     Returns:
         Dict containing account details in format:
         {
             "account_number": "0690000032",
             "account_name": "Pastor Bright"
         }
-        
+
     Raises:
         httpx.HTTPStatusError: If the API request fails
         httpx.RequestError: If there's a network error
     """
-    
-    payload = {
-        "account_number": data.account_number,
-        "account_bank": data.account_bank
-    }
-    
+
+    payload = {"account_number": data.account_number, "account_bank": data.account_bank}
+
     headers = {
         "accept": "application/json",
         "Authorization": f"Bearer {settings.FLW_SECRET_KEY}",
-        "Content-Type": "application/json"
+        "Content-Type": "application/json",
     }
-    
+
     async with httpx.AsyncClient() as client:
         try:
-            response = await client.post(f'{flutterwave_base_url}/accounts/resolve', json=payload, headers=headers)
-            
+            response = await client.post(
+                f"{flutterwave_base_url}/accounts/resolve",
+                json=payload,
+                headers=headers,
+            )
 
-            print('==================', response)
+            print("==================", response)
             response.raise_for_status()
-            
+
             # Get the raw response
             raw_response = response.json()
 
-            
             # Extract and flatten the required fields
             if raw_response.get("status") == "success" and "data" in raw_response:
                 data = raw_response["data"]
-                
+
                 formatted_response = {
                     "account_number": data["account_number"],
-                    "account_name": data["account_name"]
+                    "account_name": data["account_name"],
                 }
                 return formatted_response
 
@@ -435,7 +431,6 @@ async def resolve_account_details(
         except httpx.RequestError as e:
             print(f"Request error occurred: {e}")
             raise
-
 
 
 # async def send_welcome_email(subject: str, email_to: EmailStr, body: dict, temp_name: str):

@@ -258,8 +258,7 @@ def get_cached_order(order_id: UUID) -> Optional[dict]:
 def set_cached_order(order_id: UUID, order_data: dict) -> None:
     """Set order in cache"""
     redis_client.setex(
-        f"order:{str(order_id)}", CACHE_TTL, json.dumps(
-            order_data, default=str)
+        f"order:{str(order_id)}", CACHE_TTL, json.dumps(order_data, default=str)
     )
 
 

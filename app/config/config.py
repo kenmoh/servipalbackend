@@ -62,7 +62,7 @@ class Settings(BaseSettings):
     SMS_API_KEY: str = os.getenv("SMS_API_KEY")
 
     # Redis
-    REDIS_HOST: str ="localhost"
+    REDIS_HOST: str = "localhost"
     REDIS_PORT: int = 6379
     REDIS_DB: int = 0
     REDIS_EX: int = 3600
@@ -83,7 +83,7 @@ settings = Settings()
 
 redis_url = None
 
-if settings.ENVIRONMENT == 'development':
+if settings.ENVIRONMENT == "development":
     redis_url = "redis://localhost:6379"
 else:
     redis_url = "rediss://red-d0hplaq4d50c73dc3cmg:LIimjEyTIacx9gSwjpGYcX9CNFfvmKZB@oregon-keyvalue.render.com:6379"
@@ -113,4 +113,3 @@ email_conf = ConnectionConfig(
     USE_CREDENTIALS=settings.USE_CREDENTIALS,
     TEMPLATE_FOLDER=settings.EMAIL_TEMPLATES_DIR,
 )
-

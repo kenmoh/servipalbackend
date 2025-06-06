@@ -1,6 +1,7 @@
 from datetime import timedelta, datetime
 from typing import Optional
 from sqlalchemy import func, or_, and_, select, update, insert
+
 # from sqlalchemy.sql.expression.ColumnOperators import in_
 from fastapi import UploadFile
 from sqlalchemy.exc import IntegrityError
@@ -76,8 +77,7 @@ async def filter_delivery_by_delivery_type(
         .options(
             joinedload(Delivery.order).options(
                 selectinload(Order.order_items).options(
-                    joinedload(OrderItem.item).options(
-                        selectinload(Item.images))
+                    joinedload(OrderItem.item).options(selectinload(Item.images))
                 ),
                 joinedload(Order.delivery),
             )
@@ -164,8 +164,7 @@ async def get_all_deliveries(
         .options(
             joinedload(Delivery.order).options(
                 selectinload(Order.order_items).options(
-                    joinedload(OrderItem.item).options(
-                        selectinload(Item.images))
+                    joinedload(OrderItem.item).options(selectinload(Item.images))
                 ),
                 joinedload(Order.delivery),
             )
@@ -196,7 +195,6 @@ async def get_all_deliveries(
 async def create_package_order(
     db: AsyncSession, data: PackageCreate, image: UploadFile, current_user: User
 ) -> DeliveryResponse:
-
     if current_user.user_type == UserType.CUSTOMER and not (
         current_user.profile.full_name or current_user.profile.phone_number
     ):
@@ -228,7 +226,6 @@ async def create_package_order(
                     "item_type": ItemType.PACKAGE,
                     "name": data.name,
                     "description": data.description,
-
                 }
             )
             .returning(Item.name, Item.id, Item.user_id)
@@ -292,8 +289,7 @@ async def create_package_order(
                     "distance": data.distance,
                     "duration": data.duration,
                     "origin": data.origin,
-                    "destination": data.destination
-
+                    "destination": data.destination,
                 }
             )
             .returning(
@@ -338,8 +334,7 @@ async def create_package_order(
             .where(Order.id == delivery_data.order_id)
             .options(
                 selectinload(Order.order_items).options(
-                    joinedload(OrderItem.item).options(
-                        selectinload(Item.images))
+                    joinedload(OrderItem.item).options(selectinload(Item.images))
                 )
             )
         )
@@ -769,11 +764,12 @@ async def order_food_or_request_laundy_service(
         )
 
     # Batch fetch all items at once - filter by vendor_id for additional validation
-    item_ids = [UUID(item.item_id) if isinstance(item.item_id, str)
-                else item.item_id for item in order_item.order_items]
+    item_ids = [
+        UUID(item.item_id) if isinstance(item.item_id, str) else item.item_id
+        for item in order_item.order_items
+    ]
     items_result = await db.execute(
-        select(Item).where(Item.id.in_(item_ids)).where(
-            Item.user_id == vendor_id)
+        select(Item).where(Item.id.in_(item_ids)).where(Item.user_id == vendor_id)
     )
     items_data = {item.id: item for item in items_result.scalars().all()}
 
@@ -783,7 +779,7 @@ async def order_food_or_request_laundy_service(
         missing_items = set(item_ids) - found_items
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Items not found or don't belong to this vendor: {missing_items}"
+            detail=f"Items not found or don't belong to this vendor: {missing_items}",
         )
 
     # Calculate totals
@@ -792,13 +788,15 @@ async def order_food_or_request_laundy_service(
 
     for order_item_detail in order_item.order_items:
         # Convert string UUID to UUID object for dictionary lookup
-        item_uuid = UUID(order_item_detail.item_id) if isinstance(
-            order_item_detail.item_id, str) else order_item_detail.item_id
+        item_uuid = (
+            UUID(order_item_detail.item_id)
+            if isinstance(order_item_detail.item_id, str)
+            else order_item_detail.item_id
+        )
         item_data = items_data[item_uuid]
 
         # Price and type calculation
-        total_price += Decimal(item_data.price) * \
-            Decimal(order_item_detail.quantity)
+        total_price += Decimal(item_data.price) * Decimal(order_item_detail.quantity)
         item_types.add(item_data.item_type)
 
     # Validate single item type
@@ -813,7 +811,9 @@ async def order_food_or_request_laundy_service(
 
     try:
         # Determine if delivery is required
-        requires_delivery = order_item.require_delivery == RequireDeliverySchema.DELIVERY
+        requires_delivery = (
+            order_item.require_delivery == RequireDeliverySchema.DELIVERY
+        )
 
         # Calculate delivery details if needed
         delivery_fee = Decimal("0.00")
@@ -828,17 +828,19 @@ async def order_food_or_request_laundy_service(
         # Create the order
         order_insert_result = await db.execute(
             insert(Order)
-            .values({
-                "owner_id": current_user.id,
-                "vendor_id": vendor_id,
-                "order_type": item_type,
-                "require_delivery": order_item.require_delivery,
-                "total_price": total_price,
-                "order_payment_status": PaymentStatus.PENDING,
-                "order_status": OrderStatus.PENDING,
-                "amount_due_vendor": amount_due_vendor,
-                "additional_info": order_item.additional_info
-            })
+            .values(
+                {
+                    "owner_id": current_user.id,
+                    "vendor_id": vendor_id,
+                    "order_type": item_type,
+                    "require_delivery": order_item.require_delivery,
+                    "total_price": total_price,
+                    "order_payment_status": PaymentStatus.PENDING,
+                    "order_status": OrderStatus.PENDING,
+                    "amount_due_vendor": amount_due_vendor,
+                    "additional_info": order_item.additional_info,
+                }
+            )
             .returning(Order.id)
         )
 
@@ -860,21 +862,23 @@ async def order_food_or_request_laundy_service(
         if requires_delivery:
             delivery_insert_result = await db.execute(
                 insert(Delivery)
-                .values({
-                    "order_id": order_id,
-                    "vendor_id": vendor_id,
-                    "sender_id": current_user.id,
-                    "delivery_type": item_type,
-                    "delivery_status": DeliveryStatus.PENDING,
-                    "pickup_coordinates": order_item.pickup_coordinates,
-                    "dropoff_coordinates": order_item.dropoff_coordinates,
-                    "distance": Decimal(order_item.distance),
-                    "duration": order_item.duration,
-                    "delivery_fee": delivery_fee,
-                    "amount_due_dispatch": amount_due_dispatch,
-                    "origin": order_item.origin,
-                    "destination": order_item.destination
-                })
+                .values(
+                    {
+                        "order_id": order_id,
+                        "vendor_id": vendor_id,
+                        "sender_id": current_user.id,
+                        "delivery_type": item_type,
+                        "delivery_status": DeliveryStatus.PENDING,
+                        "pickup_coordinates": order_item.pickup_coordinates,
+                        "dropoff_coordinates": order_item.dropoff_coordinates,
+                        "distance": Decimal(order_item.distance),
+                        "duration": order_item.duration,
+                        "delivery_fee": delivery_fee,
+                        "amount_due_dispatch": amount_due_dispatch,
+                        "origin": order_item.origin,
+                        "destination": order_item.destination,
+                    }
+                )
                 .returning(Delivery.id)
             )
             delivery_id = delivery_insert_result.scalar_one()
@@ -895,7 +899,7 @@ async def order_food_or_request_laundy_service(
         cache_keys = [
             f"user_orders:{current_user.id}",
             f"vendor_orders:{vendor_id}",
-            f"order_details:{order_id}"
+            f"order_details:{order_id}",
         ]
         redis_client.delete(*cache_keys)
 
@@ -907,9 +911,7 @@ async def order_food_or_request_laundy_service(
                 .where(Order.id == order_id)
                 .options(
                     selectinload(Order.order_items).options(
-                        joinedload(OrderItem.item).options(
-                            selectinload(Item.images)
-                        )
+                        joinedload(OrderItem.item).options(selectinload(Item.images))
                     )
                 )
             )
@@ -922,9 +924,7 @@ async def order_food_or_request_laundy_service(
                 .where(Order.id == order_id)
                 .options(
                     selectinload(Order.order_items).options(
-                        joinedload(OrderItem.item).options(
-                            selectinload(Item.images)
-                        )
+                        joinedload(OrderItem.item).options(selectinload(Item.images))
                     )
                 )
             )
@@ -1016,8 +1016,7 @@ async def confirm_delivery_received(
         raise HTTPException(status_code=403, detail="Unauthorized.")
 
     if delivery.delivery_status != DeliveryStatus.DELIVERED:
-        raise HTTPException(
-            status_code=400, detail="Delivery is not yet completed.")
+        raise HTTPException(status_code=400, detail="Delivery is not yet completed.")
 
     try:
         delivery.delivery_status = DeliveryStatus.RECEIVED
@@ -1062,8 +1061,7 @@ async def confirm_delivery_received(
         return DeliveryStatusUpdateSchema(delivery_status=delivery.delivery_status)
     except Exception as e:
         await db.rollback()
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
 
 async def cancel_delivery(
@@ -1087,8 +1085,6 @@ async def cancel_delivery(
             DeliveryStatus.RECEIVED,
             DeliveryStatus.LAUNDRY_DELIVERES_TO_VENDORR,
         ]:
-
-
             result = await db.execute(
                 update(Delivery)
                 .where(Delivery.id == delivery_id)
@@ -1124,7 +1120,12 @@ async def cancel_delivery(
                     dispatch_id=None,
                 )
                 .where(Delivery.id == delivery_id)
-                .where(or_(Delivery.rider_id == current_user.id, Delivery.dispatch_id == current_user.id))
+                .where(
+                    or_(
+                        Delivery.rider_id == current_user.id,
+                        Delivery.dispatch_id == current_user.id,
+                    )
+                )
             )
 
             current_user.order_cancel_count += 1
@@ -1140,7 +1141,6 @@ async def cancel_delivery(
 async def rider_accept_delivery_order(
     db: AsyncSession, delivery_id: UUID, current_user: User
 ) -> DeliveryStatusUpdateSchema:
-
     dispatch_id = get_dispatch_id(current_user)
 
     result = await db.execute(
@@ -1155,16 +1155,20 @@ async def rider_accept_delivery_order(
 
     if current_user.user_type not in [UserType.RIDER, UserType.DISPATCH]:
         raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN, detail="Unauthorized.")
+            status_code=status.HTTP_403_FORBIDDEN, detail="Unauthorized."
+        )
 
     await db.execute(
         update(Delivery)
-            .where(Delivery.id == delivery_id)
-            .values({
+        .where(Delivery.id == delivery_id)
+        .values(
+            {
                 "delivery_status": DeliveryStatus.ACCEPT,
                 "rider_id": current_user.id,
-                "dispatch_id": dispatch_id}
-        ).returning(Delivery.delivery_status)
+                "dispatch_id": dispatch_id,
+            }
+        )
+        .returning(Delivery.delivery_status)
     )
 
     # Invalidate Cache
@@ -1183,7 +1187,6 @@ async def rider_accept_delivery_order(
 async def sender_mark_delivery_in_transit(
     db: AsyncSession, delivery_id: UUID, current_user: User
 ) -> DeliveryStatusUpdateSchema:
-
     dispatch_id = get_dispatch_id(current_user)
 
     result = await db.execute(
@@ -1199,18 +1202,18 @@ async def sender_mark_delivery_in_transit(
 
     if current_user.user_type not in [UserType.RIDER, UserType.DISPATCH]:
         raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN, detail="Unauthorized.")
+            status_code=status.HTTP_403_FORBIDDEN, detail="Unauthorized."
+        )
 
     await db.execute(
         update(Delivery)
-            .where(Delivery.id == delivery_id)
-            .values({"delivery_status": DeliveryStatus.IN_TRANSIT}
-                    ).returning(Delivery.delivery_status)
+        .where(Delivery.id == delivery_id)
+        .values({"delivery_status": DeliveryStatus.IN_TRANSIT})
+        .returning(Delivery.delivery_status)
     )
 
     dispatch_wallet = await fetch_wallet(db, dispatch_id)
     vendor_wallet = await fetch_wallet(db, delivery.vendor_id)
-
 
     # Move funds to escrow
     dispatch_new_escrow = (dispatch_wallet.escrow_balance or 0) + (
@@ -1242,11 +1245,15 @@ async def sender_mark_delivery_in_transit(
 async def rider_mark_delivered(
     db: AsyncSession, delivery_id: UUID, current_user: User
 ) -> DeliveryStatusUpdateSchema:
-
     result = await db.execute(
         select(Delivery)
         .where(Delivery.id == delivery_id)
-        .where(or_(Delivery.rider_id == current_user.id, Delivery.dispatch_id == current_user.id))
+        .where(
+            or_(
+                Delivery.rider_id == current_user.id,
+                Delivery.dispatch_id == current_user.id,
+            )
+        )
     )
     delivery = result.scalar_one_or_none()
 
@@ -1255,13 +1262,14 @@ async def rider_mark_delivered(
 
     if current_user.user_type not in [UserType.RIDER, UserType.DISPATCH]:
         raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN, detail="Unauthorized.")
+            status_code=status.HTTP_403_FORBIDDEN, detail="Unauthorized."
+        )
 
     await db.execute(
         update(Delivery)
-            .where(Delivery.id == delivery_id)
-            .values({"delivery_status": DeliveryStatus.DELIVERED}
-                    ).returning(Delivery.delivery_status)
+        .where(Delivery.id == delivery_id)
+        .values({"delivery_status": DeliveryStatus.DELIVERED})
+        .returning(Delivery.delivery_status)
     )
 
     # Invalidate Cache
@@ -1297,17 +1305,15 @@ async def sender_confirm_delivery_received(
         raise HTTPException(status_code=403, detail="Unauthorized.")
 
     if delivery.delivery_status != DeliveryStatus.DELIVERED:
-        raise HTTPException(
-            status_code=400, detail="Delivery is still in transit")
+        raise HTTPException(status_code=400, detail="Delivery is still in transit")
 
     try:
-
         await db.execute(
-        update(Delivery)
+            update(Delivery)
             .where(Delivery.id == delivery_id)
-            .values({"delivery_status": DeliveryStatus.RECEIVED}
-                    ).returning(Delivery.delivery_status)
-    )
+            .values({"delivery_status": DeliveryStatus.RECEIVED})
+            .returning(Delivery.delivery_status)
+        )
         dispatch_wallet = await fetch_wallet(db, delivery.dispatch_id)
         vendor_wallet = await fetch_wallet(db, delivery.vendor_id)
 
@@ -1348,8 +1354,7 @@ async def sender_confirm_delivery_received(
         return DeliveryStatusUpdateSchema(delivery_status=delivery.delivery_status)
     except Exception as e:
         await db.rollback()
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
 
 # <<<--- admin_modify_delivery_status --->>>
@@ -1444,24 +1449,26 @@ async def create_review(
 
     for user_id in order_item_ids:
         if current_user.id == user_id:
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN,
-                                detail="You cannot review your own item")
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="You cannot review your own item",
+            )
 
     if not user:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+            status_code=status.HTTP_404_NOT_FOUND, detail="User not found"
+        )
 
     if not order:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Order not found")
+            status_code=status.HTTP_404_NOT_FOUND, detail="Order not found"
+        )
 
     # Validate rating
     if not 1 <= data.rating <= 5:
-        raise HTTPException(
-            status_code=400, detail="Rating must be between 1 and 5")
+        raise HTTPException(status_code=400, detail="Rating must be between 1 and 5")
 
     try:
-
         for item_id in order_item_ids:
             review = Review(
                 user_id=current_user.id,
@@ -1656,11 +1663,11 @@ def format_delivery_response(
             "distance": delivery.distance,
             "delivery_fee": delivery.delivery_fee,
             "amount_due_dispatch": delivery.amount_due_dispatch,
-            'pickup_coordinates': delivery.pickup_coordinates,
-            'dropoff_coordinates': delivery.dropoff_coordinates,
+            "pickup_coordinates": delivery.pickup_coordinates,
+            "dropoff_coordinates": delivery.dropoff_coordinates,
             "origin": delivery.origin,
             "destination": delivery.destination,
-            'duration': delivery.duration,
+            "duration": delivery.duration,
             "created_at": delivery.created_at.isoformat(),
         }
 
@@ -1677,8 +1684,7 @@ def format_delivery_response(
         "order_status": order.order_status.value if order.order_status else None,
         "amount_due_vendor": str(order.amount_due_vendor),
         "payment_link": order.payment_link or "",
-        "order_items": order_items
-
+        "order_items": order_items,
     }
 
     return DeliveryResponse(delivery=delivery_data, order=order_data)

@@ -27,12 +27,23 @@ def create_access_token(data: dict) -> str:
     return encoded_jwt
 
 
-async def create_refresh_token(user_id: str, user_type: str, email: EmailStr, account_status: AccountStatus, db: AsyncSession) -> str:
+async def create_refresh_token(
+    user_id: str,
+    user_type: str,
+    email: EmailStr,
+    account_status: AccountStatus,
+    db: AsyncSession,
+) -> str:
     token = str(uuid.uuid4())
     expires_at = datetime.now() + timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS)
 
     refresh_token = RefreshToken(
-        token=token, user_id=user_id, user_type=user_type, email=email, account_status=account_status, expires_at=expires_at
+        token=token,
+        user_id=user_id,
+        user_type=user_type,
+        email=email,
+        account_status=account_status,
+        expires_at=expires_at,
     )
 
     db.add(refresh_token)
@@ -42,11 +53,23 @@ async def create_refresh_token(user_id: str, user_type: str, email: EmailStr, ac
 
 
 async def create_tokens(
-    user_id: str, user_type: str, email: EmailStr,  account_status: AccountStatus, db: AsyncSession
+    user_id: str,
+    user_type: str,
+    email: EmailStr,
+    account_status: AccountStatus,
+    db: AsyncSession,
 ) -> TokenResponse:
     access_token = create_access_token(
-        {"sub": str(user_id), "user_type": user_type, "email": email, "account_status": account_status})
-    refresh_token = await create_refresh_token(user_id, email, user_type, account_status, db)
+        {
+            "sub": str(user_id),
+            "user_type": user_type,
+            "email": email,
+            "account_status": account_status,
+        }
+    )
+    refresh_token = await create_refresh_token(
+        user_id, email, user_type, account_status, db
+    )
 
     return TokenResponse(
         access_token=access_token,
@@ -152,8 +175,12 @@ async def refresh_access_token(refresh_token: str, db: AsyncSession) -> dict:
 
         # Create new access token
         access_token = create_access_token(
-            data={"user_id": str(token.user_id),
-                  "user_type": token.user.user_type, "email": token.user.email, "account_status": token.user.account_status}
+            data={
+                "user_id": str(token.user_id),
+                "user_type": token.user.user_type,
+                "email": token.user.email,
+                "account_status": token.user.account_status,
+            }
         )
 
         # Create new refresh token
@@ -183,7 +210,4 @@ async def refresh_access_token(refresh_token: str, db: AsyncSession) -> dict:
 
     except Exception as e:
         await db.rollback()
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED, detail=str(e))
-
-
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=str(e))

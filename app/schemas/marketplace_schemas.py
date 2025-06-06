@@ -24,8 +24,7 @@ class ProductBuyRequest(BaseModel):
 
 
 class TopUpRequestSchema(BaseModel):
-    amount: Decimal = Field(ge=1000, le=100000,
-                            description="Amount to top up")
+    amount: Decimal = Field(ge=1000, le=100000, description="Amount to top up")
 
 
 class TransactionResponse(BaseModel):
@@ -42,7 +41,6 @@ class TransactionResponse(BaseModel):
 
 class BankCode(BaseModel):
     bank_code: str
-   
 
 
 class TransferDetailResponseSchema(BaseModel):
@@ -55,6 +53,7 @@ class TransferDetailResponseSchema(BaseModel):
     transfer_note: str
     transfer_amount: str
     mode: str
+
 
 class WithdrawalShema(BaseModel):
     status: str

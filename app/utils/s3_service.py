@@ -35,6 +35,7 @@ s3_client = boto3.client("s3")
 
 #     return image_url
 
+
 async def add_image(image: UploadFile) -> str:
     """
     Upload an image to S3 and return its URL.
@@ -99,7 +100,7 @@ async def add_profile_image(image: UploadFile) -> str:
     Upload a single image to S3
     Args:
         image: UploadFile object
-        
+
     Returns:
         str: Image URL
     """
@@ -186,6 +187,7 @@ async def update_image(new_image: UploadFile, old_image_url: str) -> str:
     if not new_image:
         return None
     return await add_image(new_image)
+
 
 # async def update_image(
 #     new_image: UploadFile,

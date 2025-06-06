@@ -1,5 +1,14 @@
 from uuid import UUID
-from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status, BackgroundTasks
+from fastapi import (
+    APIRouter,
+    Depends,
+    File,
+    HTTPException,
+    Query,
+    UploadFile,
+    status,
+    BackgroundTasks,
+)
 
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -19,7 +28,7 @@ from app.schemas.user_schemas import (
     VendorUserResponse,
     ProfileImageResponseSchema,
     CreateReviewSchema,
-    UpdateRider
+    UpdateRider,
 )
 from app.services import user_service
 from app.schemas.item_schemas import MenuWithReviewResponseSchema
@@ -38,17 +47,17 @@ async def get_users(
 
 @router.get("/wallets", include_in_schema=False, status_code=status.HTTP_200_OK)
 async def get_user_wallets(
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)
 ) -> list[WalletSchema]:
     return await user_service.get_user_wallets(db=db)
 
+
 @router.get("/user-wallet", include_in_schema=False, status_code=status.HTTP_200_OK)
 async def get_user_wallet(
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)
 ) -> WalletSchema:
     return await user_service.get_user_wallet(db=db, current_user=current_user)
+
 
 @router.put("/profile", status_code=status.HTTP_202_ACCEPTED)
 async def update_user_profile(
@@ -73,11 +82,9 @@ async def update_rider_profile(
     )
 
 
-
-
 @router.get("/{user_id}/profile", status_code=status.HTTP_200_OK)
 async def get_user_details(
-    user_id:UUID,
+    user_id: UUID,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> ProfileSchema:
@@ -128,7 +135,7 @@ async def upload_profile_image(
         current_user=current_user,
         backdrop_image_url=backdrop_image_url,
         profile_image_url=profile_image_url,
-        background_task=background_task
+        background_task=background_task,
     )
 
 
@@ -137,13 +144,13 @@ async def get_riders(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
     skip: int = Query(0, ge=0),
-    limit: int = Query(10, ge=1, le=100)
+    limit: int = Query(10, ge=1, le=100),
 ):
     """Get all riders for a dispatch company"""
     if current_user.user_type != UserType.DISPATCH:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only dispatch companies can access this endpoint"
+            detail="Only dispatch companies can access this endpoint",
         )
 
     return await user_service.get_dispatcher_riders(db, current_user.id, skip, limit)
@@ -155,7 +162,7 @@ async def get_restaurant_reviews_endpoint(
     limit: int = 20,
     offset: int = 0,
     db: AsyncSession = Depends(get_db),
-     current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
 ) -> list[CreateReviewSchema]:
     """
     Get all reviews for a specific restaurant.
@@ -168,8 +175,8 @@ async def get_restaurant_reviews_endpoint(
 async def get_restaurant_menu(
     vendor_id: UUID,
     db: AsyncSession = Depends(get_db),
-     current_user: User = Depends(get_current_user)
-)-> MenuWithReviewResponseSchema:
+    current_user: User = Depends(get_current_user),
+) -> MenuWithReviewResponseSchema:
     """
     Get restaurant menu with individual item reviews.
     Used when customer visits a specific restaurant.
@@ -181,7 +188,7 @@ async def get_restaurant_menu(
 async def delete_rider_endpoint(
     rider_id: UUID,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
 ):
     """Delete a rider, their profile, and profile image"""
     return await user_service.delete_rider(rider_id, db, current_user)

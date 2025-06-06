@@ -12,7 +12,7 @@ from app.schemas.item_schemas import (
     CategoryResponse,
     ItemCreate,
     ItemResponse,
-    ItemType
+    ItemType,
 )
 from app.services import item_service
 
@@ -62,14 +62,13 @@ async def create_new_item(
     """
 
     item_data = ItemCreate(
-
         name=name,
         description=description,
         price=price,
         item_type=item_type,
         images=images,
-        category_id=category_id
-        )
+        category_id=category_id,
+    )
 
     return await item_service.create_item(
         db=db, current_user=current_user, item_data=item_data, images=images
@@ -119,7 +118,6 @@ async def read_vendor_items(
     Endpoint to get all items for the logged-in VENDOR user.
     """
 
-    
     return await item_service.get_items_by_user_id(db=db, user_id=vendor_id)
 
 

@@ -24,22 +24,19 @@ class ItemType(str, Enum):
 
 
 class ItemCreate(BaseModel):
-    name: str 
-    description: str 
-    price: Decimal 
-    item_type: ItemType 
+    name: str
+    description: str
+    price: Decimal
+    item_type: ItemType
     category_id: UUID
 
 
-
-
 class ItemCreateResponse(BaseModel):
-    name: str 
+    name: str
     description: str
     price: Decimal
     item_type: ItemType
     # category_id: UUID
-
 
 
 class ItemImageSchema(BaseModel):
@@ -49,11 +46,10 @@ class ItemImageSchema(BaseModel):
 
 
 class ReviewResponseSchema(BaseModel):
-    item_id: UUID 
-    rating: int 
-    comment: str 
-    created_at: datetime 
-
+    item_id: UUID
+    rating: int
+    comment: str
+    created_at: datetime
 
 
 class ItemResponse(ItemCreateResponse):
@@ -65,8 +61,8 @@ class ItemResponse(ItemCreateResponse):
     class Config:
         from_attributes = True
 
-class MenuWithReviewSchema(BaseModel):
 
+class MenuWithReviewSchema(BaseModel):
     id: UUID
     name: str
     description: str
@@ -76,7 +72,8 @@ class MenuWithReviewSchema(BaseModel):
     review_count: int
     reviews: list[ReviewResponseSchema] = []
 
-class MenuWithReviewResponseSchema(BaseModel):        
+
+class MenuWithReviewResponseSchema(BaseModel):
     vendor_id: UUID
     menu_item: list[MenuWithReviewSchema]
     total_items: int

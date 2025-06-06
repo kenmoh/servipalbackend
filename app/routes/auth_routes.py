@@ -1,5 +1,13 @@
 from uuid import UUID
-from fastapi import APIRouter, Depends, BackgroundTasks, HTTPException, Query, Request, status
+from fastapi import (
+    APIRouter,
+    Depends,
+    BackgroundTasks,
+    HTTPException,
+    Query,
+    Request,
+    status,
+)
 from fastapi.security import OAuth2PasswordRequestForm
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -18,7 +26,7 @@ from app.schemas.user_schemas import (
     UserBase,
     UserCreate,
     VerificationSchema,
-    CreateUserSchema
+    CreateUserSchema,
 )
 from app.services import auth_service
 
@@ -35,8 +43,13 @@ async def login_user(
     try:
         user = await auth_service.login_user(login_data=user_credentials, db=db)
 
-        token = await create_tokens(user_id=user.id, email=user.email, account_status=user.account_status,
-                                    user_type=user.user_type, db=db)
+        token = await create_tokens(
+            user_id=user.id,
+            email=user.email,
+            account_status=user.account_status,
+            user_type=user.user_type,
+            db=db,
+        )
         if user:
             await auth_service.create_session(db, user.id, request)
         return TokenResponse(
@@ -47,8 +60,7 @@ async def login_user(
         )
 
     except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
 
 @router.post("/logout", include_in_schema=False, status_code=status.HTTP_200_OK)
@@ -66,8 +78,7 @@ async def logout(
         return {"message": "Successfully logged out"}
 
     except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
 
 @router.post("/register", status_code=status.HTTP_201_CREATED)
@@ -78,7 +89,9 @@ async def create_user(
 ) -> UserBase:
     """Logout user by revoking their refresh token"""
 
-    return await auth_service.create_user(db=db, user_data=user_data, background_tasks=background_tasks)
+    return await auth_service.create_user(
+        db=db, user_data=user_data, background_tasks=background_tasks
+    )
 
 
 @router.post(
@@ -160,16 +173,10 @@ async def verify_user_contacts(
 
 
 @router.post("/resend-verification")
-async def resend_verification_codes(
-    db: AsyncSession = Depends(get_db)
-) -> dict:
+async def resend_verification_codes(db: AsyncSession = Depends(get_db)) -> dict:
     """Resend verification codes"""
-    email_code, phone_code = await auth_service.generate_verification_codes(
-        db
-    )
-    return await auth_service.send_verification_codes(
-        email_code, phone_code, db
-    )
+    email_code, phone_code = await auth_service.generate_verification_codes(db)
+    return await auth_service.send_verification_codes(email_code, phone_code, db)
 
 
 # <<<<< ------------- PASSWORD CHANGE ------------ >>>>>
