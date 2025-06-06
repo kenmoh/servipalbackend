@@ -276,12 +276,21 @@ class UpdateUserSchema(BaseModel):
         from_attributes = True
 
 
-class RiderSchema(BaseModel):
-    full_name: str
+class RiderBase(BaseModel):
+    password: str
     email: EmailStr
+
+
+class RiderSchema(RiderBase):
+    full_name: str
     phone_number: str
     plate_number: str
-    password: str
+
+class UpdateRider(BaseModel):
+    full_name: str
+    phone_number: str
+    bike_number: str
+
 
 
 class RiderResponseSchema(BaseModel):

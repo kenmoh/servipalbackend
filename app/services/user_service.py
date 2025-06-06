@@ -1,9 +1,9 @@
 from decimal import Decimal
 from datetime import datetime
 from app.schemas.item_schemas import ItemType
-from app.models.models import Delivery, User, Item, Category
+from app.models.models import Delivery, User, Item, Category, RefreshToken, Session
 from sqlalchemy.orm import selectinload
-from sqlalchemy import func, select, distinct
+from sqlalchemy import func, select, distinct, delete, update
 from typing import List, Optional
 from uuid import UUID
 import json
@@ -29,7 +29,8 @@ from app.schemas.user_schemas import (
     ProfileImageResponseSchema,
     RatingSchema,
     CreateReviewSchema,
-    ProfileSchema
+    ProfileSchema, 
+    UpdateRider
 )
 
 CACHE_TTL = 3600
@@ -197,6 +198,87 @@ async def update_profile(
         redis_client.delete("all_users")
 
         return profile
+
+
+async def update_rider_profile(
+    rider_id: UUID,
+    db: AsyncSession, 
+    profile_data: UpdateRider, 
+    current_user: User
+) -> UpdateRider:
+    """
+    Update a rider's profile. Only allows dispatch users to update riders they created.
+    
+    Args:
+        rider_id: ID of the rider whose profile to update
+        db: Database session
+        profile_data: Updated profile data
+        current_user: Currently authenticated dispatch user
+    Returns:
+        Updated rider profile
+    """
+    
+    # Verify current user is a dispatch user
+    if current_user.user_type != UserType.DISPATCH:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, 
+            detail="Only dispatch users can update rider profiles"
+        )
+    
+    # Get the rider and verify it was created by the current dispatch
+    stmt = select(User).where(User.id == rider_id).options(selectinload(User.profile))
+    result = await db.execute(stmt)
+    rider = result.scalar_one_or_none()
+    
+    if not rider:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, 
+            detail="Rider not found"
+        )
+    
+    # Verify the rider was created by the current dispatch user
+    if rider.dispatcher_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, 
+            detail="You can only update riders you created"
+        )
+    
+    # Verify it's actually a rider user
+    if rider.user_type != UserType.RIDER:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, 
+            detail="User is not a rider"
+        )
+    
+    profile = rider.profile
+    if not profile:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, 
+            detail="Rider profile not found"
+        )
+    
+    # Check for unique constraints if updating phone details
+    profile.full_name = profile_data.full_name
+    profile.phone_number = profile_data.phone_number
+    profile.bike_number = profile_data.bike_number
+    
+    try:
+        await db.commit()
+        await db.refresh(profile)
+        
+        # Invalidate cached data
+        invalidate_user_cache(rider_id)  # Cache for the rider being updated
+        invalidate_user_cache(current_user.id)  # Cache for the dispatch user
+        redis_client.delete("all_users")
+        
+        return profile
+        
+    except Exception as e:
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to update rider profile"
+        )
 
 
 async def get_user_with_profile(db: AsyncSession, user_id: UUID) -> ProfileSchema:
@@ -831,7 +913,6 @@ async def get_vendor_average_rating(user_id, db: AsyncSession) -> Decimal:
 
     return average_rating
 
-
 async def get_dispatcher_riders(
     db: AsyncSession,
     dispatcher_id: UUID,
@@ -839,22 +920,20 @@ async def get_dispatcher_riders(
     limit: int = 10
 ) -> list[DispatchRiderSchema]:
     """Get all riders for a dispatch company with their stats"""
-
     # Try to get from cache first
     cache_key = f"dispatcher:{dispatcher_id}:riders:{skip}:{limit}"
     cached_data = redis_client.get(cache_key)
-
     if cached_data:
-
         logger.info(f"Cache hit for {cache_key}")
         return [DispatchRiderSchema(**rider) for rider in json.loads(cached_data)]
-
+        
     try:
-        # Get riders with their profiles and delivery counts
+        # Get riders with their profiles, profile images and delivery counts
         query = (
             select(
                 User,
                 Profile,
+                ProfileImage.profile_image_url,
                 func.count(Delivery.id).filter(
                     Delivery.delivery_status != DeliveryStatus.RECEIVED
                 ).label('pending_deliveries'),
@@ -863,28 +942,31 @@ async def get_dispatcher_riders(
                     Delivery.delivery_status == DeliveryStatus.RECEIVED
                 ).label('completed_deliveries')
             )
-            .join(Profile)
+            .select_from(User)
+            .join(Profile, Profile.user_id == User.id)
+            .outerjoin(ProfileImage, ProfileImage.profile_id == Profile.user_id)
             .outerjoin(Delivery, Delivery.rider_id == User.id)
             .filter(
                 User.dispatcher_id == dispatcher_id,
                 User.user_type == UserType.RIDER,
             )
-            .group_by(User.id, Profile.user_id)
+            .group_by(User.id, Profile.user_id, ProfileImage.profile_image_url)
             .offset(skip)
             .limit(limit)
         )
-
         result = await db.execute(query)
         riders_data = result.all()
-
+        
         # Format response
         riders = []
-        for user, profile, pending, total, completed in riders_data:
+        for user, profile, profile_image_url, pending, total, completed in riders_data:
             rider_data = {
                 "id": str(user.id),
                 "email": user.email,
                 "full_name": profile.full_name,
+                "phone_number": profile.phone_number,
                 "bike_number": profile.bike_number,
+                "profile_image_url": profile_image_url,
                 "created_at": user.created_at,
                 "stats": {
                     "total_deliveries": total,
@@ -893,19 +975,164 @@ async def get_dispatcher_riders(
                 }
             }
             riders.append(rider_data)
-
+            
         # Cache the results
         redis_client.setex(
             cache_key,
             CACHE_TTL,
             json.dumps(riders, default=str)
         )
-
         return [DispatchRiderSchema(**rider) for rider in riders]
-
+        
     except Exception as e:
         logger.error(f"Error fetching dispatcher riders: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to fetch riders"
+        )
+
+
+
+async def delete_rider(
+    rider_id: UUID,
+    db: AsyncSession,
+    current_user: User
+) -> None:
+    """
+    Delete rider using CASCADE DELETE (requires proper cascade setup in models).
+    This is more efficient as it relies on database cascading.
+    """
+    
+    if current_user.user_type != UserType.DISPATCH:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only dispatch users can delete riders"
+        )
+    
+    try:
+        stmt = (
+            select(User)
+            .where(User.id == rider_id, User.dispatcher_id == current_user.id)
+        )
+        result = await db.execute(stmt)
+        rider = result.scalar_one_or_none()
+        
+        if not rider:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Rider not found"
+            )
+        
+        
+        if rider.user_type != UserType.RIDER:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="User is not a rider"
+            )
+        
+        await db.delete(rider)
+        await db.commit()
+        
+        # Clear caches
+        invalidate_user_cache(rider_id)
+        invalidate_user_cache(current_user.id)
+        redis_client.delete("all_users")
+        
+        logger.info(f"Rider {rider_id} deleted with cascade by dispatch user {current_user.id}")
+        
+        return None
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        await db.rollback()
+        logger.error(f"Error deleting rider {rider_id}: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to delete rider"
+        )
+
+
+
+async def delete_rider(
+    rider_id: UUID,
+    db: AsyncSession,
+    current_user: User
+) -> None:
+    """
+    Delete method that explicitly handles related records.
+    """
+    
+    if current_user.user_type != UserType.DISPATCH:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only dispatch users can delete riders"
+        )
+    
+    try:
+        # Get the rider
+        stmt = select(User).where(
+            User.id == rider_id,
+            User.dispatcher_id == current_user.id,
+            User.user_type == UserType.RIDER
+        )
+        result = await db.execute(stmt)
+        rider = result.scalar_one_or_none()
+        
+        if not rider:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Rider not found or you don't have permission to delete this rider"
+            )
+        
+        rider_email = rider.email
+        
+        # Manually delete related records
+
+        # Delete refresh tokens
+        await db.execute(delete(RefreshToken).where(RefreshToken.user_id == rider_id))
+
+        # Delete Sessions
+        await db.execute(delete(Session).where(Session.user_id == rider_id))
+        
+
+        # Handle deliveries - you might want to set status to "cancelled" instead of deleting
+        await db.execute(
+            update(Delivery)
+            .where(Delivery.rider_id == rider_id)
+            .values(rider_id=None)
+        )
+        
+        # # Delete profile image
+        # await db.execute(delete(ProfileImage).where(ProfileImage.profile_id == rider_id))
+        
+        # # Delete profile
+        # await db.execute(delete(Profile).where(Profile.user_id == rider_id))
+        
+        
+        # Finally delete the user
+        await db.delete(rider)
+        await db.commit()
+        
+        # Clear caches
+        try:
+            invalidate_user_cache(rider_id)
+            invalidate_user_cache(current_user.id)
+            redis_client.delete("all_users")
+        except Exception as cache_error:
+            logger.warning(f"Cache invalidation failed: {str(cache_error)}")
+        
+        logger.info(f"Rider {rider_id} ({rider_email}) deleted by dispatcher {current_user.id}")
+        
+        return None
+        
+    except HTTPException:
+        await db.rollback()
+        raise
+    except Exception as e:
+        await db.rollback()
+        logger.error(f"Error deleting rider {rider_id}: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to delete rider. Please try again."
         )

@@ -52,6 +52,147 @@ class Base(DeclarativeBase):
     pass
 
 
+# class User(Base):
+#     __tablename__ = "users"
+
+#     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+#     email: Mapped[str] = mapped_column(unique=True, nullable=False)
+#     password: Mapped[str]
+#     is_blocked: Mapped[bool] = mapped_column(default=False)
+#     is_verified: Mapped[bool] = mapped_column(default=False)
+#     rider_is_suspended_for_order_cancel: Mapped[bool] = mapped_column(
+#         nullable=True, default=False
+#     )
+#     rider_is_suspension_until: Mapped[datetime] = mapped_column(nullable=True)
+#     order_cancel_count: Mapped[int] = mapped_column(nullable=True, default=0)
+#     reset_token: Mapped[Optional[str]] = mapped_column(
+#         nullable=True, unique=True)
+#     reset_token_expires: Mapped[Optional[datetime]
+#                                 ] = mapped_column(nullable=True)
+#     user_type: Mapped[str] = mapped_column(  # make it a UserType Enum
+#         nullable=False,
+#     )
+
+#     is_email_verified: Mapped[bool] = mapped_column(
+#         default=False, nullable=True)
+#     email_verification_code: Mapped[str] = mapped_column(
+#         nullable=True)
+#     email_verification_expires: Mapped[datetime] = mapped_column(nullable=True)
+#     account_status: Mapped[AccountStatus] = mapped_column(
+#         default=AccountStatus.PENDING)
+#     # Add dispatcher-rider relationship
+#     dispatcher_id: Mapped[Optional[UUID]] = mapped_column(
+#         ForeignKey("users.id"),
+#         nullable=True,
+#     )
+
+#     # Dispatcher-side
+#     managed_riders: Mapped[list["User"]] = relationship(
+#         "User",
+#         back_populates="dispatcher",
+#         foreign_keys=[dispatcher_id],
+#         # remote_side=[id],
+#         lazy="dynamic",  # Important for self-referential relationship
+#     )
+#     # Rider-side
+
+#     dispatcher: Mapped[Optional["User"]] = relationship(
+#         "User",
+#         back_populates="managed_riders",
+#         foreign_keys=[dispatcher_id],
+#         remote_side=[id],
+#         lazy="joined",
+#     )
+#     created_at: Mapped[datetime] = mapped_column(default=datetime.now)
+#     updated_at: Mapped[datetime] = mapped_column(
+#         default=datetime.now, onupdate=datetime.now
+#     )
+
+#     # Relationships
+#     profile: Mapped["Profile"] = relationship(
+#         back_populates="user",
+#         uselist=False,
+#         lazy="selectin",
+#     )
+#     wallet: Mapped["Wallet"] = relationship(
+#         back_populates="user",
+#         uselist=False,
+#         lazy="selectin",
+#     )
+#     items: Mapped[list["Item"]] = relationship(back_populates="vendor")
+#     orders_placed: Mapped[list["Order"]] = relationship(
+#         back_populates="owner", foreign_keys="Order.owner_id"
+#     )
+#     orders_received: Mapped[list["Order"]] = relationship(
+#         back_populates="vendor", foreign_keys="Order.vendor_id"
+#     )
+#     deliveries_as_rider: Mapped[list["Delivery"]] = relationship(
+#         back_populates="rider", foreign_keys="Delivery.rider_id"
+#     )
+#     deliveries_as_sender: Mapped[list["Delivery"]] = relationship(
+#         back_populates="sender", foreign_keys="Delivery.sender_id"
+#     )
+
+#     refresh_tokens = relationship(
+#         "RefreshToken", back_populates="user", cascade="all, delete-orphan"
+#     )
+#     reviews_written: Mapped[list["Review"]] = relationship(
+#         back_populates="reviewer", cascade="all, delete-orphan"
+#     )
+
+
+# class Profile(Base):
+#     __tablename__ = "profile"
+
+#     user_id: Mapped[UUID] = mapped_column(
+#         ForeignKey("users.id", ondelete="CASCADE"), unique=True, primary_key=True
+#     )
+#     business_name: Mapped[str] = mapped_column(nullable=True)
+#     bank_name: Mapped[str] = mapped_column(nullable=True)
+#     bank_account_number: Mapped[str] = mapped_column(nullable=True)
+#     business_address: Mapped[str] = mapped_column(nullable=True)
+#     business_registration_number: Mapped[str] = mapped_column(nullable=True)
+#     account_holder_name: Mapped[str] = mapped_column(nullable=True)
+#     opening_hours: Mapped[time] = mapped_column(nullable=True)
+#     closing_hours: Mapped[time] = mapped_column(nullable=True)
+#     full_name: Mapped[str] = mapped_column(nullable=True)
+#     phone_number: Mapped[str] = mapped_column(unique=True, nullable=False)
+#     bike_number: Mapped[str] = mapped_column(unique=True, nullable=True)
+#     is_phone_verified: Mapped[bool] = mapped_column(
+#         default=False, nullable=True)
+#     phone_verification_code: Mapped[str] = mapped_column(
+#         nullable=True)
+#     phone_verification_expires: Mapped[datetime] = mapped_column(nullable=True)
+#     created_at: Mapped[datetime] = mapped_column(default=datetime.now)
+#     updated_at: Mapped[datetime] = mapped_column(
+#         default=datetime.now, onupdate=datetime.now
+#     )
+
+#     user: Mapped["User"] = relationship(back_populates="profile")
+#     profile_image: Mapped["ProfileImage"] = relationship(
+#         back_populates="profile",
+#         uselist=False,
+#         cascade="all, delete-orphan",
+#         lazy="selectin",
+#     )
+
+
+# class ProfileImage(Base):
+#     __tablename__ = "profile_images"
+
+#     profile_id: Mapped[UUID] = mapped_column(
+#         ForeignKey("profile.user_id", ondelete="CASCADE"), primary_key=True, unique=True
+#     )
+#     profile_image_url: Mapped[str] = mapped_column(nullable=True)
+#     backdrop_image_url: Mapped[str] = mapped_column(nullable=True)
+#     created_at: Mapped[datetime] = mapped_column(default=datetime.now)
+#     updated_at: Mapped[datetime] = mapped_column(
+#         default=datetime.now, onupdate=datetime.now
+#     )
+
+#     profile: Mapped["Profile"] = relationship(back_populates="profile_image")
+
+
 class User(Base):
     __tablename__ = "users"
 
@@ -67,35 +208,31 @@ class User(Base):
     order_cancel_count: Mapped[int] = mapped_column(nullable=True, default=0)
     reset_token: Mapped[Optional[str]] = mapped_column(
         nullable=True, unique=True)
-    reset_token_expires: Mapped[Optional[datetime]
-                                ] = mapped_column(nullable=True)
-    user_type: Mapped[str] = mapped_column(  # make it a UserType Enum
-        nullable=False,
-    )
+    reset_token_expires: Mapped[Optional[datetime]] = mapped_column(nullable=True)
+    user_type: Mapped[str] = mapped_column(nullable=False)
 
-    is_email_verified: Mapped[bool] = mapped_column(
-        default=False, nullable=True)
-    email_verification_code: Mapped[str] = mapped_column(
-        nullable=True)
+    is_email_verified: Mapped[bool] = mapped_column(default=False, nullable=True)
+    email_verification_code: Mapped[str] = mapped_column(nullable=True)
     email_verification_expires: Mapped[datetime] = mapped_column(nullable=True)
-    account_status: Mapped[AccountStatus] = mapped_column(
-        default=AccountStatus.PENDING)
-    # Add dispatcher-rider relationship
+    account_status: Mapped[AccountStatus] = mapped_column(default=AccountStatus.PENDING)
+    
+    # Dispatcher-rider relationship with proper cascade
     dispatcher_id: Mapped[Optional[UUID]] = mapped_column(
-        ForeignKey("users.id"),
+        ForeignKey("users.id", ondelete="SET NULL"),  # SET NULL when dispatcher is deleted
         nullable=True,
     )
 
-    # Dispatcher-side
+    # Dispatcher-side - when dispatcher is deleted, riders become independent
     managed_riders: Mapped[list["User"]] = relationship(
         "User",
         back_populates="dispatcher",
         foreign_keys=[dispatcher_id],
-        # remote_side=[id],
-        lazy="dynamic",  # Important for self-referential relationship
+        lazy="dynamic",
+        cascade="all, delete-orphan",  # This ensures proper cleanup
+        passive_deletes=True,  # Let database handle the cascade
     )
+    
     # Rider-side
-
     dispatcher: Mapped[Optional["User"]] = relationship(
         "User",
         back_populates="managed_riders",
@@ -103,41 +240,61 @@ class User(Base):
         remote_side=[id],
         lazy="joined",
     )
+    
     created_at: Mapped[datetime] = mapped_column(default=datetime.now)
     updated_at: Mapped[datetime] = mapped_column(
         default=datetime.now, onupdate=datetime.now
     )
 
-    # Relationships
+    # Relationships with cascade
     profile: Mapped["Profile"] = relationship(
         back_populates="user",
         uselist=False,
         lazy="selectin",
+        cascade="all, delete-orphan",  # Delete profile when user is deleted
     )
+    
     wallet: Mapped["Wallet"] = relationship(
         back_populates="user",
         uselist=False,
         lazy="selectin",
+        cascade="all, delete-orphan",  # Delete wallet when user is deleted
     )
-    items: Mapped[list["Item"]] = relationship(back_populates="vendor")
+    
+    items: Mapped[list["Item"]] = relationship(
+        back_populates="vendor",
+        cascade="all, delete-orphan",  # Delete items when vendor is deleted
+    )
+    
     orders_placed: Mapped[list["Order"]] = relationship(
-        back_populates="owner", foreign_keys="Order.owner_id"
+        back_populates="owner", 
+        foreign_keys="Order.owner_id",
     )
+    
     orders_received: Mapped[list["Order"]] = relationship(
-        back_populates="vendor", foreign_keys="Order.vendor_id"
+        back_populates="vendor", 
+        foreign_keys="Order.vendor_id",
     )
+    
     deliveries_as_rider: Mapped[list["Delivery"]] = relationship(
-        back_populates="rider", foreign_keys="Delivery.rider_id"
+        back_populates="rider", 
+        foreign_keys="Delivery.rider_id",
     )
+    
     deliveries_as_sender: Mapped[list["Delivery"]] = relationship(
-        back_populates="sender", foreign_keys="Delivery.sender_id"
+        back_populates="sender", 
+        foreign_keys="Delivery.sender_id",
     )
 
     refresh_tokens = relationship(
-        "RefreshToken", back_populates="user", cascade="all, delete-orphan"
+        "RefreshToken", 
+        back_populates="user", 
+        cascade="all, delete-orphan"
     )
+    
     reviews_written: Mapped[list["Review"]] = relationship(
-        back_populates="reviewer", cascade="all, delete-orphan"
+        back_populates="reviewer", 
+        cascade="all, delete-orphan"
     )
 
 
@@ -145,7 +302,9 @@ class Profile(Base):
     __tablename__ = "profile"
 
     user_id: Mapped[UUID] = mapped_column(
-        ForeignKey("users.id"), unique=True, primary_key=True
+        ForeignKey("users.id", ondelete="CASCADE"), 
+        unique=True, 
+        primary_key=True
     )
     business_name: Mapped[str] = mapped_column(nullable=True)
     bank_name: Mapped[str] = mapped_column(nullable=True)
@@ -158,10 +317,8 @@ class Profile(Base):
     full_name: Mapped[str] = mapped_column(nullable=True)
     phone_number: Mapped[str] = mapped_column(unique=True, nullable=False)
     bike_number: Mapped[str] = mapped_column(unique=True, nullable=True)
-    is_phone_verified: Mapped[bool] = mapped_column(
-        default=False, nullable=True)
-    phone_verification_code: Mapped[str] = mapped_column(
-        nullable=True)
+    is_phone_verified: Mapped[bool] = mapped_column(default=False, nullable=True)
+    phone_verification_code: Mapped[str] = mapped_column(nullable=True)
     phone_verification_expires: Mapped[datetime] = mapped_column(nullable=True)
     created_at: Mapped[datetime] = mapped_column(default=datetime.now)
     updated_at: Mapped[datetime] = mapped_column(
@@ -181,7 +338,9 @@ class ProfileImage(Base):
     __tablename__ = "profile_images"
 
     profile_id: Mapped[UUID] = mapped_column(
-        ForeignKey("profile.user_id", ondelete="CASCADE"), primary_key=True, unique=True
+        ForeignKey("profile.user_id", ondelete="CASCADE"), 
+        primary_key=True, 
+        unique=True
     )
     profile_image_url: Mapped[str] = mapped_column(nullable=True)
     backdrop_image_url: Mapped[str] = mapped_column(nullable=True)
@@ -191,7 +350,6 @@ class ProfileImage(Base):
     )
 
     profile: Mapped["Profile"] = relationship(back_populates="profile_image")
-
 
 class Session(Base):
     __tablename__ = "sessions"
@@ -415,13 +573,13 @@ class Delivery(Base):
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
     order_id: Mapped[UUID] = mapped_column(ForeignKey("orders.id"))
     rider_id: Mapped[UUID] = mapped_column(
-        ForeignKey("users.id"), nullable=True)
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     dispatch_id: Mapped[UUID] = mapped_column(
-        ForeignKey("users.id"), nullable=True)
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     vendor_id: Mapped[UUID] = mapped_column(
-        ForeignKey("users.id"), nullable=True)
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     sender_id: Mapped[UUID] = mapped_column(
-        ForeignKey("users.id"), nullable=True)
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     image_url: Mapped[str] = mapped_column(nullable=True)
     pickup_coordinates: Mapped[Tuple[float, float]
                                ] = mapped_column(ARRAY(Float))

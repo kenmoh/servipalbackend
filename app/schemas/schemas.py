@@ -37,6 +37,8 @@ class DispatchRiderSchema(BaseModel):
     full_name: str | None
     email: str
     bike_number: str | None
+    phone_number: str
+    profile_image_url: str | None = None
     stats: RiderStatsSchema
     created_at: datetime
 

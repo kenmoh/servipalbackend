@@ -214,7 +214,7 @@ def api_health_check() -> dict:
 
 
 @app.get("/api/list-of-banks", response_model=list[BankSchema], tags=["Get Banks"])
-async def get_banks() -> list:
+async def get_banks():
     """Get list of all supported bank(Nigeria)"""
 
     return await get_all_banks()

@@ -19,6 +19,7 @@ from app.schemas.user_schemas import (
     VendorUserResponse,
     ProfileImageResponseSchema,
     CreateReviewSchema,
+    UpdateRider
 )
 from app.services import user_service
 from app.schemas.item_schemas import MenuWithReviewResponseSchema
@@ -58,6 +59,20 @@ async def update_user_profile(
     return await user_service.update_profile(
         profile_data=profile_data, db=db, current_user=current_user
     )
+
+
+@router.put("/{rider_id}/profile", status_code=status.HTTP_202_ACCEPTED)
+async def update_rider_profile(
+    rider_id: UUID,
+    profile_data: UpdateRider,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> UpdateRider:
+    return await user_service.update_rider_profile(
+        profile_data=profile_data, db=db, rider_id=rider_id, current_user=current_user
+    )
+
+
 
 
 @router.get("/{user_id}/profile", status_code=status.HTTP_200_OK)
@@ -160,3 +175,13 @@ async def get_restaurant_menu(
     Used when customer visits a specific restaurant.
     """
     return await user_service.get_restaurant_menu_with_reviews(db, vendor_id)
+
+
+@router.delete("/{rider_id}/delete", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_rider_endpoint(
+    rider_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Delete a rider, their profile, and profile image"""
+    return await user_service.delete_rider(rider_id, db, current_user)
