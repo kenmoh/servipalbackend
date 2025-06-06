@@ -15,7 +15,6 @@ from sqlalchemy import (
     func,
     Float,
     text,
-    Identity,
     Integer,
     UniqueConstraint,
     Index,
