@@ -22,9 +22,8 @@ from sqlalchemy import (
     Text,
 )
 from sqlalchemy.schema import Sequence
-from sqlalchemy.dialects.postgresql import CHAR
 from sqlalchemy.orm import mapped_column, Mapped, relationship
-from sqlalchemy.types import TypeDecorator
+
 
 from app.database.database import Base
 
@@ -32,7 +31,7 @@ from app.schemas.delivery_schemas import DeliveryType
 from app.schemas.item_schemas import ItemType
 from app.schemas.status_schema import (
     AccountStatus,
-    DelivertyStatus,
+    DeliveryStatus,
     OrderStatus,
     OrderType,
     PaymentStatus,
@@ -592,8 +591,8 @@ class Delivery(Base):
     origin: Mapped[str]
     destination: Mapped[str]
 
-    delivery_status: Mapped[DelivertyStatus] = mapped_column(
-        default=DelivertyStatus.PENDING
+    delivery_status: Mapped[DeliveryStatus] = mapped_column(
+        default=DeliveryStatus.PENDING
     )
     delivery_type: Mapped[DeliveryType]
     amount_due_dispatch: Mapped[Decimal] = mapped_column(nullable=False)
