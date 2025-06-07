@@ -406,7 +406,6 @@ async def resolve_account_details(
                 headers=headers,
             )
 
-            print("==================", response)
             response.raise_for_status()
 
             # Get the raw response
