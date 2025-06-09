@@ -808,7 +808,7 @@ async def rider_accept_delivery_order(
     redis_client.delete(f"user_orders:{delivery.sender_id}")
     if delivery.dispatch_id:
         redis_client.delete(f"dispatch_deliveries:{delivery.dispatch_id}")
-        invalidate_rider_cache(delivery.delivery_id)
+        invalidate_rider_cache(delivery.id)
     if delivery.rider_id:
         redis_client.delete(f"rider_deliveries:{delivery.rider_id}")
         invalidate_rider_cache(delivery.rider_id)
@@ -866,7 +866,7 @@ async def sender_mark_delivery_in_transit(
     redis_client.delete(f"user_orders:{delivery.sender_id}")
     if delivery.dispatch_id:
         redis_client.delete(f"dispatch_deliveries:{delivery.dispatch_id}")
-        invalidate_rider_cache(delivery.delivery_id)
+        invalidate_rider_cache(delivery.id)
     if delivery.rider_id:
         redis_client.delete(f"rider_deliveries:{delivery.rider_id}")
         invalidate_rider_cache(delivery.rider_id)
