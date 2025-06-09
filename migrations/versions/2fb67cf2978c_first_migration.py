@@ -258,63 +258,7 @@ def upgrade() -> None:
         ),
         sa.PrimaryKeyConstraint("id"),
     )
-    op.create_table(
-        "deliveries",
-        sa.Column("id", sa.Uuid(), nullable=False),
-        sa.Column("order_id", sa.Uuid(), nullable=False),
-        sa.Column("rider_id", sa.Uuid(), nullable=True),
-        sa.Column("dispatch_id", sa.Uuid(), nullable=True),
-        sa.Column("vendor_id", sa.Uuid(), nullable=True),
-        sa.Column("sender_id", sa.Uuid(), nullable=True),
-        sa.Column("image_url", sa.String(), nullable=True),
-        sa.Column("pickup_coordinates", sa.ARRAY(sa.Float()), nullable=False),
-        sa.Column("dropoff_coordinates", sa.ARRAY(sa.Float()), nullable=False),
-        sa.Column(
-            "delivery_status",
-            sa.Enum(
-                "PENDING",
-                "IN_TRANSIT",
-                "DELIVERED",
-                "RECEIVED",
-                "VENDOR_RECEIVED_LAUNDRY_ITEM",
-                "CANCELLED",
-                name="delivertystatus",
-            ),
-            nullable=False,
-        ),
-        sa.Column("delivery_fee", sa.Numeric(), nullable=False),
-        sa.Column("distance", sa.Numeric(), nullable=True),
-        sa.Column("duration", sa.Numeric(), nullable=True),
-        sa.Column(
-            "delivery_type",
-            sa.Enum("FOOD", "LAUNDRY", "PACKAGE", name="deliverytype"),
-            nullable=False,
-        ),
-        sa.Column("amount_due_dispatch", sa.Numeric(), nullable=False),
-        sa.Column("created_at", sa.DateTime(), nullable=False),
-        sa.Column("updated_at", sa.DateTime(), nullable=False),
-        sa.ForeignKeyConstraint(
-            ["dispatch_id"],
-            ["users.id"],
-        ),
-        sa.ForeignKeyConstraint(
-            ["order_id"],
-            ["orders.id"],
-        ),
-        sa.ForeignKeyConstraint(
-            ["rider_id"],
-            ["users.id"],
-        ),
-        sa.ForeignKeyConstraint(
-            ["sender_id"],
-            ["users.id"],
-        ),
-        sa.ForeignKeyConstraint(
-            ["vendor_id"],
-            ["users.id"],
-        ),
-        sa.PrimaryKeyConstraint("id"),
-    )
+    
     op.create_table(
         "item_images",
         sa.Column("id", sa.Uuid(), nullable=False),

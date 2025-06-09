@@ -46,6 +46,8 @@ class DeliverySchema(BaseModel):
     duration: str
     origin: str
     destination: str
+    sender_phone_number: str | None = None
+    rider_phone_number: str | None = None
     pickup_coordinates: list[float]
     dropoff_coordinates: list[float]
     delivery_fee: Decimal
