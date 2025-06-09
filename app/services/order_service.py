@@ -963,15 +963,15 @@ async def rider_mark_delivered(
     db.refresh(delivery)
 
     # Invalidate Cache
-    redis_client.delete(f'{delivery.order_id}')
-    redis_client.delete(f"{ALL_DELIVERY}")
-    redis_client.delete(f"user_orders:{delivery.sender_id}")
-    if delivery.dispatch_id:
-        redis_client.delete(f"dispatch_deliveries:{delivery.dispatch_id}")
-        invalidate_rider_cache(delivery.id)
-    if delivery.rider_id:
-        redis_client.delete(f"rider_deliveries:{delivery.rider_id}")
-        invalidate_rider_cache(delivery.rider_id)
+    # redis_client.delete(f'{delivery.order_id}')
+    # redis_client.delete(f"{ALL_DELIVERY}")
+    # redis_client.delete(f"user_orders:{delivery.sender_id}")
+    # if delivery.dispatch_id:
+    #     redis_client.delete(f"dispatch_deliveries:{delivery.dispatch_id}")
+    #     invalidate_rider_cache(delivery.id)
+    # if delivery.rider_id:
+    #     redis_client.delete(f"rider_deliveries:{delivery.rider_id}")
+    #     invalidate_rider_cache(delivery.rider_id)
 
     token = get_user_notification_token(
         db=db, user_id=delivery.vendor_id)
