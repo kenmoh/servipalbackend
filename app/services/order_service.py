@@ -835,7 +835,7 @@ async def sender_mark_delivery_in_transit(
     if not delivery:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Delivery not found.")
 
-    if current_user.user_type not in [UserType.RIDER, UserType.DISPATCH]:
+    if current_user.user_type not in [UserType.CUSTOMER, UserType.VENDOR]:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN, detail="Unauthorized."
         )
