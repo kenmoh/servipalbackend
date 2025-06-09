@@ -52,16 +52,24 @@ from app.services.auth_service import invalidate_rider_cache
 from app.utils.utils import (
     get_dispatch_id,
     get_payment_link,
+    send_push_notification,
 )
 from app.config.config import redis_client
 from app.utils.s3_service import add_image
 
-async def get_user_profile(db: AsyncSession, current_user: User):
-    result = await db.execute(select(Profile).where(Profile.user_id == current_user.id))
-    return result.scalar_one_or_none()
+
+async def get_user_notification_token(db: AsyncSession, user_id):
+    result = await db.execute(select(User.notification_token).where(User.id == user_id))
+    token = result.scalar_one()
+
+    if not token:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,
+                            detail='Notification token missing')
+    return token
 
 
 ALL_DELIVERY = 'ALL_DELIVERY'
+
 
 async def filter_delivery_by_delivery_type(
     delivery_type: DeliveryType, db: AsyncSession, skip: int = 0, limit: int = 20
@@ -82,7 +90,8 @@ async def filter_delivery_by_delivery_type(
         .options(
             joinedload(Delivery.order).options(
                 selectinload(Order.order_items).options(
-                    joinedload(OrderItem.item).options(selectinload(Item.images))
+                    joinedload(OrderItem.item).options(
+                        selectinload(Item.images))
                 ),
                 joinedload(Order.delivery),
             )
@@ -169,7 +178,8 @@ async def get_all_deliveries(
         .options(
             joinedload(Delivery.order).options(
                 selectinload(Order.order_items).options(
-                    joinedload(OrderItem.item).options(selectinload(Item.images))
+                    joinedload(OrderItem.item).options(
+                        selectinload(Item.images))
                 ),
                 joinedload(Order.delivery),
             )
@@ -200,7 +210,6 @@ async def get_all_deliveries(
 async def create_package_order(
     db: AsyncSession, data: PackageCreate, image: UploadFile, current_user: User
 ) -> DeliveryResponse:
-
 
     if current_user.user_type == UserType.CUSTOMER and not (
         current_user.profile.full_name or current_user.profile.phone_number
@@ -342,7 +351,8 @@ async def create_package_order(
             .where(Order.id == delivery_data.order_id)
             .options(
                 selectinload(Order.order_items).options(
-                    joinedload(OrderItem.item).options(selectinload(Item.images))
+                    joinedload(OrderItem.item).options(
+                        selectinload(Item.images))
                 )
             )
         )
@@ -395,7 +405,8 @@ async def order_food_or_request_laundy_service(
         for item in order_item.order_items
     ]
     items_result = await db.execute(
-        select(Item).where(Item.id.in_(item_ids)).where(Item.user_id == vendor_id)
+        select(Item).where(Item.id.in_(item_ids)).where(
+            Item.user_id == vendor_id)
     )
     items_data = {item.id: item for item in items_result.scalars().all()}
 
@@ -422,7 +433,8 @@ async def order_food_or_request_laundy_service(
         item_data = items_data[item_uuid]
 
         # Price and type calculation
-        total_price += Decimal(item_data.price) * Decimal(order_item_detail.quantity)
+        total_price += Decimal(item_data.price) * \
+            Decimal(order_item_detail.quantity)
         item_types.add(item_data.item_type)
 
     # Validate single item type
@@ -538,7 +550,8 @@ async def order_food_or_request_laundy_service(
                 .where(Order.id == order_id)
                 .options(
                     selectinload(Order.order_items).options(
-                        joinedload(OrderItem.item).options(selectinload(Item.images))
+                        joinedload(OrderItem.item).options(
+                            selectinload(Item.images))
                     )
                 )
             )
@@ -551,13 +564,17 @@ async def order_food_or_request_laundy_service(
                 .where(Order.id == order_id)
                 .options(
                     selectinload(Order.order_items).options(
-                        joinedload(OrderItem.item).options(selectinload(Item.images))
+                        joinedload(OrderItem.item).options(
+                            selectinload(Item.images))
                     )
                 )
             )
             order = (await db.execute(stmt)).scalar_one()
 
             redis_client.delete(f"{ALL_DELIVERY}")
+
+            token = get_user_notification_token(db=db, user_id=vendor_id)
+            await send_push_notification(tokens=[token], title='New Order', message='YOu have a new order', navigate_to='/delivery/orders')
             return format_delivery_response(order, delivery=None)
 
     except Exception as e:
@@ -645,7 +662,8 @@ async def confirm_delivery_received(
         raise HTTPException(status_code=403, detail="Unauthorized.")
 
     if delivery.delivery_status != DeliveryStatus.DELIVERED:
-        raise HTTPException(status_code=400, detail="Delivery is not yet completed.")
+        raise HTTPException(
+            status_code=400, detail="Delivery is not yet completed.")
 
     try:
         delivery.delivery_status = DeliveryStatus.RECEIVED
@@ -689,10 +707,16 @@ async def confirm_delivery_received(
 
         redis_client.delete(f"{ALL_DELIVERY}")
 
+        token = get_user_notification_token(
+            db=db, user_id=current_user.id)
+
+        await send_push_notification(tokens=[token], title='Order completed', message='Congratulations! Order complete. Fund has been released to your wallet', navigate_to='/delivery/orders')
+
         return DeliveryStatusUpdateSchema(delivery_status=delivery.delivery_status)
     except Exception as e:
         await db.rollback()
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
 
 async def cancel_delivery(
@@ -770,6 +794,11 @@ async def cancel_delivery(
             invalidate_delivery_cache(delivery_result.id)
             redis_client.delete(f"{ALL_DELIVERY}")
 
+            token = get_user_notification_token(
+                db=db, user_id=delivery.vendor_id)
+
+            await send_push_notification(tokens=[token], title='Order canceled', message='Your Order has been canceled', navigate_to='/delivery/orders')
+
             return delivery_result
 
 
@@ -786,10 +815,12 @@ async def rider_accept_delivery_order(
     delivery = result.scalar_one_or_none()
 
     if not delivery:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Delivery not found.")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Delivery not found.")
 
     if delivery.rider_phone_number or delivery.rider_id:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="This order has been assigned to a rider.")
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
+                            detail="This order has been assigned to a rider.")
 
     if current_user.user_type not in [UserType.RIDER, UserType.DISPATCH]:
         raise HTTPException(
@@ -824,6 +855,11 @@ async def rider_accept_delivery_order(
         redis_client.delete(f"rider_deliveries:{delivery.rider_id}")
         invalidate_rider_cache(delivery.rider_id)
 
+    token = get_user_notification_token(
+        db=db, user_id=delivery.vendor_id)
+
+    await send_push_notification(tokens=[token], title='Order Assigned', message=f'Your order has been assigned to {current_user.profile.full_name}, {current_user.profile.phone_number}', navigate_to='/delivery/orders')
+
     return DeliveryStatusUpdateSchema(delivery_status=delivery.delivery_status)
 
 
@@ -841,7 +877,8 @@ async def sender_mark_delivery_in_transit(
     delivery = result.scalar_one_or_none()
 
     if not delivery:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Delivery not found.")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Delivery not found.")
 
     if current_user.user_type not in [UserType.CUSTOMER, UserType.VENDOR]:
         raise HTTPException(
@@ -883,6 +920,11 @@ async def sender_mark_delivery_in_transit(
         redis_client.delete(f"rider_deliveries:{delivery.rider_id}")
         invalidate_rider_cache(delivery.rider_id)
 
+    token = get_user_notification_token(
+        db=db, user_id=delivery.rider_id)
+
+    await send_push_notification(tokens=[token], title='Order in transit', message='Order in transit, please drive safely', navigate_to='/delivery/orders')
+
     return DeliveryStatusUpdateSchema(delivery_status=delivery.delivery_status)
 
 
@@ -902,7 +944,8 @@ async def rider_mark_delivered(
     delivery = result.scalar_one_or_none()
 
     if not delivery:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Delivery not found.")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Delivery not found.")
 
     if current_user.user_type not in [UserType.RIDER, UserType.DISPATCH]:
         raise HTTPException(
@@ -930,6 +973,11 @@ async def rider_mark_delivered(
         redis_client.delete(f"rider_deliveries:{delivery.rider_id}")
         invalidate_rider_cache(delivery.rider_id)
 
+    token = get_user_notification_token(
+        db=db, user_id=delivery.vendor_id)
+
+    await send_push_notification(tokens=[token], title='Order delivered', message='Your Order has been delivered. Please confirm with the receipient before marking as received.', navigate_to='/delivery/orders')
+
     return DeliveryStatusUpdateSchema(delivery_status=delivery.delivery_status)
 
 
@@ -944,16 +992,19 @@ async def sender_confirm_delivery_received(
     delivery = result.scalar_one_or_none()
 
     if not delivery:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Delivery not found.")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Delivery not found.")
 
     if (
         current_user.user_type not in [UserType.CUSTOMER, UserType.VENDOR]
         or delivery.sender_id != current_user.id
     ):
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Unauthorized.")
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail="Unauthorized.")
 
     if delivery.delivery_status != DeliveryStatus.DELIVERED:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Delivery is still in transit")
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
+                            detail="Delivery is still in transit")
 
     try:
         await db.execute(
@@ -999,13 +1050,13 @@ async def sender_confirm_delivery_received(
         await db.commit()
         await db.refresh(delivery)
 
-
         redis_client.delete(f"{ALL_DELIVERY}")
-        
+
         return DeliveryStatusUpdateSchema(delivery_status=delivery.delivery_status)
     except Exception as e:
         await db.rollback()
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
 
 # <<<--- admin_modify_delivery_status --->>>
@@ -1118,7 +1169,8 @@ async def create_review(
 
     # Validate rating
     if not 1 <= data.rating <= 5:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Rating must be between 1 and 5")
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
+                            detail="Rating must be between 1 and 5")
 
     try:
         for item_id in order_item_ids:

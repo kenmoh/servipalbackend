@@ -20,6 +20,7 @@ from app.models.models import ProfileImage, User, Profile
 from app.schemas.schemas import DispatchRiderSchema
 from app.schemas.status_schema import UserType
 from app.schemas.user_schemas import (
+    Notification,
     ProfileSchema,
     UserProfileResponse,
     UserResponse,
@@ -192,3 +193,13 @@ async def delete_rider_endpoint(
 ):
     """Delete a rider, their profile, and profile image"""
     return await user_service.delete_rider(rider_id, db, current_user)
+
+
+@router.put("/notification", status_code=status.HTTP_202_ACCEPTED)
+async def register_for_push_notification(
+    push_token: Notification,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Delete a rider, their profile, and profile image"""
+    return await user_service.register_notification(push_token=push_token, db=db, current_user=current_user)
