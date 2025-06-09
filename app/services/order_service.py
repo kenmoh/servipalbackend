@@ -1311,6 +1311,7 @@ def format_delivery_response(
             "delivery_status": delivery.delivery_status.value,
             "sender_id": delivery.sender_id,
             "vendor_id": delivery.vendor_id,
+            "rider_id": delivery.rider_id,
             "dispatch_id": delivery.dispatch_id if delivery.dispatch_id else None,
             "distance": delivery.distance,
             "delivery_fee": delivery.delivery_fee,
