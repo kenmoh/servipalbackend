@@ -6,15 +6,16 @@ from datetime import datetime
 from pydantic import BaseModel
 
 from app.schemas.order_schema import OrderResponseSchema
+from app.schemas.status_schema import RequireDeliverySchema, DeliveryStatus
 
 
-class DeliveryStatus(str, Enum):
-    PENDING = "pending"
-    IN_TRANSIT = "in transit"
-    DELIVERED = "delivered"
-    CANCELLED = "cancelled"
-    RECEIVED = "received"
-    LAUNDRY_DELIVERES_TO_VENDOR = "delivered-to-vendor"
+# class DeliveryStatus(str, Enum):
+#     PENDING = "pending"
+#     IN_TRANSIT = "in transit"
+#     DELIVERED = "delivered"
+#     CANCELLED = "cancelled"
+#     RECEIVED = "received"
+#     LAUNDRY_DELIVERES_TO_VENDOR = "delivered-to-vendor"
 
 
 class DeliveryType(str, Enum):
