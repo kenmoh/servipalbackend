@@ -151,7 +151,7 @@ async def get_delivery_by_id(db: AsyncSession, delivery_id: UUID) -> DeliveryRes
     return delivery_response
 
 
-async def get_all_delivery(
+async def get_all_deliveries(
     db: AsyncSession, skip: int = 0, limit: int = 20
 ) -> list[DeliveryResponse]:
     """
