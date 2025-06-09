@@ -803,6 +803,9 @@ async def rider_accept_delivery_order(
         .returning(Delivery.delivery_status)
     )
 
+    await db.commit()
+    db.refresh(delivery)
+
     # Invalidate Cache
     invalidate_order_cache(delivery.order_id)
     redis_client.delete(f"user_orders:{delivery.sender_id}")
@@ -903,6 +906,9 @@ async def rider_mark_delivered(
         .values({"delivery_status": DeliveryStatus.DELIVERED})
         .returning(Delivery.delivery_status)
     )
+
+    await db.commit()
+    db.refresh(delivery)
 
     # Invalidate Cache
     invalidate_order_cache(delivery.order_id)
