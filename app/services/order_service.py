@@ -297,7 +297,7 @@ async def create_package_order(
                     "duration": data.duration,
                     "origin": data.origin,
                     "destination": data.destination,
-                    "sender_phone_number": current_user.user.phone_number
+                    "sender_phone_number": current_user.profile.phone_number
                 }
             )
             .returning(
@@ -503,7 +503,7 @@ async def order_food_or_request_laundy_service(
                         "amount_due_dispatch": amount_due_dispatch,
                         "origin": order_item.origin,
                         "destination": order_item.destination,
-                        "sender_phone_number": current_user.user.phone_number
+                        "sender_phone_number": current_user.profile.phone_number
                     }
                 )
                 .returning(Delivery.id)
@@ -797,7 +797,7 @@ async def rider_accept_delivery_order(
                 "delivery_status": DeliveryStatus.ACCEPT,
                 "rider_id": current_user.id,
                 "dispatch_id": dispatch_id,
-                "rider_phone_number": current_user.user.phone_number
+                "rider_phone_number": current_user.profile.phone_number
             }
         )
         .returning(Delivery.delivery_status)
