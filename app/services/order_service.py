@@ -963,7 +963,7 @@ async def rider_mark_delivered(
     db.refresh(delivery)
 
     # Invalidate Cache
-    invalidate_order_cache(delivery.order_id)
+    redis_client.delete(f'{delivery.order_id}')
     redis_client.delete(f"{ALL_DELIVERY}")
     redis_client.delete(f"user_orders:{delivery.sender_id}")
     if delivery.dispatch_id:
