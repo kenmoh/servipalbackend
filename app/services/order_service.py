@@ -847,7 +847,7 @@ async def sender_mark_delivery_in_transit(
         .returning(Delivery.delivery_status)
     )
 
-    dispatch_wallet = await fetch_wallet(db, dispatch_id)
+    dispatch_wallet = await fetch_wallet(db, delivery.dispatch_id)
     vendor_wallet = await fetch_wallet(db, delivery.vendor_id)
 
     # Move funds to escrow
