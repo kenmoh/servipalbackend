@@ -61,7 +61,7 @@ async def get_user_profile(db: AsyncSession, current_user: User):
     return result.scalar_one_or_none()
 
 
-
+ALL_DELIVERY = 'ALL_DELIVERY'
 
 async def filter_delivery_by_delivery_type(
     delivery_type: DeliveryType, db: AsyncSession, skip: int = 0, limit: int = 20
@@ -69,7 +69,7 @@ async def filter_delivery_by_delivery_type(
     """
     Get all deliveries by delivery type with pagination and caching
     """
-    cache_key = f"all_deliveries_by_type"
+    cache_key = f"all_delivery_by_type"
 
     # Try cache first
     cached_deliveries = redis_client.get(cache_key)
@@ -151,13 +151,13 @@ async def get_delivery_by_id(db: AsyncSession, delivery_id: UUID) -> DeliveryRes
     return delivery_response
 
 
-async def get_all_deliveries(
+async def get_all_delivery(
     db: AsyncSession, skip: int = 0, limit: int = 20
 ) -> list[DeliveryResponse]:
     """
     Get all deliveries with pagination and caching
     """
-    cache_key = f"all_deliveries"
+    cache_key = ALL_DELIVERY
 
     # Try cache first
     cached_deliveries = redis_client.get(cache_key)
@@ -331,7 +331,7 @@ async def create_package_order(
 
         invalidate_order_cache(delivery_data.order_id)
         redis_client.delete(f"user_orders:{current_user.id}")
-        redis_client.delete("all_deliveries")
+        redis_client.delete(f"{ALL_DELIVERY}")
         if hasattr(delivery_data, "vendor_id"):
             redis_client.delete(f"vendor_orders:{delivery_data.vendor_id}")
         else:
@@ -556,6 +556,8 @@ async def order_food_or_request_laundy_service(
                 )
             )
             order = (await db.execute(stmt)).scalar_one()
+
+            redis_client.delete(f"{ALL_DELIVERY}")
             return format_delivery_response(order, delivery=None)
 
     except Exception as e:
@@ -685,6 +687,8 @@ async def confirm_delivery_received(
         await db.commit()
         await db.refresh(delivery)
 
+        redis_client.delete(f"{ALL_DELIVERY}")
+
         return DeliveryStatusUpdateSchema(delivery_status=delivery.delivery_status)
     except Exception as e:
         await db.rollback()
@@ -762,7 +766,10 @@ async def cancel_delivery(
             await db.commit()
 
             delivery_result = result.scalar_one_or_none()
+
             invalidate_delivery_cache(delivery_result.id)
+            redis_client.delete(f"{ALL_DELIVERY}")
+
             return delivery_result
 
 
@@ -809,6 +816,7 @@ async def rider_accept_delivery_order(
     # Invalidate Cache
     invalidate_order_cache(delivery.order_id)
     redis_client.delete(f"user_orders:{delivery.sender_id}")
+    redis_client.delete(f"{ALL_DELIVERY}")
     if delivery.dispatch_id:
         redis_client.delete(f"dispatch_deliveries:{delivery.dispatch_id}")
         invalidate_rider_cache(delivery.id)
@@ -866,6 +874,7 @@ async def sender_mark_delivery_in_transit(
 
     # Invalidate Cache
     invalidate_order_cache(delivery.order_id)
+    redis_client.delete(f"{ALL_DELIVERY}")
     redis_client.delete(f"user_orders:{delivery.sender_id}")
     if delivery.dispatch_id:
         redis_client.delete(f"dispatch_deliveries:{delivery.dispatch_id}")
@@ -912,6 +921,7 @@ async def rider_mark_delivered(
 
     # Invalidate Cache
     invalidate_order_cache(delivery.order_id)
+    redis_client.delete(f"{ALL_DELIVERY}")
     redis_client.delete(f"user_orders:{delivery.sender_id}")
     if delivery.dispatch_id:
         redis_client.delete(f"dispatch_deliveries:{delivery.dispatch_id}")
@@ -989,6 +999,9 @@ async def sender_confirm_delivery_received(
         await db.commit()
         await db.refresh(delivery)
 
+
+        redis_client.delete(f"{ALL_DELIVERY}")
+        
         return DeliveryStatusUpdateSchema(delivery_status=delivery.delivery_status)
     except Exception as e:
         await db.rollback()
@@ -1041,6 +1054,7 @@ async def admin_modify_delivery_status(
         await db.refresh(delivery)
 
         invalidate_delivery_cache(delivery_id)
+        redis_client.delete('all_deliveries')
 
         return DeliveryStatusUpdateSchema(delivery_status=new_status)
 
