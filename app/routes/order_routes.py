@@ -50,10 +50,8 @@ async def send_item(
     current_user: User = Depends(get_current_user),
 ):
     try:
-        pickup_coords = [float(x.strip())
-                         for x in pickup_coordinates.split(",")]
-        dropoff_coords = [float(x.strip())
-                          for x in dropoff_coordinates.split(",")]
+        pickup_coords = [float(x.strip()) for x in pickup_coordinates.split(",")]
+        dropoff_coords = [float(x.strip()) for x in dropoff_coordinates.split(",")]
 
         if len(pickup_coords) != 2 or len(dropoff_coords) != 2:
             raise ValueError
@@ -118,8 +116,7 @@ async def sender_confirm_delivery_received(
             delivery_id=delivery_id,
         )
     except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
 
 @router.put("/{delivery_id}/accept-delivery", status_code=status.HTTP_202_ACCEPTED)
@@ -133,8 +130,7 @@ async def rider_accept_delivery(
             db=db, current_user=current_user, delivery_id=delivery_id
         )
     except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
 
 # @router.put("/{delivery_id}/in-transit", status_code=status.HTTP_202_ACCEPTED)
@@ -162,8 +158,7 @@ async def rider_mark_item_delivered(
             db=db, current_user=current_user, delivery_id=delivery_id
         )
     except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
 
 @router.put("/{delivery_id}/laundry-received", status_code=status.HTTP_202_ACCEPTED)
@@ -177,8 +172,7 @@ async def laundry_vendor_mark_item_received(
             db=db, current_user=current_user, delivery_id=delivery_id
         )
     except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
 
 @router.put(
@@ -196,8 +190,7 @@ async def admin_modify_delivery_status(
         )
 
     except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
 
 @router.put(
@@ -215,8 +208,7 @@ async def cancel_delivery(
         )
 
     except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
 
 @router.post(
@@ -235,5 +227,4 @@ async def add_review(
         )
 
     except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
