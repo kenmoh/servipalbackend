@@ -9,7 +9,13 @@ from fastapi import HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 import httpx
 from redis import Redis
-from exponent_server_sdk_async import AsyncPushClient, PushMessage, PushTicket, DeviceNotRegisteredError, PushServerError
+from exponent_server_sdk_async import (
+    AsyncPushClient,
+    PushMessage,
+    PushTicket,
+    DeviceNotRegisteredError,
+    PushServerError,
+)
 from app.models.models import ChargeAndCommission, User
 from app.schemas.status_schema import UserType, BankSchema
 from app.config.config import settings, redis_client
@@ -49,8 +55,7 @@ async def verify_transaction_tx_ref(tx_ref: str):
             response_data = response.json()
             return response_data
     except httpx.HTTPStatusError as e:
-        raise HTTPException(
-            status_code=502, detail=f"Payment gateway error: {str(e)}")
+        raise HTTPException(status_code=502, detail=f"Payment gateway error: {str(e)}")
     except Exception as e:
         raise HTTPException(
             status_code=500, detail=f"Failed to verify transaction reference: {str(e)}"
@@ -81,8 +86,7 @@ async def get_payment_link(id: UUID, amount: Decimal, current_user: User):
 
         return link
     except httpx.HTTPStatusError as e:
-        raise HTTPException(
-            status_code=502, detail=f"Payment gateway error: {str(e)}")
+        raise HTTPException(status_code=502, detail=f"Payment gateway error: {str(e)}")
     except Exception as e:
         raise HTTPException(
             status_code=500, detail=f"Failed to generate payment link: {str(e)}"
@@ -112,8 +116,7 @@ async def get_fund_wallet_payment_link(id: UUID, amount: Decimal, current_user: 
 
         return link
     except httpx.HTTPStatusError as e:
-        raise HTTPException(
-            status_code=502, detail=f"Payment gateway error: {str(e)}")
+        raise HTTPException(status_code=502, detail=f"Payment gateway error: {str(e)}")
     except Exception as e:
         raise HTTPException(
             status_code=500, detail=f"Failed to generate payment link: {str(e)}"
@@ -135,8 +138,7 @@ async def get_all_banks() -> list[BankSchema]:
 
             sorted_banks = sorted(banks, key=lambda bank: bank["name"])
 
-            redis_client.set(cache_key, json.dumps(
-                sorted_banks, default=str), ex=86400)
+            redis_client.set(cache_key, json.dumps(sorted_banks, default=str), ex=86400)
             return sorted_banks
 
     except httpx.HTTPStatusError as e:
@@ -399,8 +401,7 @@ async def resolve_account_details(
         httpx.RequestError: If there's a network error
     """
 
-    payload = {"account_number": data.account_number,
-               "account_bank": data.account_bank}
+    payload = {"account_number": data.account_number, "account_bank": data.account_bank}
 
     headers = {
         "accept": "application/json",
@@ -432,8 +433,7 @@ async def resolve_account_details(
                 return formatted_response
 
         except httpx.HTTPStatusError as e:
-            print(
-                f"HTTP error occurred: {e.response.status_code} - {e.response.text}")
+            print(f"HTTP error occurred: {e.response.status_code} - {e.response.text}")
             raise
         except httpx.RequestError as e:
             print(f"Request error occurred: {e}")
@@ -443,7 +443,8 @@ async def resolve_account_details(
 async def send_push_message(token, message, extra=None):
     try:
         response = AsyncPushClient().publish(
-            PushMessage(to=token, body=message, data=extra))
+            PushMessage(to=token, body=message, data=extra)
+        )
         return response
     except PushServerError:
         # Encountered some likely formatting/validation error.
@@ -453,11 +454,19 @@ async def send_push_message(token, message, extra=None):
         )
 
 
-async def send_push_notification(tokens: list[str], message: str, title: str, extra=None, navigate_to=None):
+async def send_push_notification(
+    tokens: list[str], message: str, title: str, extra=None, navigate_to=None
+):
     push_client = AsyncPushClient()
     push_messages = [
-        PushMessage(to=token, body=message, data={
-                    'extra': extra, 'navigate_to': navigate_to}, title=title, sound='default') for token in tokens
+        PushMessage(
+            to=token,
+            body=message,
+            data={"extra": extra, "navigate_to": navigate_to},
+            title=title,
+            sound="default",
+        )
+        for token in tokens
     ]
 
     try:
@@ -465,18 +474,20 @@ async def send_push_notification(tokens: list[str], message: str, title: str, ex
 
         for ticket in push_tickets:
             if ticket.is_success():
-                logger.info('Notification sent to: {}', ticket.push_message.to)
+                logger.info("Notification sent to: {}", ticket.push_message.to)
             else:
                 logger.warn(
-                    'Error sending notification to: {}, Error: {},', ticket.push_message.to)
+                    "Error sending notification to: {}, Error: {},",
+                    ticket.push_message.to,
+                )
     except PushServerError as e:
-        logger.error('Push Server Error: {}',  e)
+        logger.error("Push Server Error: {}", e)
         raise
     except DeviceNotRegisteredError as e:
-        logger.error('Device not registered error: {}', e)
+        logger.error("Device not registered error: {}", e)
         raise
     except PushTicket as e:
-        logger.error('Push ticket error: {}', e)
+        logger.error("Push ticket error: {}", e)
 
     # async def send_welcome_email(subject: str, email_to: EmailStr, body: dict, temp_name: str):
     #     message = MessageSchema(

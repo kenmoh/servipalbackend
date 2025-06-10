@@ -392,6 +392,7 @@ class Transaction(Base):
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
     wallet_id: Mapped[UUID] = mapped_column(ForeignKey("wallets.id"))
     amount: Mapped[Decimal] = mapped_column(default=0.00)
+    payment_by: Mapped[str] = mapped_column(nullable=True)
     transaction_type: Mapped[TransactionType]
     payment_status: Mapped[PaymentStatus] = mapped_column(
         default=PaymentStatus.PENDING)

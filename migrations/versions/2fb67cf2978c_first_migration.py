@@ -258,7 +258,7 @@ def upgrade() -> None:
         ),
         sa.PrimaryKeyConstraint("id"),
     )
-    
+
     op.create_table(
         "item_images",
         sa.Column("id", sa.Uuid(), nullable=False),

@@ -85,8 +85,7 @@ async def get_users(db: AsyncSession) -> list[UserProfileResponse]:
 
         if not users:
             # Cache empty result to avoid repeated DB queries
-            redis_client.set("all_users", json.dumps(
-                [], default=str), ex=CACHE_TTL)
+            redis_client.set("all_users", json.dumps([], default=str), ex=CACHE_TTL)
             return []
 
         # Convert to your exact response format
@@ -126,8 +125,7 @@ async def get_users(db: AsyncSession) -> list[UserProfileResponse]:
             users_data.append(user_data)
 
         # Cache the users data
-        redis_client.set("all_users", json.dumps(
-            users_data, default=str), ex=CACHE_TTL)
+        redis_client.set("all_users", json.dumps(users_data, default=str), ex=CACHE_TTL)
 
         # Convert to response objects
         return [UserProfileResponse(**user_data) for user_data in users_data]
@@ -237,8 +235,7 @@ async def update_rider_profile(
         )
 
     # Get the rider and verify it was created by the current dispatch
-    stmt = select(User).where(User.id == rider_id).options(
-        selectinload(User.profile))
+    stmt = select(User).where(User.id == rider_id).options(selectinload(User.profile))
     result = await db.execute(stmt)
     rider = result.scalar_one_or_none()
 
@@ -476,8 +473,7 @@ async def get_restaurant_vendors(
             serializable_response.append(vendor_dict)
 
         redis_client.setex(
-            cache_key, CACHE_TTL, json.dumps(
-                serializable_response, default=str)
+            cache_key, CACHE_TTL, json.dumps(serializable_response, default=str)
         )
 
         return response
@@ -607,8 +603,7 @@ async def upload_image_profile(
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail="Failed to upload backdrop image",
                 )
-            logger.info(
-                f"New backdrop image uploaded: {new_backdrop_image_url}")
+            logger.info(f"New backdrop image uploaded: {new_backdrop_image_url}")
 
         # Handle profile image creation/update
         if profile.profile_image:
@@ -652,8 +647,7 @@ async def upload_image_profile(
             and new_profile_image_url
             and old_profile_url != new_profile_image_url
         ):
-            logger.info(
-                f"Scheduling deletion of old profile image: {old_profile_url}")
+            logger.info(f"Scheduling deletion of old profile image: {old_profile_url}")
             background_task.add_task(delete_s3_object, old_profile_url)
 
         if (
@@ -864,8 +858,7 @@ async def get_dispatcher_riders(
             riders.append(rider_data)
 
         # Cache the results
-        redis_client.setex(cache_key, CACHE_TTL,
-                           json.dumps(riders, default=str))
+        redis_client.setex(cache_key, CACHE_TTL, json.dumps(riders, default=str))
         return [DispatchRiderSchema(**rider) for rider in riders]
 
     except Exception as e:
@@ -969,8 +962,7 @@ async def delete_rider(rider_id: UUID, db: AsyncSession, current_user: User) -> 
 
         # Handle deliveries - you might want to set status to "cancelled" instead of deleting
         await db.execute(
-            update(Delivery).where(Delivery.rider_id ==
-                                   rider_id).values(rider_id=None)
+            update(Delivery).where(Delivery.rider_id == rider_id).values(rider_id=None)
         )
 
         # # Delete profile image
@@ -1014,14 +1006,17 @@ async def register_notification(
     db: AsyncSession,
     current_user: User,
 ) -> Notification:
-
     result = await db.execute(select(User).where(User.id == current_user.id))
 
     user = result.scalar_one_or_none()
 
     if not user.notification_token:
         # Add notification token if not exists
-        await db.execute(update(User).where(User.id == current_user.id).values({'notification_token': push_token.notification_token}))
+        await db.execute(
+            update(User)
+            .where(User.id == current_user.id)
+            .values({"notification_token": push_token.notification_token})
+        )
         user.notification_token = push_token.notification_token
 
     # else:

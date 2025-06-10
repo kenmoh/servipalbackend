@@ -12,8 +12,8 @@ import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
 
 # revision identifiers, used by Alembic.
-revision: str = 'c311e853753b'
-down_revision: Union[str, None] = '99ae0b8f61a0'
+revision: str = "c311e853753b"
+down_revision: Union[str, None] = "99ae0b8f61a0"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
@@ -37,27 +37,39 @@ depends_on: Union[str, Sequence[str], None] = None
 #                existing_nullable=False)
 #     # ### end Alembic commands ###
 
+
 def upgrade() -> None:
     """Upgrade schema."""
     # Create the correctly named enum with new value
-    op.execute("CREATE TYPE deliverystatus AS ENUM ('ACCEPT', 'PENDING', 'IN_TRANSIT', 'DELIVERED', 'RECEIVED', 'VENDOR_RECEIVED_LAUNDRY_ITEM', 'CANCELLED')")
-    
+    op.execute(
+        "CREATE TYPE deliverystatus AS ENUM ('ACCEPT', 'PENDING', 'IN_TRANSIT', 'DELIVERED', 'RECEIVED', 'VENDOR_RECEIVED_LAUNDRY_ITEM', 'CANCELLED')"
+    )
+
     # Update column to use the new enum
-    op.execute("ALTER TABLE deliveries ALTER COLUMN delivery_status TYPE deliverystatus USING delivery_status::text::deliverystatus")
-    
+    op.execute(
+        "ALTER TABLE deliveries ALTER COLUMN delivery_status TYPE deliverystatus USING delivery_status::text::deliverystatus"
+    )
+
     # Drop the old misspelled enum
     op.execute("DROP TYPE delivertystatus")
+
 
 def downgrade() -> None:
     """Downgrade schema."""
     # Recreate the old enum with typo
-    op.execute("CREATE TYPE delivertystatus AS ENUM ('PENDING', 'IN_TRANSIT', 'DELIVERED', 'RECEIVED', 'VENDOR_RECEIVED_LAUNDRY_ITEM', 'CANCELLED')")
-    
+    op.execute(
+        "CREATE TYPE delivertystatus AS ENUM ('PENDING', 'IN_TRANSIT', 'DELIVERED', 'RECEIVED', 'VENDOR_RECEIVED_LAUNDRY_ITEM', 'CANCELLED')"
+    )
+
     # Handle ACCEPT values before reverting
-    op.execute("UPDATE deliveries SET delivery_status = 'PENDING' WHERE delivery_status = 'ACCEPT'")
-    
+    op.execute(
+        "UPDATE deliveries SET delivery_status = 'PENDING' WHERE delivery_status = 'ACCEPT'"
+    )
+
     # Revert column
-    op.execute("ALTER TABLE deliveries ALTER COLUMN delivery_status TYPE delivertystatus USING delivery_status::text::delivertystatus")
-    
+    op.execute(
+        "ALTER TABLE deliveries ALTER COLUMN delivery_status TYPE delivertystatus USING delivery_status::text::delivertystatus"
+    )
+
     # Drop the corrected enum
     op.execute("DROP TYPE deliverystatus")

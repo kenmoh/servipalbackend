@@ -202,4 +202,6 @@ async def register_for_push_notification(
     current_user: User = Depends(get_current_user),
 ):
     """Delete a rider, their profile, and profile image"""
-    return await user_service.register_notification(push_token=push_token, db=db, current_user=current_user)
+    return await user_service.register_notification(
+        push_token=push_token, db=db, current_user=current_user
+    )

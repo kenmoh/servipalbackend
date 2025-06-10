@@ -315,7 +315,6 @@ async def create_new_rider(
         )
 
 
-
 async def create_session(db: AsyncSession, user_id: UUID, request: Request) -> Session:
     """Create new session record"""
     session = Session(
