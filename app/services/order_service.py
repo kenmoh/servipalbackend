@@ -724,12 +724,12 @@ async def cancel_delivery(
             token = get_user_notification_token(
                 db=db, user_id=delivery.vendor_id)
 
-            await send_push_notification(
-                tokens=[token],
-                title="Order canceled",
-                message="Your Order has been canceled",
-                navigate_to="/delivery/orders",
-            )
+            # await send_push_notification(
+            #     tokens=[token],
+            #     title="Order canceled",
+            #     message="Your Order has been canceled",
+            #     navigate_to="/delivery/orders",
+            # )
 
             return delivery_result
 
@@ -842,12 +842,12 @@ async def rider_accept_delivery_order(
 
     token = get_user_notification_token(db=db, user_id=delivery.sender_id)
 
-    await send_push_notification(
-        tokens=[token],
-        title="Order Assigned",
-        message=f"Your order has been assigned to {current_user.profile.full_name}, {current_user.profile.phone_number}",
-        navigate_to="/delivery/orders",
-    )
+    # await send_push_notification(
+    #     tokens=[token],
+    #     title="Order Assigned",
+    #     message=f"Your order has been assigned to {current_user.profile.full_name}, {current_user.profile.phone_number}",
+    #     navigate_to="/delivery/orders",
+    # )
 
     return DeliveryStatusUpdateSchema(delivery_status=delivery.delivery_status)
 
@@ -1007,12 +1007,12 @@ async def sender_confirm_delivery_received(
         token = get_user_notification_token(db=db, user_id=delivery.rider_id)
         dispatch_token = get_user_notification_token(
             db=db, user_id=delivery.dispatch_id)
-        await send_push_notification(
-            tokens=[token, dispatch_token],
-            title="Order completed",
-            message=f"Congratulations! Order completed. {delivery.amount_due_dispatch} has been released to your wallet",
-            navigate_to="/delivery/orders",
-        )
+        # await send_push_notification(
+        #     tokens=[token, dispatch_token],
+        #     title="Order completed",
+        #     message=f"Congratulations! Order completed. {delivery.amount_due_dispatch} has been released to your wallet",
+        #     navigate_to="/delivery/orders",
+        # )
 
         return DeliveryStatusUpdateSchema(delivery_status=delivery.delivery_status)
 
@@ -1100,12 +1100,12 @@ async def vendor_mark_laundry_item_received(
         token = get_user_notification_token(db=db, user_id=delivery.rider_id)
         dispatch_token = get_user_notification_token(
             db=db, user_id=delivery.dispatch_id)
-        await send_push_notification(
-            tokens=[token, dispatch_token],
-            title="Order completed",
-            message=f"Congratulations! Order complete. Your wallet has been credited with NGN {dispatch_amount}",
-            navigate_to="/delivery/orders",
-        )
+        # await send_push_notification(
+        #     tokens=[token, dispatch_token],
+        #     title="Order completed",
+        #     message=f"Congratulations! Order complete. Your wallet has been credited with NGN {dispatch_amount}",
+        #     navigate_to="/delivery/orders",
+        # )
 
         return DeliveryStatusUpdateSchema(delivery_status=delivery.delivery_status)
 
@@ -1145,6 +1145,15 @@ async def rider_mark_delivered(
 
         await db.commit()
         await db.refresh(delivery)
+
+    token = get_user_notification_token(db=db, user_id=delivery.rider_id)
+
+    await send_push_notification(
+        tokens=[token],
+        title="Order Delivered",
+        message=f"Your order has been delivered. Please confirm with the receipient before marking as received.",
+        navigate_to="/delivery/orders",
+    )
 
     return DeliveryStatusUpdateSchema(delivery_status=delivery.delivery_status)
 
