@@ -1149,12 +1149,12 @@ async def rider_mark_delivered(
 
     token = get_user_notification_token(db=db, user_id=delivery.rider_id)
 
-    await send_push_notification(
-        tokens=[token],
-        title="Order Delivered",
-        message=f"Your order has been delivered. Please confirm with the receipient before marking as received.",
-        navigate_to="/delivery/orders",
-    )
+    # await send_push_notification(
+    #     tokens=[token],
+    #     title="Order Delivered",
+    #     message=f"Your order has been delivered. Please confirm with the receipient before marking as received.",
+    #     navigate_to="/delivery/orders",
+    # )
 
     return DeliveryStatusUpdateSchema(delivery_status=delivery.delivery_status)
 
