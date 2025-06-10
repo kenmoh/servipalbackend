@@ -1121,6 +1121,7 @@ async def rider_mark_delivered(
     result = await db.execute(
         select(Delivery)
         .where(Delivery.id == delivery_id)
+        .where(or_(Delivery.rider_id==current_user.id, Delivery.dispatch_id==current_user.id))
         .options(selectinload(Delivery.order))
     )
 
@@ -1129,11 +1130,11 @@ async def rider_mark_delivered(
     if not delivery:
         raise HTTPException(status_code=404, detail="Delivery not found.")
     if (
-        current_user.user_type not in [UserType.RIDER, UserType.DISPATCH]
-        or delivery.sender_id != current_user.id
+        current_user.user_type not in [UserType.RIDER, UserType.DISPATCH] and
+        (delivery.rider_id != current_user.id or delivery.dispatch_id != current_user.id)
     ):
         raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized"
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="You are not allowed to perform this action."
         )
 
     if delivery.delivery_status == DeliveryStatus.ACCEPT:
