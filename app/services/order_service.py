@@ -862,17 +862,20 @@ async def sender_confirm_delivery_received(
     )
     delivery = result.scalar_one_or_none()
     if not delivery:
-        raise HTTPException(status_code=404, detail="Delivery not found.")
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Delivery not found.")
     if (
         current_user.user_type not in [UserType.CUSTOMER, UserType.VENDOR]
         or delivery.sender_id != current_user.id
     ):
-        raise HTTPException(status_code=403, detail="Unauthorized.")
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You are not allowed to perform this action.")
+    
     if delivery.delivery_status != DeliveryStatus.DELIVERED:
         raise HTTPException(
-            status_code=400, detail="Delivery is not yet completed.")
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Delivery is not yet completed.")
 
-    profile = get_user_profile(delivery.sender_id, db=db)
+    dispatch_profile = await get_user_profile(delivery.dispatch_id, db=db)
+
+    vendor_profile = await get_user_profile(delivery.vendor_id, db=db)
 
     sender = (
         current_user.profile.full_name
@@ -902,7 +905,6 @@ async def sender_confirm_delivery_received(
                         "balance": dispatch_wallet.balance + dispatch_amount,
                         "escrow_balance": dispatch_wallet.escrow_balance
                         - dispatch_amount,
-                        "payment_by": sender,
                     }
                 )
             )
@@ -912,11 +914,8 @@ async def sender_confirm_delivery_received(
                 .where(Wallet.id == delivery.sender_id)
                 .values(
                     {
-                        "escrow_balance": dispatch_wallet.escrow_balance
-                        - dispatch_amount,
-                        "payment_by": profile.full_name
-                        if profile.full_name
-                        else profile.business_name,
+                        "escrow_balance": sender_wallet.escrow_balance
+                        - delivery.delivery_fee,
                     }
                 )
             )
@@ -930,6 +929,7 @@ async def sender_confirm_delivery_received(
                 dispatch_wallet.id,
                 dispatch_amount,
                 TransactionType.CREDIT,
+                payment_by=sender,
             )
 
             await create_wallet_transaction(
@@ -937,9 +937,11 @@ async def sender_confirm_delivery_received(
                 sender_wallet.id,
                 delivery.order.total_price,
                 TransactionType.DEBIT,
+                payment_by=dispatch_profile.full_name if dispatch_profile.full_name else dispatch_profile.business_name,
             )
 
         if delivery.delivery_type in [DeliveryType.FOOD, DeliveryType.LAUNDRY]:
+
             # update wallet
             await db.execute(
                 update(Wallet)
@@ -968,8 +970,8 @@ async def sender_confirm_delivery_received(
                 .where(Wallet.id == delivery.sender_id)
                 .values(
                     {
-                        "escrow_balance": dispatch_wallet.escrow_balance
-                        - dispatch_amount,
+                        "escrow_balance": sender_wallet.escrow_balance
+                        - delivery.order.total_price,
                     }
                 )
             )
@@ -998,9 +1000,9 @@ async def sender_confirm_delivery_received(
                 sender_wallet.id,
                 delivery.order.total_price,
                 TransactionType.DEBIT,
-                payment_by=profile.full_name
-                if profile.full_name
-                else profile.business_name,
+                payment_by=vendor_profile.full_name
+                if vendor_profile.full_name
+                else vendor_profile.business_name,
             )
 
         # redis_client.delete(f"{ALL_DELIVERY}")
