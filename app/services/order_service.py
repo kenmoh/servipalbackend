@@ -999,6 +999,110 @@ async def sender_confirm_delivery_received(
             status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
 
+async def vendor_mark_laundry_item_received(
+    db: AsyncSession, delivery_id: UUID, current_user: User
+) -> DeliveryStatusUpdateSchema:
+    result = await db.execute(
+        select(Delivery)
+        .where(Delivery.id == delivery_id)
+        .options(selectinload(Delivery.order))
+    )
+    delivery = result.scalar_one_or_none()
+
+    if not delivery:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Delivery not found.")
+
+    if current_user.user_type != UserType.VENDOR and current_user.id != delivery.order.vendor_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail="Unauthorized.")
+
+    if delivery.delivery_status != DeliveryStatus.DELIVERED:
+        raise HTTPException(
+            status_code=400, detail="Delivery is not yet completed.")
+
+    profile = get_user_profile(delivery.sender_id, db=db)
+
+    try:
+        delivery.delivery_status = DeliveryStatus.VENDOR_RECEIVED_LAUNDRY_ITEM
+
+        # Get wallets
+        dispatch_wallet = await fetch_wallet(db, delivery.dispatch_id)
+
+        # Calculate amounts to release from escrow
+        dispatch_amount = delivery.amount_due_dispatch or 0
+
+        # update wallet
+        await db.execute(update(Wallet).where(Wallet.id == delivery.dispatch_id).values({
+            'balance': dispatch_wallet.balance + dispatch_amount,
+            "escrow_balance": dispatch_wallet.escrow_balance - dispatch_amount,
+        }))
+
+        await db.execute(update(Wallet).where(Wallet.id == delivery.sender_id).values({
+            "escrow_balance": dispatch_wallet.escrow_balance - dispatch_amount,
+
+        }))
+
+        await db.commit()
+        await db.refresh(delivery)
+
+        # create transactions
+        await create_wallet_transaction(
+            db,
+            dispatch_wallet.id,
+            dispatch_amount,
+            TransactionType.CREDIT,
+            payment_by=profile.full_name if profile.full_name else profile.business_name
+        )
+
+        # redis_client.delete(f"{ALL_DELIVERY}")
+        token = get_user_notification_token(db=db, user_id=current_user.id)
+        await send_push_notification(
+            tokens=[token],
+            title="Order completed",
+            message="Congratulations! Order complete. Fund has been released to your wallet",
+            navigate_to="/delivery/orders",
+        )
+
+        return DeliveryStatusUpdateSchema(delivery_status=delivery.delivery_status)
+
+    except Exception as e:
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+
+
+async def rider_mark_delivered(delivery_id: UUID, current_user: User, db: AsyncSession) -> DeliveryStatusUpdateSchema:
+
+    result = await db.execute(
+        select(Delivery)
+        .where(Delivery.id == delivery_id)
+        .options(selectinload(Delivery.order))
+    )
+
+    delivery = result.scalar_one_or_none()
+
+    if not delivery:
+        raise HTTPException(status_code=404, detail="Delivery not found.")
+    if (
+        current_user.user_type not in [UserType.RIDER, UserType.DISPATCH]
+        or delivery.sender_id != current_user.id
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail='Unauthorized')
+
+    if delivery.delivery_status == DeliveryStatus.ACCEPT:
+        await db.execute(update(Delivery).where(Delivery.id == delivery_id).values({
+            'delivery_status': DeliveryStatus.DELIVERED
+
+        }))
+
+        await db.commit()
+        await db.refresh(delivery)
+
+    return DeliveryStatusUpdateSchema(delivery_status=delivery.delivery_status)
+
+
 # <<<--- admin_modify_delivery_status --->>>
 async def admin_modify_delivery_status(
     db: AsyncSession, delivery_id: UUID, new_status: DeliveryStatus, current_user: dict

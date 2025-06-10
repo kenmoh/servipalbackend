@@ -35,7 +35,7 @@ class DeliveryStatus(str, Enum):
     ACCEPT: str = "accept"  # Rider/Dispatch ops
     PENDING: str = "pending"  # Default
     IN_TRANSIT: str = "in_transit"  # Sender ops (remove)
-    DELIVERED: str = "delivered"  # Rider/Dispatch ops(remove)
+    DELIVERED: str = "delivered"  # Rider/Dispatch ops
     RECEIVED: str = "received"  # Sender ops
     VENDOR_RECEIVED_LAUNDRY_ITEM: str = "laundry_received"  # Vendor ops
     CANCELLED: str = "canceled"  # Vendor/Rider/Dispath ops
