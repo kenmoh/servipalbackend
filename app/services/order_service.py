@@ -642,81 +642,81 @@ async def get_order_with_items(
     return OrderItemResponseSchema(**order_data)
 
 
-async def confirm_delivery_received(
-    db: AsyncSession, delivery_id: UUID, current_user: User
-) -> DeliveryStatusUpdateSchema:
-    result = await db.execute(
-        select(Delivery)
-        .where(Delivery.id == delivery_id)
-        .options(selectinload(Delivery.order))
-    )
-    delivery = result.scalar_one_or_none()
+# async def confirm_delivery_received(
+#     db: AsyncSession, delivery_id: UUID, current_user: User
+# ) -> DeliveryStatusUpdateSchema:
+#     result = await db.execute(
+#         select(Delivery)
+#         .where(Delivery.id == delivery_id)
+#         .options(selectinload(Delivery.order))
+#     )
+#     delivery = result.scalar_one_or_none()
 
-    if not delivery:
-        raise HTTPException(status_code=404, detail="Delivery not found.")
+#     if not delivery:
+#         raise HTTPException(status_code=404, detail="Delivery not found.")
 
-    if (
-        current_user.user_type not in [UserType.CUSTOMER, UserType.VENDOR]
-        or delivery.sender_id != current_user.id
-    ):
-        raise HTTPException(status_code=403, detail="Unauthorized.")
+#     if (
+#         current_user.user_type not in [UserType.CUSTOMER, UserType.VENDOR]
+#         or delivery.sender_id != current_user.id
+#     ):
+#         raise HTTPException(status_code=403, detail="Unauthorized.")
 
-    if delivery.delivery_status != DeliveryStatus.DELIVERED:
-        raise HTTPException(
-            status_code=400, detail="Delivery is not yet completed.")
+#     if delivery.delivery_status != DeliveryStatus.DELIVERED:
+#         raise HTTPException(
+#             status_code=400, detail="Delivery is not yet completed.")
 
-    try:
-        delivery.delivery_status = DeliveryStatus.RECEIVED
+#     try:
+#         delivery.delivery_status = DeliveryStatus.RECEIVED
 
-        dispatch_wallet = await fetch_wallet(db, delivery.dispatch_id)
-        vendor_wallet = await fetch_wallet(db, delivery.vendor_id)
+#         dispatch_wallet = await fetch_wallet(db, delivery.dispatch_id)
+#         vendor_wallet = await fetch_wallet(db, delivery.vendor_id)
 
-        dispatch_escrow = dispatch_wallet.escrow_balance or 0
-        vendor_escrow = vendor_wallet.escrow_balance or 0
+#         dispatch_escrow = dispatch_wallet.escrow_balance or 0
+#         vendor_escrow = vendor_wallet.escrow_balance or 0
 
-        # Dispatch payment
-        dispatch_tx = await create_wallet_transaction(
-            db,
-            dispatch_wallet.id,
-            delivery.amount_due_dispatch or 0,
-            TransactionType.CREDIT,
-        )
-        await update_wallet_balance(
-            db,
-            wallet_id=dispatch_wallet.id,
-            new_balance=dispatch_wallet.balance + dispatch_tx.amount,
-            escrow_balance=dispatch_escrow,
-        )
+#         # Dispatch payment
+#         dispatch_tx = await create_wallet_transaction(
+#             db,
+#             dispatch_wallet.id,
+#             delivery.amount_due_dispatch or 0,
+#             TransactionType.CREDIT,
+#         )
+#         await update_wallet_balance(
+#             db,
+#             wallet_id=dispatch_wallet.id,
+#             new_balance=dispatch_wallet.balance + dispatch_tx.amount,
+#             escrow_balance=dispatch_escrow - dispatch_tx.amount
+#         )
 
-        # Vendor payment
-        vendor_tx = await create_wallet_transaction(
-            db,
-            vendor_wallet.id,
-            delivery.order.amount_due_vendor or 0,
-            TransactionType.CREDIT,
-        )
-        await update_wallet_balance(
-            db,
-            wallet_id=vendor_wallet.id,
-            new_balance=vendor_wallet.balance + vendor_tx.amount,
-            escrow_balance=vendor_escrow,
-        )
+#         # Vendor payment
+#         vendor_tx = await create_wallet_transaction(
+#             db,
+#             vendor_wallet.id,
+#             delivery.order.amount_due_vendor or 0,
+#             TransactionType.CREDIT,
+#         )
+#         await update_wallet_balance(
+#             db,
+#             wallet_id=vendor_wallet.id,
+#             new_balance=vendor_wallet.balance + vendor_tx.amount,
+#             escrow_balance=vendor_escrow - vendor_tx.amount
+#         )
 
-        await db.commit()
-        await db.refresh(delivery)
+#         await db.commit()
+#         await db.refresh(delivery)
 
-        redis_client.delete(f"{ALL_DELIVERY}")
+#         redis_client.delete(f"{ALL_DELIVERY}")
 
-        token = get_user_notification_token(
-            db=db, user_id=current_user.id)
+#         token = get_user_notification_token(
+#             db=db, user_id=current_user.id)
 
-        await send_push_notification(tokens=[token], title='Order completed', message='Congratulations! Order complete. Fund has been released to your wallet', navigate_to='/delivery/orders')
+#         await send_push_notification(tokens=[token], title='Order completed', message='Congratulations! Order complete. Fund has been released to your wallet', navigate_to='/delivery/orders')
 
-        return DeliveryStatusUpdateSchema(delivery_status=delivery.delivery_status)
-    except Exception as e:
-        await db.rollback()
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+#         return DeliveryStatusUpdateSchema(delivery_status=delivery.delivery_status)
+#     except Exception as e:
+#         await db.rollback()
+#         raise HTTPException(
+#             status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
 
 async def cancel_delivery(
@@ -844,17 +844,6 @@ async def rider_accept_delivery_order(
     await db.commit()
     db.refresh(delivery)
 
-    # Invalidate Cache
-    invalidate_order_cache(delivery.order_id)
-    redis_client.delete(f"user_orders:{delivery.sender_id}")
-    redis_client.delete(f"{ALL_DELIVERY}")
-    if delivery.dispatch_id:
-        redis_client.delete(f"dispatch_deliveries:{delivery.dispatch_id}")
-        invalidate_rider_cache(delivery.id)
-    if delivery.rider_id:
-        redis_client.delete(f"rider_deliveries:{delivery.rider_id}")
-        invalidate_rider_cache(delivery.rider_id)
-
     token = get_user_notification_token(
         db=db, user_id=delivery.vendor_id)
 
@@ -908,17 +897,6 @@ async def sender_mark_delivery_in_transit(
 
     await db.commit()
     await db.refresh(delivery)
-
-    # Invalidate Cache
-    invalidate_order_cache(delivery.order_id)
-    redis_client.delete(f"{ALL_DELIVERY}")
-    redis_client.delete(f"user_orders:{delivery.sender_id}")
-    if delivery.dispatch_id:
-        redis_client.delete(f"dispatch_deliveries:{delivery.dispatch_id}")
-        invalidate_rider_cache(delivery.id)
-    if delivery.rider_id:
-        redis_client.delete(f"rider_deliveries:{delivery.rider_id}")
-        invalidate_rider_cache(delivery.rider_id)
 
     token = get_user_notification_token(
         db=db, user_id=delivery.rider_id)
@@ -987,76 +965,163 @@ async def sender_confirm_delivery_received(
     result = await db.execute(
         select(Delivery)
         .where(Delivery.id == delivery_id)
-        .where(Delivery.sender_id == current_user.id)
+        .options(selectinload(Delivery.order))
     )
     delivery = result.scalar_one_or_none()
-
     if not delivery:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Delivery not found.")
-
+        raise HTTPException(status_code=404, detail="Delivery not found.")
     if (
         current_user.user_type not in [UserType.CUSTOMER, UserType.VENDOR]
         or delivery.sender_id != current_user.id
     ):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN, detail="Unauthorized.")
-
+        raise HTTPException(status_code=403, detail="Unauthorized.")
     if delivery.delivery_status != DeliveryStatus.DELIVERED:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
-                            detail="Delivery is still in transit")
-
+        raise HTTPException(
+            status_code=400, detail="Delivery is not yet completed.")
+    
     try:
-        await db.execute(
-            update(Delivery)
-            .where(Delivery.id == delivery_id)
-            .values({"delivery_status": DeliveryStatus.RECEIVED})
-            .returning(Delivery.delivery_status)
-        )
+        delivery.delivery_status = DeliveryStatus.RECEIVED
+        
+        # Get wallets
         dispatch_wallet = await fetch_wallet(db, delivery.dispatch_id)
         vendor_wallet = await fetch_wallet(db, delivery.vendor_id)
-
-        dispatch_escrow = dispatch_wallet.escrow_balance or 0
-        vendor_escrow = vendor_wallet.escrow_balance or 0
-
-        # Dispatch payment
+        
+        # Calculate amounts to release from escrow
+        dispatch_amount = delivery.amount_due_dispatch or 0
+        vendor_amount = delivery.order.amount_due_vendor or 0
+        
+        # Dispatch payment - release from escrow to balance
         dispatch_tx = await create_wallet_transaction(
             db,
             dispatch_wallet.id,
-            delivery.amount_due_dispatch or 0,
+            dispatch_amount,
             TransactionType.CREDIT,
         )
-        await update_wallet_balance(
+        
+        # Update dispatch wallet: increase balance, decrease escrow
+        new_dispatch_balance = dispatch_wallet.balance + dispatch_amount
+        new_dispatch_escrow = dispatch_wallet.escrow_balance - dispatch_amount
+        
+        await update_wallet_balance_and_escrow(
             db,
             wallet_id=dispatch_wallet.id,
-            new_balance=dispatch_wallet.balance + dispatch_tx.amount,
-            escrow_balance=dispatch_escrow,
+            new_balance=new_dispatch_balance,
+            new_escrow_balance=new_dispatch_escrow
         )
-
-        # Vendor payment
+        
+        # Vendor payment - release from escrow to balance
         vendor_tx = await create_wallet_transaction(
             db,
             vendor_wallet.id,
-            delivery.order.amount_due_vendor or 0,
+            vendor_amount,
             TransactionType.CREDIT,
         )
-        await update_wallet_balance(
+        
+        # Update vendor wallet: increase balance, decrease escrow
+        new_vendor_balance = vendor_wallet.balance + vendor_amount
+        new_vendor_escrow = vendor_wallet.escrow_balance - vendor_amount
+        
+        await update_wallet_balance_and_escrow(
             db,
             wallet_id=vendor_wallet.id,
-            new_balance=vendor_wallet.balance + vendor_tx.amount,
-            escrow_balance=vendor_escrow,
+            new_balance=new_vendor_balance,
+            new_escrow_balance=new_vendor_escrow
         )
-
+        
         await db.commit()
         await db.refresh(delivery)
-
+        
         redis_client.delete(f"{ALL_DELIVERY}")
-
+        token = get_user_notification_token(db=db, user_id=current_user.id)
+        await send_push_notification(
+            tokens=[token], 
+            title='Order completed', 
+            message='Congratulations! Order complete. Fund has been released to your wallet', 
+            navigate_to='/delivery/orders'
+        )
+        
         return DeliveryStatusUpdateSchema(delivery_status=delivery.delivery_status)
+        
     except Exception as e:
         await db.rollback()
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+
+# async def sender_confirm_delivery_received(
+#     db: AsyncSession, delivery_id: UUID, current_user: User
+# ) -> DeliveryStatusUpdateSchema:
+#     result = await db.execute(
+#         select(Delivery)
+#         .where(Delivery.id == delivery_id)
+#         .where(Delivery.sender_id == current_user.id)
+#     )
+#     delivery = result.scalar_one_or_none()
+
+#     if not delivery:
+#         raise HTTPException(
+#             status_code=status.HTTP_404_NOT_FOUND, detail="Delivery not found.")
+
+#     if (
+#         current_user.user_type not in [UserType.CUSTOMER, UserType.VENDOR]
+#         or delivery.sender_id != current_user.id
+#     ):
+#         raise HTTPException(
+#             status_code=status.HTTP_403_FORBIDDEN, detail="Unauthorized.")
+
+#     if delivery.delivery_status != DeliveryStatus.DELIVERED:
+#         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
+#                             detail="Delivery is still in transit")
+
+#     try:
+#         await db.execute(
+#             update(Delivery)
+#             .where(Delivery.id == delivery_id)
+#             .values({"delivery_status": DeliveryStatus.RECEIVED})
+#             .returning(Delivery.delivery_status)
+#         )
+#         dispatch_wallet = await fetch_wallet(db, delivery.dispatch_id)
+#         vendor_wallet = await fetch_wallet(db, delivery.vendor_id)
+
+#         dispatch_escrow = dispatch_wallet.escrow_balance or 0
+#         vendor_escrow = vendor_wallet.escrow_balance or 0
+
+#         # Dispatch payment
+#         dispatch_tx = await create_wallet_transaction(
+#             db,
+#             dispatch_wallet.id,
+#             delivery.amount_due_dispatch or 0,
+#             TransactionType.CREDIT,
+#         )
+#         await update_wallet_balance(
+#             db,
+#             wallet_id=dispatch_wallet.id,
+#             new_balance=dispatch_wallet.balance + dispatch_tx.amount,
+#             escrow_balance=dispatch_escrow,
+#         )
+
+#         # Vendor payment
+#         vendor_tx = await create_wallet_transaction(
+#             db,
+#             vendor_wallet.id,
+#             delivery.order.amount_due_vendor or 0,
+#             TransactionType.CREDIT,
+#         )
+#         await update_wallet_balance(
+#             db,
+#             wallet_id=vendor_wallet.id,
+#             new_balance=vendor_wallet.balance + vendor_tx.amount,
+#             escrow_balance=vendor_escrow,
+#         )
+
+#         await db.commit()
+#         await db.refresh(delivery)
+
+#         redis_client.delete(f"{ALL_DELIVERY}")
+
+#         return DeliveryStatusUpdateSchema(delivery_status=delivery.delivery_status)
+#     except Exception as e:
+#         await db.rollback()
+#         raise HTTPException(
+#             status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
 
 # <<<--- admin_modify_delivery_status --->>>
@@ -1273,6 +1338,22 @@ async def create_wallet_transaction(
     await db.refresh(transx)
     return transx
 
+
+async def update_wallet_balance_and_escrow(
+    db: AsyncSession, 
+    wallet_id: UUID, 
+    new_balance: Decimal, 
+    new_escrow_balance: Decimal
+) -> None:
+    """Updates both wallet balance and escrow balance."""
+    await db.execute(
+        update(Wallet)
+        .where(Wallet.id == wallet_id)
+        .values(
+            balance=new_balance,
+            escrow_balance=new_escrow_balance
+        )
+    )
 
 async def update_wallet_balance(
     db: AsyncSession, wallet_id: UUID, new_balance: Decimal, escrow_balance: Decimal = 0
