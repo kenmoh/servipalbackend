@@ -574,7 +574,7 @@ class Delivery(Base):
     sender_id: Mapped[UUID] = mapped_column(
         ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )
-    sender_phone_number: Mapped[str] = mapped_column(nullable=True)
+    sender_phone_number: Mapped[str]
     rider_phone_number: Mapped[str] = mapped_column(nullable=True)
     image_url: Mapped[str] = mapped_column(nullable=True)
     pickup_coordinates: Mapped[Tuple[float, float]] = mapped_column(ARRAY(Float))

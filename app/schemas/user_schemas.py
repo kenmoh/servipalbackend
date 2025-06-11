@@ -64,6 +64,7 @@ class TransactionSchema(BaseModel):
     id: UUID
     wallet_id: UUID
     amount: Decimal
+    payment_by: str
     transaction_type: TransactionType
     created_at: datetime
 

@@ -767,7 +767,7 @@ async def rider_accept_delivery_order(
         .where(Delivery.id == delivery_id)
         .values(
             {
-                "delivery_status": DeliveryStatus.ACCEPT,
+                "delivery_status": DeliveryStatus.ACCEPTED,
                 "rider_id": current_user.id,
                 "dispatch_id": dispatch_id,
                 "rider_phone_number": current_user.profile.phone_number,
@@ -862,16 +862,22 @@ async def sender_confirm_delivery_received(
     )
     delivery = result.scalar_one_or_none()
     if not delivery:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Delivery not found.")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Delivery not found.")
     if (
         current_user.user_type not in [UserType.CUSTOMER, UserType.VENDOR]
         or delivery.sender_id != current_user.id
     ):
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You are not allowed to perform this action.")
-    
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN,
+                            detail="You are not allowed to perform this action.")
+
     if delivery.delivery_status != DeliveryStatus.DELIVERED:
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail="Delivery is not yet completed.")
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Order is not yet completed.")
+
+    if delivery.delivery_status == DeliveryStatus.RECEIVED:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="You already mark this order as received.")
 
     dispatch_profile = await get_user_profile(delivery.dispatch_id, db=db)
 
@@ -1058,6 +1064,7 @@ async def vendor_mark_laundry_item_received(
 
         # Get wallets
         dispatch_wallet = await fetch_wallet(db, delivery.dispatch_id)
+        sender_wallet = await fetch_wallet(db, delivery.sender_id)
 
         # Calculate amounts to release from escrow
         dispatch_amount = delivery.amount_due_dispatch or 0
@@ -1074,15 +1081,15 @@ async def vendor_mark_laundry_item_received(
             )
         )
 
-        await db.execute(
-            update(Wallet)
-            .where(Wallet.id == delivery.sender_id)
-            .values(
-                {
-                    "escrow_balance": dispatch_wallet.escrow_balance - dispatch_amount,
-                }
-            )
-        )
+        # await db.execute(
+        #     update(Wallet)
+        #     .where(Wallet.id == delivery.sender_id)
+        #     .values(
+        #         {
+        #             "escrow_balance": sender_wallet.escrow_balance - dispatch_amount,
+        #         }
+        #     )
+        # )
 
         await db.commit()
         await db.refresh(delivery)
@@ -1123,7 +1130,7 @@ async def rider_mark_delivered(
     result = await db.execute(
         select(Delivery)
         .where(Delivery.id == delivery_id)
-        .where(or_(Delivery.rider_id==current_user.id, Delivery.dispatch_id==current_user.id))
+        .where(or_(Delivery.rider_id == current_user.id, Delivery.dispatch_id == current_user.id))
         .options(selectinload(Delivery.order))
     )
 
@@ -1139,7 +1146,7 @@ async def rider_mark_delivered(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="You are not allowed to perform this action."
         )
 
-    if delivery.delivery_status == DeliveryStatus.ACCEPT:
+    if delivery.delivery_status == DeliveryStatus.ACCEPTED:
         await db.execute(
             update(Delivery)
             .where(Delivery.id == delivery_id)
