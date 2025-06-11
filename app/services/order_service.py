@@ -760,9 +760,9 @@ async def rider_accept_delivery_order(
             detail="This order has been assigned to a rider.",
         )
 
-    if current_user.user_type not in [UserType.RIDER, UserType.DISPATCH]:
+    if current_user.user_type not in [UserType.RIDER]:
         raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN, detail="Unauthorized."
+            status_code=status.HTTP_403_FORBIDDEN, detail="Only a rider can pickup orders. Register a rider"
         )
 
     await db.execute(

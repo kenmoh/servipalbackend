@@ -24,6 +24,7 @@ from app.schemas.user_schemas import (
     Notification,
     ProfileSchema,
     UserProfileResponse,
+    RiderProfileSchema,
     UserResponse,
     WalletSchema,
     VendorUserResponse,
@@ -54,6 +55,40 @@ def set_cached_user(user_id: UUID, user_data: dict) -> None:
 def invalidate_user_cache(user_id: UUID) -> None:
     """Helper function to invalidate user cache"""
     redis_client.delete(f"user:{user_id}")
+
+
+
+async def get_rider_profile(db: AsyncSession, user_id: UUID)->RiderProfileSchema:
+
+    cached_user = redis_client.get(f"rider_id:{user_id}")
+    if cached_user:
+        users_data = json.loads(cached_user)
+        return [UserProfileResponse(**user_data) for user_data in users_data]
+
+    stmt = (
+        select(User)
+        .options(
+            selectinload(User.profile).selectinload(Profile.profile_image)
+        )
+        .where(User.id == user_id)
+    )
+    result = await db.execute(stmt)
+    rider = result.scalar_one_or_none()
+
+    rider_dict = {
+        'profile_image_url': rider.profile.profile_image.profile_image_url,
+        'full_name': rider.profile.full_name,
+        'email': rider.email,
+        'phone_number': rider.phone_number,
+        'business_address': rider.profile.business_address,
+        'business_name': rider.profile.business_name,
+        'bike_number': rider.profile.bike_number
+
+    }
+
+    redis_client.set(f"rider_id:{rider.id}", json.dumps(rider_dict, default=str), ex=CACHE_TTL)
+
+    return rider_dict
 
 
 async def get_users(db: AsyncSession) -> list[UserProfileResponse]:

@@ -183,21 +183,63 @@ async def create_new_rider(
     Returns:
         UserBase: The newly created rider user details.
     """
+
+
+    # Check user permissions and restrictions
+    if current_user.is_blocked:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You cannot create rider due to suspension!",
+        )
+    if not current_user.is_verified and riders_count > 1:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Please verify your business to add more riders",
+        )
+
+    if current_user.account_status == AccountStatus.PENDING:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail="Please verify your account!"
+        )
+
+    if current_user.user_type != UserType.DISPATCH:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail="Only a dispatch user can create rider."
+        )
+
+
+    if not current_user.profile.business_registration_number and riders_count > 1:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Please update your company registration number to add more riders.",
+        )
+    if not current_user.user_type == UserType.DISPATCH:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only dispatch company users can create riders!",
+        )
+
+    if not current_user.profile.business_name or not user.profile.business_address:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Please update your profile with your company name and phone number.",
+        )
+
     # validate password
     validate_password(data.password)
 
     # Check current user's profile
-    stmt = (
-        select(User).where(User.id == current_user.id).options(joinedload(User.profile))
-    )
-    result = await db.execute(stmt)
-    user = result.scalar_one_or_none()
+    # stmt = (
+    #     select(User).where(User.id == current_user.id).options(joinedload(User.profile))
+    # )
+    # result = await db.execute(stmt)
+    # user = result.scalar_one_or_none()
 
-    if not user:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Current user not found",
-        )
+    # if not user:
+    #     raise HTTPException(
+    #         status_code=status.HTTP_404_NOT_FOUND,
+    #         detail="Current user not found",
+    #     )
 
     # Count existing riders for this dispatcher
     stmt = (
@@ -208,39 +250,39 @@ async def create_new_rider(
     riders_result = await db.execute(stmt)
     riders_count = riders_result.scalar()
 
-    # Check user permissions and restrictions
-    if user.is_blocked:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="You cannot create rider due to suspension!",
-        )
-    if not user.is_verified and riders_count > 1:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Please verify your business to add more riders",
-        )
+    # # Check user permissions and restrictions
+    # if user.is_blocked:
+    #     raise HTTPException(
+    #         status_code=status.HTTP_403_FORBIDDEN,
+    #         detail="You cannot create rider due to suspension!",
+    #     )
+    # if not user.is_verified and riders_count > 1:
+    #     raise HTTPException(
+    #         status_code=status.HTTP_403_FORBIDDEN,
+    #         detail="Please verify your business to add more riders",
+    #     )
 
-    if user.account_status == AccountStatus.PENDING:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN, detail="Please verify your account!"
-        )
+    # if user.account_status == AccountStatus.PENDING:
+    #     raise HTTPException(
+    #         status_code=status.HTTP_403_FORBIDDEN, detail="Please verify your account!"
+    #     )
 
-    if not user.profile.business_registration_number and riders_count > 1:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Please update your company registration number to add more riders.",
-        )
-    if not user.user_type == UserType.DISPATCH:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only dispatch company users can create riders!",
-        )
+    # if not user.profile.business_registration_number and riders_count > 1:
+    #     raise HTTPException(
+    #         status_code=status.HTTP_403_FORBIDDEN,
+    #         detail="Please update your company registration number to add more riders.",
+    #     )
+    # if not user.user_type == UserType.DISPATCH:
+    #     raise HTTPException(
+    #         status_code=status.HTTP_403_FORBIDDEN,
+    #         detail="Only dispatch company users can create riders!",
+    #     )
 
-    if not user.profile.business_name or not user.profile.phone_number:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Please update your profile with your company name and phone number.",
-        )
+    # if not user.profile.business_name or not user.profile.business_address:
+    #     raise HTTPException(
+    #         status_code=status.HTTP_403_FORBIDDEN,
+    #         detail="Please update your profile with your company name and phone number.",
+    #     )
 
     # Check if email already exists
     email_result = await db.execute(
@@ -286,6 +328,8 @@ async def create_new_rider(
             bike_number=data.bike_number,
             created_at=datetime.today(),
             updated_at=datetime.today(),
+            business_address=current_user.profile.business_address,
+            business_name=current_user.profile.business_name
         )
         db.add(rider_profile)
 
