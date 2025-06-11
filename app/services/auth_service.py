@@ -184,6 +184,13 @@ async def create_new_rider(
         UserBase: The newly created rider user details.
     """
 
+    stmt = (
+        select(func.count())
+        .select_from(User)
+        .where(User.dispatcher_id == current_user.id)
+    )
+    riders_result = await db.execute(stmt)
+    riders_count = riders_result.scalar()
 
     # Check user permissions and restrictions
     if current_user.is_blocked:
@@ -242,13 +249,13 @@ async def create_new_rider(
     #     )
 
     # Count existing riders for this dispatcher
-    stmt = (
-        select(func.count())
-        .select_from(User)
-        .where(User.dispatcher_id == current_user.id)
-    )
-    riders_result = await db.execute(stmt)
-    riders_count = riders_result.scalar()
+    # stmt = (
+    #     select(func.count())
+    #     .select_from(User)
+    #     .where(User.dispatcher_id == current_user.id)
+    # )
+    # riders_result = await db.execute(stmt)
+    # riders_count = riders_result.scalar()
 
     # # Check user permissions and restrictions
     # if user.is_blocked:
