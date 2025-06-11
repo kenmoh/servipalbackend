@@ -226,7 +226,7 @@ async def create_new_rider(
             detail="Only dispatch company users can create riders!",
         )
 
-    if not current_user.profile.business_name or not user.profile.business_address:
+    if not current_user.profile.business_name or not current_user.profile.business_address:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Please update your profile with your company name and phone number.",
