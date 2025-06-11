@@ -440,7 +440,7 @@ async def order_payment_callback(request: Request, db: AsyncSession):
         # Uodate vendour escrow
         await db.execute(
             update(Wallet)
-            .where(Wallet.id == result.owner_id)
+            .where(Wallet.id == owner_id)
             .values({"escrow_balance": escrow_balance + total_price})
         )
         await db.commit()
