@@ -1171,6 +1171,7 @@ async def rider_mark_delivered(
     #     navigate_to="/delivery/orders",
     # )
 
+    redis_client.delete(f"delivery:{delivery_id}")
     return DeliveryStatusUpdateSchema(delivery_status=delivery.delivery_status)
 
 
