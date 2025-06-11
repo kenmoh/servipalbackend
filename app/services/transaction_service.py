@@ -17,6 +17,7 @@ from app.models.models import (
     Wallet,
     Transaction,
     OrderItem,
+    Delivery
 )
 from app.schemas.marketplace_schemas import (
     TopUpRequestSchema,
@@ -411,6 +412,9 @@ async def order_payment_callback(request: Request, db: AsyncSession):
     else:
         new_status = PaymentStatus.FAILED
 
+
+
+
     # Update only the payment status and return it
     stmt = (
         update(Order)
@@ -424,7 +428,13 @@ async def order_payment_callback(request: Request, db: AsyncSession):
 
     # Get the updated status directly
     updated_status = result.scalar_one()
-    redis_client.delete(f"delivery:{delivery_id}")
+
+    delivery_stmt = select(Delivery.id).where(Delivery.order_id == UUID(tx_ref))
+    delivery_result = await db.execute(delivery_stmt)
+    delivery_id = delivery_result.scalar_one_or_none()
+
+    if delivery_id:
+        redis_client.delete(f"delivery:{delivery_id}")
     redis_client.delete("deliveries")
 
     return {"order_payment_status": updated_status}
