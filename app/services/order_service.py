@@ -69,7 +69,7 @@ async def get_user_notification_token(db: AsyncSession, user_id):
     return token
 
 
-ALL_DELIVERY = "ALL_DELIVERY"
+ALL_DELIVERY = "deliveries"
 
 
 async def filter_delivery_by_delivery_type(
@@ -849,6 +849,8 @@ async def rider_accept_delivery_order(
     #     navigate_to="/delivery/orders",
     # )
 
+    redis_client.delete(f"delivery:{delivery_id}")
+
     return DeliveryStatusUpdateSchema(delivery_status=delivery.delivery_status)
 
 
@@ -1022,6 +1024,8 @@ async def sender_confirm_delivery_received(
         #     navigate_to="/delivery/orders",
         # )
 
+        redis_client.delete(f"delivery:{delivery_id}")
+
         return DeliveryStatusUpdateSchema(delivery_status=delivery.delivery_status)
 
     except Exception as e:
@@ -1115,6 +1119,8 @@ async def vendor_mark_laundry_item_received(
         #     message=f"Congratulations! Order complete. Your wallet has been credited with NGN {dispatch_amount}",
         #     navigate_to="/delivery/orders",
         # )
+
+        redis_client.delete(f"delivery:{delivery_id}")
 
         return DeliveryStatusUpdateSchema(delivery_status=delivery.delivery_status)
 
@@ -1215,6 +1221,8 @@ async def admin_modify_delivery_status(
 
         invalidate_delivery_cache(delivery_id)
         redis_client.delete("all_deliveries")
+
+        redis_client.delete(f"delivery:{delivery_id}")
 
         return DeliveryStatusUpdateSchema(delivery_status=new_status)
 

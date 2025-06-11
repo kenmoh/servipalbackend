@@ -34,7 +34,7 @@ from app.utils.utils import (
     verify_transaction_tx_ref,
     flutterwave_base_url,
 )
-from app.config.config import settings
+from app.config.config import settings, redis_client
 
 logger = setup_logger()
 
@@ -424,6 +424,8 @@ async def order_payment_callback(request: Request, db: AsyncSession):
 
     # Get the updated status directly
     updated_status = result.scalar_one()
+    redis_client.delete(f"delivery:{delivery_id}")
+    redis_client.delete("deliveries")
 
     return {"order_payment_status": updated_status}
 
