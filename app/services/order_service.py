@@ -967,7 +967,7 @@ async def sender_confirm_delivery_received(
                     }
                 )
             )
-            
+
             await db.commit()
             await db.refresh(delivery)
 
@@ -1395,7 +1395,7 @@ async def create_wallet_transaction(
         payment_by=payment_by,
     )
     db.add(transx)
-    await db.flush()
+    await db.commit()
     await db.refresh(transx)
     return transx
 
