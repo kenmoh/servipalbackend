@@ -424,7 +424,16 @@ async def order_payment_callback(request: Request, db: AsyncSession):
     result = await db.execute(stmt)
     await db.commit()
 
-    wallet_result = await db.execute(select(Wallet.escrow_balance).where(Wallet.id == result.owner_id))
+    # Fetch the actual row data
+    row = result.fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="Order not found")
+
+    owner_id = row.owner_id
+    total_price = row.total_price
+
+    # Get the current escrow balance
+    wallet_result = await db.execute(select(Wallet.escrow_balance).where(Wallet.id == owner_id))
     escrow_balance = wallet_result.scalar_one_or_none()
 
     if tx_status == 'successful':
@@ -432,7 +441,7 @@ async def order_payment_callback(request: Request, db: AsyncSession):
         await db.execute(
             update(Wallet)
             .where(Wallet.id == result.owner_id)
-            .values({"escrow_balance": escrow_balance + result.total_price})
+            .values({"escrow_balance": escrow_balance + total_price})
         )
         await db.commit()
 
