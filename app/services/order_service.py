@@ -642,6 +642,7 @@ async def get_order_with_items(
 
     # Cache the formatted response
     set_cached_order(order_id, order_data)
+    redis_client.delete(f"{ALL_DELIVERY}")
 
     return OrderItemResponseSchema(**order_data)
 
@@ -730,6 +731,8 @@ async def cancel_delivery(
             #     message="Your Order has been canceled",
             #     navigate_to="/delivery/orders",
             # )
+
+            redis_client.delete(f"{ALL_DELIVERY}")
 
             return delivery_result
 
@@ -850,6 +853,7 @@ async def rider_accept_delivery_order(
     # )
 
     redis_client.delete(f"delivery:{delivery_id}")
+    redis_client.delete(f"{ALL_DELIVERY}")
 
     return DeliveryStatusUpdateSchema(delivery_status=delivery.delivery_status)
 
@@ -1025,6 +1029,7 @@ async def sender_confirm_delivery_received(
         # )
 
         redis_client.delete(f"delivery:{delivery_id}")
+        redis_client.delete(f"{ALL_DELIVERY}")
 
         return DeliveryStatusUpdateSchema(delivery_status=delivery.delivery_status)
 
@@ -1121,6 +1126,7 @@ async def vendor_mark_laundry_item_received(
         # )
 
         redis_client.delete(f"delivery:{delivery_id}")
+        redis_client.delete(f"{ALL_DELIVERY}")
 
         return DeliveryStatusUpdateSchema(delivery_status=delivery.delivery_status)
 
@@ -1172,6 +1178,7 @@ async def rider_mark_delivered(
     # )
 
     redis_client.delete(f"delivery:{delivery_id}")
+    redis_client.delete(f"{ALL_DELIVERY}")
     return DeliveryStatusUpdateSchema(delivery_status=delivery.delivery_status)
 
 
