@@ -407,24 +407,36 @@ async def order_payment_callback(request: Request, db: AsyncSession):
         and verify_tranx.get("data", {}).get("status") == "successful"
     ):
         new_status = PaymentStatus.PAID
+
     elif tx_status == "cancelled":
         new_status = PaymentStatus.CANCELLED
     else:
         new_status = PaymentStatus.FAILED
-
-
-
 
     # Update only the payment status and return it
     stmt = (
         update(Order)
         .where(Order.id == UUID(tx_ref))
         .values(order_payment_status=new_status)
-        .returning(Order.order_payment_status)
+        .returning(Order.order_payment_status, Order.owner_id, Order.total_price)
     )
 
     result = await db.execute(stmt)
     await db.commit()
+
+    wallet_result = await db.execute(select(Wallet.escrow_balance).where(Wallet.id == result.owner_id))
+    escrow_balance = wallet_result.scalar_one_or_none()
+
+    if tx_status == 'successful':
+        # Uodate vendour escrow
+        await db.execute(
+            update(Wallet)
+            .where(Wallet.id == result.owner_id)
+            .values({"escrow_balance": escrow_balance + result.total_price})
+        )
+        await db.commit()
+
+
 
     # Get the updated status directly
     updated_status = result.scalar_one()

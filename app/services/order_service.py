@@ -801,12 +801,6 @@ async def rider_accept_delivery_order(
             )
         )
 
-        # Move funds to escrow for sender
-        await db.execute(
-            update(Wallet)
-            .where(Wallet.id == delivery.sender_id)
-            .values({"escrow_balance": sender_wallet.escrow_balance + delivery_fee})
-        )
 
         await db.commit()
         await db.refresh(delivery)
@@ -821,6 +815,9 @@ async def rider_accept_delivery_order(
             )
         )
 
+        await db.commit()
+        await db.refresh(delivery)
+
         # Uodate vendour escrow
         await db.execute(
             update(Wallet)
@@ -828,17 +825,6 @@ async def rider_accept_delivery_order(
             .values({"escrow_balance": vendor_wallet.escrow_balance + vendor_amount})
         )
 
-        # Update sender escrow
-        await db.execute(
-            update(Wallet)
-            .where(Wallet.id == delivery.vendor_id)
-            .values(
-                {
-                    "escrow_balance": sender_wallet.escrow_balance
-                    + delivery.order.total_price
-                }
-            )
-        )
 
         await db.commit()
         await db.refresh(delivery)
@@ -920,6 +906,8 @@ async def sender_confirm_delivery_received(
                     }
                 )
             )
+            await db.commit()
+            await db.refresh(delivery)
 
             await db.execute(
                 update(Wallet)
@@ -966,6 +954,9 @@ async def sender_confirm_delivery_received(
                     }
                 )
             )
+            await db.commit()
+            await db.refresh(delivery)
+
             await db.execute(
                 update(Wallet)
                 .where(Wallet.id == delivery.vendor_id)
@@ -976,6 +967,9 @@ async def sender_confirm_delivery_received(
                     }
                 )
             )
+            
+            await db.commit()
+            await db.refresh(delivery)
 
             await db.execute(
                 update(Wallet)
