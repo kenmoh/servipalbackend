@@ -15,9 +15,8 @@ class CategoryCreate(BaseModel):
     name: str
 
 
-class CategoryResponse(BaseModel):
+class CategoryResponse(CategoryCreate):
     id: UUID
-    name: str
     category_type: CategoryType
 
 
