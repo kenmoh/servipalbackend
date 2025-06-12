@@ -337,6 +337,8 @@ async def create_new_rider(
             updated_at=datetime.today(),
             business_address=current_user.profile.business_address,
             business_name=current_user.profile.business_name
+            # add company email
+            # add company phone
         )
         db.add(rider_profile)
 
@@ -871,6 +873,7 @@ async def verify_user_contact(
     user.phone_verification_expires = None
 
     await db.commit()
+    db.refresh()
 
     return {"message": "Email and phone verified successfully"}
 

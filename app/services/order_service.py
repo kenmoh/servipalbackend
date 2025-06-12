@@ -212,25 +212,23 @@ async def create_package_order(
     db: AsyncSession, data: PackageCreate, image: UploadFile, current_user: User
 ) -> DeliveryResponse:
     if current_user.user_type == UserType.CUSTOMER and not (
-        current_user.profile.full_name or current_user.profile.phone_number
+        current_user.profile.full_name and current_user.profile.phone_number
     ):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Phone number and full name are required. Please update your profile!",
         )
     if current_user.user_type == UserType.VENDOR and not (
-        current_user.profile.business_name or current_user.profile.phone_number
+        current_user.profile.business_name and current_user.profile.phone_number
     ):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Phone number and business name are required. Please update your profile!",
         )
-    if current_user.user_type in [UserType.RIDER, UserType.DISPATCH] and not (
-        current_user.profile.full_name or current_user.profile.phone_number
-    ):
+    if current_user.user_type in [UserType.RIDER, UserType.DISPATCH]:
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Phone number and full name are required. Please update your profile!",
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You are not allowed to perform this action.",
         )
     try:
         # --- 1. Insert into 'packages' table ---
@@ -397,6 +395,13 @@ async def order_food_or_request_laundy_service(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Phone number and business name are required. Please update your profile!",
         )
+
+    if current_user.user_type in [UserType.RIDER, UserType.DISPATCH]:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You are not allowed to perform this action!",
+        )
+
 
     # Batch fetch all items at once - filter by vendor_id for additional validation
     item_ids = [
@@ -858,7 +863,7 @@ async def sender_confirm_delivery_received(
             status_code=status.HTTP_400_BAD_REQUEST, detail="Delivery not found.")
     if (
         current_user.user_type not in [UserType.CUSTOMER, UserType.VENDOR]
-        or delivery.sender_id != current_user.id
+        and delivery.sender_id != current_user.id
     ):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN,
                             detail="You are not allowed to perform this action.")
@@ -915,7 +920,7 @@ async def sender_confirm_delivery_received(
                 .values(
                     {
                         "escrow_balance": sender_wallet.escrow_balance
-                        - delivery.delivery_fee,
+                        - delivery.delivery_fee if sender_wallet.escrow_balance >= delivery.delivery_fee else 0,
                     }
                 )
             )
@@ -1391,6 +1396,7 @@ async def create_wallet_transaction(
     transx = Transaction(
         wallet_id=wallet_id,
         amount=amount,
+        payment_status=PaymentStatus.PAID,
         transaction_type=transaction_type,
         payment_by=payment_by,
     )

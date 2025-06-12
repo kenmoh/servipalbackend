@@ -413,24 +413,22 @@ async def order_payment_callback(request: Request, db: AsyncSession):
     else:
         new_status = PaymentStatus.FAILED
 
-    # Update only the payment status and return it
-    stmt = (
+    # Update payment status
+    order_update_result = await db.execute(
         update(Order)
         .where(Order.id == UUID(tx_ref))
         .values(order_payment_status=new_status)
         .returning(Order.order_payment_status, Order.owner_id, Order.total_price)
     )
 
-    result = await db.execute(stmt)
-    await db.commit()
-
+   
     # Fetch the actual row data
-    row = result.fetchone()
-    if not row:
+    order_data = order_update_result.fetchone()
+    if not order_data:
         raise HTTPException(status_code=404, detail="Order not found")
 
-    owner_id = row.owner_id
-    total_price = row.total_price
+    owner_id = order_data.owner_id
+    total_price = order_data.total_price
 
     # Get the current escrow balance
     wallet_result = await db.execute(select(Wallet.escrow_balance).where(Wallet.id == owner_id))
@@ -447,9 +445,6 @@ async def order_payment_callback(request: Request, db: AsyncSession):
 
 
 
-    # Get the updated status directly
-    updated_status = result.scalar_one()
-
     delivery_stmt = select(Delivery.id).where(Delivery.order_id == UUID(tx_ref))
     delivery_result = await db.execute(delivery_stmt)
     delivery_id = delivery_result.scalar_one_or_none()
@@ -458,7 +453,7 @@ async def order_payment_callback(request: Request, db: AsyncSession):
         redis_client.delete(f"delivery:{delivery_id}")
     redis_client.delete("deliveries")
 
-    return {"order_payment_status": updated_status}
+    return {"order_payment_status": order_data.order_payment_status}
 
 
 async def pay_with_wallet(
