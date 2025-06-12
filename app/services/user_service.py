@@ -79,7 +79,7 @@ async def get_rider_profile(db: AsyncSession, user_id: UUID)->RiderProfileSchema
         'profile_image_url': rider.profile.profile_image.profile_image_url,
         'full_name': rider.profile.full_name,
         'email': rider.email,
-        'phone_number': rider.phone_number,
+        'phone_number': rider.profile.phone_number,
         'business_address': rider.profile.business_address,
         'business_name': rider.profile.business_name,
         'bike_number': rider.profile.bike_number

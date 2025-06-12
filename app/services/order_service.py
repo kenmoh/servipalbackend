@@ -770,6 +770,12 @@ async def rider_accept_delivery_order(
             status_code=status.HTTP_403_FORBIDDEN, detail="Only a rider can pickup orders. Register a rider"
         )
 
+    if not current_user.profile.profile_image.profile_image_url:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail="Profile image is missing. Please update your profile"
+        )
+
+
     await db.execute(
         update(Delivery)
         .where(Delivery.id == delivery_id)
