@@ -71,9 +71,9 @@ async def get_categories(db: AsyncSession) -> list[CategoryResponse]:
     """Retrieves all categories."""
 
     # Try cache first
-    # cached_categories = get_cached_categories()
-    # if cached_categories:
-    #     return cached_categories
+    cached_categories = get_cached_categories()
+    if cached_categories:
+        return cached_categories
 
     # If not in cache, fetch from database
     stmt = select(Category)
@@ -195,75 +195,6 @@ async def get_items_by_current_user(
         )
 
     return [ItemResponse(**item) for item in item_list_dict]
-
-
-# async def get_items_by_user_id(db: AsyncSession, user_id: UUID) -> list[ItemResponse]:
-#     """Retrieves all items belonging to  VENDOR user."""
-
-#     cached_items = redis_client.get(f"vendor_items:{user_id}")
-#     if cached_items:
-#         return json.loads(cached_items)
-
-#     stmt = select(Item).where(Item.user_id == user_id).join(Item.reviews)
-#     result = await db.execute(stmt)
-#     items = result.scalars().all()
-
-#     # Cache the results if items exist
-#     if items:
-#         redis_client.setex(
-#             f"vendor_items:{user_id}",
-#             CACHE_TTL,
-#             json.dumps([item.dict() for item in items], default=str),
-#         )
-#     return items
-
-
-# async def get_items_by_user_id(db: AsyncSession, user_id: UUID) -> list[ItemResponse]:
-#     """Retrieves all items belonging to VENDOR user."""
-#     cached_items = redis_client.get(f"vendor_items:{user_id}")
-#     if cached_items:
-#         return json.loads(cached_items)
-
-#     # Remove the join with reviews - it's causing INNER JOIN behavior
-#     # The reviews relationship is already configured with lazy="selectin" in your model
-#     stmt = select(Item).where(Item.user_id == user_id)
-
-#     result = await db.execute(stmt)
-#     items = result.scalars().all()
-
-#     # Cache the results if items exist
-#     if items:
-#         redis_client.setex(
-#             f"vendor_items:{user_id}",
-#             CACHE_TTL,
-#             json.dumps([item.dict() for item in items], default=str),
-#         )
-#     return items
-
-# async def get_items_by_user_id(db: AsyncSession, user_id: UUID) -> list[ItemResponse]:
-#     """Retrieves all items belonging to VENDOR user."""
-#     cached_items = redis_client.get(f"vendor_items:{user_id}")
-#     if cached_items:
-#         # Return cached data as ItemResponse objects
-#         cached_data = json.loads(cached_items)
-#         return [ItemResponse(**item) for item in cached_data]
-
-#     stmt = select(Item).where(Item.user_id == user_id)
-#     result = await db.execute(stmt)
-#     items = result.scalars().all()
-
-#     # Convert SQLAlchemy models to Pydantic models
-#     item_responses = [ItemResponse.model_validate(item) for item in items]
-
-#     # Cache the Pydantic model data
-#     if item_responses:
-#         redis_client.setex(
-#             f"vendor_items:{user_id}",
-#             CACHE_TTL,
-#             json.dumps([item.model_dump() for item in item_responses], default=str),
-#         )
-
-#     return item_responses
 
 
 async def get_items_by_user_id(db: AsyncSession, user_id: UUID) -> list[ItemResponse]:
@@ -577,7 +508,7 @@ def get_cached_categories() -> list:
 def set_cached_categories(categories: list) -> None:
     """Set categories in cache"""
     categories_dict_list = [
-        {"id": category.id, "name": category.name} for category in categories
+        {"id": category.id, "name": category.name, "category_type": category.category_type} for category in categories
     ]
     redis_client.setex(
         "all_categories", CACHE_TTL, json.dumps(categories_dict_list, default=str)
