@@ -7,6 +7,10 @@ from typing import Optional
 from uuid import UUID
 
 
+class CategoryType(str, Enum):
+    FOOD = 'food'
+    PRODUCT = 'product'
+
 class CategoryCreate(BaseModel):
     name: str
 
@@ -14,6 +18,7 @@ class CategoryCreate(BaseModel):
 class CategoryResponse(BaseModel):
     id: UUID
     name: str
+    category_type: CategoryType
 
 
 class ItemType(str, Enum):

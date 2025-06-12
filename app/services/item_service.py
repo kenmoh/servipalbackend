@@ -14,6 +14,7 @@ from app.schemas.item_schemas import (
     ItemResponse,
     MenuWithReviewResponseSchema,
     ItemType,
+    CategoryType
 )
 from app.schemas.status_schema import AccountStatus, UserType
 from app.config.config import redis_client
@@ -47,7 +48,7 @@ async def create_category(
                 detail=f"Category with name '{data.name}' already exists.",
             )
 
-        new_category = Category(**data.model_dump())
+        new_category = Category(**data.model_dump(), category_type=CategoryType.PRODUCT)
         db.add(new_category)
         await db.commit()
         await db.refresh(new_category)
