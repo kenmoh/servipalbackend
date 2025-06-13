@@ -44,24 +44,68 @@ async def buy_listed_product(
 
 
 @router.put(
-    "/{order_id}/status",
-    response_model=OrderResponseSchema,
-    status_code=status.HTTP_200_OK,
+    "/{order_id}/item-delivered",
+    response_model=OrderStatus,
+    status_code=status.HTTP_202_ACCEPTED,
     summary="Update order status",
 )
-async def update_order_status(
+async def vendor_mark_item_delivered(
     order_id: UUID,
-    new_status: OrderStatus,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """
-    Endpoint to update the status of an order.
+    updated_order = await marketplace_service.vendor_mark_item_delivered(
+        order_id=order_id, current_user=current_user, db=db
+    )
+    return updated_order
 
-    - Requires authentication.
-    - Only allows valid status transitions based on user role (buyer/vendor).
-    """
-    updated_order = await marketplace_service.update_item_order_status(
-        order_id=order_id, new_status=new_status, current_user=current_user, db=db
+
+@router.put(
+    "/{order_id}/item-received",
+    response_model=OrderStatus,
+    status_code=status.HTTP_202_ACCEPTED,
+    summary="Update order status",
+)
+async def owner_mark_item_received(
+    order_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    updated_order = await marketplace_service.owner_mark_item_received(
+        order_id=order_id, current_user=current_user, db=db
+    )
+    return updated_order
+
+
+@router.put(
+    "/{order_id}/item-rejected",
+    response_model=OrderStatus,
+    status_code=status.HTTP_202_ACCEPTED,
+    summary="Update order status",
+)
+async def owner_mark_item_rejected(
+    order_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    updated_order = await marketplace_service.owner_mark_item_rejected(
+        order_id=order_id, current_user=current_user, db=db
+    )
+    return updated_order
+
+
+@router.put(
+    "/{order_id}/vendor-received-rejected-item",
+    response_model=OrderStatus,
+    status_code=status.HTTP_202_ACCEPTED,
+    summary="Update order status",
+)
+async def vendor_mark_rejected_item_received(
+    order_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    updated_order = await marketplace_service.vendor_mark_rejected_item_received(
+        order_id=order_id, current_user=current_user, db=db
     )
     return updated_order

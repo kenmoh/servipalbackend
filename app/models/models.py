@@ -50,6 +50,7 @@ def generate_6_digit_code():
 class Base(DeclarativeBase):
     pass
 
+
 class User(Base):
     __tablename__ = "users"
 
@@ -289,7 +290,9 @@ class Category(Base):
 
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
     name: Mapped[str] = mapped_column(unique=True)
-    category_type: Mapped[CategoryType] = mapped_column(nullable=True, default=CategoryType.FOOD)
+    category_type: Mapped[CategoryType] = mapped_column(
+        nullable=True, default=CategoryType.FOOD
+    )
     created_at: Mapped[datetime] = mapped_column(default=datetime.now)
 
     items: Mapped[list["Item"]] = relationship(back_populates="category")

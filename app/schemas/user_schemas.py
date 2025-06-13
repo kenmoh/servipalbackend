@@ -195,13 +195,13 @@ class FavouriteResponseSchema(BaseModel):
 
 
 class RiderProfileSchema(BaseModel):
-   profile_image_url: str | None = None
-   full_name: str
-   email: str
-   phone_number: str
-   business_address: str
-   business_name: str
-   bike_number: str
+    profile_image_url: str | None = None
+    full_name: str
+    email: str
+    phone_number: str
+    business_address: str
+    business_name: str
+    bike_number: str
 
 
 class UserResponseSchema(BaseModel):

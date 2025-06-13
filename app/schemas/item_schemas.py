@@ -8,8 +8,9 @@ from uuid import UUID
 
 
 class CategoryType(str, Enum):
-    FOOD = 'food'
-    PRODUCT = 'product'
+    FOOD = "food"
+    PRODUCT = "product"
+
 
 class CategoryCreate(BaseModel):
     name: str

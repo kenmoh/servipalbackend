@@ -14,7 +14,7 @@ from app.schemas.item_schemas import (
     ItemResponse,
     MenuWithReviewResponseSchema,
     ItemType,
-    CategoryType
+    CategoryType,
 )
 from app.schemas.status_schema import AccountStatus, UserType
 from app.config.config import redis_client
@@ -508,7 +508,12 @@ def get_cached_categories() -> list:
 def set_cached_categories(categories: list) -> None:
     """Set categories in cache"""
     categories_dict_list = [
-        {"id": category.id, "name": category.name, "category_type": category.category_type} for category in categories
+        {
+            "id": category.id,
+            "name": category.name,
+            "category_type": category.category_type,
+        }
+        for category in categories
     ]
     redis_client.setex(
         "all_categories", CACHE_TTL, json.dumps(categories_dict_list, default=str)

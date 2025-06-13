@@ -93,8 +93,6 @@ async def get_user_details(
     return await user_service.get_user_with_profile(db=db, user_id=user_id)
 
 
-
-
 @router.get("/{user_id}/rider-profile", status_code=status.HTTP_200_OK)
 async def get_rider_details(
     user_id: UUID,

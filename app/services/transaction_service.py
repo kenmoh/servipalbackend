@@ -17,7 +17,7 @@ from app.models.models import (
     Wallet,
     Transaction,
     OrderItem,
-    Delivery
+    Delivery,
 )
 from app.schemas.marketplace_schemas import (
     TopUpRequestSchema,
@@ -421,7 +421,6 @@ async def order_payment_callback(request: Request, db: AsyncSession):
         .returning(Order.order_payment_status, Order.owner_id, Order.total_price)
     )
 
-   
     # Fetch the actual row data
     order_data = order_update_result.fetchone()
     if not order_data:
@@ -431,10 +430,12 @@ async def order_payment_callback(request: Request, db: AsyncSession):
     total_price = order_data.total_price
 
     # Get the current escrow balance
-    wallet_result = await db.execute(select(Wallet.escrow_balance).where(Wallet.id == owner_id))
+    wallet_result = await db.execute(
+        select(Wallet.escrow_balance).where(Wallet.id == owner_id)
+    )
     escrow_balance = wallet_result.scalar_one_or_none()
 
-    if tx_status == 'successful':
+    if tx_status == "successful":
         # Uodate vendour escrow
         await db.execute(
             update(Wallet)
@@ -442,8 +443,6 @@ async def order_payment_callback(request: Request, db: AsyncSession):
             .values({"escrow_balance": escrow_balance + total_price})
         )
         await db.commit()
-
-
 
     delivery_stmt = select(Delivery.id).where(Delivery.order_id == UUID(tx_ref))
     delivery_result = await db.execute(delivery_stmt)

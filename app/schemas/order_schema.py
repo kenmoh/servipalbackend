@@ -87,8 +87,8 @@ class OrderItemCreate(BaseModel):
 
 class OrderAndDeliverySchema(BaseModel):
     order_items: list[OrderItemCreate]
-    pickup_coordinates: list[float] 
-    dropoff_coordinates: list[float] 
+    pickup_coordinates: list[float]
+    dropoff_coordinates: list[float]
     distance: Decimal | None = None
     require_delivery: RequireDeliverySchema
     duration: str | None = None

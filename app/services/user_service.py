@@ -57,9 +57,7 @@ def invalidate_user_cache(user_id: UUID) -> None:
     redis_client.delete(f"user:{user_id}")
 
 
-
-async def get_rider_profile(db: AsyncSession, user_id: UUID)->RiderProfileSchema:
-
+async def get_rider_profile(db: AsyncSession, user_id: UUID) -> RiderProfileSchema:
     cached_user = redis_client.get(f"rider_id:{user_id}")
     if cached_user:
         users_data = json.loads(cached_user)
@@ -67,26 +65,25 @@ async def get_rider_profile(db: AsyncSession, user_id: UUID)->RiderProfileSchema
 
     stmt = (
         select(User)
-        .options(
-            selectinload(User.profile).selectinload(Profile.profile_image)
-        )
+        .options(selectinload(User.profile).selectinload(Profile.profile_image))
         .where(User.id == user_id)
     )
     result = await db.execute(stmt)
     rider = result.scalar_one_or_none()
 
     rider_dict = {
-        'profile_image_url': rider.profile.profile_image.profile_image_url,
-        'full_name': rider.profile.full_name,
-        'email': rider.email,
-        'phone_number': rider.profile.phone_number,
-        'business_address': rider.profile.business_address,
-        'business_name': rider.profile.business_name,
-        'bike_number': rider.profile.bike_number
-
+        "profile_image_url": rider.profile.profile_image.profile_image_url,
+        "full_name": rider.profile.full_name,
+        "email": rider.email,
+        "phone_number": rider.profile.phone_number,
+        "business_address": rider.profile.business_address,
+        "business_name": rider.profile.business_name,
+        "bike_number": rider.profile.bike_number,
     }
 
-    redis_client.set(f"rider_id:{rider.id}", json.dumps(rider_dict, default=str), ex=CACHE_TTL)
+    redis_client.set(
+        f"rider_id:{rider.id}", json.dumps(rider_dict, default=str), ex=CACHE_TTL
+    )
 
     return rider_dict
 
@@ -744,6 +741,7 @@ async def upload_image_profile(
 
 # <<<<< --------- GET LAUNDRY SERVICE PROVIDERS ---------- >>>>>
 
+
 async def get_users_by_laundry_services(
     db: AsyncSession, category_id: Optional[UUID] = None
 ) -> List[VendorUserResponse]:
@@ -881,11 +879,6 @@ async def get_users_by_laundry_services(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to fetch restaurant vendors",
         )
-
-
-
-
-
 
 
 async def get_users_by_laundry_services(db: AsyncSession) -> List[VendorUserResponse]:
