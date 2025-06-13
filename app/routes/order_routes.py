@@ -133,18 +133,18 @@ async def rider_accept_delivery(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
 
-# @router.put("/{delivery_id}/in-transit", status_code=status.HTTP_202_ACCEPTED)
-# async def sender_mark_delivery_in_transit(
-#     delivery_id: UUID,
-#     db: AsyncSession = Depends(get_db),
-#     current_user: User = Depends(get_current_user),
-# ) -> DeliveryStatusUpdateSchema:
-#     try:
-#         return await order_service.sender_mark_delivery_in_transit(
-#             db=db, current_user=current_user, delivery_id=delivery_id
-#         )
-#     except Exception as e:
-#         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+@router.put("/{delivery_id}/re-list-item", status_code=status.HTTP_202_ACCEPTED)
+async def re_list_item_for_delivery(
+    delivery_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> DeliveryStatusUpdateSchema:
+    try:
+        return await order_service.re_list_item_for_delivery(
+            db=db, current_user=current_user, delivery_id=delivery_id
+        )
+    except Exception as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
 
 @router.put("/{delivery_id}/delivered", status_code=status.HTTP_202_ACCEPTED)

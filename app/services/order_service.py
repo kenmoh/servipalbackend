@@ -659,6 +659,10 @@ async def cancel_delivery(
     cancel delivery(Owner/Rider/Dispatch)
     """
 
+    wallet_result = await db.execute(select(Wallet).where(Wallet.id==current_user.id))
+
+    wallet = wallet_result.scalar_one_or_none()
+
     if current_user.user_type in [UserType.CUSTOMER, UserType.VENDOR]:
         result = await db.execute(
             select(Delivery)
@@ -668,7 +672,6 @@ async def cancel_delivery(
         delivery = result.scalar_one_or_none()
 
         if delivery.delivery_status not in [
-            DeliveryStatus.IN_TRANSIT,
             DeliveryStatus.DELIVERED,
             DeliveryStatus.RECEIVED,
             DeliveryStatus.LAUNDRY_DELIVERES_TO_VENDORR,
@@ -680,26 +683,33 @@ async def cancel_delivery(
                 .values(delivery_status=DeliveryStatus.CANCELLED)
             )
             await db.commit()
-            # UPDATE USER WALLET HERE
-            delivery_result = result.scalar_one_or_none()
-            invalidate_delivery_cache(delivery_result.id)
-            return
 
-    if current_user.user_type in [UserType.RIDER, UserType.DISPATCH]:
+            # UPDATE USER WALLET
+            escrow_balance = (wallet.escrow_balance - delivery.delivery_fee) if wallet.escrow_balance >= delivery.delivery_fee else 0
+            await async db.execute(update(Wallet).where(Wallet.id==current_user.sender_id).values(
+
+                {
+                'balance': wallet.balance + (wallet.escrow_balance - delivery.delivery_fee),
+                'escrow_balance': escrow_balance
+                }
+                ))
+            await db.commit()
+            await db.refresh(delivery)
+
+            invalidate_delivery_cache(delivery.id)
+            return DeliveryStatusUpdateSchema(delivery_status=delivery.delivery_status)
+
+
+    if current_user.user_type == UserType.RIDER:
         result = await db.execute(
             select(Delivery)
             .where(Delivery.id == delivery_id)
-            .where(
-                or_(
-                    Delivery.rider_id == current_user.id,
-                    Delivery.dispatch_id == current_user.id,
-                )
-            )
+            .where(Delivery.rider_id == current_user.id)
         )
 
         delivery = result.scalar_one_or_none()
 
-        if delivery.delivery_status == DeliveryStatus.IN_TRANSIT:
+        if delivery.delivery_status == DeliveryStatus.ACCEPTED:
             result = await db.execute(
                 update(Delivery)
                 .values(
@@ -709,22 +719,24 @@ async def cancel_delivery(
                     rider_phone_number=None,
                 )
                 .where(Delivery.id == delivery_id)
-                .where(
-                    or_(
-                        Delivery.rider_id == current_user.id,
-                        Delivery.dispatch_id == current_user.id,
-                    )
-                )
+                .where(Delivery.rider_id == current_user.id)
             )
 
             current_user.order_cancel_count += 1
 
-            # UPDATE RIDER ESCROW BALANCE HERE
             await db.commit()
+         
+            # UPDATE RIDER ESCROW BALANCE
+            escrow_balance = (wallet.escrow_balance - delivery.amount_due_dispatch) if wallet.escrow_balance >= delivery.amount_due_dispatch else 0
+            await async db.execute(update(Wallet).where(Wallet.id==current_user.sender_id).values({
+                'escrow_balance': escrow_balance}
+                ))
 
-            delivery_result = result.scalar_one_or_none()
+            await db.commit()
+            await db.refresh()
 
-            invalidate_delivery_cache(delivery_result.id)
+
+            invalidate_delivery_cache(deliveryt.id)
             redis_client.delete(f"{ALL_DELIVERY}")
 
             token = get_user_notification_token(
@@ -740,6 +752,58 @@ async def cancel_delivery(
             redis_client.delete(f"{ALL_DELIVERY}")
 
             return delivery_result
+
+
+async def re_list_item_for_delivery(
+    db: AsyncSession, delivery_id: UUID, current_user: User
+) -> DeliveryStatusUpdateSchema:
+    """
+    Re-list delivery(Owner)
+    """
+
+    wallet_result = await db.execute(select(Wallet).where(Wallet.id==current_user.id))
+
+    wallet = wallet_result.scalar_one_or_none()
+
+    if current_user.user_type in [UserType.CUSTOMER, UserType.VENDOR]:
+        result = await db.execute(
+            select(Delivery)
+            .where(Delivery.id == delivery_id)
+            .where(Delivery.sender_id == current_user.id)
+        )
+        delivery = result.scalar_one_or_none()
+
+
+        try:
+
+            if delivery.delivery_status == DeliveryStatus.CANCELLED:
+                result = await db.execute(
+                    update(Delivery)
+                    .where(Delivery.id == delivery_id)
+                    .where(Delivery.sender_id == current_user.id)
+                    .values(delivery_status=DeliveryStatus.PENDING)
+                )
+                await db.commit()
+
+                # UPDATE USER WALLET
+                escrow_balance = wallet.escrow_balance + delivery.delivery_fee
+                await async db.execute(update(Wallet).where(Wallet.id==current_user.sender_id).values(
+
+                    {
+                    'balance': wallet.balance - delivery.delivery_fee,
+                    'escrow_balance': escrow_balance
+                    }
+                    ))
+                await db.commit()
+                await db.refresh(delivery)
+
+                invalidate_delivery_cache(delivery.id)
+                return DeliveryStatusUpdateSchema(delivery_status=delivery.delivery_status)
+
+        except Exception as e:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f'Something went wrong. {e}')
+
+
 
 
 async def rider_accept_delivery_order(
@@ -765,7 +829,7 @@ async def rider_accept_delivery_order(
             detail="This order has been assigned to a rider.",
         )
 
-    if current_user.user_type not in [UserType.RIDER]:
+    if current_user.user_type != UserType.RIDER:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN, detail="Only a rider can pickup orders. Register a rider"
         )
@@ -775,6 +839,8 @@ async def rider_accept_delivery_order(
             status_code=status.HTTP_403_FORBIDDEN, detail="Profile image is missing. Please update your profile"
         )
 
+    if current_user.rider_is_suspended_for_order_cancel:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail='You have been blocked for too many cancelled order.Wait until your account is reset')
 
     await db.execute(
         update(Delivery)

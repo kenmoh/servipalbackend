@@ -153,7 +153,7 @@ async def update_item_order_status(
         # Verify user permissions using cached data
         if (
             current_user.id != cached_order["owner_id"]
-            and current_user.id != cached_order["vendor_id"]
+            or current_user.id != cached_order["vendor_id"]
         ):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
