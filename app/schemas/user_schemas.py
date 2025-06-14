@@ -375,6 +375,8 @@ class ProfileSchema(BaseModel):
     closing_hours: time | None = None
     opening_hours: time | None = None
     account_holder_name: str | None = None
+    profile_image_url: str | None = None
+    backdrop_image_url: str | None = None
 
     model_config = ConfigDict(from_attributes=True)
 

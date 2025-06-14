@@ -337,9 +337,8 @@ async def get_user_with_profile(db: AsyncSession, user_id: UUID) -> ProfileSchem
         return ProfileSchema(**cached_user)
 
     try:
-        result = await db.execute(select(Profile).where(Profile.user_id == user_id))
+        result = await db.execute(select(Profile).options(selectinload(Profile.profile_image)).where(Profile.user_id == user_id))
         profile = result.scalar_one_or_none()
-
         if not profile:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND, detail="Profile not found"
@@ -358,6 +357,9 @@ async def get_user_with_profile(db: AsyncSession, user_id: UUID) -> ProfileSchem
             or None,
             "closing_hours": profile.closing_hours or None,
             "opening_hours": profile.opening_hours or None,
+            "profile_image_url": profile.profile_image.profile_image_url,
+            "backdrop_image_url": profile.backdrop_image_url or None
+
         }
 
         # Cache the user data using your existing function
@@ -771,7 +773,7 @@ async def get_users_by_laundry_services(
             )
             .select_from(Item)
             .join(Review, Item.id == Review.item_id)
-            .where(Item.item_type == ItemType.FOOD)
+            .where(Item.item_type == ItemType.LAUNDRY)
             .group_by(Item.user_id)
         ).subquery()
 
@@ -796,7 +798,7 @@ async def get_users_by_laundry_services(
                 review_stats_subquery, User.id == review_stats_subquery.c.vendor_id
             )
             .where(
-                Item.item_type == ItemType.FOOD,
+                Item.item_type == ItemType.LAUNDRY,
                 User.user_type == UserType.VENDOR.value,
             )
             .group_by(
@@ -881,7 +883,7 @@ async def get_users_by_laundry_services(
         )
 
 
-async def get_users_by_laundry_services(db: AsyncSession) -> List[VendorUserResponse]:
+async def get_users_by_laundry_services1(db: AsyncSession) -> List[VendorUserResponse]:
     """
     Retrieve users who have items with item_type='laundry'.
 
