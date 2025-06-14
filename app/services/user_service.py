@@ -1255,24 +1255,43 @@ async def register_notification(
     db: AsyncSession,
     current_user: User,
 ) -> Notification:
-    result = await db.execute(select(User).where(User.id == current_user.id))
 
-    user = result.scalar_one_or_none()
 
-    if not user.notification_token:
-        # Add notification token if not exists
-        await db.execute(
-            update(User)
-            .where(User.id == current_user.id)
-            .values({"notification_token": push_token.notification_token})
-        )
-        user.notification_token = push_token.notification_token
+    cache_key = f"notification_token:{current_user.notification_token}"
+    cached_data = redis_client.get(cache_key)
+    if cached_data:
+        return Notification(**rider)
 
-    # else:
-    #     # remove notification token if exists
-    #     db_user.notification_token = ""
-
+    result = await db.execute(select(User.notification_token).where(User.id == current_user.id))
+    existing_token = result.scalar_one_or_none()
+    
+    if existing_token is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+    
+    # Check if token already exists and is the same
+    if existing_token == push_token.notification_token:
+        # Token already exists and is the same, just return it
+        return existing_token
+    
+    # Update the notification token (either add new or update existing)
+    await db.execute(
+        update(User)
+        .where(User.id == current_user.id)
+        .values({"notification_token": push_token.notification_token})
+        .returning(User.notification_token)
+    )
+    
     await db.commit()
-    await db.refresh(user)
+    await db.refresh(new_token)
 
-    return user.notification_token
+
+    # Cache the new token
+    redis_client.setex(cache_key, 3600, push_token.notification_token) 
+    
+    return push_token.notification_token
+
+
+
+
+
+
