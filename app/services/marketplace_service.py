@@ -1,4 +1,3 @@
-from tkinter import E
 from redis import Redis
 from typing import Optional
 import json
