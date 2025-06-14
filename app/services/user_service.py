@@ -88,6 +88,77 @@ async def get_rider_profile(db: AsyncSession, user_id: UUID) -> RiderProfileSche
     return rider_dict
 
 
+async def get_current_user_details(db: AsyncSession, current_user: User) -> UserProfileResponse:
+    """
+    Retrieves all users with their profiles.
+
+    Args:
+        db: Async database session.
+
+    Returns:
+        List of UserProfileResponse objects with user and profile data.
+    """
+    # Try to get from cache first
+    cached_users = redis_client.get("current_useer_profile")
+    if cached_users:
+        user_data = json.loads(cached_users)
+        return UserProfileResponse(**user_data)
+
+    try:
+        # Build optimized query to get users with profiles
+        stmt = (
+            select(User)
+            .options(selectinload(User.profile).selectinload(Profile.profile_image))
+            .where(User.id == current_user.id)
+            .order_by(User.created_at.desc())
+        )
+
+        result = await db.execute(stmt)
+        user = result.scalar_one_or_none()
+
+        # Convert response format
+        user_profile_dict = {
+            "email": user.email,
+            "user_type": user.user_type,
+            "id": user.id,
+
+            "profile": {"phone_number": user.profile.phone_number,
+                        "user_id": user.id,
+                        "bike_number": getattr(user.profile, "bike_number", None),
+                        "bank_account_number": getattr(
+                            user.profile, "bank_account_number", None
+                        ),
+                        "bank_name": getattr(user.profile, "bank_name", None),
+                        "full_name": user.profile.full_name,
+                        "business_name": getattr(user.profile, "business_name", None),
+                        "business_address": getattr(user.profile, "business_address", None),
+                        "backdrop_image_url": getattr(user.profile.profile_image, 'backdrop_image_url', None),
+                        "profile_image_url": getattr(user.profile.profile_image, 'profile_image_url', None),
+                        "business_registration_number": getattr(
+                            user.profile, "business_registration_number", None
+                        ),
+                        "closing_hours": user.profile.closing_hours.isoformat()
+                        if getattr(user.profile, "closing_hours", None)
+                        else None,
+                        "opening_hours": user.profile.opening_hours.isoformat()
+                        if getattr(user.profile, "opening_hours", None)
+                        else None,}
+        }
+
+        # Cache the users data
+        redis_client.set("current_useer_profile", json.dumps(user_profile_dict, default=str), ex=CACHE_TTL)
+
+        # Convert to response objects
+        return UserProfileResponse(**user_profile_dict)
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to retrieve users: {str(e)}",
+        )
+
+
+
 async def get_users(db: AsyncSession) -> list[UserProfileResponse]:
     """
     Retrieves all users with their profiles.
@@ -108,7 +179,7 @@ async def get_users(db: AsyncSession) -> list[UserProfileResponse]:
         # Build optimized query to get users with profiles
         stmt = (
             select(User)
-            .options(selectinload(User.profile))
+            .options(selectinload(User.profile).selectinload(Profile.profile_image))
             .order_by(User.created_at.desc())
         )
 
@@ -120,7 +191,7 @@ async def get_users(db: AsyncSession) -> list[UserProfileResponse]:
             redis_client.set("all_users", json.dumps([], default=str), ex=CACHE_TTL)
             return []
 
-        # Convert to your exact response format
+        # Convert to  response format
         users_data = []
         for user in users:
             user_data = {
@@ -132,6 +203,7 @@ async def get_users(db: AsyncSession) -> list[UserProfileResponse]:
             # Add profile if exists
             if user.profile:
                 user_data["profile"] = {
+                "user_id": user.id,
                     "phone_number": user.profile.phone_number,
                     "bike_number": getattr(user.profile, "bike_number", None),
                     "bank_account_number": getattr(
@@ -141,6 +213,8 @@ async def get_users(db: AsyncSession) -> list[UserProfileResponse]:
                     "full_name": user.profile.full_name,
                     "business_name": getattr(user.profile, "business_name", None),
                     "business_address": getattr(user.profile, "business_address", None),
+                    "backdrop_image_url": getattr(user.profile.profile_image, 'backdrop_image_url', None),
+                    "profile_image_url": getattr(user.profile.profile_image, 'profile_image_url', None),
                     "business_registration_number": getattr(
                         user.profile, "business_registration_number", None
                     ),
