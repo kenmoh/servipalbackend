@@ -486,8 +486,7 @@ async def send_push_notification(
     except DeviceNotRegisteredError as e:
         logger.error("Device not registered error: {}", e)
         raise
-    except PushTicket as e:
-        logger.error("Push ticket error: {}", e)
+
 
     # async def send_welcome_email(subject: str, email_to: EmailStr, body: dict, temp_name: str):
     #     message = MessageSchema(

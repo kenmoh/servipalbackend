@@ -588,7 +588,7 @@ async def order_food_or_request_laundy_service(
 
             redis_client.delete(f"{ALL_DELIVERY}")
 
-            token = get_user_notification_token(db=db, user_id=vendor_id)
+            token = await get_user_notification_token(db=db, user_id=vendor_id)
             await send_push_notification(
                 tokens=[token],
                 title="New Order",
@@ -761,15 +761,24 @@ async def cancel_delivery(
             invalidate_delivery_cache(delivery.id)
             redis_client.delete(f"{ALL_DELIVERY}")
 
-            token = get_user_notification_token(
+            token = await get_user_notification_token(
                 db=db, user_id=delivery.vendor_id)
+            rider_token = await get_user_notification_token(db=db, user_id=delivery.rider_id)
 
-            await send_push_notification(
-                tokens=[token],
-                title="Order canceled",
-                message="Your Order has been canceled",
-                navigate_to="/(app)/delivery/orders",
-            )
+            if token:
+                await send_push_notification(
+                    tokens=[token],
+                    title="Order canceled",
+                    message="Your Order has been canceled",
+                    navigate_to="/(app)/delivery/orders",
+                )
+            if rider_token:
+                await send_push_notification(
+                    tokens=[rider_token],
+                    title="Order canceled",
+                    message="You canceled this order.",
+                    navigate_to="/(app)/delivery/orders",
+                )
 
             redis_client.delete(f"{ALL_DELIVERY}")
 
@@ -935,14 +944,25 @@ async def rider_accept_delivery_order(
         await db.commit()
         await db.refresh(delivery)
 
-    token = get_user_notification_token(db=db, user_id=delivery.sender_id)
+    token = await get_user_notification_token(db=db, user_id=delivery.rider_id)
+    sender_token = await get_user_notification_token(db=db, user_id=delivery.sender_id)
 
-    await send_push_notification(
-        tokens=[token],
-        title="Order Assigned",
-        message=f"Your order has been assigned to {current_user.profile.full_name}, {current_user.profile.phone_number}",
-        navigate_to="/(app)/delivery/orders",
-    )
+    if token:
+        await send_push_notification(
+            tokens=[token],
+            title="Order Assigned",
+            message=f"This order has been assigned to you. Drive safely",
+            navigate_to="/(app)/delivery/orders",
+        )
+    if token:
+        await send_push_notification(
+            tokens=[sender_token],
+            title="Order Assigned",
+            message=f"Your order has been assigned to {current_user.profile.full_name}, {current_user.profile.phone_number}",
+            navigate_to="/(app)/delivery/orders",
+        )
+    if not token and not sender_token:
+        logger.warn("No notification token found")
 
     redis_client.delete(f"delivery:{delivery_id}")
     redis_client.delete(f"{ALL_DELIVERY}")
@@ -1127,17 +1147,28 @@ async def sender_confirm_delivery_received(
                 else vendor_profile.business_name,
             )
 
-        # redis_client.delete(f"{ALL_DELIVERY}")
-        token = get_user_notification_token(db=db, user_id=delivery.rider_id)
-        dispatch_token = get_user_notification_token(
-            db=db, user_id=delivery.dispatch_id
+        token = await get_user_notification_token(db=db, user_id=delivery.rider_id)
+        sender_token = await get_user_notification_token(
+            db=db, user_id=delivery.sender_id
         )
-        await send_push_notification(
-            tokens=[token, dispatch_token],
-            title="Order completed",
-            message=f"Congratulations! Order completed. {delivery.amount_due_dispatch} has been released to your wallet",
-             navigate_to="/(app)/delivery/orders",
-        )
+        if token:
+            await send_push_notification(
+                tokens=[token],
+                title="Order completed",
+                message=f"Congratulations! Order completed. {delivery.amount_due_dispatch} has been released to your wallet",
+                 navigate_to="/(app)/delivery/orders",
+            )
+
+        if sender_token:
+            await send_push_notification(
+                tokens=[sender_token],
+                title="Order completed",
+                message=f"Congratulations! Order completed. {delivery.order.total_price} has been debited from your escrow_balance",
+                 navigate_to="/(app)/delivery/orders",
+            )
+
+        if not token and not rider_token:
+            logger.warn("No notification token found")
 
         redis_client.delete(f"delivery:{delivery_id}")
         redis_client.delete(f"{ALL_DELIVERY}")
@@ -1226,16 +1257,32 @@ async def vendor_mark_laundry_item_received(
         )
 
         # redis_client.delete(f"{ALL_DELIVERY}")
-        token = get_user_notification_token(db=db, user_id=delivery.rider_id)
-        dispatch_token = get_user_notification_token(
-            db=db, user_id=delivery.dispatch_id
+        token = await get_user_notification_token(db=db, user_id=delivery.sender_id)
+        rider_token = await get_user_notification_token(
+            db=db, user_id=delivery.rider_id
         )
-        await send_push_notification(
-            tokens=[token, dispatch_token],
-            title="Order completed",
-            message=f"Congratulations! Order complete. Your wallet has been credited with NGN {dispatch_amount}",
-            navigate_to="/(app)/delivery",
+
+        # Send notification to rider  
+        if token:
+            await send_push_notification(
+                tokens=[sender],
+                title="Order Completed",
+                message="Your laundry item has been received by the vendor",
+                navigate_to="/(app)/delivery",
+                )
+
+       
+        if rider_token:
+            await send_push_notification(
+                tokens=[rider_token],
+                title="Payment Received",
+                message=f"Congratulations! Order complete. Your wallet has been credited with NGN {dispatch_amount}",
+                navigate_to="/(app)/delivery",
         )
+
+        # Log if no tokens found
+        if not sender_token and not rider_token:
+            logger.warn("No notification tokens found for delivery: {}", delivery.id)
 
         redis_client.delete(f"delivery:{delivery_id}")
         redis_client.delete(f"{ALL_DELIVERY}")
@@ -1285,14 +1332,17 @@ async def rider_mark_delivered(
         await db.commit()
         await db.refresh(delivery)
 
-    token = get_user_notification_token(db=db, user_id=delivery.rider_id)
+    token = await get_user_notification_token(db=db, user_id=delivery.sender_id)
 
-    await send_push_notification(
-        tokens=[token],
-        title="Order Delivered",
-        message=f"Your order has been delivered. Please confirm with the receipient before marking as received.",
-        navigate_to="/(app)/delivery",
-    )
+    if token:
+        await send_push_notification(
+            tokens=[token],
+            title="Order Delivered",
+            message=f"Your order has been delivered. Please confirm with the receipient before marking as received.",
+            navigate_to="/(app)/delivery",
+        )
+    else:
+        logger.warn("No notification token found for user")
 
     redis_client.delete(f"delivery:{delivery_id}")
     redis_client.delete(f"{ALL_DELIVERY}")
