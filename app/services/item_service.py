@@ -5,6 +5,7 @@ from fastapi import HTTPException, UploadFile, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload, selectinload
 from sqlalchemy import select, delete, update
+from asyncpg.exceptions import UniqueViolationError
 
 from app.models.models import Item, Category, ItemImage, User
 from app.schemas.item_schemas import (
@@ -138,6 +139,9 @@ async def create_item(
         redis_client.delete(f"vendor_items:{current_user.id}")
 
         return new_item
+    except UniqueViolationError as e:
+        if 'unique_name_user_non_package' in str(e):
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail='You already have an item with this name.')
     except Exception as e:
         await db.rollback()
         # Log the error e
