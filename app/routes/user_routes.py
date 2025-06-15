@@ -98,7 +98,7 @@ async def get_current_user_details(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> UserProfileResponse:
-    return await user_service.get_current_user_details(db=db, user_id=user_id, current_user=current_user)
+    return await user_service.get_current_user_details(db=db, user_id=user_id)
 
 @router.get("/{user_id}/rider-profile", status_code=status.HTTP_200_OK)
 async def get_rider_details(
