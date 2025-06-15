@@ -1270,7 +1270,7 @@ async def register_notification(
     # Check if token already exists and is the same
     if user.notification_token == push_token.notification_token:
         # Token already exists and is the same, just return it
-        return existing_token
+        return user.notification_token
     
     # Update the notification token (either add new or update existing)
     await db.execute(
