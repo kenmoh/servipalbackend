@@ -1262,14 +1262,14 @@ async def register_notification(
     if cached_data:
         return Notification(**rider)
 
-    result = await db.execute(select(User.notification_token).where(User.id == current_user.id))
-    existing_token = result.scalar_one_or_none()
+    result = await db.execute(select(User).where(User.id == current_user.id))
+    user = result.scalar_one_or_none()
     
-    if existing_token is None:
+    if user is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
     
     # Check if token already exists and is the same
-    if existing_token == push_token.notification_token:
+    if user.notification_token == push_token.notification_token:
         # Token already exists and is the same, just return it
         return existing_token
     
@@ -1278,17 +1278,14 @@ async def register_notification(
         update(User)
         .where(User.id == current_user.id)
         .values({"notification_token": push_token.notification_token})
-        .returning(User.notification_token)
     )
     
     await db.commit()
-    await db.refresh(new_token)
-
 
     # Cache the new token
     redis_client.setex(cache_key, 3600, push_token.notification_token) 
     
-    return push_token.notification_token
+    return user.notification_token
 
 
 
