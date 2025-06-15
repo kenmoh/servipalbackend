@@ -88,7 +88,7 @@ async def get_rider_profile(db: AsyncSession, user_id: UUID) -> RiderProfileSche
     return rider_dict
 
 
-async def get_current_user_details(db: AsyncSession, current_user: User) -> UserProfileResponse:
+async def get_current_user_details(db: AsyncSession, user_id: UUID) -> UserProfileResponse:
     """
     Retrieves all users with their profiles.
 
@@ -109,8 +109,7 @@ async def get_current_user_details(db: AsyncSession, current_user: User) -> User
         stmt = (
             select(User)
             .options(selectinload(User.profile).selectinload(Profile.profile_image))
-            .where(User.id == current_user.id)
-            .order_by(User.created_at.desc())
+            .where(User.id == user_id)
         )
 
         result = await db.execute(stmt)
