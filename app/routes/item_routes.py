@@ -50,7 +50,7 @@ async def create_new_item(
     description: str = Form(None),
     price: Decimal = Form(...),
     item_type: ItemType = Form(...),
-    category_id: UUID = Form(None),
+    category_id: UUID | None = Form(None),
     images: List[UploadFile] = File(...),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),

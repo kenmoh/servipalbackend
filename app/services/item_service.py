@@ -102,6 +102,7 @@ async def create_item(
         current_user.is_blocked
         or current_user.account_status != AccountStatus.CONFIRMED
     ):
+        
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Permission denied! You have either been blocked or your account is not confirmed.",
