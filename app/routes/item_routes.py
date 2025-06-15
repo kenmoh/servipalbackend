@@ -47,10 +47,10 @@ async def create_new_category(
 )
 async def create_new_item(
     name: str = Form(...),
-    description: str = Form(...),
+    description: str = Form(None),
     price: Decimal = Form(...),
     item_type: ItemType = Form(...),
-    category_id: UUID = Form(...),
+    category_id: UUID = Form(None),
     images: List[UploadFile] = File(...),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),

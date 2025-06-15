@@ -99,10 +99,10 @@ async def get_current_user_details(db: AsyncSession, user_id: UUID) -> UserProfi
         List of UserProfileResponse objects with user and profile data.
     """
     # Try to get from cache first
-    # cached_users = redis_client.get("current_useer_profile")
-    # if cached_users:
-    #     user_data = json.loads(cached_users)
-    #     return UserProfileResponse(**user_data)
+    cached_user = redis_client.get(f"current_useer_profile:{user_id}")
+    if cached_user:
+        user_data = json.loads(cached_user)
+        return UserProfileResponse(**user_data)
 
     try:
         # Build optimized query to get users with profiles
@@ -145,7 +145,7 @@ async def get_current_user_details(db: AsyncSession, user_id: UUID) -> UserProfi
         }
 
         # Cache the users data
-        redis_client.set("current_useer_profile", json.dumps(user_profile_dict, default=str), ex=CACHE_TTL)
+        redis_client.set(f"current_useer_profile:{user_id}", json.dumps(user_profile_dict, default=str), ex=CACHE_TTL)
 
         # Convert to response objects
         return UserProfileResponse(**user_profile_dict)

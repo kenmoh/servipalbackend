@@ -30,10 +30,10 @@ class ItemType(str, Enum):
 
 class ItemCreate(BaseModel):
     name: str
-    description: str
+    description: str | None = None
     price: Decimal
     item_type: ItemType
-    category_id: UUID
+    category_id: UUID | None = None
 
 
 class ItemCreateResponse(BaseModel):

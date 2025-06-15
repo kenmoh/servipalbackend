@@ -32,7 +32,6 @@ from app.utils.utils import (
 )
 from app.config.config import redis_client
 
-
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 
@@ -541,6 +540,7 @@ async def logout_user(db: AsyncSession, current_user: User) -> bool:
         )
         await db.execute(stmt)
         await db.commit()
+        redis_client.delete(f"current_useer_profile:{current_user.id}")
         return True
     except Exception as e:
         await db.rollback()

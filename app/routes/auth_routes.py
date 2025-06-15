@@ -65,12 +65,12 @@ async def login_user(
 
 @router.post("/logout", include_in_schema=False, status_code=status.HTTP_200_OK)
 async def logout(
-    refresh_token: str,
+    current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> dict:
     """Logout user by revoking their refresh token"""
     try:
-        success = await auth_service.logout_user(db=db, refresh_token=refresh_token)
+        success = await auth_service.logout_user(db=db, current_user=current_user)
         if not success:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid token"
