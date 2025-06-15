@@ -108,13 +108,13 @@ async def create_item(
         )
 
     # Check if category exists
-    stmt_cat = select(Category).where(Category.id == item_data.category_id)
-    result_cat = await db.execute(stmt_cat)
-    if not result_cat.scalar_one_or_none():
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Category with id {item_data.category_id} not found.",
-        )
+    # stmt_cat = select(Category).where(Category.id == item_data.category_id)
+    # result_cat = await db.execute(stmt_cat)
+    # if not result_cat.scalar_one_or_none():
+    #     raise HTTPException(
+    #         status_code=status.HTTP_404_NOT_FOUND,
+    #         detail=f"Category with id {item_data.category_id} not found.",
+    #     )
 
     try:
         # Create item first
@@ -363,14 +363,14 @@ async def update_item(
     )  # Reuse get_item_by_id to check ownership and existence
 
     # Check if the new category exists if it's being changed
-    if item_data.category_id != item.category_id:
-        stmt_cat = select(Category).where(Category.id == item_data.category_id)
-        result_cat = await db.execute(stmt_cat)
-        if not result_cat.scalar_one_or_none():
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Category with id {item_data.category_id} not found.",
-            )
+    # if item.category_id is not None and item_data.category_id != item.category_id:
+    #     stmt_cat = select(Category).where(Category.id == item_data.category_id)
+    #     result_cat = await db.execute(stmt_cat)
+    #     if not result_cat.scalar_one_or_none():
+    #         raise HTTPException(
+    #             status_code=status.HTTP_404_NOT_FOUND,
+    #             detail=f"Category with id {item_data.category_id} not found.",
+    #         )
 
     # Update item fields
     update_data = item_data.model_dump(
