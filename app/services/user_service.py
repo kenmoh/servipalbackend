@@ -1290,7 +1290,7 @@ async def register_notification(
 
 async def get_current_user_notification_token(current_user: UUID, db: AsyncSession)-> Notification:
 
-    result = await db.execute(User).where(User.id==current_user.id)
+    result = await db.execute(select(User).where(User.id==current_user.id))
 
     user = result.scalar_one_or_none()
 
