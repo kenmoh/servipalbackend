@@ -1288,6 +1288,16 @@ async def register_notification(
 
 
 
+async def get_current_user_notification_token(current_user: UUID, db: AsyncSession)-> Notification:
 
+    result = await db.execute(User).where(User.id==current_user.id)
 
+    user = result.scalar_one_or_none()
 
+    if not user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail='User not found')
+
+    if not user.notification_token:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Notification token not found")
+
+    return user.notification_token

@@ -792,10 +792,10 @@ async def send_verification_codes(
     result = await db.execute(stmt)
     user = result.scalars().first()
 
-    if not user.profile.phone_number:
+    if not user.profile.phone_number and not user.email:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="User phone number not found",
+            detail="User phone number or email not found",
         )
 
     # Send email code
