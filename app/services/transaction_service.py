@@ -309,11 +309,13 @@ async def handle_payment_webhook(
                 # Update the database in the background with retry mechanism
                 background_task.add_task(update_database, db_order, db)
 
-                await send_push_notification(
-                tokens=[sender_token],
-                title="Payment Received",
-                message=f"Your payment of ₦{db_order.total_price} has been received.",
-        )
+                if sender_token:
+
+                    await send_push_notification(
+                    tokens=[sender_token],
+                    title="Payment Received",
+                    message=f"Your payment of ₦{db_order.total_price} has been received.",
+            )
                 return {"message": "Success"}
 
         return {"message": "Payment validation failed"}
@@ -373,10 +375,13 @@ async def fund_wallet_callback(request: Request, db: AsyncSession):
 
             token = get_user_notification_token(db=db, user_id=wallet.id)
 
-            await send_push_notification(
-                tokens=[token],
-                title="Payment Received",
-                message=f"Your payment of ₦{amount_to_add} has been received.")
+
+            if token:
+
+                await send_push_notification(
+                    tokens=[token],
+                    title="Payment Received",
+                    message=f"Your payment of ₦{amount_to_add} has been received.")
 
             return {
                 "payment_status": transaction.status,
@@ -463,10 +468,12 @@ async def order_payment_callback(request: Request, db: AsyncSession):
 
         token = get_user_notification_token(db=db, user_id=owner_id)
 
-        await send_push_notification(
-            tokens=[token],
-            title="Payment Received",
-            message=f"Your payment of ₦{total_price} has been received.")
+        if token:
+
+            await send_push_notification(
+                tokens=[token],
+                title="Payment Received",
+                message=f"Your payment of ₦{total_price} has been received.")
 
     delivery_stmt = select(Delivery.id).where(Delivery.order_id == UUID(tx_ref))
     delivery_result = await db.execute(delivery_stmt)

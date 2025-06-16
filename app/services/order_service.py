@@ -578,12 +578,14 @@ async def order_food_or_request_laundy_service(
             redis_client.delete(f"{ALL_DELIVERY}")
 
             token = await get_user_notification_token(db=db, user_id=vendor_id)
-            await send_push_notification(
-                tokens=[token],
-                title="New Order",
-                message=f"You have a new order from {current_user.profile.full_name if current_user.profile.full_name else current_user.profile.business_name}",
-                navigate_to="/delivery/orders",
-            )
+
+            if token:
+                await send_push_notification(
+                    tokens=[token],
+                    title="New Order",
+                    message=f"You have a new order from {current_user.profile.full_name if current_user.profile.full_name else current_user.profile.business_name}",
+                    navigate_to="/delivery/orders",
+                )
             return format_delivery_response(order, delivery=None)
 
     except Exception as e:
@@ -943,7 +945,7 @@ async def rider_accept_delivery_order(
             message=f"This order has been assigned to you. Drive safely",
             navigate_to="/(app)/delivery/orders",
         )
-    if token:
+    if sender_token:
         await send_push_notification(
             tokens=[sender_token],
             title="Order Assigned",
