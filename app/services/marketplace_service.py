@@ -27,7 +27,7 @@ from app.schemas.status_schema import (
     TransactionType,
 )
 from app.services.order_service import fetch_wallet
-from app.utils.utils import get_fund_wallet_payment_link
+from app.utils.utils import get_fund_wallet_payment_link, get_user_notification_token
 from app.config.config import redis_client
 
 
@@ -146,6 +146,16 @@ async def buy_product(
         await db.commit()
         await db.refresh(order)
 
+        token = await get_user_notification_token(db=db, user_id=order.vendor_id)
+
+            if token:
+                await send_push_notification(
+                    tokens=[token],
+                    title="New Order",
+                    message=f"You have a new order from {buyer.profile.full_name if buyer.profile.full_name else buyer.profile.business_name}",
+                    navigate_to="/delivery/orders",
+                )
+
         set_cached_order(order.id, order.dict())
 
         return order
@@ -184,6 +194,16 @@ async def vendor_mark_item_delivered(
             order.order_status = OrderStatus.DELIVERED
             await db.commit
             await db.refresh(order)
+
+            token = await get_user_notification_token(db=db, user_id=order.owner_id)
+
+            if token:
+                await send_push_notification(
+                    tokens=[token],
+                    title="Item Delivered",
+                    message=f"Your item has been marked as delivered. Ensure it is what you ordered before marking as received.",
+                    navigate_to="/delivery/orders",
+                )
 
             return {"order_status": order.order_status}
 
@@ -280,6 +300,16 @@ async def owner_mark_item_received(
 
             await db.commit()
 
+            token = await get_user_notification_token(db=db, user_id=order.vendor_id)
+
+            if token:
+                await send_push_notification(
+                    tokens=[token],
+                    title="successful",
+                    message=f"Transaction complete. \n The sum of ₦{order.amount_due_vendor} has released to your wallet",
+                    navigate_to="/delivery/orders",
+                )
+
             return {"order_status": order.order_status}
 
     except Exception as e:
@@ -317,6 +347,16 @@ async def owner_mark_item_rejected(
             order.order_status = OrderStatus.REJECTED
             await db.commit
             await db.refresh(order)
+
+            token = await get_user_notification_token(db=db, user_id=order.vendor_id)
+
+            if token:
+                await send_push_notification(
+                    tokens=[token],
+                    title="Rejected",
+                    message=f"Your item with order # {order.order_number} has been rejected.",
+                    navigate_to="/delivery/orders",
+                )
 
             return {"order_status": order.order_status}
 
@@ -374,6 +414,16 @@ async def vendor_mark_rejected_item_received(
                 .values({"balance": owner_wallet.balance + order.total_price})
             )
             await db.commit()
+
+            token = await get_user_notification_token(db=db, user_id=order.owner_id)
+
+            if token:
+                await send_push_notification(
+                    tokens=[token],
+                    title="Received",
+                    message=f"Your rejected item with order #{order.order_number} been received by the vendour.",
+                    navigate_to="/delivery/orders",
+                )
 
             return {"order_status": order.order_status}
 
