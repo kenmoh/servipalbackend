@@ -1300,4 +1300,4 @@ async def get_current_user_notification_token(current_user: UUID, db: AsyncSessi
     if not user.notification_token:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Notification token not found")
 
-    return user.notification_token
+    return {"notification_token": user.notification_token}
