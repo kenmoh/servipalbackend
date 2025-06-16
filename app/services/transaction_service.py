@@ -294,7 +294,7 @@ async def handle_payment_webhook(
             logging.warning(f"Order not found for txRef: {tx_ref}")
             return {"message": "Order not found"}
 
-        sender_token = get_user_notification_token(db=db, user_id=db_order.sender_id)
+        owner_token = get_user_notification_token(db=db, user_id=db_order.owner_id)
 
         # Check if the payment is valid and not already processed
         if (
@@ -312,7 +312,7 @@ async def handle_payment_webhook(
                 if sender_token:
 
                     await send_push_notification(
-                    tokens=[sender_token],
+                    tokens=[owner_token],
                     title="Payment Received",
                     message=f"Your payment of ₦{db_order.total_price} has been received.",
             )
