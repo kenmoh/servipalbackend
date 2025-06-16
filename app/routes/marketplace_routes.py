@@ -33,14 +33,13 @@ async def buy_listed_product(
     - Checks product availability, stock, and user funds.
     - Creates a transaction record and updates stock/wallet balances.
     """
-    transaction = await marketplace_service.buy_product(
+    return await marketplace_service.buy_product(
         db=db,
         product_id=product_id,
         buyer=current_user,
         buy_request=buy_request,
     )
-    # Exceptions (404, 400, 500) are handled within the service layer
-    return transaction
+    
 
 
 @router.put(
@@ -54,10 +53,9 @@ async def vendor_mark_item_delivered(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    updated_order = await marketplace_service.vendor_mark_item_delivered(
+    return await marketplace_service.vendor_mark_item_delivered(
         order_id=order_id, current_user=current_user, db=db
     )
-    return updated_order
 
 
 @router.put(
@@ -71,11 +69,9 @@ async def owner_mark_item_received(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    updated_order = await marketplace_service.owner_mark_item_received(
+    return await marketplace_service.owner_mark_item_received(
         order_id=order_id, current_user=current_user, db=db
     )
-    return updated_order
-
 
 @router.put(
     "/{order_id}/item-rejected",
@@ -88,10 +84,10 @@ async def owner_mark_item_rejected(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    updated_order = await marketplace_service.owner_mark_item_rejected(
+    return await marketplace_service.owner_mark_item_rejected(
         order_id=order_id, current_user=current_user, db=db
     )
-    return updated_order
+
 
 
 @router.put(
@@ -105,7 +101,7 @@ async def vendor_mark_rejected_item_received(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    updated_order = await marketplace_service.vendor_mark_rejected_item_received(
+    return await marketplace_service.vendor_mark_rejected_item_received(
         order_id=order_id, current_user=current_user, db=db
     )
-    return updated_order
+    

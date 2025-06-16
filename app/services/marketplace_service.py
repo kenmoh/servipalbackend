@@ -148,13 +148,13 @@ async def buy_product(
 
         token = await get_user_notification_token(db=db, user_id=order.vendor_id)
 
-            if token:
-                await send_push_notification(
-                    tokens=[token],
-                    title="New Order",
-                    message=f"You have a new order from {buyer.profile.full_name if buyer.profile.full_name else buyer.profile.business_name}",
-                    navigate_to="/delivery/orders",
-                )
+        if token:
+            await send_push_notification(
+                tokens=[token],
+                title="New Order",
+                message=f"You have a new order from {buyer.profile.full_name if buyer.profile.full_name else buyer.profile.business_name}",
+                navigate_to="/delivery/orders",
+            )
 
         set_cached_order(order.id, order.dict())
 
@@ -421,7 +421,7 @@ async def vendor_mark_rejected_item_received(
                 await send_push_notification(
                     tokens=[token],
                     title="Received",
-                    message=f"Your rejected item with order #{order.order_number} been received by the vendour.",
+                    message=f"Your rejected item with order #{order.order_number} been received by the vendour and the sum of ₦{order.total_price} has been released t your wallet.",
                     navigate_to="/delivery/orders",
                 )
 
