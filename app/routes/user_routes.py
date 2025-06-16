@@ -218,7 +218,7 @@ async def register_for_push_notification(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Delete a rider, their profile, and profile image"""
+    """Add Push token"""
     return await user_service.register_notification(
         push_token=push_token, db=db, current_user=current_user
     )
@@ -228,8 +228,8 @@ async def register_for_push_notification(
 async def get_push_notification(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
-):
-    """Delete a rider, their profile, and profile image"""
+)-> Notification:
+    """Delete Push Token"""
     return await user_service.get_current_user_notification_token(
       db=db, current_user=current_user
     )
