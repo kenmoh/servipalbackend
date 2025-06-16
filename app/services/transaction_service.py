@@ -294,7 +294,7 @@ async def handle_payment_webhook(
             logging.warning(f"Order not found for txRef: {tx_ref}")
             return {"message": "Order not found"}
 
-        owner_token = get_user_notification_token(db=db, user_id=db_order.owner_id)
+        owner_token = await get_user_notification_token(db=db, user_id=db_order.owner_id)
 
         # Check if the payment is valid and not already processed
         if (
@@ -373,7 +373,7 @@ async def fund_wallet_callback(request: Request, db: AsyncSession):
             await db.refresh(transaction)
             await db.refresh(wallet)
 
-            token = get_user_notification_token(db=db, user_id=wallet.id)
+            token = await get_user_notification_token(db=db, user_id=wallet.id)
 
 
             if token:
@@ -466,10 +466,9 @@ async def order_payment_callback(request: Request, db: AsyncSession):
         )
         await db.commit()
 
-        token = get_user_notification_token(db=db, user_id=owner_id)
+        token = await get_user_notification_token(db=db, user_id=owner_id)
 
         if token:
-
             await send_push_notification(
                 tokens=[token],
                 title="Payment Received",
