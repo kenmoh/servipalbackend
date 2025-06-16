@@ -487,6 +487,16 @@ async def send_push_notification(
         logger.error("Device not registered error: {}", e)
         raise
 
+async def get_user_notification_token(db: AsyncSession, user_id):
+    result = await db.execute(select(User.notification_token).where(User.id == user_id))
+    token = result.scalar_one()
+
+    if not token:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Notification token missing"
+        )
+    return token
+
 
     # async def send_welcome_email(subject: str, email_to: EmailStr, body: dict, temp_name: str):
     #     message = MessageSchema(

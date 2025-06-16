@@ -53,21 +53,10 @@ from app.utils.utils import (
     get_dispatch_id,
     get_payment_link,
     send_push_notification,
+    get_user_notification_token
 )
 from app.config.config import redis_client
 from app.utils.s3_service import add_image
-
-
-async def get_user_notification_token(db: AsyncSession, user_id):
-    result = await db.execute(select(User.notification_token).where(User.id == user_id))
-    token = result.scalar_one()
-
-    if not token:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Notification token missing"
-        )
-    return token
-
 
 ALL_DELIVERY = "deliveries"
 
@@ -769,7 +758,7 @@ async def cancel_delivery(
                 await send_push_notification(
                     tokens=[token],
                     title="Order canceled",
-                    message="Your Order has been canceled",
+                    message="Your Order has been canceled and will be re-listed",
                     navigate_to="/(app)/delivery/orders",
                 )
             if rider_token:
@@ -1163,7 +1152,7 @@ async def sender_confirm_delivery_received(
             await send_push_notification(
                 tokens=[sender_token],
                 title="Order completed",
-                message=f"Congratulations! Order completed. {delivery.order.total_price} has been debited from your escrow_balance",
+                message=f"Congratulations! Order completed. {delivery.order.total_price} has been debited from your escrow balance",
                  navigate_to="/(app)/delivery/orders",
             )
 
@@ -1276,7 +1265,7 @@ async def vendor_mark_laundry_item_received(
             await send_push_notification(
                 tokens=[rider_token],
                 title="Payment Received",
-                message=f"Congratulations! Order complete. Your wallet has been credited with NGN {dispatch_amount}",
+                message=f"Congratulations! Order complete. Your wallet has been credited with ₦ {dispatch_amount}",
                 navigate_to="/(app)/delivery",
         )
 
