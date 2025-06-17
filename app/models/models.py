@@ -306,6 +306,7 @@ class Item(Base):
     item_type: Mapped[ItemType]
     user_id: Mapped[UUID] = mapped_column(ForeignKey("users.id"))
     name: Mapped[str]
+    store_name: Mapped[str] = mapped_column(nullable=True)
     description: Mapped[str] = mapped_column(nullable=True)
     price: Mapped[Decimal] = mapped_column(default=0.00, nullable=False)
     sizes: Mapped[str] = mapped_column(nullable=True)
