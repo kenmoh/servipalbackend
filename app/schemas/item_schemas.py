@@ -44,7 +44,7 @@ class ItemCreateResponse(BaseModel):
     description: str | None = None
     price: Decimal
     item_type: ItemType
-    colors: list[] = []
+    colors: list[str] = []
     stock: int | None = None
     sizes: str | None = None
 
