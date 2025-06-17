@@ -110,18 +110,11 @@ async def create_item(
             detail="Permission denied! You have either been blocked or your account is not confirmed.",
         )
 
-    # Check if category exists
-    # stmt_cat = select(Category).where(Category.id == item_data.category_id)
-    # result_cat = await db.execute(stmt_cat)
-    # if not result_cat.scalar_one_or_none():
-    #     raise HTTPException(
-    #         status_code=status.HTTP_404_NOT_FOUND,
-    #         detail=f"Category with id {item_data.category_id} not found.",
-    #     )
+    colors = [color for color in item_data.colors]
 
     try:
         # Create item first
-        new_item = Item(**item_data.model_dump(), user_id=current_user.id, store_name=current_user.profile.store_name or None)
+        new_item = Item(**item_data.model_dump(), colors=colors or [], user_id=current_user.id, store_name=current_user.profile.store_name or None)
         db.add(new_item)
         await db.flush()
 
