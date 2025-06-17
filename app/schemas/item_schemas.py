@@ -44,7 +44,9 @@ class ItemCreateResponse(BaseModel):
     description: str | None = None
     price: Decimal
     item_type: ItemType
-    # category_id: UUID
+    colors: list[] = []
+    stock: int | None = None
+    sizes: str | None = None
 
 
 class ItemImageSchema(BaseModel):
