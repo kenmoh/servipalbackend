@@ -171,6 +171,7 @@ class Profile(Base):
     closing_hours: Mapped[time] = mapped_column(nullable=True)
     full_name: Mapped[str] = mapped_column(nullable=True)
     phone_number: Mapped[str] = mapped_column(unique=True, nullable=False)
+    store_name: Mapped[str] = mapped_column(unique=True, nullable=True)
     bike_number: Mapped[str] = mapped_column(unique=True, nullable=True)
     is_phone_verified: Mapped[bool] = mapped_column(default=False, nullable=True)
     phone_verification_code: Mapped[str] = mapped_column(nullable=True)

@@ -7,7 +7,7 @@ from uuid import UUID
 from fastapi import HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import insert, select, update
-from sqlalchemy.orm import selectinload
+from sqlalchemy.orm import selectinload,joinedload
 from sqlalchemy.sql.expression import and_
 from app.models.models import (
     ChargeAndCommission,
@@ -87,7 +87,7 @@ async def get_marketplace_item(item_id: UUID, db: AsyncSession) -> ItemResponse:
     cached_item = redis_client.get(f"marketplace_items:{item_id}")
     if cached_item:
         item_dict = json.loads(cached_item)
-        return ItemResponse(**item)
+        return ItemResponse(**item_dict)
 
     stmt = (
         select(Item)
@@ -96,7 +96,7 @@ async def get_marketplace_item(item_id: UUID, db: AsyncSession) -> ItemResponse:
         .options(joinedload(Item.images))
     )
     result = await db.execute(stmt)
-    item = result.scalar_one_or_none()
+    item = result.unique().scalar_one_or_none()
 
     item_dict = {
         "name": item.name,
@@ -122,7 +122,7 @@ async def get_marketplace_item(item_id: UUID, db: AsyncSession) -> ItemResponse:
             json.dumps(item_dict, default=str),
         )
 
-    return ItemResponse(**item)
+    return ItemResponse(**item_dict)
 
 
 

@@ -163,7 +163,7 @@ app = FastAPI(
     },
 )
 
-logfire.configure(project_name="ServiPal", service_name="ServiPal")
+logfire.configure(service_name="ServiPal")
 logfire.debug("App Debug mode on")
 logfire.instrument_fastapi(app=app)
 logfire.instrument_sqlalchemy(engine=engine)
