@@ -95,9 +95,9 @@ async def create_item(
     images: list[UploadFile],
 ) -> ItemResponse:
     """Creates a new item for the current VENDOR user."""
-    if current_user.user_type != UserType.VENDOR:
+    if current_user.user_type not in [UserType.VENDOR, UserType.CUSTOMER]:
         raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN, detail="Permission denied"
+            status_code=status.HTTP_403_FORBIDDEN, detail="Only vendour and customer users are allowed to perform this action "
         )
     if (
         current_user.is_blocked
