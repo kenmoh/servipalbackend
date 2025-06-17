@@ -498,7 +498,7 @@ async def get_user_notification_token(db: AsyncSession, user_id):
         )
     return token
 
-
+#https://servipalbackend.onrender.com/api/payment/order-payment-callback?status=successful&tx_ref=12345&transaction_id=8976667
     # async def send_welcome_email(subject: str, email_to: EmailStr, body: dict, temp_name: str):
     #     message = MessageSchema(
     #         subject=subject,
