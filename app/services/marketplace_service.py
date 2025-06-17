@@ -19,6 +19,7 @@ from app.models.models import (
     Wallet,
 )
 from app.schemas.marketplace_schemas import ProductBuyRequest
+from app.schemas.item_schemas import ItemType, ItemResponse
 from app.schemas.order_schema import OrderResponseSchema, OrderType
 from app.schemas.status_schema import (
     OrderStatus,
@@ -29,6 +30,100 @@ from app.schemas.status_schema import (
 from app.services.order_service import fetch_wallet
 from app.utils.utils import get_fund_wallet_payment_link, get_user_notification_token
 from app.config.config import redis_client
+
+
+
+async def get_marketplace_items(db: AsyncSession) -> list[ItemResponse]:
+    """Retrieves all marketplace items"""
+
+    # Try cache first
+    cached_items = redis_client.get(f"marketplace_items")
+    if cached_items:
+        item_dicts = json.loads(cached_items)
+        return [ItemResponse(**item) for item in item_dicts]
+
+    stmt = (
+        select(Item)
+        .where(Item.item_type == ItemType.PRODUCT)
+        .options(joinedload(Item.images))
+    )
+    result = await db.execute(stmt)
+    items = result.unique().scalars().all()
+
+    item_list_dict = []
+    for item in items:
+        item_dict = {
+            "name": item.name,
+            "description": item.description,
+            "price": item.price,
+            "item_type": item.item_type,
+            "category_id": item.category_id,
+            "colors": item.colors,
+            "stock": item.stock,
+            "sizes": item.sizes,
+            "id": item.id,
+            "user_id": item.user_id,
+            "images": [
+                {"id": img.id, "url": img.url, "item_id": img.item_id}
+                for img in item.images
+            ],
+        }
+        item_list_dict.append(item_dict)
+
+    # Cache the results
+    if item_list_dict:
+        redis_client.setex("marketplace_items",
+            CACHE_TTL,
+            json.dumps(item_list_dict, default=str),
+        )
+
+    return [ItemResponse(**item) for item in item_list_dict]
+
+
+async def get_marketplace_item(item_id: UUID, db: AsyncSession) -> ItemResponse:
+    """Retrieves all marketplace items"""
+
+    # Try cache first
+    cached_item = redis_client.get(f"marketplace_items:{item_id}")
+    if cached_item:
+        item_dict = json.loads(cached_item)
+        return ItemResponse(**item)
+
+    stmt = (
+        select(Item)
+        .where(Item.id == item_id)
+        .where(Item.item_type == ItemType.PRODUCT)
+        .options(joinedload(Item.images))
+    )
+    result = await db.execute(stmt)
+    item = result.scalar_one_or_none()
+
+    item_dict = {
+        "name": item.name,
+        "description": item.description,
+        "price": item.price,
+        "item_type": item.item_type,
+        "category_id": item.category_id,
+        "colors": item.colors,
+        "stock": item.stock,
+        "sizes": item.sizes,
+        "id": item.id,
+        "user_id": item.user_id,
+        "images": [
+            {"id": img.id, "url": img.url, "item_id": img.item_id}
+            for img in item.images
+        ]
+    }
+
+    # Cache the results
+    if item_dict:
+        redis_client.setex(f"marketplace_items:{item_id}",
+            CACHE_TTL,
+            json.dumps(item_dict, default=str),
+        )
+
+    return ItemResponse(**item)
+
 
 
 async def buy_product(

@@ -9,9 +9,40 @@ from app.schemas.marketplace_schemas import ProductBuyRequest
 from app.schemas.order_schema import OrderResponseSchema
 from app.schemas.status_schema import OrderStatus
 from app.services import marketplace_service
+from app.schemas.item_schemas import ItemResponse
 
 router = APIRouter(prefix="/marketplace", tags=["Marketplace"])
 
+
+
+@router.get(
+    "",
+    response_model=list[ItemResponse],
+    status_code=status.HTTP_200_OK,
+    summary="Get marketplace items",
+)
+async def get_marketplace_items(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    return await marketplace_service.get_marketplace_items(
+       db=db
+    )
+
+@router.get(
+    "/{item_id}/marketplace",
+    response_model=ItemResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Get marketplace item",
+)
+async def get_marketplace_item(
+    item_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    return await marketplace_service.get_marketplace_item(
+       db=db, item_id=item_id
+    )
 
 @router.post(
     "/{product_id}/buy",
