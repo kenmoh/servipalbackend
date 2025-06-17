@@ -121,7 +121,7 @@ async def create_item(
 
     try:
         # Create item first
-        new_item = Item(**item_data.model_dump(), user_id=current_user.id, store_name=current_user,store_name or None)
+        new_item = Item(**item_data.model_dump(), user_id=current_user.id, store_name=current_user.store_name or None)
         db.add(new_item)
         await db.flush()
 
