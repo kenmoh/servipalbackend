@@ -22,9 +22,7 @@ from urllib.parse import urlparse
 
 DEBUG = settings.DEBUG
 
-# engine = create_engine(SQLALCHEMY_DATABASE_URL, echo=True if DEBUG else False)
-# SessionLocal = sessionmaker(bind=engine, autocommit=False, autoflush=False)
-# session = SessionLocal()
+
 
 # Parse and clean test database URL
 test_db_url = settings.TEST_DATABASE_URL
@@ -77,23 +75,3 @@ async def get_db_context():
             raise
         finally:
             await session.close()
-
-
-# async def get_db() -> AsyncGenerator[AsyncSession, None]:
-#     async with async_session() as session:
-#         try:
-#             yield session
-#             session.commit()
-#         except Exception as e:
-#             await session.rollback()
-#             raise e
-#         finally:
-#             await session.close()
-
-
-# def get_db():
-#     db = SessionLocal()
-#     try:
-#         yield db
-#     finally:
-#         db.close()

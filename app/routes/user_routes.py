@@ -112,7 +112,7 @@ async def get_rider_details(
 @router.get("/restaurants", status_code=status.HTTP_200_OK)
 async def get_restaurants(
     category_id: UUID | None = None,
-    current_user: User = Depends(get_current_user),
+    # current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> list[VendorUserResponse]:
     """

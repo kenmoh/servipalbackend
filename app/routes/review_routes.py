@@ -105,8 +105,8 @@ async def update_report_status(
     update_data: ReportIssueUpdate,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
-) -> ReportIssueResponse:
+) -> ReportIssueUpdate:
     """
     Update report by user
     """
-    return await review_service.update_report_status(db=db, update_data=update_data, current_user=current_user)
+    return await review_service.update_report_status(db=db, update_data=update_data, report_id=report_id, current_user=current_user)

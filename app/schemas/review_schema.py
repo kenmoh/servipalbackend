@@ -7,7 +7,7 @@ from pydantic import BaseModel, Field
 
 class ReviewerType(str, Enum):
     ORDER = 'order'
-    RIDER = 'rider'
+    ITEM = 'item'
 
 
 class ReviewCreate(BaseModel):

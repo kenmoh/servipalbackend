@@ -7,7 +7,7 @@ from uuid import UUID
 import uuid
 from fastapi import HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, text
 import httpx
 from redis import Redis
 from exponent_server_sdk_async import (

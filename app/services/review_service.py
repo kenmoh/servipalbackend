@@ -43,7 +43,6 @@ def convert_report_to_response(report: ReportIssue) -> ReportIssueResponse:
 
 
 
-
 async def create_review(
     db: AsyncSession,
     current_user: User,
@@ -56,10 +55,10 @@ async def create_review(
 
     if data.review_type == ReviewerType.ORDER:
         # Optional caching
-        cache_key = f"review:order:{data.order_id}:user:{reviewer_id}"
-        if redis_client.get(cache_key):
-            print('FROM CACHE')
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Review already exists for this order.")
+        # cache_key = f"review:order:{data.order_id}:user:{reviewer_id}"
+        # if redis_client.get(cache_key):
+        #     print('FROM CACHE')
+        #     raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Review already exists for this order.")
 
         # Check if review already exists
         existing_review = await db.execute(
@@ -69,7 +68,7 @@ async def create_review(
             )
         )
         if existing_review.scalar():
-            redis_client.setex(cache_key, True, ttl=settings.REDIS_EX)
+        #     redis_client.setex(cache_key, True, settings.REDIS_EX)
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Review already exists for this order.")
 
         # Order validation
@@ -89,7 +88,7 @@ async def create_review(
     elif data.review_type == ReviewerType.RIDER:
         cache_key = f"review:delivery:{data.delivery_id}:user:{reviewer_id}"
         if redis_client.get(cache_key):
-            raise HTTPException(status_code=400, detail="Review already exists for this delivery.")
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Review already exists for this delivery.")
 
         existing_review = await db.execute(
             select(Review).where(
@@ -98,7 +97,7 @@ async def create_review(
             )
         )
         if existing_review.scalar():
-            redis_client.setex(cache_key, True, ttl=settings.REDIS_EX)
+            redis_client.setex(cache_key, settings.REDIS_EX)
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Review already exists for this delivery.")
 
         delivery = await db.get(Delivery, data.delivery_id)
@@ -349,56 +348,6 @@ async def get_reports_by_user(
     return report_responses
 
 
-
-# async def get_reports_by_user(
-#     db: AsyncSession,
-#     current_user: User,
-# ) -> list[ReportIssueResponse]:
-#     """
-#     Fetch all reports involving a user (as reported user or reporter) with Redis caching.
-#     """
-#     cache_key = f'user_reports:{current_user.id}'
-    
-#     # Try cache first with error handling
-
-#     cached_reports = redis_client.get(cache_key)
-#     if cached_reports:
-#         return [ReportIssueResponse(**r) for r in json.loads(cached_reports)]
-
-
-#     # Build query
-#     user_filters = or_(
-#         ReportIssue.vendor_id == current_user.id,
-#         ReportIssue.customer_id == current_user.id,
-#         ReportIssue.dispatch_id == current_user.id,
-#         ReportIssue.reporter_id == current_user.id
-#     )
-#     query = select(ReportIssue).where(user_filters).order_by(ReportIssue.created_at.desc())
-    
-#     # Execute query
-#     result = await db.execute(query)
-#     reports = result.scalars().all()
-    
-#     report_responses = convert_report_to_response(reports)
-
-    
-#     # Cache the results
-#     reports_data = [report.model_dump() for report in report_responses]
-  
-#     try:
-#         redis_client.setex(
-#             cache_key,
-#             settings.REDIS_EX,
-#             json.dumps(reports_data, default=str),
-#         )
-#         print(f"Cache SET for key: {cache_key}")
-#     except Exception as e:
-#         print(f"Cache set error: {e}")
-    
-#     return report_responses
-
-
-
 async def get_report_by_id(
     db: AsyncSession, 
     current_user: User, 
@@ -464,10 +413,10 @@ async def update_report_status(
     report_id: UUID, 
     update_data: ReportIssueUpdate,
     current_user: User
-) -> IssueStatus:
+) -> ReportIssueUpdate:
     """Update report status (typically by admin or involved parties)"""
 
-    cache_key = f'report_id:{reporter_id}'
+    cache_key = f'report_id:{report_id}'
     
     # report = await get_report_by_id(db, report_id)
     report_result = await db.execute(select(ReportIssue).where(ReportIssue.id==report_id, ReportIssue.reporter_id==current_user.id))
@@ -481,10 +430,10 @@ async def update_report_status(
         )
     await db.execute(update(ReportIssue).where(ReportIssue.id==report_id).values(issue_status=update_data.issue_status).returning(ReportIssue.issue_status))    
 
-    db.commit()
-    db.refresh(report)
+    await db.commit()
+    await db.refresh(report)
 
     redis_client.delete(cache_key)
     
-    return report.issue_status
+    return {'issue_status': report.issue_status}
 
