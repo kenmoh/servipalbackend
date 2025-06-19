@@ -2,7 +2,7 @@ import json
 from uuid import UUID
 from typing import List, Optional
 
-from fastapi import HTTPException, status, UploadFile
+from fastapi import HTTPException, status, UploadFile, BackgroundTasks
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, update, delete
 from sqlalchemy.orm import selectinload
@@ -10,9 +10,9 @@ from asyncpg.exceptions import UniqueViolationError
 from sqlalchemy.exc import IntegrityError
 
 from app.models.models import Item, User, Category, ItemImage
-from app.schemas.product_schemas import ProductCreate, ProductUpdate, ProductResponse
+from app.schemas.product_schemas import ProductCreate, ProductUpdate, ProductResponse, ProductImage
 from app.schemas.item_schemas import ItemType
-from app.config.config import redis_client
+from app.config.config import redis_client, settings
 from app.utils.s3_service import upload_multiple_images
 
 
@@ -65,7 +65,7 @@ async def create_product(
         await db.refresh(new_product)
 
         redis_client.delete("all_products")
-        redis_client.delete(f"seller_products:{seller.id}")
+        redis_client.delete(f"products:{seller.id}")
 
         return new_product
     except IntegrityError as e:
@@ -86,65 +86,127 @@ async def create_product(
         )
 
 
-async def get_product_by_id(db: AsyncSession, product_id: UUID) -> ProductResponse:
+async def get_product_by_id(
+    db: AsyncSession, 
+    product_id: UUID, 
+    background_task: BackgroundTasks | None = None
+) -> ProductResponse | None:
     """
     Retrieves a single product by its ID, including seller and category info.
+    Uses Redis caching to improve performance.
 
     Args:
         db: The database session.
         product_id: The ID of the product to retrieve.
+        redis: Redis client instance.
+        background_tasks: FastAPI background tasks for cache invalidation.
 
     Returns:
         The product details or None if not found.
     """
-    cached_product = await get_cached_product(product_id)
+    cached_product = redis_client.get(f"product:{product_id}")
     if cached_product:
-        return ProductResponse(**cached_product)
+        return ProductResponse(**json.loads(cached_product))
+
+    # Not in cache, query database
     stmt = (
         select(Item)
-        .where(Item.id == product_id)
-        # Eager load relationships
-        .options(selectinload(Item.seller), selectinload(Item.category))
+        .where(Item.id == product_id, Item.item_type==ItemType.PRODUCT)
+        .options(selectinload(Item.images), selectinload(Item.category))
     )
 
     result = await db.execute(stmt)
     product = result.scalar_one_or_none()
+    
+    if not product:
+        return None
 
-    if product:
-        await set_cached_product(product_id, product.dict())
+    # Convert and cache the product
+    product_response = convert_item_to_product_response(product)
 
-    return product
+    # Cache the formatted response
+    if product_response:
+        redis_client.setex(
+            f"product:{product_id}",
+            settings.REDIS_EX,
+            json.dumps(product_response.model_dump(), default=str),
+        )
+    
+    return product_response
+
 
 
 async def get_products(
-    db: AsyncSession, skip: int = 0, limit: int = 100
-) -> List[ProductResponse]:
-    """
-    Retrieves a list of products with pagination.
+    db: AsyncSession
+) -> list[ProductResponse]:
 
-    Args:
-        db: The database session.
-        skip: Number of products to skip.
-        limit: Maximum number of products to return.
 
-    Returns:
-        A list of products.
-    """
+    cache_key = "all_products"
 
-    cache_key = f"all_products:{skip}:{limit}"
     cached_products = redis_client.get(cache_key)
     if cached_products:
-        return [ProductResponse(**p) for p in json.loads(cached_products)]
-
-    stmt = select(Item).offset(skip).limit(limit).order_by(Item.created_at.desc())
+        print(f"Cache HIT for key: {cache_key}") 
+        return [ProductResponse(**product) for product in json.loads(cached_products)]
+  
+    # Get ALL products and cache them
+    stmt = (
+        select(Item)
+        .where(Item.item_type == ItemType.PRODUCT)
+        .options(selectinload(Item.images))
+        .order_by(Item.created_at.desc())
+    )
     result = await db.execute(stmt)
     products = result.scalars().all()
 
-    if products:
+    product_responses = [convert_item_to_product_response(product) for product in products]
+
+    
+    if product_responses:
         redis_client.setex(
-            cache_key, CACHE_TTL, json.dumps([p.dict() for p in products], default=str)
+            cache_key,
+            settings.REDIS_EX,
+            json.dumps([product.model_dump() for product in product_responses], default=str),
         )
-    return products
+        print(f'CACHE SET FOR {cache_key}')
+    return product_responses
+    
+
+
+async def get_user_products(
+    db: AsyncSession,
+    current_user: User
+) -> list[ProductResponse]:
+
+
+    cache_key = f"products:{current_user.id}"
+
+    cached_products = redis_client.get(cache_key)
+    if cached_products:
+        return [ProductResponse(**product) for product in json.loads(cached_products)]
+  
+    # Get ALL products and cache them
+    stmt = (
+        select(Item)
+        .where(Item.item_type == ItemType.PRODUCT, Item.user_id==current_user.id)
+        .options(selectinload(Item.images))
+        .order_by(Item.created_at.desc())
+    )
+    result = await db.execute(stmt)
+    products = result.scalars().all()
+
+    product_responses = [convert_item_to_product_response(product) for product in products]
+
+    
+    if product_responses:
+        redis_client.setex(
+            cache_key,
+            settings.REDIS_EX,
+            json.dumps([product.model_dump() for product in product_responses], default=str),
+        )
+
+    return product_responses
+    
+
 
 
 async def update_product(
@@ -273,20 +335,69 @@ async def delete_product(
 # <<<<< ---------- CACHE UTILITY FOR PRODUCTS ---------- >>>>>
 
 # Add cache constants and helpers at the top after imports
-CACHE_TTL = 3600  # 1 hour
 
 
-def get_cached_product(product_id: UUID) -> Optional[dict]:
-    """Get product from cache"""
-    cached_product = redis_client.get(f"product:{str(product_id)}")
-    return json.loads(cached_product) if cached_product else None
+# def get_cached_product(cache_key: str) -> ProductResponse:
+#     """Get single product from cache"""
+#     try:
+#         cached_data = redis_client.get(cache_key)
+#         if cached_data:
+#             product_dict = json.loads(cached_data)
+#             # Convert image dictionaries to ProdutImage objects
+#             if 'images' in product_dict:
+#                 product_dict['images'] = [
+#                     ProdutImage(**img_dict) for img_dict in product_dict['images']
+#                 ]
+#             return ProductResponse(**product_dict)
+#         return None
+#     except Exception as e:
+#         print(f"Cache get error: {e}")
+#         return None
 
 
-def set_cached_product(product_id: UUID, product_data: dict) -> None:
-    """Set product in cache"""
-    redis_client.setex(
-        f"product:{str(product_id)}", CACHE_TTL, json.dumps(product_data, default=str)
-    )
+# def set_cached_product(cache_key: str, product: ProductResponse) -> None:
+#     """Set single product in cache"""
+#     try:
+#         product_dict = product.model_dump()
+#         json_string = json.dumps(product_dict, default=str)
+#         redis_client.setex(cache_key, settings.REDIS_EX, json_string)
+#         print(f"Cache SET for key: {cache_key}")
+#     except Exception as e:
+#         print(f"Cache set error: {e}")
+
+
+# def get_cached_products(cache_key: str) -> list[ProductResponse]:
+#     """Get products from cache"""
+#     try:
+#         cached_data = redis_client.get(cache_key)
+#         if cached_data:
+#             product_dicts = json.loads(cached_data)
+#             # Convert dictionaries back to ProductResponse objects
+#             products = []
+#             for product_dict in product_dicts:
+#                 # Convert image dictionaries to ProdutImage objects
+#                 if 'images' in product_dict:
+#                     product_dict['images'] = [
+#                         ProdutImage(**img_dict) for img_dict in product_dict['images']
+#                     ]
+#                 products.append(ProductResponse(**product_dict))
+#             return products
+#         return None
+#     except Exception as e:
+#         print(f"Cache get error: {e}")
+#         return None
+
+
+# def set_cached_products(cache_key: str, products: list[ProductResponse]) -> None:
+#     """Set products in cache"""
+#     try:
+#         # Convert ProductResponse objects to dictionaries, then to JSON string
+#         product_dicts = [product.model_dump() for product in products]
+#         json_string = json.dumps(product_dicts, default=str)
+#         redis_client.setex(cache_key, settings.REDIS_EX, json_string)
+#         print(f"Cache SET for key: {cache_key}")
+#     except Exception as e:
+#         print(f"Cache set error: {e}")
 
 
 def invalidate_product_cache(product_id: UUID, seller_id: UUID = None) -> None:
@@ -295,3 +406,34 @@ def invalidate_product_cache(product_id: UUID, seller_id: UUID = None) -> None:
     redis_client.delete("all_products")
     if seller_id:
         redis_client.delete(f"seller_products:{str(seller_id)}")
+
+
+
+def convert_item_to_product_response(item) -> ProductResponse:
+    """Convert SQLAlchemy Item to ProductResponse"""
+    # Convert ItemImage objects to ProdutImage objects
+    images = [
+        ProductImage(
+            id=img.id,
+            url=img.url,
+            item_id=img.item_id 
+        )
+        for img in item.images
+    ]
+    
+    return ProductResponse(
+        id=item.id,
+        user_id=item.user_id,  # This will be aliased to seller_id
+        total_sold=item.total_sold,
+        name=item.name,
+        description=item.description or "",
+        price=item.price,
+        stock=item.stock,
+        category_id=item.category_id,
+        sizes=item.sizes,
+        colors=item.colors if item.colors else [],
+        in_stock=item.in_stock,
+        images=images,
+        created_at=item.created_at,
+        updated_at=item.updated_at
+    )

@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status, Query, UploadFile, File
+from fastapi import APIRouter, Depends, HTTPException, status, Query, UploadFile, File, BackgroundTasks
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import List, Optional
 from uuid import UUID
@@ -54,12 +54,13 @@ async def create_new_product(
 )
 async def read_product(
     product_id: UUID,
+    background_task: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
 ):
     """
     Endpoint to retrieve a product by its unique ID. Publicly accessible.
     """
-    product = await product_service.get_product_by_id(db=db, product_id=product_id)
+    product = await product_service.get_product_by_id(db=db, product_id=product_id, background_task=background_task)
     if product is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Product not found"
@@ -75,18 +76,28 @@ async def read_product(
     description="Retrieves a list of products with optional pagination.",
 )
 async def read_products(
-    skip: int = Query(0, ge=0, description="Number of items to skip"),
-    limit: int = Query(
-        100, ge=1, le=200, description="Maximum number of items to return"
-    ),
     db: AsyncSession = Depends(get_db),
 ):
     """
     Endpoint to retrieve a list of products. Supports pagination. Publicly accessible.
     """
-    products = await product_service.get_products(db=db, skip=skip, limit=limit)
-    return products
+    return await product_service.get_products(db=db)
 
+@router.get(
+    "",
+    response_model=List[ProductResponse],
+    status_code=status.HTTP_200_OK,
+)
+async def get_user_items(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+    
+):
+    """
+    Endpoint to retrieve a list of products. Supports pagination. Publicly accessible.
+    """
+    return await product_service.get_user_products(db=db)
+  
 
 @router.put(
     "/{product_id}",

@@ -55,10 +55,10 @@ from app.utils.utils import (
     send_push_notification,
     get_user_notification_token
 )
-from app.config.config import redis_client
+from app.config.config import redis_client, settings
 from app.utils.s3_service import add_image
 
-ALL_DELIVERY = "deliveries"
+ALL_DELIVERY = "orders"
 
 
 async def filter_delivery_by_delivery_type(
@@ -109,45 +109,151 @@ async def filter_delivery_by_delivery_type(
     return delivery_responses
 
 
-async def get_delivery_by_id(db: AsyncSession, delivery_id: UUID) -> DeliveryResponse:
-    """
-    Properly loads all relationships including item images without errors
-    """
+async def get_delivery_by_order_id(
+    order_id: UUID,
+    db: AsyncSession,
+) -> DeliveryResponse:
+    """Get delivery by order ID"""
 
-    cached_delivery = redis_client.get(f"delivery:{delivery_id}")
-    if cached_delivery:
-        return DeliveryResponse(**json.loads(cached_delivery))
-
-    stmt = (
-        select(Delivery)
-        .where(Delivery.id == delivery_id)
-        .options(
-            joinedload(Delivery.order).options(
-                selectinload(Order.order_items).options(
-                    joinedload(OrderItem.item).options(
-                        selectinload(Item.images)  # This loads the item images
-                    )
-                ),
-                joinedload(Order.delivery),  # This loads the order's delivery
+    cached_order = redis_client.get(f"delivery:{order_id}")
+    if cached_order:
+        return DeliveryResponse(**json.loads(cached_order))
+    try:
+        # Query order with its delivery and order items
+        order_stmt = (
+            select(Order)
+            .options(
+                selectinload(Order.delivery),
+                selectinload(Order.order_items).selectinload(
+                    OrderItem.item).selectinload(Item.images)
             )
+            .where(Order.id == order_id)
         )
-    )
 
+        order_result = await db.execute(order_stmt)
+        order = order_result.scalar_one_or_none()
+
+        if not order:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Order not found"
+            )
+
+        oder_response = format_delivery_response(order, order.delivery)
+
+        # Cache the formatted response
+        redis_client.setex(
+            f"delivery:{order_id}",
+            timedelta(seconds=settings.REDIS_EX),
+            json.dumps(oder_response.model_dump(), default=str),
+        )
+
+        return oder_response
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error retrieving delivery: {str(e)}"
+        )
+
+
+
+# async def get_all_orders(
+#     db: AsyncSession
+# ) -> list[DeliveryResponse]:
+#     """
+#     Get all orders with their deliveries (if any) with pagination and caching
+#     """
+#     cache_key = ALL_DELIVERY
+#     # Try cache first
+#     cached_deliveries = redis_client.get(cache_key)
+#     if cached_deliveries:
+#         print('CACH HIT')
+#         return [DeliveryResponse(**d) for d in json.loads(cached_deliveries)]
+    
+#     stmt = (
+#         select(Order)
+#         .options(
+#             selectinload(Order.order_items).options(
+#                 joinedload(OrderItem.item).options(
+#                     selectinload(Item.images))
+#             ),
+#             joinedload(Order.delivery),
+#         )
+#         .order_by(Order.updated_at.desc())
+#     )
+    
+#     result = await db.execute(stmt)
+#     orders = result.unique().scalars().all()
+    
+#     # Format responses - delivery will be None for orders without delivery
+#     order_responses = [
+#         format_delivery_response(order, order.delivery) for order in orders
+#     ]
+    
+#     # Cache the formatted responses
+#     redis_client.setex(
+#         cache_key,
+#         timedelta(seconds=settings.REDIS_EX),
+#         json.dumps([order.model_dump() for order in order_responses], default=str),
+#     )
+    
+#     return order_responses
+
+
+async def get_all_orders(
+    db: AsyncSession
+) -> list[DeliveryResponse]:
+    """
+    Get all orders with their deliveries (if any) with caching
+    """
+    cache_key = ALL_DELIVERY
+    
+    # Try cache first with error handling
+    try:
+        cached_deliveries = redis_client.get(cache_key)
+        if cached_deliveries:
+            print(f"Cache HIT for key: {cache_key}")
+            return [DeliveryResponse(**d) for d in json.loads(cached_deliveries)]
+        else:
+            print(f"Cache MISS for key: {cache_key}")
+    except Exception as e:
+        print(f"Cache error: {e}")
+    
+    stmt = (
+        select(Order)
+        .options(
+            selectinload(Order.order_items).options(
+                joinedload(OrderItem.item).options(
+                    selectinload(Item.images))
+            ),
+            joinedload(Order.delivery),  # This will be None if no delivery exists
+        )
+        .order_by(Order.created_at.desc())  # Removed offset and limit
+    )
+    
     result = await db.execute(stmt)
-    delivery = result.unique().scalars().one_or_none()
-
-    if not delivery:
-        return None
-    delivery_response = format_delivery_response(delivery.order, delivery)
-
-    # Cache the formatted response
-    redis_client.setex(
-        f"delivery:{delivery_id}",
-        timedelta(seconds=CACHE_TTL),
-        json.dumps(delivery_response.model_dump(), default=str),
-    )
-
-    return delivery_response
+    orders = result.unique().scalars().all()
+    
+    # Format responses - delivery will be None for orders without delivery
+    delivery_responses = [
+        format_delivery_response(order, order.delivery) for order in orders
+    ]
+    
+    # Cache the formatted responses with error handling
+    try:
+        redis_client.setex(
+            cache_key,
+            timedelta(seconds=CACHE_TTL),
+            json.dumps([d.model_dump() for d in delivery_responses], default=str),
+        )
+        print(f"Cache SET for key: {cache_key}")
+    except Exception as e:
+        print(f"Cache set error: {e}")
+    
+    return delivery_responses
 
 
 async def get_all_deliveries(
@@ -610,9 +716,9 @@ async def get_order_with_items(
         Exception: If the order is not found.
     """
     #  # Try cache first
-    cached_order = await get_cached_order(order_id)
-    if cached_order:
-        return OrderItemResponseSchema(**cached_order)
+    # cached_order = await get_cached_order(order_id)
+    # if cached_order:
+    #     return OrderItemResponseSchema(**cached_order)
 
     # If not in cache, fetch from database
     stmt = (
@@ -952,8 +1058,6 @@ async def rider_accept_delivery_order(
             message=f"Your order has been assigned to {current_user.profile.full_name}, {current_user.profile.phone_number}",
             navigate_to="/(app)/delivery/orders",
         )
-    if not token and not sender_token:
-        logger.warn("No notification token found")
 
     redis_client.delete(f"delivery:{delivery_id}")
     redis_client.delete(f"{ALL_DELIVERY}")
@@ -1147,7 +1251,7 @@ async def sender_confirm_delivery_received(
                 tokens=[token],
                 title="Order completed",
                 message=f"Congratulations! Order completed. {delivery.amount_due_dispatch} has been released to your wallet",
-                 navigate_to="/(app)/delivery/orders",
+                navigate_to="/(app)/delivery/orders",
             )
 
         if sender_token:
@@ -1155,11 +1259,8 @@ async def sender_confirm_delivery_received(
                 tokens=[sender_token],
                 title="Order completed",
                 message=f"Congratulations! Order completed. {delivery.order.total_price} has been debited from your escrow balance",
-                 navigate_to="/(app)/delivery/orders",
+                navigate_to="/(app)/delivery/orders",
             )
-
-        if not token and not rider_token:
-            logger.warn("No notification token found")
 
         redis_client.delete(f"delivery:{delivery_id}")
         redis_client.delete(f"{ALL_DELIVERY}")
@@ -1253,27 +1354,22 @@ async def vendor_mark_laundry_item_received(
             db=db, user_id=delivery.rider_id
         )
 
-        # Send notification to rider  
+        # Send notification to rider
         if token:
             await send_push_notification(
-                tokens=[sender],
+                tokens=[token],
                 title="Order Completed",
                 message="Your laundry item has been received by the vendor",
                 navigate_to="/(app)/delivery",
-                )
+            )
 
-       
         if rider_token:
             await send_push_notification(
                 tokens=[rider_token],
                 title="Payment Received",
                 message=f"Congratulations! Order complete. Your wallet has been credited with ₦ {dispatch_amount}",
                 navigate_to="/(app)/delivery",
-        )
-
-        # Log if no tokens found
-        if not sender_token and not rider_token:
-            logger.warn("No notification tokens found for delivery: {}", delivery.id)
+            )
 
         redis_client.delete(f"delivery:{delivery_id}")
         redis_client.delete(f"{ALL_DELIVERY}")
@@ -1332,8 +1428,6 @@ async def rider_mark_delivered(
             message=f"Your order has been delivered. Please confirm with the receipient before marking as received.",
             navigate_to="/(app)/delivery",
         )
-    else:
-        logger.warn("No notification token found for user")
 
     redis_client.delete(f"delivery:{delivery_id}")
     redis_client.delete(f"{ALL_DELIVERY}")

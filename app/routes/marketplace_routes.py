@@ -23,7 +23,6 @@ router = APIRouter(prefix="/marketplace", tags=["Marketplace"])
 )
 async def get_marketplace_items(
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
 ):
     return await marketplace_service.get_marketplace_items(
        db=db
@@ -37,7 +36,6 @@ async def get_marketplace_items(
 )
 async def get_marketplace_item(
     item_id: UUID,
-    db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     return await marketplace_service.get_marketplace_item(

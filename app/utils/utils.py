@@ -510,3 +510,11 @@ async def get_user_notification_token(db: AsyncSession, user_id):
     #     mail = FastMail(connection_config)
     #     await mail.send_message(message=message, template_name=temp_name)
     #     return JSONResponse(status_code=200, content={"message": "email has been sent"})
+    
+async def refresh_vendor_review_stats_view(db: AsyncSession):
+    try:
+        await db.execute(text("REFRESH MATERIALIZED VIEW CONCURRENTLY vendor_review_stats"))
+        await db.commit()
+    except Exception as e:
+        await db.rollback()
+        raise Exception(f"Failed to refresh materialized view: {e}")

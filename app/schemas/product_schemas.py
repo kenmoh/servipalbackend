@@ -6,6 +6,11 @@ from decimal import Decimal
 from datetime import datetime
 
 
+class ProductImage(BaseModel):
+    id: UUID
+    url: str
+    item_id: UUID
+
 # Base schema with common fields
 class ProductBase(BaseModel):
     name: str = Form(...)
@@ -29,10 +34,19 @@ class ProductUpdate(ProductBase):
 
 
 # Schema for representing a product in responses (output)
-class ProductResponse(ProductBase):
+class ProductResponse(BaseModel):
     id: UUID
-    seller_id: UUID = Field(alias="user_id")
-    total_sold: int = 0
+    user_id: UUID
+    total_sold: int | None = None
+    name: str
+    description: str
+    price: Decimal
+    stock: int | None = None 
+    category_id: UUID
+    sizes: str | None = None
+    colors: list[str] = []
+    in_stock: bool
+    images: list[ProductImage]
     created_at: datetime
     updated_at: datetime
 

@@ -1,3 +1,4 @@
+from typing import Optional
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 import random
 from uuid import UUID, uuid4
@@ -37,6 +38,8 @@ from app.schemas.status_schema import (
     RequireDeliverySchema,
     TransactionType,
 )
+
+from app.schemas.review_schema import ReviewerType, IssueType,IssueStatus, ReportingType
 
 
 logging.basicConfig(level=logging.INFO)
@@ -151,8 +154,45 @@ class User(Base):
     )
 
     reviews_written: Mapped[list["Review"]] = relationship(
-        back_populates="reviewer", cascade="all, delete-orphan"
+        back_populates="reviewer", cascade="all, delete-orphan", foreign_keys="[Review.reviewer_id]"
+        )
+
+    reviews_received: Mapped[list["Review"]] = relationship(
+        back_populates="reviewee", cascade="all, delete-orphan", foreign_keys="[Review.reviewee_id]"
     )
+
+    issues_as_vendor: Mapped[list["ReportIssue"]] = relationship(
+        "ReportIssue",
+        foreign_keys="ReportIssue.vendor_id",
+        back_populates="vendor",
+        lazy="selectin",
+        cascade="all, delete-orphan"
+    )
+
+    issues_as_customer: Mapped[list["ReportIssue"]] = relationship(
+        "ReportIssue",
+        foreign_keys="ReportIssue.customer_id",
+        back_populates="customer",
+        lazy="selectin",
+        cascade="all, delete-orphan"
+    )
+
+    issues_as_dispatch: Mapped[list["ReportIssue"]] = relationship(
+        "ReportIssue",
+        foreign_keys="ReportIssue.dispatch_id",
+        back_populates="dispatch",
+        lazy="selectin",
+        cascade="all, delete-orphan"
+    )
+
+    issues_reported: Mapped[list["ReportIssue"]] = relationship(
+        "ReportIssue",
+        foreign_keys="ReportIssue.reporter_id",
+        back_populates="reporter",
+        lazy="selectin",
+        cascade="all, delete-orphan"
+    )
+
 
 
 class Profile(Base):
@@ -333,7 +373,7 @@ class Item(Base):
         uselist=True,
     )
     reviews: Mapped[list["Review"]] = relationship(
-        back_populates="item", cascade="all, delete-orphan", lazy="selectin"
+    back_populates="item", cascade="all, delete-orphan"
     )
     # __table_args__ = (UniqueConstraint(
     #     "name", "user_id", name="uq_name_item"),)
@@ -347,6 +387,7 @@ class Item(Base):
             postgresql_where=text("item_type != 'PACKAGE'"),
         ),
     )
+
 
 
 class ItemImage(Base):
@@ -405,6 +446,16 @@ class Order(Base):
         lazy="selectin",
     )
     delivery: Mapped["Delivery"] = relationship(back_populates="order")
+    user_reviews: Mapped[list["Review"]] = relationship(
+    back_populates="order", cascade="all, delete-orphan"
+    )
+    issues: Mapped[list["ReportIssue"]] = relationship(
+        "ReportIssue",
+        back_populates="order",
+        lazy="selectin",
+        cascade="all, delete-orphan"
+    )
+
 
 
 class OrderItem(Base):
@@ -469,7 +520,20 @@ class Delivery(Base):
     sender: Mapped["User"] = relationship(
         back_populates="deliveries_as_sender", foreign_keys=[sender_id]
     )
+    issues: Mapped[list["ReportIssue"]] = relationship(
+        "ReportIssue",
+        back_populates="delivery",
+        lazy="selectin",
+        cascade="all, delete-orphan"
+    )
 
+    reviews: Mapped[list["Review"]] = relationship(
+    back_populates="delivery", cascade="all, delete-orphan"
+    )
+
+
+
+  
 
 class ChargeAndCommission(Base):
     __tablename__ = "charges"
@@ -489,24 +553,118 @@ class ChargeAndCommission(Base):
     created_at: Mapped[datetime] = mapped_column(default=datetime.today)
     updated_at: Mapped[datetime] = mapped_column(default=datetime.today)
 
-
 class Review(Base):
     __tablename__ = "reviews"
 
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
-    user_id: Mapped[UUID] = mapped_column(ForeignKey("users.id"), nullable=False)
-    item_id: Mapped[UUID] = mapped_column(ForeignKey("items.id"), nullable=False)
-    rating: Mapped[int] = mapped_column(Integer, nullable=False)  # e.g., 1 to 5
+    
+    reviewer_id: Mapped[UUID] = mapped_column(ForeignKey("users.id"))  # Who wrote the review
+    order_id: Mapped[Optional[UUID]] = mapped_column(ForeignKey("orders.id"), nullable=True)
+    delivery_id: Mapped[Optional[UUID]] = mapped_column(ForeignKey("deliveries.id"), nullable=True)
+    item_id: Mapped[Optional[UUID]] = mapped_column(ForeignKey("items.id"), nullable=True)
+    
+    reviewee_id: Mapped[Optional[UUID]] = mapped_column(ForeignKey("users.id"), nullable=True)  # Who is being reviewed
+
+    rating: Mapped[int] = mapped_column(Integer, nullable=False)
+    review_type: Mapped[ReviewerType] = mapped_column(nullable=False)  # Enum: ITEM, RIDER, VENDOR
     comment: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
     created_at: Mapped[datetime] = mapped_column(default=datetime.now)
-    updated_at: Mapped[datetime] = mapped_column(
-        default=datetime.now, onupdate=datetime.now
+    updated_at: Mapped[datetime] = mapped_column(default=datetime.now, onupdate=datetime.now)
+
+    # RELATIONSHIPS
+    reviewer: Mapped["User"] = relationship(
+        "User", back_populates="reviews_written", foreign_keys=[reviewer_id]
     )
 
-    # Relationships
-    reviewer: Mapped["User"] = relationship(back_populates="reviews_written")
-    item: Mapped["Item"] = relationship(back_populates="reviews")
+    reviewee: Mapped["User"] = relationship(
+        "User", back_populates="reviews_received", foreign_keys=[reviewee_id]
+    )
+
+    order: Mapped[Optional["Order"]] = relationship(back_populates="user_reviews")
+    delivery: Mapped[Optional["Delivery"]] = relationship(back_populates="reviews")
+    item: Mapped[Optional["Item"]] = relationship(back_populates="reviews")
 
     __table_args__ = (
-        UniqueConstraint("user_id", "item_id", name="uq_user_item_review"),
+        # Optional: Prevent duplicate reviews (e.g., per reviewer/order/item)
+        UniqueConstraint("reviewer_id", "order_id", name="uq_user_order_review"),
+        UniqueConstraint("reviewer_id", "item_id", name="uq_user_item_review"),
+        UniqueConstraint("reviewer_id", "delivery_id", name="uq_user_delivery_review"),
     )
+
+
+
+
+class ReportIssue(Base):
+    __tablename__ = "issues"
+
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+
+    # Foreign keys to either Order or Delivery
+    order_id: Mapped[Optional[UUID]] = mapped_column(ForeignKey("orders.id"), nullable=True)
+    delivery_id: Mapped[Optional[UUID]] = mapped_column(ForeignKey("deliveries.id"), nullable=True)
+
+    # The user being reported (based on context)
+    dispatch_id: Mapped[Optional[UUID]] = mapped_column(ForeignKey("users.id"), nullable=True)
+    vendor_id: Mapped[Optional[UUID]] = mapped_column(ForeignKey("users.id"), nullable=True)
+    customer_id: Mapped[Optional[UUID]] = mapped_column(ForeignKey("users.id"), nullable=True)
+
+    # Reporter
+    reporter_id: Mapped[UUID] = mapped_column(ForeignKey("users.id"), nullable=False)
+
+    description: Mapped[str]
+    issue_type: Mapped[IssueType]
+    issue_status: Mapped[IssueStatus] = mapped_column(default=IssueStatus.PENDING)
+    reporting: Mapped[ReportingType]
+
+    created_at: Mapped[datetime] = mapped_column(default=datetime.now)
+    updated_at: Mapped[datetime] = mapped_column(default=datetime.now, onupdate=datetime.now)
+
+    __table_args__ = (
+        # One report per reporter per order (if vendor is involved)
+        UniqueConstraint("reporter_id", "order_id", "vendor_id", name="uq_reporter_order_report"),
+
+        # One report per reporter per delivery (if dispatch is involved)
+        UniqueConstraint("reporter_id", "delivery_id", "dispatch_id", name="uq_reporter_delivery_report"),
+    )
+
+    vendor: Mapped[Optional["User"]] = relationship(
+        "User",
+        foreign_keys=[vendor_id],
+        back_populates="issues_as_vendor",
+        lazy="joined"
+    )
+
+    customer: Mapped[Optional["User"]] = relationship(
+        "User",
+        foreign_keys=[vendor_id],
+        back_populates="issues_as_customer",
+        lazy="joined"
+    )
+
+    dispatch: Mapped[Optional["User"]] = relationship(
+        "User",
+        foreign_keys=[dispatch_id],
+        back_populates="issues_as_dispatch",
+        lazy="joined"
+    )
+
+    reporter: Mapped["User"] = relationship(
+        "User",
+        foreign_keys=[reporter_id],
+        back_populates="issues_reported",
+        lazy="joined"
+    )
+
+    order: Mapped[Optional["Order"]] = relationship(
+        "Order",
+        back_populates="issues",
+        lazy="selectin"
+    )
+
+    delivery: Mapped[Optional["Delivery"]] = relationship(
+        "Delivery",
+        back_populates="issues",
+        lazy="selectin"
+    )
+

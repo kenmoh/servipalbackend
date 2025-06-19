@@ -95,7 +95,6 @@ async def read_user_items(
 @router.get("/categories", status_code=status.HTTP_200_OK)
 async def get_categories(
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
 ) -> List[CategoryResponse]:
     """
     Endpoint to get all categories.
@@ -112,7 +111,6 @@ async def get_categories(
 async def read_vendor_items(
     vendor_id: UUID,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
 ) -> List[ItemResponse]:
     """
     Endpoint to get all items for the logged-in VENDOR user.
@@ -131,22 +129,15 @@ async def read_vendor_items(
 )
 async def read_item(
     item_id: UUID,
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
 ) -> ItemResponse:
     """
     Endpoint to retrieve a specific item by its UUID.
     - Requires authenticated VENDOR user.
     - Returns 404 if the item is not found or does not belong to the user.
     """
-    item = await item_service.get_item_by_id(db, item_id)
-    if not item:
-        # This check might be redundant if get_item_by_id already raises HTTPException
-        # but it's good practice for clarity.
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Item not found"
-        )
-    return item
+    return await item_service.get_item_by_id(db, item_id)
+
 
 
 @router.put(
@@ -197,4 +188,4 @@ async def delete_existing_item(
     - Returns 204 No Content on successful deletion.
     """
     await item_service.delete_item(db, current_user, item_id)
-    return None  # Return None for 204 status code
+    return None

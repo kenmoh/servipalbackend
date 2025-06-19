@@ -1,5 +1,6 @@
 from datetime import datetime, time
 from dataclasses import dataclass
+from enum import Enum
 from decimal import Decimal
 from uuid import UUID
 from fastapi import Depends, Form
@@ -362,6 +363,7 @@ class UserBase(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+
 class ProfileSchema(BaseModel):
     user_id: UUID | None = None
     phone_number: str
@@ -467,3 +469,5 @@ class VendorUserResponse(BaseModel):
 class ProfileImageResponseSchema(BaseModel):
     profile_image_url: str | None = None
     backdrop_image_url: str | None = None
+
+

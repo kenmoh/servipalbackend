@@ -22,6 +22,7 @@ from app.routes import (
     order_routes,
     product_routes,
     marketplace_routes,
+    review_routes
 )
 
 from app.utils.cron_job import (
@@ -168,11 +169,8 @@ logfire.debug("App Debug mode on")
 logfire.instrument_fastapi(app=app)
 logfire.instrument_sqlalchemy(engine=engine)
 
-# SQLAlchemyInstrumentor().instrument(engine=engine)
-
 origins = ["http://localhost:3000", "https://servipal-admin.vercel.app"]
 
-# noinspection PyTypeChecker
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,
@@ -230,6 +228,8 @@ async def resolve_account_name(data: AccountDetails) -> AccountDetailResponse:
 app.include_router(auth_routes.router)
 app.include_router(auth_routes.router)
 app.include_router(user_routes.router)
+app.include_router(review_routes.router)
+app.include_router(review_routes.report)
 app.include_router(item_routes.router)
 app.include_router(order_routes.router)
 app.include_router(payment_routes.router)

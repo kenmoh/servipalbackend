@@ -23,6 +23,15 @@ from app.services import order_service
 router = APIRouter(prefix="/api/orders", tags=["Orders"])
 
 
+
+@router.get("", status_code=status.HTTP_200_OK)
+async def get_all_orders(
+    db: AsyncSession = Depends(get_db),
+) -> list[DeliveryResponse]:
+    return await order_service.get_all_orders(db=db)
+
+
+
 @router.get("/deliveries", status_code=status.HTTP_200_OK)
 async def get_deliveries(
     db: AsyncSession = Depends(get_db),
@@ -31,6 +40,7 @@ async def get_deliveries(
     current_user: User = Depends(get_current_user),
 ) -> list[DeliveryResponse]:
     return await order_service.get_all_deliveries(db=db, skip=skip, limit=limit)
+
 
 
 @router.post(
@@ -94,13 +104,12 @@ async def order_food_or_request_laundy_service(
     )
 
 
-@router.get("/{delivery_id}", status_code=status.HTTP_200_OK)
-async def get_delivery_by_id(
-    delivery_id: UUID,
+@router.get("/{order_id}", status_code=status.HTTP_200_OK)
+async def get_delivery_by_order_id(
+    order_id: UUID,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
 ) -> DeliveryResponse:
-    return await order_service.get_delivery_by_id(db=db, delivery_id=delivery_id)
+    return await order_service.get_delivery_by_order_id(db=db, order_id=order_id)
 
 
 @router.put("/{delivery_id}/confirm-delivery", status_code=status.HTTP_202_ACCEPTED)
