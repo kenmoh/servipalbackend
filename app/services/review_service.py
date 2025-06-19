@@ -90,7 +90,7 @@ async def create_review(
             review_type=ReviewerType.ORDER
         )
 
-    elif order.order.order_type == ReviewerType.PRODUCT::
+    elif order.order.order_type == ReviewerType.PRODUCT:
         # cache_key = f"review:delivery:{data.item_id}:user:{reviewer_id}"
         # if redis_client.get(cache_key):
         #     raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Review already exists for this delivery.")

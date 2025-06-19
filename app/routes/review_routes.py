@@ -62,7 +62,7 @@ async def get_user_reviews(
     """
     Endpoint to get current user reviews
     """
-    return await review_service.fetch_vendor_reviews(db=db, vendor_id:vendor_id, current_user=current_user)
+    return await review_service.fetch_vendor_reviews(db=db, vendor_id=vendor_id, current_user=current_user)
 
 
 @report.get(

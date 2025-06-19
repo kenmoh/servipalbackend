@@ -33,7 +33,7 @@ from app.schemas.user_schemas import (
     UpdateRider,
 )
 from app.services import user_service
-from app.schemas.item_schemas import MenuWithReviewResponseSchema
+from app.schemas.item_schemas import RestaurantMenuResponseSchema
 from app.utils.s3_service import add_profile_image, update_image
 
 
@@ -188,17 +188,17 @@ async def get_restaurant_reviews_endpoint(
     return await user_service.get_restaurant_reviews(db, vendor_id, limit, offset)
 
 
-@router.get("/restaurants/{vendor_id}/menu", status_code=status.HTTP_200_OK)
+@router.get("/restaurants/{restaurant_id}/menu", status_code=status.HTTP_200_OK)
 async def get_restaurant_menu(
-    vendor_id: UUID,
+    restaurant_id: UUID,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-) -> MenuWithReviewResponseSchema:
+
+) -> list[RestaurantMenuResponseSchema]:
     """
     Get restaurant menu with individual item reviews.
     Used when customer visits a specific restaurant.
     """
-    return await user_service.get_restaurant_menu_with_reviews(db, vendor_id)
+    return await user_service.get_restaurant_menu(db=db, restaurant_id=restaurant_id)
 
 
 @router.delete("/{rider_id}/delete", status_code=status.HTTP_204_NO_CONTENT)

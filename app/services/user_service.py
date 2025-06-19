@@ -22,8 +22,9 @@ from app.schemas.status_schema import AccountStatus, UserType
 from app.utils.s3_service import add_image, update_image, delete_s3_object
 from app.config.config import redis_client, settings
 from app.models.materialize_model import VendorReviewStats
-from app.models.models import User, Wallet, Profile, ProfileImage, Transaction, Review, Order
+from app.models.models import User, Wallet, Profile, ProfileImage, Transaction, Review, Order, Item
 from app.schemas.review_schema import ReviewerType
+from app.schemas.item_schemas import RestaurantMenuResponseSchema
 from app.schemas.user_schemas import (
     Notification,
     ProfileSchema,
@@ -1298,70 +1299,70 @@ async def get_users_by_laundry_services(
 
 
 
-async def get_users_by_laundry_services1(db: AsyncSession) -> List[VendorUserResponse]:
-    """
-    Retrieve users who have items with item_type='laundry'.
+# async def get_users_by_laundry_services1(db: AsyncSession) -> List[VendorUserResponse]:
+#     """
+#     Retrieve users who have items with item_type='laundry'.
 
-    Args:
-        db: The database session.
+#     Args:
+#         db: The database session.
 
-    Returns:
-        List of dictionaries containing user details in the specified format.
+#     Returns:
+#         List of dictionaries containing user details in the specified format.
 
-    Raises:
-        HTTPException: If an error occurs during the database query.
-    """
-    try:
-        # Query to get users with laundry items
-        stmt = (
-            select(User)
-            .join(Item, Item.user_id == User.id)
-            .where(Item.item_type == ItemType.LAUNDRY)
-            .options(
-                selectinload(User.profile).selectinload(Profile.profile_image),
-                # selectinload(User.profile).selectinload(Profile.profile_image),
-            )
-        )
+#     Raises:
+#         HTTPException: If an error occurs during the database query.
+#     """
+#     try:
+#         # Query to get users with laundry items
+#         stmt = (
+#             select(User)
+#             .join(Item, Item.user_id == User.id)
+#             .where(Item.item_type == ItemType.LAUNDRY)
+#             .options(
+#                 selectinload(User.profile).selectinload(Profile.profile_image),
+#                 # selectinload(User.profile).selectinload(Profile.profile_image),
+#             )
+#         )
 
-        # Execute query
-        result = await db.execute(stmt)
-        users = result.scalars().unique().all()
+#         # Execute query
+#         result = await db.execute(stmt)
+#         users = result.scalars().unique().all()
 
-        # Format the response
-        response = []
-        for user in users:
-            response.append(
-                {
-                    "id": user.id,
-                    "company_name": user.profile.business_name
-                    if user.profile
-                    else None,
-                    "email": user.email,
-                    "phone_number": user.profile.phone_number if user.profile else None,
-                    "profile_image": user.profile.profile_image.url
-                    if user.profile and user.profile.profile_image
-                    else None,
-                    "location": user.profile.business_address if user.profile else None,
-                    "company_background_image": user.profile.backdrop.url
-                    if user.profile.backdrop
-                    else None,
-                    "opening_hour": user.profile.opening_hours
-                    if user.profile
-                    else None,
-                    "closing_hour": user.profile.closing_hours
-                    if user.profile
-                    else None,
-                    "rating": await get_vendor_average_rating(user.id, db),
-                }
-            )
+#         # Format the response
+#         response = []
+#         for user in users:
+#             response.append(
+#                 {
+#                     "id": user.id,
+#                     "company_name": user.profile.business_name
+#                     if user.profile
+#                     else None,
+#                     "email": user.email,
+#                     "phone_number": user.profile.phone_number if user.profile else None,
+#                     "profile_image": user.profile.profile_image.url
+#                     if user.profile and user.profile.profile_image
+#                     else None,
+#                     "location": user.profile.business_address if user.profile else None,
+#                     "company_background_image": user.profile.backdrop.url
+#                     if user.profile.backdrop
+#                     else None,
+#                     "opening_hour": user.profile.opening_hours
+#                     if user.profile
+#                     else None,
+#                     "closing_hour": user.profile.closing_hours
+#                     if user.profile
+#                     else None,
+#                     "rating": await get_vendor_average_rating(user.id, db),
+#                 }
+#             )
 
-        return response
+#         return response
 
-    except Exception as e:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Failed to retrieve laundry service providers: {str(e)}",
-        )
+#     except Exception as e:
+#         raise HTTPException(
+#             status_code=500,
+#             detail=f"Failed to retrieve laundry service providers: {str(e)}",
+#         )
 
 
 async def get_vendor_average_rating(user_id, db: AsyncSession) -> Decimal:
@@ -1643,6 +1644,74 @@ async def get_current_user_notification_token(current_user: UUID, db: AsyncSessi
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Notification token not found")
 
     return {"notification_token": user.notification_token}
+
+
+
+async def get_restaurant_menu(db: AsyncSession, restaurant_id: UUID) -> list[RestaurantMenuResponseSchema]:
+    """
+    Retrieve all menu items for a specific restaurant with Redis caching.
+    
+    Args:
+        db: Async database session
+        restaurant_id: UUID of the restaurant
+        redis_client: Redis client instance
+        
+    Returns:
+        List of RestaurantMenuResponseSchema objects
+        
+    Raises:
+        SQLAlchemyError: If database query fails
+    """
+    cache_key = f"restaurant_menu:{restaurant_id}"
+
+    
+    # Check cache first
+    cached_data = redis_client.get(cache_key)
+    if cached_data:
+        menu_data = json.loads(cached_data)
+        # Convert back to Pydantic models
+        return [RestaurantMenuResponseSchema(**item) for item in menu_data]
+    try:
+        # Query menu items with eager loading of images
+        menu_stmt = select(Item).where(Item.user_id == restaurant_id, Item.item_type==ItemType.FOOD).options(selectinload(Item.images))
+        result = await db.execute(menu_stmt)
+        menus = result.unique().scalars().all()
+        
+        # Transform each menu item to response schema
+        menu_list = []
+        for menu in menus:
+            menu_dict = {
+                'id': menu.id,  
+                'restaurant_id': menu.user_id,
+                'name': menu.name,
+                'item_type': menu.item_type,
+                'description': menu.description,
+                'price': menu.price, 
+                'images': [
+                    {
+                        'id': image.id, 
+                        'item_id': image.item_id, 
+                        'url': image.url
+                    } for image in menu.images
+                ]
+            }
+            menu_list.append(menu_dict)
+        
+        # Cache the data
+        redis_client.setex(cache_key, settings.REDIS_EX, json.dumps(menu_list, default=str))
+        
+        # Convert to Pydantic models for return
+        return [RestaurantMenuResponseSchema(**item) for item in menu_list]
+        
+    except Exception as e:
+        # Log the error (you might want to use proper logging here)
+        print(f"Error fetching restaurant menu: {e}")
+        raise
+
+
+ 
+
+
 
 
 # <<<<< ---------- REVIEW SYSTEM ---------- >>>>>
