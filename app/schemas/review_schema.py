@@ -7,12 +7,12 @@ from pydantic import BaseModel, Field
 
 class ReviewerType(str, Enum):
     ORDER = 'order'
-    ITEM = 'item'
+    PRODUCT = 'product'
 
 
 class ReviewCreate(BaseModel):
     order_id: UUID | None = None
-    delivery_id: UUID | None = None
+    item_id: UUID | None = None
     item_id: UUID | None = None
     reviewee_id: UUID
     rating: int = Field(..., ge=1, le=5)

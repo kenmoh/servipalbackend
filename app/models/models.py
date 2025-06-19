@@ -560,7 +560,7 @@ class Review(Base):
     
     reviewer_id: Mapped[UUID] = mapped_column(ForeignKey("users.id"))  # Who wrote the review
     order_id: Mapped[Optional[UUID]] = mapped_column(ForeignKey("orders.id"), nullable=True)
-    delivery_id: Mapped[Optional[UUID]] = mapped_column(ForeignKey("deliveries.id"), nullable=True)
+    # delivery_id: Mapped[Optional[UUID]] = mapped_column(ForeignKey("deliveries.id"), nullable=True)
     item_id: Mapped[Optional[UUID]] = mapped_column(ForeignKey("items.id"), nullable=True)
     
     reviewee_id: Mapped[Optional[UUID]] = mapped_column(ForeignKey("users.id"), nullable=True)  # Who is being reviewed

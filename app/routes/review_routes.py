@@ -51,17 +51,18 @@ async def create_report(
 
 
 @router.get(
-    "/current-user-reviews",
+    "/{vendor_id}/vendor-reviews",
     status_code=status.HTTP_200_OK,
 )
 async def get_user_reviews(
+    vendor_id: UUID,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> list[VendorReviewResponse]:
     """
     Endpoint to get current user reviews
     """
-    return await review_service.fetch_vendor_reviews(db=db, current_user=current_user)
+    return await review_service.fetch_vendor_reviews(db=db, vendor_id:vendor_id, current_user=current_user)
 
 
 @report.get(

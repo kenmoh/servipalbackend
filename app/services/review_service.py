@@ -11,7 +11,7 @@ from app.schemas.review_schema import (ReviewCreate,
         VendorReviewResponse,  
         ReportingType,
 IssueStatus, ReportIssueCreate, ReportIssueUpdate, ReportIssueResponse)
-from app.models.models import User, Review, Delivery, Order, ReportIssue
+from app.models.models import User, Review, Delivery, Order, ReportIssue, Profile, ProfileImage, OrderItem
 from app.schemas.status_schema import DeliveryStatus, OrderStatus
 from app.utils.utils import refresh_vendor_review_stats_view
 from app.config.config import redis_client, settings
@@ -44,6 +44,7 @@ def convert_report_to_response(report: ReportIssue) -> ReportIssueResponse:
 
 
 async def create_review(
+    order_id: UUID,
     db: AsyncSession,
     current_user: User,
     data: ReviewCreate
@@ -53,7 +54,11 @@ async def create_review(
     reviewer_id = current_user.id
     reviewee_id = data.reviewee_id
 
-    if data.review_type == ReviewerType.ORDER:
+    order_result = await db.execute(select(Order).where(Order.id==order_id).options(selectinload(Order.OrderItem).selectinload(OrderItem.item))) 
+    order = order_result.scalar_one_or_none()
+
+    # if data.review_type == ReviewerType.ORDER:
+    if order.order.order_type == ReviewerType.ORDER:
         # Optional caching
         # cache_key = f"review:order:{data.order_id}:user:{reviewer_id}"
         # if redis_client.get(cache_key):
@@ -82,22 +87,22 @@ async def create_review(
             reviewee_id=reviewee_id,
             rating=data.rating,
             comment=data.comment,
-            review_type=data.review_type
+            review_type=ReviewerType.ORDER
         )
 
-    elif data.review_type == ReviewerType.RIDER:
-        cache_key = f"review:delivery:{data.delivery_id}:user:{reviewer_id}"
-        if redis_client.get(cache_key):
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Review already exists for this delivery.")
+    elif order.order.order_type == ReviewerType.PRODUCT::
+        # cache_key = f"review:delivery:{data.item_id}:user:{reviewer_id}"
+        # if redis_client.get(cache_key):
+        #     raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Review already exists for this delivery.")
 
         existing_review = await db.execute(
             select(Review).where(
-                Review.delivery_id == data.delivery_id,
+                Review.item_id == data.item_id,
                 Review.reviewer_id == reviewer_id
             )
         )
         if existing_review.scalar():
-            redis_client.setex(cache_key, settings.REDIS_EX)
+            # redis_client.setex(cache_key, settings.REDIS_EX)
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Review already exists for this delivery.")
 
         delivery = await db.get(Delivery, data.delivery_id)
@@ -105,12 +110,12 @@ async def create_review(
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Delivery is not completed or doesn't exist.")
 
         review = Review(
-            delivery_id=data.delivery_id,
+            item_id=data.item_id,
             reviewer_id=reviewer_id,
             reviewee_id=reviewee_id,
             rating=data.rating,
             comment=data.comment,
-            review_type=data.review_type
+            review_type=ReviewerType.ITEM
         )
 
     else:
@@ -128,11 +133,12 @@ async def create_review(
 
 
 async def fetch_vendor_reviews(
+    vendor_id: UUID,
     db: AsyncSession,
     current_user:User
 ) -> list[VendorReviewResponse]:
 
-    cache_key = f"reviews:{current_user.id}"
+    cache_key = f"reviews:{vendor_id}"
     cached_reviews = redis_client.get(cache_key)
 
     if cached_reviews:
