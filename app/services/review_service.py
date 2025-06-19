@@ -325,9 +325,8 @@ async def get_reports_by_user(
     result = await db.execute(query)
     reports = result.scalars().all()
     
-    report_responses = convert_reports_to_responses(reports)
+    report_responses = convert_reports_to_response(reports)
 
-    print(report_responses)
     
     # Cache the results
     reports_data = [report.model_dump() for report in report_responses]
