@@ -1188,122 +1188,114 @@ async def upload_image_profile(
 
 
 async def get_users_by_laundry_services(
-    db: AsyncSession, category_id: Optional[UUID] = None
-) -> List[VendorUserResponse]:
-    cache_key = f"restaurant_vendors:{category_id if category_id else 'all'}"
+    db: AsyncSession, category_id: UUID | None = None
+) -> list[VendorUserResponse]:
+    """
+    Fetch all vendors who offer laundry services with:
+    - basic info
+    - number of laundry items
+    - avg review (from Review via Order)
+    - review count
+    """
+    cache_key = f"laundry_vendors:{category_id if category_id else 'all'}"
     cached_data = redis_client.get(cache_key)
-
     if cached_data:
         logger.info(f"Cache hit for {cache_key}")
-        cached_vendors = json.loads(cached_data)
-        return [
-            VendorUserResponse(
-                **{
-                    **vendor,
-                    "rating": RatingSchema(**vendor["rating"]),
-                }
-            )
-            for vendor in cached_vendors
-        ]
+        return json.loads(cached_data)
 
     try:
-        # Join with materialized view
+        # Review stats subquery (ORDER review type only)
+        review_stats_subq = (
+            select(
+                Order.vendor_id.label("vendor_id"),
+                func.avg(Review.rating).label("average_rating"),
+                func.count(Review.id).label("review_count"),
+            )
+            .join(Review, Review.order_id == Order.id)
+            .where(Review.review_type == ReviewerType.ORDER)
+            .group_by(Order.vendor_id)
+            .subquery()
+        )
+
+        # Laundry item count subquery
+        item_count_subq = (
+            select(
+                Item.user_id.label("vendor_id"),
+                func.count(Item.id).label("total_items"),
+            )
+            .where(Item.item_type == ItemType.LAUNDRY)
+        )
+
+        if category_id:
+            item_count_subq = item_count_subq.where(Item.category_id == category_id)
+
+        item_count_subq = item_count_subq.group_by(Item.user_id).subquery()
+
+        # Main query
         stmt = (
             select(
                 User,
                 Profile,
                 ProfileImage,
-                func.count(distinct(Item.id)).label("item_count"),
-                func.coalesce(VendorReviewStats.avg_rating, 0).label("avg_rating"),
-                func.coalesce(VendorReviewStats.review_count, 0).label("review_count"),
+                func.coalesce(review_stats_subq.c.average_rating, 0).label("avg_rating"),
+                func.coalesce(review_stats_subq.c.review_count, 0).label("review_count"),
+                func.coalesce(item_count_subq.c.total_items, 0).label("total_items"),
             )
-            .join(Profile, User.id == Profile.user_id)
-            .outerjoin(ProfileImage, Profile.user_id == ProfileImage.profile_id)
-            .join(Item, User.id == Item.user_id)
-            .outerjoin(
-                VendorReviewStats,
-                (VendorReviewStats.vendor_id == User.id)
-                & (VendorReviewStats.item_type == cast(ItemType.LAUNDRY.value, postgresql.ENUM(ItemType, name="itemtype"))),
-            )
-            .where(
-                Item.item_type == cast(ItemType.LAUNDRY.value, postgresql.ENUM(ItemType, name="itemtype")),
-                User.user_type == UserType.VENDOR.value,
-            )
-            .group_by(
-                User.id,
-                Profile.user_id,
-                ProfileImage.profile_id,
-                VendorReviewStats.avg_rating,
-                VendorReviewStats.review_count,
-            )
+            .join(Profile, Profile.user_id == User.id)
+            .outerjoin(ProfileImage, ProfileImage.profile_id == User.id)
+            .outerjoin(review_stats_subq, review_stats_subq.c.vendor_id == User.id)
+            .outerjoin(item_count_subq, item_count_subq.c.vendor_id == User.id)
+            .where(User.user_type == UserType.VENDOR)
         )
 
-        if category_id:
-            stmt = stmt.where(Item.category_id == category_id)
-
         result = await db.execute(stmt)
-        vendors = result.all()
+        rows = result.all()
 
         response = []
-        for row in vendors:
-            user, profile, profile_image, item_count, avg_rating, review_count = row
+        for user, profile, image, avg_rating, review_count, total_items in rows:
+            if total_items == 0:
+                continue  # skip vendors with no laundry services
 
-            if item_count > 0:
-                rating_data = RatingSchema(
-                    average_rating=round(avg_rating, 2),
-                    number_of_ratings=review_count,
-                    reviews=[],  # skip for listing
-                )
-
-                vendor_data = VendorUserResponse(
-                    id=str(user.id),
-                    company_name=profile.business_name,
-                    email=user.email,
-                    phone_number=profile.phone_number,
-                    profile_image=profile_image.profile_image_url
-                    if profile_image
-                    else None,
-                    location=profile.business_address,
-                    backdrop_image_url=profile_image.backdrop_image_url
-                    if profile_image
-                    else None,
-                    opening_hour=profile.opening_hours.strftime("%H:%M")
+            vendor_dict = {
+                "id": str(user.id),
+                "company_name": profile.business_name or "",
+                "email": user.email,
+                "phone_number": profile.phone_number,
+                "profile_image": image.profile_image_url if image else None,
+                "location": profile.business_address,
+                "backdrop_image_url": image.backdrop_image_url if image else None,
+                "opening_hour": (
+                    profile.opening_hours.strftime("%H:%M:%S")
                     if profile.opening_hours
-                    else None,
-                    closing_hour=profile.closing_hours.strftime("%H:%M")
+                    else None
+                ),
+                "closing_hour": (
+                    profile.closing_hours.strftime("%H:%M:%S")
                     if profile.closing_hours
-                    else None,
-                    rating=rating_data,
-                    total_items=item_count,
-                )
-
-                response.append(vendor_data)
-
-        # Cache it
-        serializable_response = [
-            {
-                **vendor.model_dump(),
+                    else None
+                ),
                 "rating": {
-                    "average_rating": str(vendor.rating.average_rating),
-                    "number_of_ratings": vendor.rating.number_of_ratings,
-                    "reviews": [],
+                    "average_rating": str(round(float(avg_rating or 0), 2)),
+                    "number_of_reviews": review_count or 0,
                 },
+                "total_items": total_items,
             }
-            for vendor in response
-        ]
 
+            response.append(vendor_dict)
+
+        # Cache result
         redis_client.setex(
-            cache_key, settings.REDIS_EX, json.dumps(serializable_response, default=str)
+            cache_key,
+            settings.REDIS_EX,
+            json.dumps(response, default=str),
         )
 
         return response
 
     except Exception as e:
-        logger.error(f"Error fetching laundry vendors: {e}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to fetch laundry vendors",
-        )
+        logger.error(f"Error fetching laundry vendors: {str(e)}")
+        raise
+
 
 
 async def get_users_by_laundry_services1(db: AsyncSession) -> List[VendorUserResponse]:

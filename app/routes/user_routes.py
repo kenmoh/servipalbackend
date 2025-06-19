@@ -112,7 +112,6 @@ async def get_rider_details(
 @router.get("/restaurants", status_code=status.HTTP_200_OK)
 async def get_restaurants(
     category_id: UUID | None = None,
-    # current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> list[VendorUserResponse]:
     """
@@ -132,7 +131,7 @@ async def get_restaurants(
     status_code=status.HTTP_200_OK,
 )
 async def get_laundry_vendors(
-    db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)
+    db: AsyncSession = Depends(get_db)
 ):
     """
     Get users who provide laundry services.
