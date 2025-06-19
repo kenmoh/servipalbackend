@@ -3,7 +3,7 @@ import json
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import or_, select, and_, update
 from sqlalchemy.orm import selectinload
-from fastapi import HTTPException, status
+from fastapi import HTTPException, status,BackgroundTasks
 
 from app.schemas.review_schema import (ReviewCreate, 
         ReviewResponse, 
@@ -21,31 +21,28 @@ from app.utils.model_converter import model_to_response
 from sqlalchemy.exc import NoResultFound
 from uuid import UUID
 
+
+
 def convert_report_to_response(report: ReportIssue) -> ReportIssueResponse:
-    return model_to_response(report, ReportIssueResponse)
-
-# def convert_report_to_response(report: ReportIssue) -> ReportIssueResponse:
-#     """Convert a ReportIssue SQLAlchemy model to ReportIssueResponse Pydantic model"""
-#     return ReportIssueResponse(
-#         id=report.id,
-#         order_id=report.order_id,
-#         delivery_id=report.delivery_id,
-#         dispatch_id=report.dispatch_id,
-#         vendor_id=report.vendor_id,
-#         customer_id=report.customer_id,
-#         reporter_id=report.reporter_id,
-#         description=report.description,
-#         issue_type=report.issue_type,
-#         issue_status=report.issue_status,
-#         reporting=report.reporting,
-#         created_at=report.created_at,
-#         updated_at=report.updated_at
-#     )
+    """Convert a ReportIssue SQLAlchemy model to ReportIssueResponse Pydantic model"""
+    return ReportIssueResponse(
+        id=report.id,
+        order_id=report.order_id,
+        delivery_id=report.delivery_id,
+        dispatch_id=report.dispatch_id,
+        vendor_id=report.vendor_id,
+        customer_id=report.customer_id,
+        reporter_id=report.reporter_id,
+        description=report.description,
+        issue_type=report.issue_type,
+        issue_status=report.issue_status,
+        reporting=report.reporting,
+        created_at=report.created_at,
+        updated_at=report.updated_at
+    )
 
 
-# def convert_reports_to_responses(reports: list[ReportIssue]) -> list[ReportIssueResponse]:
-#     """Convert a list of ReportIssue to ReportIssueResponse models"""
-#     return [convert_report_to_response(report) for report in reports]
+
 
 async def create_review(
     db: AsyncSession,
@@ -294,22 +291,31 @@ async def create_report(db: AsyncSession, report_data: ReportIssueCreate, curren
             detail=f"An error occurred while creating the report: {str(e)}"
         )
 
-
 async def get_reports_by_user(
     db: AsyncSession,
     current_user: User,
+    background_task: BackgroundTasks | None = None,
 ) -> list[ReportIssueResponse]:
     """
     Fetch all reports involving a user (as reported user or reporter) with Redis caching.
+    
+    Args:
+        db: Database session
+        redis: Redis client
+        current_user: The user whose reports to fetch
+        background_tasks: Optional FastAPI background tasks
+        force_refresh: If True, bypass cache and force refresh from database
+        
+    Returns:
+        List of ReportIssueResponse objects
     """
     cache_key = f'user_reports:{current_user.id}'
     
-    # Try cache first with error handling
-
+    # Try cache first (unless force_refresh is True)
     cached_reports = redis_client.get(cache_key)
     if cached_reports:
-        print(f"Cache HIT for key: {cache_key}")
-        return [ReportIssueResponse(**r) for r in json.loads(cached_reports)]
+        cached_data = json.loads(cached_reports)
+        return [ReportIssueResponse.model_validate(report) for report in cached_data]
 
 
     # Build query
@@ -325,49 +331,133 @@ async def get_reports_by_user(
     result = await db.execute(query)
     reports = result.scalars().all()
     
-    report_responses = convert_reports_to_response(reports)
-
+    # Convert to response models
+    report_responses = [convert_report_to_response(report) for report in reports]
     
-    # Cache the results
+    # Prepare data for caching
     reports_data = [report.model_dump() for report in report_responses]
-  
-    try:
-        redis_client.setex(
-            cache_key,
-            settings.REDIS_EX,
-            json.dumps(reports_data, default=str),
-        )
-        print(f"Cache SET for key: {cache_key}")
-    except Exception as e:
-        print(f"Cache set error: {e}")
     
+    # Cache the results (either in background or directly)
+    background_tasks.add_task(
+        redis_client.setex,
+        cache_key,
+        settings.REDIS_EX,
+        reports_json
+    )
+
+      
     return report_responses
 
 
 
-async def get_report_by_id(db: AsyncSession, report_id: UUID) -> ReportIssueResponse:
-    """Get a specific report by ID"""
+# async def get_reports_by_user(
+#     db: AsyncSession,
+#     current_user: User,
+# ) -> list[ReportIssueResponse]:
+#     """
+#     Fetch all reports involving a user (as reported user or reporter) with Redis caching.
+#     """
+#     cache_key = f'user_reports:{current_user.id}'
+    
+#     # Try cache first with error handling
 
-    cache_key = f'report_id:{reporter_id}'
+#     cached_reports = redis_client.get(cache_key)
+#     if cached_reports:
+#         return [ReportIssueResponse(**r) for r in json.loads(cached_reports)]
+
+
+#     # Build query
+#     user_filters = or_(
+#         ReportIssue.vendor_id == current_user.id,
+#         ReportIssue.customer_id == current_user.id,
+#         ReportIssue.dispatch_id == current_user.id,
+#         ReportIssue.reporter_id == current_user.id
+#     )
+#     query = select(ReportIssue).where(user_filters).order_by(ReportIssue.created_at.desc())
+    
+#     # Execute query
+#     result = await db.execute(query)
+#     reports = result.scalars().all()
+    
+#     report_responses = convert_report_to_response(reports)
+
+    
+#     # Cache the results
+#     reports_data = [report.model_dump() for report in report_responses]
+  
+#     try:
+#         redis_client.setex(
+#             cache_key,
+#             settings.REDIS_EX,
+#             json.dumps(reports_data, default=str),
+#         )
+#         print(f"Cache SET for key: {cache_key}")
+#     except Exception as e:
+#         print(f"Cache set error: {e}")
+    
+#     return report_responses
+
+
+
+async def get_report_by_id(
+    db: AsyncSession, 
+    current_user: User, 
+    report_id: UUID,
+    background_task: BackgroundTasks | None = None
+) -> ReportIssueResponse | None:
+    """
+    Get a specific report by ID with Redis caching.
+    
+    Args:
+        db: Database session
+        current_user: The authenticated user
+        report_id: ID of the report to fetch
+        background_tasks: Optional FastAPI background tasks
+        
+    Returns:
+        ReportIssueResponse if found and accessible by user, None otherwise
+    """
+    cache_key = f'report:{report_id}'
+    
+    # Try to get from cache first
     cached_report = redis_client.get(cache_key)
-
     if cached_report:
-        return ReportIssueResponse(**cached_report)
+        return ReportIssueResponse.model_validate_json(cached_report)
 
+    # Build query with user access filters
     user_filters = or_(
         ReportIssue.vendor_id == current_user.id,
         ReportIssue.customer_id == current_user.id,
         ReportIssue.dispatch_id == current_user.id,
         ReportIssue.reporter_id == current_user.id
     )
-
-    stmt = select(ReportIssue).where(ReportIssue.id == report_id).where(user_filters)
-    result = db.execute(stmt)
+    stmt = select(ReportIssue).where(
+        ReportIssue.id == report_id,
+        user_filters
+    )
+    
+    # Execute query
+    result = await db.execute(stmt)
     report = result.scalar_one_or_none()
+    
+    if not report:
+        return None
+    
+    # Convert to response model
+    report_response = convert_report_to_response(report)
+    
+    # Cache the response (as JSON string)
+    report_json = report_response.model_dump_json()
+    
+    background_tasks.add_task(
+        redis_client.setex,
+        cache_key,
+        settings.REDIS_EX,
+        report_json
+    )
 
-    redis_client.setex(cache_key, report, default=str, ttl=settings.REDIS_EX)
-
-    return report
+    
+    return report_response
 
 async def update_report_status(
     db: AsyncSession,

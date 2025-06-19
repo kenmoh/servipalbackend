@@ -1,7 +1,7 @@
 from uuid import UUID
 from decimal import Decimal
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.auth import get_db, get_current_user
@@ -86,13 +86,14 @@ async def get_reports_by_user(
 )
 async def get_report_by_id(
     report_id: UUID,
+    background_task: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> ReportIssueResponse:
     """
    Get report details
     """
-    return await review_service.get_report_by_id(db=db, current_user=current_user)
+    return await review_service.get_report_by_id(db=db, current_user=current_user, report_id=report_id)
 
 
 @report.put(
