@@ -527,10 +527,7 @@ class Delivery(Base):
         cascade="all, delete-orphan"
     )
 
-    reviews: Mapped[list["Review"]] = relationship(
-    back_populates="delivery", cascade="all, delete-orphan"
-    )
-
+  
 
 
   
@@ -560,7 +557,6 @@ class Review(Base):
     
     reviewer_id: Mapped[UUID] = mapped_column(ForeignKey("users.id"))  # Who wrote the review
     order_id: Mapped[Optional[UUID]] = mapped_column(ForeignKey("orders.id"), nullable=True)
-    # delivery_id: Mapped[Optional[UUID]] = mapped_column(ForeignKey("deliveries.id"), nullable=True)
     item_id: Mapped[Optional[UUID]] = mapped_column(ForeignKey("items.id"), nullable=True)
     
     reviewee_id: Mapped[Optional[UUID]] = mapped_column(ForeignKey("users.id"), nullable=True)  # Who is being reviewed
@@ -582,14 +578,12 @@ class Review(Base):
     )
 
     order: Mapped[Optional["Order"]] = relationship(back_populates="user_reviews")
-    delivery: Mapped[Optional["Delivery"]] = relationship(back_populates="reviews")
     item: Mapped[Optional["Item"]] = relationship(back_populates="reviews")
 
     __table_args__ = (
         # Optional: Prevent duplicate reviews (e.g., per reviewer/order/item)
         UniqueConstraint("reviewer_id", "order_id", name="uq_user_order_review"),
         UniqueConstraint("reviewer_id", "item_id", name="uq_user_item_review"),
-        UniqueConstraint("reviewer_id", "delivery_id", name="uq_user_delivery_review"),
     )
 
 
