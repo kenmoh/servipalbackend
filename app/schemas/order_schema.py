@@ -126,6 +126,7 @@ class OrderResponseSchema(BaseModel):
     order_number: int | None = None
     amount_due_vendor: Decimal
     payment_link: str
+    created_at: datetime
     order_items: list[OrderItemResponseSchema]
 
 

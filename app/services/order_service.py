@@ -664,7 +664,7 @@ async def order_food_or_request_laundy_service(
                     message=f"You have a new order from {current_user.profile.full_name if current_user.profile.full_name else current_user.profile.business_name}",
                     navigate_to="/delivery/orders",
                 )
-            return format_delivery_response(order, delivery=None, business_name=None)
+            return format_delivery_response(order, delivery=None)
 
     except Exception as e:
         await db.rollback()
@@ -1762,6 +1762,7 @@ def format_delivery_response(
         "amount_due_vendor": str(order.amount_due_vendor),
         "payment_link": order.payment_link or "",
         "order_items": order_items,
+        "created_at": order.created_at.isoformat(),
     }
 
     return DeliveryResponse(delivery=delivery_data, order=order_data)
