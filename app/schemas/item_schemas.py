@@ -88,12 +88,20 @@ class MenuWithReviewResponseSchema(BaseModel):
     menu_item: list[MenuWithReviewSchema]
     total_items: int
 
-
-class RestaurantMenuResponseSchema(BaseModel):
+class MenuBase(BaseModel):
     id: UUID
-    restaurant_id: UUID
     name: str
     item_type: ItemType
-    description: str
     price: Decimal
     images: list[ItemImageSchema]
+
+
+
+class RestaurantMenuResponseSchema(MenuBase):
+    restaurant_id: UUID
+    description: str
+   
+
+
+class LaundryMenuResponseSchema(BaseModel):
+    laundry_id: str

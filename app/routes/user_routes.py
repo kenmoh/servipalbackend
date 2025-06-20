@@ -33,7 +33,7 @@ from app.schemas.user_schemas import (
     UpdateRider,
 )
 from app.services import user_service
-from app.schemas.item_schemas import RestaurantMenuResponseSchema
+from app.schemas.item_schemas import RestaurantMenuResponseSchema, LaundryMenuResponseSchema
 from app.utils.s3_service import add_profile_image, update_image
 
 
@@ -132,7 +132,7 @@ async def get_restaurants(
 )
 async def get_laundry_vendors(
     db: AsyncSession = Depends(get_db)
-):
+)-> list[VendorUserResponse]:
     """
     Get users who provide laundry services.
     """
@@ -200,6 +200,18 @@ async def get_restaurant_menu(
     """
     return await user_service.get_restaurant_menu(db=db, restaurant_id=restaurant_id)
 
+
+@router.get("/laundry/{laundry_id}/menu", status_code=status.HTTP_200_OK)
+async def get_laundry_menu(
+    laundry_id: UUID,
+    db: AsyncSession = Depends(get_db),
+
+) -> list[LaundryMenuResponseSchema]:
+    """
+    Get restaurant menu with individual item reviews.
+    Used when customer visits a specific restaurant.
+    """
+    return await user_service.get_laundry_menu(db=db, laundry_id=laundry_id)
 
 @router.delete("/{rider_id}/delete", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_rider_endpoint(
