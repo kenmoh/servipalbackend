@@ -910,6 +910,96 @@ async def re_list_item_for_delivery(
             )
 
 
+async def vendor_or_owner_mark_order_delivered_or_received(
+    db: AsyncSession, order_id: UUID, current_user: User
+) -> DeliveryStatusUpdateSchema:
+    
+    order_result = db.execute(select(Order).where(Order.id==order_id).where(or_(Order.owner_id==current_user,id, Order.vendor_id==current_user.id)))
+
+    order = order_result.scalar_one_or_none()
+
+    if not order:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Order not found"
+        )
+
+    vendor_wallet = await fetch_wallet(db, order.vendor_id)
+    owner_wallet = await fetch_wallet(db, order.owner_id)
+
+    try:
+
+        if order.vendor_id==current_user.id and order.order_status==OrderStatus.PENDING:
+            await db.execute(Order).where(Order.id==order_id).values({
+                    'order_status': OrderStatus.DELIVERED
+                }).returning(Order.order_status)
+
+            await db.commit()
+            await db.refresh(order) 
+
+            owner_token = await get_user_notification_token(db=db, user_id=order.owner_id)
+
+            if owner_token:
+                await send_push_notification(
+                    tokens=[owner_token],
+                    title="Order Delivered",
+                    message=f"Your order has been marked as delivered by the vendor, please verify before marking as received.",
+                    navigate_to="/(app)/delivery/orders",
+                )
+
+
+
+        if order.owner_id==current_user.id:
+            if order.order_status != OrderStatus.DELIVERED:
+                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=f'Order is not yet delivered.')
+            await db.execute(Order).where(Order.id==order_id).values({
+                    'order_status': OrderStatus.RECEIVED
+                }).returning(Order.order_status)
+
+
+            vendor_amount = order.amount_due_vendor
+
+            await db.execute(
+                update(Wallet)
+                .where(Wallet.id == order.vendor_id)
+                .values(
+                    {
+                    "balance": vendor_wallet.balance + vendor_amount,
+                    "escrow_balance": vendor_wallet.escrow_balance - vendor_amount
+                    }
+                )
+            )
+
+            await db.execute(
+                update(Wallet)
+                .where(Wallet.id == order.owner_id)
+                .values(
+
+                    {"escrow_balance": vendor_wallet.escrow_balance - order.total_price}
+                )
+            )
+            await db.commit()
+            await db.refresh(order)       
+
+            token = await get_user_notification_token(db=db, user_id=order.vendor_id)
+            
+
+            if token:
+                await send_push_notification(
+                    tokens=[token],
+                    title="Order Completed",
+                    message=f"Order Completed! The  sum of ₦{vendor_amount} has been credited to your wallet.",
+                    navigate_to="/(app)/delivery/orders",
+                )
+
+        redis_client.delete(f"delivery:{order_id}")
+        redis_client.delete(f"{ALL_DELIVERY}")
+
+        return DeliveryStatusUpdateSchema(delivery_status=order.order_status)
+    except Exception as e:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f'Error updating status. {e}')
+
+
 async def rider_accept_delivery_order(
     db: AsyncSession, delivery_id: UUID, current_user: User
 ) -> DeliveryStatusUpdateSchema:

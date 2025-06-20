@@ -128,6 +128,14 @@ async def sender_confirm_delivery_received(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
 
+@router.get("/{order_id}/update-status", status_code=status.HTTP_202_ACCEPTED)
+async def update_order_status(order_id: UUID, db: AsyncSession=Depends(get_db), current_user: User = Depends(get_current_user))-> DeliveryStatusUpdateSchema:
+    return vendor_or_owner_mark_order_delivered_or_received(
+             db=db,
+            current_user=current_user,
+            order_id=order_id,
+        )
+
 @router.put("/{delivery_id}/accept-delivery", status_code=status.HTTP_202_ACCEPTED)
 async def rider_accept_delivery(
     delivery_id: UUID,
