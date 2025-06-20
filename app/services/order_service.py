@@ -118,17 +118,30 @@ async def get_delivery_by_order_id(
     cached_order = redis_client.get(f"delivery:{order_id}")
     if cached_order:
         return DeliveryResponse(**json.loads(cached_order))
+
     try:
         # Query order with its delivery and order items
+        # order_stmt = (
+        #     select(Order)
+        #     .options(
+        #         selectinload(Order.delivery),
+        #         selectinload(Order.order_items).selectinload(
+        #             OrderItem.item).selectinload(Item.images)
+        #     )
+        #     .where(Order.id == order_id)
+        # )
+
         order_stmt = (
-            select(Order)
-            .options(
-                selectinload(Order.delivery),
-                selectinload(Order.order_items).selectinload(
-                    OrderItem.item).selectinload(Item.images)
-            )
-            .where(Order.id == order_id)
+        select(Order)
+        .options(
+            selectinload(Order.delivery),
+            selectinload(Order.order_items).selectinload(OrderItem.item).selectinload(Item.images),
+            joinedload(Order.vendor).joinedload(User.profile),
         )
+        .where(Order.id == order_id)
+    )
+
+
 
         order_result = await db.execute(order_stmt)
         order = order_result.scalar_one_or_none()
@@ -160,48 +173,6 @@ async def get_delivery_by_order_id(
 
 
 
-# async def get_all_orders(
-#     db: AsyncSession
-# ) -> list[DeliveryResponse]:
-#     """
-#     Get all orders with their deliveries (if any) with pagination and caching
-#     """
-#     cache_key = ALL_DELIVERY
-#     # Try cache first
-#     cached_deliveries = redis_client.get(cache_key)
-#     if cached_deliveries:
-#         print('CACH HIT')
-#         return [DeliveryResponse(**d) for d in json.loads(cached_deliveries)]
-    
-#     stmt = (
-#         select(Order)
-#         .options(
-#             selectinload(Order.order_items).options(
-#                 joinedload(OrderItem.item).options(
-#                     selectinload(Item.images))
-#             ),
-#             joinedload(Order.delivery),
-#         )
-#         .order_by(Order.updated_at.desc())
-#     )
-    
-#     result = await db.execute(stmt)
-#     orders = result.unique().scalars().all()
-    
-#     # Format responses - delivery will be None for orders without delivery
-#     order_responses = [
-#         format_delivery_response(order, order.delivery) for order in orders
-#     ]
-    
-#     # Cache the formatted responses
-#     redis_client.setex(
-#         cache_key,
-#         timedelta(seconds=settings.REDIS_EX),
-#         json.dumps([order.model_dump() for order in order_responses], default=str),
-#     )
-    
-#     return order_responses
-
 
 async def get_all_orders(
     db: AsyncSession
@@ -229,9 +200,10 @@ async def get_all_orders(
                 joinedload(OrderItem.item).options(
                     selectinload(Item.images))
             ),
-            joinedload(Order.delivery),  # This will be None if no delivery exists
+            joinedload(Order.delivery),
+            joinedload(Order.vendor).joinedload(User.profile)
         )
-        .order_by(Order.created_at.desc())  # Removed offset and limit
+        .order_by(Order.created_at.desc()) 
     )
     
     result = await db.execute(stmt)
@@ -692,7 +664,7 @@ async def order_food_or_request_laundy_service(
                     message=f"You have a new order from {current_user.profile.full_name if current_user.profile.full_name else current_user.profile.business_name}",
                     navigate_to="/delivery/orders",
                 )
-            return format_delivery_response(order, delivery=None)
+            return format_delivery_response(order, delivery=None, business_name=None)
 
     except Exception as e:
         await db.rollback()
@@ -1730,6 +1702,7 @@ def format_delivery_response(
     order: Order, delivery: Optional[Delivery] = None
 ) -> DeliveryResponse:
     # Format order items with proper image structure
+
     order_items = []
     for order_item in order.order_items:
         item = order_item.item
@@ -1780,6 +1753,7 @@ def format_delivery_response(
         "user_id": str(order.owner_id),
         "order_number": order.order_number,
         "vendor_id": str(order.vendor_id),
+        "business_name": order.vendor.profile.business_name or order.vendor.profile.full_name,
         "order_type": order.order_type.value,
         "require_delivery": order.require_delivery,
         "total_price": str(order.total_price),

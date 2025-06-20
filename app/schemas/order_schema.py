@@ -120,6 +120,7 @@ class OrderResponseSchema(BaseModel):
     order_type: str
     total_price: Decimal
     order_payment_status: str
+    business_name: str | None = None
     require_delivery: str
     order_status: OrderStatus | None = None
     order_number: int | None = None
