@@ -914,7 +914,7 @@ async def vendor_or_owner_mark_order_delivered_or_received(
     db: AsyncSession, order_id: UUID, current_user: User
 ) -> DeliveryStatusUpdateSchema:
     
-    order_result = db.execute(select(Order).where(Order.id==order_id).where(or_(Order.owner_id==current_user,id, Order.vendor_id==current_user.id)))
+    order_result = await db.execute(select(Order).where(Order.id==order_id).where(or_(Order.owner_id==current_user.id, Order.vendor_id==current_user.id)))
 
     order = order_result.scalar_one_or_none()
 
