@@ -130,7 +130,7 @@ async def sender_confirm_delivery_received(
 
 @router.put("/{order_id}/update-status", status_code=status.HTTP_202_ACCEPTED)
 async def update_order_status(order_id: UUID, db: AsyncSession=Depends(get_db), current_user: User = Depends(get_current_user))-> DeliveryStatusUpdateSchema:
-    return order_service.vendor_or_owner_mark_order_delivered_or_received(
+    return await order_service.vendor_or_owner_mark_order_delivered_or_received(
              db=db,
             current_user=current_user,
             order_id=order_id,
