@@ -25,7 +25,6 @@ report = APIRouter(prefix="/api/reports", tags=["Reports"])
     status_code=status.HTTP_201_CREATED,
 )
 async def create_new_review(
-    order_id: UUID,
     data: ReviewCreate,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
