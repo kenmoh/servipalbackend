@@ -929,6 +929,9 @@ async def vendor_or_owner_mark_order_delivered_or_received(
 
     try:
 
+        if order.vendor_id == current_user.id and order.order_status == OrderStatus.DELIVERED:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f'You already mark this order as delivered.')
+
         if order.vendor_id == current_user.id and order.order_status == OrderStatus.PENDING:
             await db.execute(update(Order).where(Order.id == order_id).values({
                 'order_status': OrderStatus.DELIVERED
@@ -949,6 +952,8 @@ async def vendor_or_owner_mark_order_delivered_or_received(
 
 
         if order.owner_id==current_user.id:
+            if order.order_status == OrderStatus.RECEIVED:
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f'You already mark this order as received.')
             if order.order_status != OrderStatus.DELIVERED:
                 raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=f'Order is not yet delivered.')
             await db.execute(update(Order).where(Order.id==order_id).values({
