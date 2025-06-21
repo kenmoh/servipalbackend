@@ -53,7 +53,7 @@ async def create_review(
     reviewer_id = current_user.id
     reviewee_id = data.reviewee_id
 
-    order_result = await db.execute(select(Order).where(Order.id==data.order_id).options(selectinload(Order.OrderItem).selectinload(OrderItem.item))) 
+    order_result = await db.execute(select(Order).where(Order.id==data.order_id)) 
     order = order_result.scalar_one_or_none()
 
     # if data.review_type == ReviewerType.ORDER:
