@@ -929,13 +929,12 @@ async def vendor_or_owner_mark_order_delivered_or_received(
 
     try:
 
-        if order.vendor_id==current_user.id and order.order_status==OrderStatus.PENDING:
-            await db.execute(update(Order).where(Order.id==order_id).values({
-                    'order_status': OrderStatus.DELIVERED
-                }).returning(Order.order_status)
-
+        if order.vendor_id == current_user.id and order.order_status == OrderStatus.PENDING:
+            await db.execute(update(Order).where(Order.id == order_id).values({
+                'order_status': OrderStatus.DELIVERED
+            }).returning(Order.order_status))
             await db.commit()
-            await db.refresh(order) 
+            await db.refresh(order)
 
             owner_token = await get_user_notification_token(db=db, user_id=order.owner_id)
 
@@ -954,7 +953,7 @@ async def vendor_or_owner_mark_order_delivered_or_received(
                 raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=f'Order is not yet delivered.')
             await db.execute(update(Order).where(Order.id==order_id).values({
                     'order_status': OrderStatus.RECEIVED
-                }).returning(Order.order_status)
+                }).returning(Order.order_status))
 
 
             vendor_amount = order.amount_due_vendor
