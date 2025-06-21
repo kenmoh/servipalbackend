@@ -44,7 +44,6 @@ def convert_report_to_response(report: ReportIssue) -> ReportIssueResponse:
 
 
 async def create_review(
-    order_id: UUID,
     db: AsyncSession,
     current_user: User,
     data: ReviewCreate
@@ -54,7 +53,7 @@ async def create_review(
     reviewer_id = current_user.id
     reviewee_id = data.reviewee_id
 
-    order_result = await db.execute(select(Order).where(Order.id==order_id).options(selectinload(Order.OrderItem).selectinload(OrderItem.item))) 
+    order_result = await db.execute(select(Order).where(Order.id==data.order_id).options(selectinload(Order.OrderItem).selectinload(OrderItem.item))) 
     order = order_result.scalar_one_or_none()
 
     # if data.review_type == ReviewerType.ORDER:
@@ -125,9 +124,6 @@ async def create_review(
     db.add(review)
     await db.commit()
     await db.refresh(review)
-
-    # Refresh stats view 
-    await refresh_vendor_review_stats_view(db)
 
     return review
 
