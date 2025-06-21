@@ -661,4 +661,73 @@ class ReportIssue(Base):
         back_populates="issues",
         lazy="selectin"
     )
+"""
+const demoNotifications = [
+    {
+        id: "1",
+        type: "broadcast",
+        read: false,
+        sender: {
+            name: "Admin",
+            avatar: "https://randomuser.me/api/portraits/men/32.jpg",
+        },
+        date: "2024-06-01",
+        title: "Welcome to ServiPal",
+        content:
+            "Your one-stop app for item delivery, food ordering, laundry services, and secure online peer-to-peer shopping.",
+    },
+    {
+        id: "2",
+        type: "report",
+        read: true,
+        thread: [
+            {
+                sender: {
+                    name: "Jane Smith",
+                    avatar: "https://randomuser.me/api/portraits/women/44.jpg",
+                },
+                role: "reporter",
+                date: "2024-06-02",
+                content: "I received the wrong item in my order. Please assist.",
+                read: true,
+            },
+            {
+                sender: {
+                    name: "John Doe",
+                    avatar: "https://randomuser.me/api/portraits/men/45.jpg",
+                },
+                role: "reportee",
+                date: "2024-06-02",
+                content:
+                    "Sorry for the mix-up! I will arrange a replacement immediately.Sorry for the mix-up! I will arrange a replacement immediately.",
+                read: false,
+            },
+            {
+                sender: {
+                    name: "Admin",
+                    avatar: "https://randomuser.me/api/portraits/men/32.jpg",
+                },
+                role: "admin",
+                date: "2024-06-02",
+                content:
+                    "We are monitoring this report and will ensure it is resolved promptly.",
+                read: false,
+            },
+        ],
+        title: "Order Issue Report",
+    },
+    {
+        id: "3",
+        type: "broadcast",
+        read: true,
+        sender: {
+            name: "Admin",
+            avatar: "https://randomuser.me/api/portraits/men/32.jpg",
+        },
+        date: "2024-06-03",
+        title: "Quick & Reliable Delivery",
+        content: "Send and receive packages with ease, anywhere, anytime.",
+    },
+];
 
+"""

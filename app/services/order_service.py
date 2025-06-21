@@ -949,6 +949,11 @@ async def vendor_or_owner_mark_order_delivered_or_received(
                     navigate_to="/(app)/delivery/orders",
                 )
 
+                
+                redis_client.delete(f"delivery:{order_id}")
+                redis_client.delete(f"{ALL_DELIVERY}")
+
+                return DeliveryStatusUpdateSchema(delivery_status=order.order_status)
 
 
         if order.owner_id==current_user.id:
@@ -996,10 +1001,10 @@ async def vendor_or_owner_mark_order_delivered_or_received(
                     navigate_to="/(app)/delivery/orders",
                 )
 
-        redis_client.delete(f"delivery:{order_id}")
-        redis_client.delete(f"{ALL_DELIVERY}")
+            redis_client.delete(f"delivery:{order_id}")
+            redis_client.delete(f"{ALL_DELIVERY}")
 
-        return DeliveryStatusUpdateSchema(delivery_status=order.order_status)
+            return DeliveryStatusUpdateSchema(delivery_status=order.order_status)
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f'Error updating status. {e}')
 

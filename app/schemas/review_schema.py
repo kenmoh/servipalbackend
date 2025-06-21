@@ -13,7 +13,6 @@ class ReviewerType(str, Enum):
 class ReviewCreate(BaseModel):
     order_id: UUID | None = None
     item_id: UUID | None = None
-    item_id: UUID | None = None
     reviewee_id: UUID
     rating: int = Field(..., ge=1, le=5)
     comment: str

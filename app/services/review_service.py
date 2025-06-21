@@ -115,7 +115,7 @@ async def create_review(
             reviewee_id=reviewee_id,
             rating=data.rating,
             comment=data.comment,
-            review_type=ReviewerType.ITEM
+            review_type=ReviewerType.PRODUCT
         )
 
     else:

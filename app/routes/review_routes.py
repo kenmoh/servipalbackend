@@ -21,10 +21,11 @@ router = APIRouter(prefix="/api/reviews", tags=["Reviews"])
 report = APIRouter(prefix="/api/reports", tags=["Reports"])
 
 @router.post(
-    "",
+    "/{order_id}",
     status_code=status.HTTP_201_CREATED,
 )
 async def create_new_review(
+    order_id: UUID,
     data: ReviewCreate,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -32,7 +33,7 @@ async def create_new_review(
     """
     Endpoint to create a new review
     """
-    return await review_service.create_review(db=db, current_user=current_user, data=data)
+    return await review_service.create_review(db=db, current_user=current_user, order_id=order_id, data=data)
 
 
 @report.post(
