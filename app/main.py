@@ -165,10 +165,10 @@ app = FastAPI(
     },
 )
 
-# logfire.configure(service_name="ServiPal")
-# logfire.debug("App Debug mode on")
-# logfire.instrument_fastapi(app=app)
-# logfire.instrument_sqlalchemy(engine=engine)
+logfire.configure(service_name="ServiPal")
+logfire.debug("App Debug mode on")
+logfire.instrument_fastapi(app=app)
+logfire.instrument_sqlalchemy(engine=engine)
 
 origins = ["http://localhost:3000", "https://servipal-admin.vercel.app"]
 
