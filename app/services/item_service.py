@@ -112,12 +112,15 @@ async def create_item(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Permission denied! You have either been blocked or your account is not confirmed.",
         )
+    colors = []
 
-    colors = [color for color in item_data.colors]
+    if len(item_data.colors) > 0:
+
+        colors = [color for color in item_data.colors]
 
     try:
         # Create item first
-        new_item = Item(**item_data.model_dump(), colors=colors or [], user_id=current_user.id, store_name=current_user.profile.store_name or None)
+        new_item = Item(**item_data.model_dump(), colors=colors, user_id=current_user.id, store_name=current_user.profile.store_name or None)
         db.add(new_item)
         await db.flush()
 

@@ -39,7 +39,7 @@ class ItemCreate(BaseModel):
     price: Decimal
     item_type: ItemType
     category_id: UUID | None = None
-    colors: list[str] | None = None
+    colors: list[str] = []
     sizes: str | None = None
     stock: int | None = None
 
