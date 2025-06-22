@@ -242,7 +242,7 @@ def generate_expiry(hours: int = 24) -> datetime:
     return datetime.now() + timedelta(hours=hours)
 
 
-async def send_sms(phone_number: str, message: str) -> dict:
+async def send_sms(phone_number: str, phone_code: str) -> dict:
     """
     Send SMS using Termii API with httpx async client
 
@@ -259,10 +259,10 @@ async def send_sms(phone_number: str, message: str) -> dict:
     payload = {
         "to": phone_number,
         "from": "ServiPal",
-        "sms": message,
+        "sms": f"Your verification code is: {phone_code}. This code will expire in 25 minutes.",
         "type": "plain",
         "channel": "generic",
-        "api_key": api_key,
+        "api_key": settings.SMS_API_KEY,
     }
 
     headers = {"Content-Type": "application/json"}

@@ -152,6 +152,7 @@ async def create_user(
         #     send_verification_codes, user, email_code, phone_code, db
         # )
         await send_verification_codes(email_code=email_code, phone_code=phone_code, db=db)
+        # await send_sms(phone_number=profile.phone_number, phone_code=profile.ph)
         return user
     except IntegrityError as e:
         await db.rollback()
@@ -782,8 +783,8 @@ async def send_verification_codes(
 
     # Send SMS code (using Termii)
     await send_sms(
-        to=user.profile.phone_number,
-        message=f"Your verification code is: {phone_code}. This code will expire in 10 minutes.",
+        phone_number=user.profile.phone_number,
+        phone_code=f"Your verification code is: {phone_code}. This code will expire in 10 minutes.",
     )
 
     return {"message": "Verification codes sent to your email and phone"}
