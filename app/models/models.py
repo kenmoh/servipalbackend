@@ -1,5 +1,7 @@
+from tkinter import E
 from typing import Optional
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
+from sqlalchemy.dialects import postgresql
 import random
 from uuid import UUID, uuid4
 import uuid
@@ -20,6 +22,7 @@ from sqlalchemy import (
     UniqueConstraint,
     Index,
     Text,
+    Enum,
 )
 from sqlalchemy.schema import Sequence
 from sqlalchemy.orm import mapped_column, Mapped, relationship
@@ -28,7 +31,7 @@ from sqlalchemy.orm import mapped_column, Mapped, relationship
 from app.database.database import Base
 
 from app.schemas.delivery_schemas import DeliveryType
-from app.schemas.item_schemas import ItemType, CategoryType
+from app.schemas.item_schemas import FoodGroup, ItemType, CategoryType
 from app.schemas.status_schema import (
     AccountStatus,
     DeliveryStatus,
@@ -39,7 +42,7 @@ from app.schemas.status_schema import (
     TransactionType,
 )
 
-from app.schemas.review_schema import ReviewerType, IssueType,IssueStatus, ReportingType
+from app.schemas.review_schema import ReviewType, IssueType,IssueStatus, ReportType
 
 
 logging.basicConfig(level=logging.INFO)
@@ -191,6 +194,36 @@ class User(Base):
         back_populates="reporter",
         lazy="selectin",
         cascade="all, delete-orphan"
+    )
+
+    notifications_sent: Mapped[list["Notification"]] = relationship(
+        "Notification",
+        foreign_keys="[Notification.sender_id]",
+        back_populates="sender",
+        lazy="selectin",
+        cascade="all, delete-orphan"
+    )
+
+    notifications_received: Mapped[list["Notification"]] = relationship(
+        "Notification",
+        foreign_keys="[Notification.recipient_id]",
+        back_populates="recipient",
+        lazy="selectin"
+    )
+
+    notification_messages_sent: Mapped[list["NotificationMessage"]] = relationship(
+        "NotificationMessage",
+        foreign_keys="[NotificationMessage.sender_id]",
+        back_populates="sender",
+        lazy="selectin",
+        cascade="all, delete-orphan"
+    )
+
+    broadcast_notifications_received: Mapped[list["NotificationRecipient"]] = relationship(
+        "NotificationRecipient",
+        foreign_keys="[NotificationRecipient.recipient_id]",
+        back_populates="recipient",
+        lazy="selectin"
     )
 
 
@@ -358,6 +391,11 @@ class Item(Base):
     category_id: Mapped[UUID] = mapped_column(
         ForeignKey("categories.id"), nullable=True
     )
+    food_group: Mapped[FoodGroup] = mapped_column(
+        Enum(FoodGroup, name="foodgroup", create_constraint=True), 
+        nullable=True
+    )
+
     created_at: Mapped[datetime] = mapped_column(default=datetime.now)
     updated_at: Mapped[datetime] = mapped_column(
         default=datetime.now, onupdate=datetime.now
@@ -542,11 +580,11 @@ class ChargeAndCommission(Base):
     payout_charge_transaction_from_5001_to_50_000_naira: Mapped[Decimal]  # 25
     payout_charge_transaction_above_50_000_naira: Mapped[Decimal]  # 50
     stamp_duty: Mapped[Decimal]  # 50
-    base_delivery_fee: Mapped[Decimal]  # 550
-    delivery_fee_per_km: Mapped[Decimal]  # 250
-    delivery_commission_percentage: Mapped[Decimal]  # 0.18
-    food_laundry_commission_percentage: Mapped[Decimal]  # 0.15
-    product_commission_percentage: Mapped[Decimal]  # 0.15
+    base_delivery_fee: Mapped[Decimal]  # 1750
+    delivery_fee_per_km: Mapped[Decimal]  # 150
+    delivery_commission_percentage: Mapped[Decimal]  # 0.15
+    food_laundry_commission_percentage: Mapped[Decimal]  # 0.10
+    product_commission_percentage: Mapped[Decimal]  # 0.10
     created_at: Mapped[datetime] = mapped_column(default=datetime.today)
     updated_at: Mapped[datetime] = mapped_column(default=datetime.today)
 
@@ -562,7 +600,7 @@ class Review(Base):
     reviewee_id: Mapped[Optional[UUID]] = mapped_column(ForeignKey("users.id"), nullable=True)  # Who is being reviewed
 
     rating: Mapped[int] = mapped_column(Integer, nullable=False)
-    review_type: Mapped[ReviewerType] = mapped_column(nullable=False)  # Enum: ITEM, RIDER, VENDOR
+    review_type: Mapped[ReviewType] = mapped_column(nullable=False)  # Enum: ITEM, RIDER, VENDOR
     comment: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(default=datetime.now)
@@ -609,7 +647,7 @@ class ReportIssue(Base):
     description: Mapped[str]
     issue_type: Mapped[IssueType]
     issue_status: Mapped[IssueStatus] = mapped_column(default=IssueStatus.PENDING)
-    reporting: Mapped[ReportingType]
+    report_type: Mapped[ReportType]
 
     created_at: Mapped[datetime] = mapped_column(default=datetime.now)
     updated_at: Mapped[datetime] = mapped_column(default=datetime.now, onupdate=datetime.now)
@@ -661,6 +699,202 @@ class ReportIssue(Base):
         back_populates="issues",
         lazy="selectin"
     )
+
+    notifications: Mapped[list["Notification"]] = relationship(
+        "Notification",
+        back_populates="report_issue",
+        lazy="selectin",
+        cascade="all, delete-orphan"
+    )
+
+
+class Notification(Base):
+    __tablename__ = "notifications"
+
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    
+    # Notification type: broadcast, individual, report_thread
+    notification_type: Mapped[str] = mapped_column(nullable=False)  # "broadcast", "individual", "report_thread"
+    
+    # For individual notifications
+    recipient_id: Mapped[Optional[UUID]] = mapped_column(ForeignKey("users.id"), nullable=True)
+    
+    # For report thread notifications
+    report_issue_id: Mapped[Optional[UUID]] = mapped_column(ForeignKey("issues.id"), nullable=True)
+    
+    # Sender (admin or user)
+    sender_id: Mapped[UUID] = mapped_column(ForeignKey("users.id"), nullable=False)
+    
+    # Content
+    title: Mapped[str] = mapped_column(nullable=False)
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    
+    # Status
+    is_read: Mapped[bool] = mapped_column(default=False)
+    is_broadcast: Mapped[bool] = mapped_column(default=False)
+    
+    created_at: Mapped[datetime] = mapped_column(default=datetime.now)
+    updated_at: Mapped[datetime] = mapped_column(default=datetime.now, onupdate=datetime.now)
+
+    # Relationships
+    sender: Mapped["User"] = relationship(
+        "User",
+        foreign_keys=[sender_id],
+        back_populates="notifications_sent",
+        lazy="joined"
+    )
+
+    recipient: Mapped[Optional["User"]] = relationship(
+        "User",
+        foreign_keys=[recipient_id],
+        back_populates="notifications_received",
+        lazy="joined"
+    )
+
+    report_issue: Mapped[Optional["ReportIssue"]] = relationship(
+        "ReportIssue",
+        back_populates="notifications",
+        lazy="selectin"
+    )
+
+    # Thread messages for this notification
+    thread_messages: Mapped[list["NotificationMessage"]] = relationship(
+        "NotificationMessage",
+        back_populates="notification",
+        cascade="all, delete-orphan",
+        lazy="selectin",
+        order_by="NotificationMessage.created_at"
+    )
+
+    # Recipients for broadcast notifications
+    recipients: Mapped[list["NotificationRecipient"]] = relationship(
+        "NotificationRecipient",
+        back_populates="notification",
+        lazy="selectin",
+        cascade="all, delete-orphan"
+    )
+
+
+class NotificationMessage(Base):
+    __tablename__ = "notification_messages"
+
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    
+    # Parent notification
+    notification_id: Mapped[UUID] = mapped_column(ForeignKey("notifications.id", ondelete="CASCADE"))
+    
+    # Message sender
+    sender_id: Mapped[UUID] = mapped_column(ForeignKey("users.id"), nullable=False)
+    
+    # Message role (reporter, reportee, admin)
+    sender_role: Mapped[str] = mapped_column(nullable=False)  # "reporter", "reportee", "admin"
+    
+    # Message content
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    
+    # Read status
+    is_read: Mapped[bool] = mapped_column(default=False)
+    
+    created_at: Mapped[datetime] = mapped_column(default=datetime.now)
+    updated_at: Mapped[datetime] = mapped_column(default=datetime.now, onupdate=datetime.now)
+
+    # Relationships
+    notification: Mapped["Notification"] = relationship(
+        "Notification",
+        back_populates="thread_messages",
+        lazy="joined"
+    )
+
+    sender: Mapped["User"] = relationship(
+        "User",
+        foreign_keys=[sender_id],
+        back_populates="notification_messages_sent",
+        lazy="joined"
+    )
+
+
+class NotificationRecipient(Base):
+    __tablename__ = "notification_recipients"
+
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    
+    # For broadcast notifications - track who received it
+    notification_id: Mapped[UUID] = mapped_column(ForeignKey("notifications.id", ondelete="CASCADE"))
+    recipient_id: Mapped[UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
+    
+    # Read status for this specific recipient
+    is_read: Mapped[bool] = mapped_column(default=False)
+    
+    created_at: Mapped[datetime] = mapped_column(default=datetime.now)
+    updated_at: Mapped[datetime] = mapped_column(default=datetime.now, onupdate=datetime.now)
+
+    # Relationships
+    notification: Mapped["Notification"] = relationship(
+        "Notification",
+        back_populates="recipients",
+        lazy="joined"
+    )
+
+    recipient: Mapped["User"] = relationship(
+        "User",
+        foreign_keys=[recipient_id],
+        back_populates="broadcast_notifications_received",
+        lazy="joined"
+    )
+
+    __table_args__ = (
+        UniqueConstraint("notification_id", "recipient_id", name="uq_notification_recipient"),
+    )
+
+
+# Add relationships to existing User model
+# Add these to the User class relationships section:
+
+# notifications_sent: Mapped[list["Notification"]] = relationship(
+#     "Notification",
+#     foreign_keys="[Notification.sender_id]",
+#     back_populates="sender",
+#     lazy="selectin",
+#     cascade="all, delete-orphan"
+# )
+
+# notifications_received: Mapped[list["Notification"]] = relationship(
+#     "Notification",
+#     foreign_keys="[Notification.recipient_id]",
+#     back_populates="recipient",
+#     lazy="selectin"
+# )
+
+# notification_messages_sent: Mapped[list["NotificationMessage"]] = relationship(
+#     "NotificationMessage",
+#     foreign_keys="[NotificationMessage.sender_id]",
+#     back_populates="sender",
+#     lazy="selectin",
+#     cascade="all, delete-orphan"
+# )
+
+# broadcast_notifications_received: Mapped[list["NotificationRecipient"]] = relationship(
+#     "NotificationRecipient",
+#     foreign_keys="[NotificationRecipient.recipient_id]",
+#     back_populates="recipient",
+#     lazy="selectin"
+# )
+
+# Add relationship to ReportIssue model:
+# notifications: Mapped[list["Notification"]] = relationship(
+#     "Notification",
+#     back_populates="report_issue",
+#     lazy="selectin",
+#     cascade="all, delete-orphan"
+# )
+
+# Add relationship to Notification model:
+# recipients: Mapped[list["NotificationRecipient"]] = relationship(
+#     "NotificationRecipient",
+#     back_populates="notification",
+#     lazy="selectin",
+#     cascade="all, delete-orphan"
+# )
 """
 const demoNotifications = [
     {

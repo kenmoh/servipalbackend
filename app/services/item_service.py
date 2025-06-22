@@ -12,16 +12,19 @@ from app.models.models import Item, Category, ItemImage, User
 from app.schemas.item_schemas import (
     CategoryCreate,
     CategoryResponse,
+    FoodGroup,
     ItemCreate,
     ItemResponse,
-    MenuWithReviewResponseSchema,
+    MenuResponseSchema,
     ItemType,
     CategoryType,
 )
 from app.schemas.status_schema import AccountStatus, UserType
-from app.config.config import redis_client
+from app.config.config import redis_client, settings
+from app.utils.logger_config import setup_logger
 from app.utils.s3_service import delete_s3_object, upload_multiple_images
 
+logger  =setup_logger()
 
 async def create_category(
     db: AsyncSession, current_user: User, data: CategoryCreate
@@ -198,7 +201,7 @@ async def get_items_by_current_user(
     if item_list_dict:
         redis_client.setex(
             f"vendor_items:{current_user.id}",
-            CACHE_TTL,
+            settings.REDIS_EX,
             json.dumps(item_list_dict, default=str),
         )
 
@@ -225,28 +228,37 @@ async def get_items_by_user_id(db: AsyncSession, user_id: UUID) -> list[ItemResp
     if item_responses:
         redis_client.setex(
             f"vendor_items:{user_id}",
-            CACHE_TTL,
+            settings.REDIS_EX,
             json.dumps([item.model_dump() for item in item_responses], default=str),
         )
 
     return item_responses
 
 
-async def get_restaurant_menu_with_reviews(
-    db: AsyncSession, vendor_id: UUID
-) -> MenuWithReviewResponseSchema:
+async def get_restaurant_menu(
+    db: AsyncSession, vendor_id: UUID,
+    food_group: FoodGroup = FoodGroup.MAIN_COURSE
+) -> MenuResponseSchema:
     """
     Get restaurant menu items with their individual reviews.
     This is for when customer visits a specific restaurant.
     """
     try:
+        # Try cache first
+        cached_menu = get_cached_menu(vendor_id, food_group)
+        if cached_menu:
+            return MenuResponseSchema(**cached_menu)
+
         # Get menu items with their reviews
         menu_query = (
-            select(Item)
-            .where(Item.user_id == vendor_id, Item.item_type == ItemType.FOOD)
-            .options(selectinload(Item.reviews).selectinload(Review.reviewer))
-            .order_by(Item.name)
+        select(Item)
+        .where(
+            Item.user_id == vendor_id,
+            Item.item_type == ItemType.FOOD,
+            Item.food_group == food_group
         )
+        .order_by(Item.name)
+    )
 
         result = await db.execute(menu_query)
         menu_items = result.scalars().all()
@@ -254,26 +266,6 @@ async def get_restaurant_menu_with_reviews(
         # Format menu with reviews
         menu_with_reviews = []
         for item in menu_items:
-            item_reviews = []
-            total_rating = 0
-            review_count = 0
-
-            for review in item.reviews:
-                item_reviews.append(
-                    {
-                        "id": str(review.id),
-                        "rating": review.rating,
-                        "comment": review.comment,
-                        "created_at": review.created_at,
-                        "reviewer_name": review.reviewer.email,  # or actual name
-                    }
-                )
-                total_rating += review.rating
-                review_count += 1
-
-            avg_rating = (
-                round(total_rating / review_count, 2) if review_count > 0 else 0
-            )
 
             menu_with_reviews.append(
                 {
@@ -282,17 +274,19 @@ async def get_restaurant_menu_with_reviews(
                     "description": item.description,
                     "price": str(item.price),
                     "image_url": item.image_url,
-                    "average_rating": avg_rating,
-                    "review_count": review_count,
-                    "reviews": item_reviews[:5],  # Show only first 5 reviews
                 }
             )
 
-        return {
+        menu_response = {
             "vendor_id": str(vendor_id),
             "menu_item": menu_with_reviews,
             "total_items": len(menu_with_reviews),
         }
+
+        # Cache the menu
+        set_cached_menu(vendor_id, food_group, menu_response)
+
+        return MenuResponseSchema(**menu_response)
 
     except Exception as e:
         logger.error(
@@ -350,7 +344,7 @@ async def get_item_by_id(db: AsyncSession, item_id: UUID) -> ItemResponse:
     # }
 
     # Cache the serialized item
-    redis_client.setex(cache_key, CACHE_TTL, json.dumps(item, default=str))
+    redis_client.setex(cache_key, settings.REDIS_EX, json.dumps(item, default=str))
 
     # Return response model
     return ItemResponse(**item)
@@ -370,15 +364,6 @@ async def update_item(
         db, current_user, item_id
     )  # Reuse get_item_by_id to check ownership and existence
 
-    # Check if the new category exists if it's being changed
-    # if item.category_id is not None and item_data.category_id != item.category_id:
-    #     stmt_cat = select(Category).where(Category.id == item_data.category_id)
-    #     result_cat = await db.execute(stmt_cat)
-    #     if not result_cat.scalar_one_or_none():
-    #         raise HTTPException(
-    #             status_code=status.HTTP_404_NOT_FOUND,
-    #             detail=f"Category with id {item_data.category_id} not found.",
-    #         )
 
     # Update item fields
     update_data = item_data.model_dump(
@@ -484,7 +469,6 @@ async def get_item_reviews(item_id: UUID, db: AsyncSession):
 
 
 # <<<<< ---------- CACHE UTILITY FOR ITEM ---------- >>>>>
-CACHE_TTL = 3600
 
 
 def get_cached_item(item_id: UUID) -> dict:
@@ -496,7 +480,7 @@ def get_cached_item(item_id: UUID) -> dict:
 def set_cached_item(item_id: UUID, item_data: dict) -> None:
     """Set item in cache"""
     redis_client.setex(
-        f"item:{str(item_id)}", CACHE_TTL, json.dumps(item_data, default=str)
+        f"item:{str(item_id)}", settings.REDIS_EX, json.dumps(item_data, default=str)
     )
 
 
@@ -524,10 +508,25 @@ def set_cached_categories(categories: list) -> None:
         for category in categories
     ]
     redis_client.setex(
-        "all_categories", CACHE_TTL, json.dumps(categories_dict_list, default=str)
+        "all_categories", settings.REDIS_EX, json.dumps(categories_dict_list, default=str)
     )
 
 
 def invalidate_categories_cache() -> None:
     """Invalidate categories cache"""
     redis_client.delete("all_categories")
+
+
+# <<<<< ---------- CACHE UTILITY FOR MENU ---------- >>>>>
+def get_cached_menu(vendor_id: UUID, food_group: FoodGroup) -> dict:
+    key = f"menu:{vendor_id}:{food_group}"
+    cached_menu = redis_client.get(key)
+    return json.loads(cached_menu) if cached_menu else None
+
+def set_cached_menu(vendor_id: UUID, food_group: FoodGroup, menu: dict) -> None:
+    key = f"menu:{vendor_id}:{food_group}"
+    redis_client.setex(key, settings.REDIS_EX, json.dumps(menu, default=str))
+
+def invalidate_menu_cache(vendor_id: UUID, food_group: FoodGroup) -> None:
+    key = f"menu:{vendor_id}:{food_group}"
+    redis_client.delete(key)

@@ -6,17 +6,16 @@ from sqlalchemy.orm import selectinload
 from fastapi import HTTPException, status,BackgroundTasks
 
 from app.schemas.review_schema import (ReviewCreate, 
-        ReviewResponse, 
-        ReviewerType,
+        ReviewResponse, ReviewerProfile, 
+        ReviewType,
         VendorReviewResponse,  
-        ReportingType,
+        ReportType,
 IssueStatus, ReportIssueCreate, ReportIssueUpdate, ReportIssueResponse)
-from app.models.models import User, Review, Delivery, Order, ReportIssue, Profile, ProfileImage, OrderItem
+from app.models.models import User, Review, Delivery, Order, ReportIssue, Profile
 from app.schemas.status_schema import DeliveryStatus, OrderStatus
-from app.utils.utils import refresh_vendor_review_stats_view
 from app.config.config import redis_client, settings
-from app.utils.model_converter import model_to_response
 
+from app.services.notification_service import create_automatic_report_thread
 
 from sqlalchemy.exc import NoResultFound
 from uuid import UUID
@@ -56,8 +55,8 @@ async def create_review(
     order_result = await db.execute(select(Order).where(Order.id==data.order_id)) 
     order = order_result.scalar_one_or_none()
 
-    # if data.review_type == ReviewerType.ORDER:
-    if order.order_type == ReviewerType.ORDER:
+    # if data.review_type == ReviewType.ORDER:
+    if order.order_type == ReviewType.ORDER:
         # Optional caching
         # cache_key = f"review:order:{data.order_id}:user:{reviewer_id}"
         # if redis_client.get(cache_key):
@@ -86,10 +85,10 @@ async def create_review(
             reviewee_id=reviewee_id,
             rating=data.rating,
             comment=data.comment,
-            review_type=ReviewerType.ORDER
+            review_type=ReviewType.ORDER
         )
 
-    elif order.order_type == ReviewerType.PRODUCT:
+    elif order.order_type == ReviewType.PRODUCT:
         # cache_key = f"review:delivery:{data.item_id}:user:{reviewer_id}"
         # if redis_client.get(cache_key):
         #     raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Review already exists for this delivery.")
@@ -114,7 +113,7 @@ async def create_review(
             reviewee_id=reviewee_id,
             rating=data.rating,
             comment=data.comment,
-            review_type=ReviewerType.PRODUCT
+            review_type=ReviewType.PRODUCT
         )
 
     else:
@@ -195,7 +194,7 @@ async def create_report(db: AsyncSession, report_data: ReportIssueCreate, curren
         
         # Validate that the reported user ID matches the reporting type
         reported_user_id = None
-        if report_data.reporting == ReportingType.VENDOR:
+        if report_data.reporting == ReportType.VENDOR:
             if not report_data.vendor_id:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
@@ -203,7 +202,7 @@ async def create_report(db: AsyncSession, report_data: ReportIssueCreate, curren
                 )
             reported_user_id = report_data.vendor_id
         
-        elif report_data.reporting == ReportingType.CUSTOMER:
+        elif report_data.reporting == ReportType.CUSTOMER:
             if not report_data.customer_id:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
@@ -211,7 +210,7 @@ async def create_report(db: AsyncSession, report_data: ReportIssueCreate, curren
                 )
             reported_user_id = report_data.customer_id
         
-        elif report_data.reporting == ReportingType.DISPATCH:
+        elif report_data.reporting == ReportType.DISPATCH:
             if not report_data.dispatch_id:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
@@ -279,6 +278,9 @@ async def create_report(db: AsyncSession, report_data: ReportIssueCreate, curren
         
         redis_client.delete(f'user_report:{current_user.id}')
         
+        # Create automatic report thread
+        await create_automatic_report_thread(db, new_report)
+        
         return new_report
     
     except HTTPException:
@@ -339,11 +341,11 @@ async def get_reports_by_user(
     reports_data = [report.model_dump() for report in report_responses]
     
     # Cache the results (either in background or directly)
-    background_tasks.add_task(
+    background_task.add_task(
         redis_client.setex,
         cache_key,
         settings.REDIS_EX,
-        reports_json
+        json.dumps(reports_data)
     )
 
       
@@ -400,7 +402,7 @@ async def get_report_by_id(
     # Cache the response (as JSON string)
     report_json = report_response.model_dump_json()
     
-    background_tasks.add_task(
+    background_task.add_task(
         redis_client.setex,
         cache_key,
         settings.REDIS_EX,

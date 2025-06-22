@@ -1662,9 +1662,11 @@ async def calculate_delivery_fee(distance: Decimal, db: AsyncSession) -> Decimal
     delivery_fee = await get_charges(db)
 
     if distance <= 1:
-        return delivery_fee.base_delivery_fee
+        return delivery_fee.base_delivery_fee + delivery_fee.delivery_fee_per_km
 
-    return distance * delivery_fee.delivery_fee_per_km
+    return (distance * delivery_fee.delivery_fee_per_km) + delivery_fee.base_delivery_fee
+
+
 
 
 async def calculate_amount_due_dispatch(

@@ -237,62 +237,6 @@ async def create_new_rider(
     # validate password
     validate_password(data.password)
 
-    # Check current user's profile
-    # stmt = (
-    #     select(User).where(User.id == current_user.id).options(joinedload(User.profile))
-    # )
-    # result = await db.execute(stmt)
-    # user = result.scalar_one_or_none()
-
-    # if not user:
-    #     raise HTTPException(
-    #         status_code=status.HTTP_404_NOT_FOUND,
-    #         detail="Current user not found",
-    #     )
-
-    # Count existing riders for this dispatcher
-    # stmt = (
-    #     select(func.count())
-    #     .select_from(User)
-    #     .where(User.dispatcher_id == current_user.id)
-    # )
-    # riders_result = await db.execute(stmt)
-    # riders_count = riders_result.scalar()
-
-    # # Check user permissions and restrictions
-    # if user.is_blocked:
-    #     raise HTTPException(
-    #         status_code=status.HTTP_403_FORBIDDEN,
-    #         detail="You cannot create rider due to suspension!",
-    #     )
-    # if not user.is_verified and riders_count > 1:
-    #     raise HTTPException(
-    #         status_code=status.HTTP_403_FORBIDDEN,
-    #         detail="Please verify your business to add more riders",
-    #     )
-
-    # if user.account_status == AccountStatus.PENDING:
-    #     raise HTTPException(
-    #         status_code=status.HTTP_403_FORBIDDEN, detail="Please verify your account!"
-    #     )
-
-    # if not user.profile.business_registration_number and riders_count > 1:
-    #     raise HTTPException(
-    #         status_code=status.HTTP_403_FORBIDDEN,
-    #         detail="Please update your company registration number to add more riders.",
-    #     )
-    # if not user.user_type == UserType.DISPATCH:
-    #     raise HTTPException(
-    #         status_code=status.HTTP_403_FORBIDDEN,
-    #         detail="Only dispatch company users can create riders!",
-    #     )
-
-    # if not user.profile.business_name or not user.profile.business_address:
-    #     raise HTTPException(
-    #         status_code=status.HTTP_403_FORBIDDEN,
-    #         detail="Please update your profile with your company name and phone number.",
-    #     )
-
     # Check if email already exists
     email_result = await db.execute(
         select(User).options(joinedload(User.profile)).where(User.email == data.email)
@@ -521,11 +465,9 @@ async def change_password(
 async def logout_user(db: AsyncSession, current_user: User) -> bool:
     """
     Revokes all refresh tokens for a user, effectively logging them out of all devices
-
     Args:
         db: Database session
         user_id: ID of user to logout
-
     Returns:
         bool: True if successful
     """
@@ -544,10 +486,8 @@ async def logout_user(db: AsyncSession, current_user: User) -> bool:
         return True
     except Exception as e:
         await db.rollback()
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to logout all sessions: {str(e)}",
-        )
+        # Instead of raising, just return True for UI logout success
+        return True
 
 
 async def reset_password(reset_data: PasswordResetConfirm, db: AsyncSession) -> dict:
@@ -790,7 +730,7 @@ async def send_verification_codes(
 
     stmt = select(User).options(joinedload(User.profile))
     result = await db.execute(stmt)
-    user = result.scalars().first()
+    user = result.scalar_one_or_none()
 
     if not user.profile.phone_number and not user.email:
         raise HTTPException(
@@ -822,20 +762,15 @@ async def verify_user_contact(
     email_code: str, phone_code: str, db: AsyncSession
 ) -> dict:
     """Verify both email and phone codes"""
-
     now = datetime.now()
-
     # Load user with profile
     stmt = select(User).options(joinedload(User.profile))
-
     result = await db.execute(stmt)
     user = result.scalars().first()
-
     if not user.profile:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail="User profile not found"
         )
-
     # Check if codes are expired
     email_expired = (
         user.email_verification_expires is not None
@@ -845,39 +780,33 @@ async def verify_user_contact(
         user.profile.phone_verification_expires is not None
         and user.profile.phone_verification_expires < now
     )
-
     if email_expired or phone_expired:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Verification codes have expired",
         )
-
     # Verify email code
     if email_code != user.email_verification_code:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Invalid email verification code",
         )
-
     # Verify phone code
     if phone_code != user.profile.phone_verification_code:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Invalid phone verification code",
         )
-
     # Update verification status
     user.is_email_verified = True
     user.profile.is_phone_verified = True
     user.account_status = AccountStatus.CONFIRMED
     user.email_verification_code = None
-    user.phone_verification_code = None
+    user.profile.phone_verification_code = None
     user.email_verification_expires = None
-    user.phone_verification_expires = None
-
+    user.profile.phone_verification_expires = None
     await db.commit()
-    db.refresh()
-
+    await send_welcome_email(user)
     return {"message": "Email and phone verified successfully"}
 
 
@@ -909,3 +838,19 @@ def invalidate_rider_cache(dispatcher_id: UUID):
 #         await db.refresh(user)
 
 #     return user
+
+
+async def send_welcome_email(user):
+    message = MessageSchema(
+        subject="Welcome to ServiPal!",
+        recipients=[user.email],
+        template_body={
+            "title": "Welcome to ServiPal",
+            "name": user.email.split("@")[0],
+            "body": "Thank you for joining our platform. We're excited to have you!",
+            "code": "",
+        },
+        subtype="html",
+    )
+    fm = FastMail(email_conf)
+    await fm.send_message(message, template_name="welcome_email.html")

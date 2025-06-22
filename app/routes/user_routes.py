@@ -13,9 +13,9 @@ from fastapi import (
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth.auth import create_tokens, get_current_user
+from app.auth.auth import get_current_user
 from app.database.database import get_db
-from app.models.models import ProfileImage, User, Profile
+from app.models.models import User
 
 from app.schemas.schemas import DispatchRiderSchema
 from app.schemas.status_schema import UserType
@@ -24,8 +24,6 @@ from app.schemas.user_schemas import (
     ProfileSchema,
     UserProfileResponse,
     RiderProfileSchema,
-    UserResponse,
-    WalletRespose,
     WalletSchema,
     VendorUserResponse,
     ProfileImageResponseSchema,
@@ -34,7 +32,7 @@ from app.schemas.user_schemas import (
 )
 from app.services import user_service
 from app.schemas.item_schemas import RestaurantMenuResponseSchema, LaundryMenuResponseSchema
-from app.utils.s3_service import add_profile_image, update_image
+
 
 
 router = APIRouter(prefix="/api/users", tags=["Users"])

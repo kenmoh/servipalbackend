@@ -10,7 +10,7 @@ from app.schemas.review_schema import (
     ReviewCreate,
     ReviewResponse,
     VendorReviewResponse,
-    ReviewerType,
+    ReviewType,
     ReportIssueResponse,
     ReportIssueUpdate,
     ReportIssueCreate

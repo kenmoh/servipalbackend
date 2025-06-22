@@ -23,7 +23,7 @@ from app.utils.s3_service import add_image, update_image, delete_s3_object
 from app.config.config import redis_client, settings
 from app.models.materialize_model import VendorReviewStats
 from app.models.models import User, Wallet, Profile, ProfileImage, Transaction, Review, Order, Item
-from app.schemas.review_schema import ReviewerType
+from app.schemas.review_schema import ReviewType
 from app.schemas.item_schemas import RestaurantMenuResponseSchema, LaundryMenuResponseSchema
 from app.schemas.user_schemas import (
     Notification,
@@ -481,7 +481,7 @@ async def get_restaurant_vendors(
                 func.count(Review.id).label("review_count"),
             )
             .join(Review, Review.order_id == Order.id)
-            .where(Review.review_type == ReviewerType.ORDER)
+            .where(Review.review_type == ReviewType.ORDER)
             .group_by(Order.vendor_id)
             .subquery()
         )
@@ -814,7 +814,7 @@ async def get_users_by_laundry_services(
                 func.count(Review.id).label("review_count"),
             )
             .join(Review, Review.order_id == Order.id)
-            .where(Review.review_type == ReviewerType.ORDER)
+            .where(Review.review_type == ReviewType.ORDER)
             .group_by(Order.vendor_id)
             .subquery()
         )

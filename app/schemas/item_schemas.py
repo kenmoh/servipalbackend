@@ -1,10 +1,18 @@
 from datetime import datetime
 from decimal import Decimal
 from enum import Enum
+from tkinter.tix import MAIN
 from fastapi import Form
 from pydantic import BaseModel, Field
 from typing import Optional
 from uuid import UUID
+
+
+class FoodGroup(str, Enum):
+    APPETIZER = "appetizer"
+    MAIN_COURSE = "main_course"
+    DESSERT = "dessert"
+    OTHERS='others'
 
 
 class CategoryType(str, Enum):
@@ -72,21 +80,19 @@ class ItemResponse(ItemCreateResponse):
         from_attributes = True
 
 
-class MenuWithReviewSchema(BaseModel):
+class MenuSchema(BaseModel):
     id: UUID
     name: str
     description: str
     price: Decimal
     image_url: str
-    average_rating: float
-    review_count: int
-    reviews: list[ReviewResponseSchema] = []
+ 
 
 
-class MenuWithReviewResponseSchema(BaseModel):
+class MenuResponseSchema(BaseModel):
     vendor_id: UUID
-    menu_item: list[MenuWithReviewSchema]
-    total_items: int
+    menu_item: list[MenuSchema]
+    # total_items: int
 
 class MenuBase(BaseModel):
     id: UUID
@@ -103,5 +109,5 @@ class RestaurantMenuResponseSchema(MenuBase):
    
 
 
-class LaundryMenuResponseSchema(BaseModel):
+class LaundryMenuResponseSchema(MenuBase):
     laundry_id: str

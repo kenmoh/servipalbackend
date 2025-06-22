@@ -5,7 +5,7 @@ from pydantic import BaseModel, Field
 
 
 
-class ReviewerType(str, Enum):
+class ReviewType(str, Enum):
     ORDER = 'order'
     PRODUCT = 'product'
 
@@ -16,7 +16,7 @@ class ReviewCreate(BaseModel):
     reviewee_id: UUID
     rating: int = Field(..., ge=1, le=5)
     comment: str
-    review_type: ReviewerType
+    review_type: ReviewType
 
 class ReviewResponse(BaseModel):
     id: UUID
@@ -53,7 +53,7 @@ class IssueStatus(str, Enum):
     RESOLVED = "resolved"
     DISMISSED = "dismissed"
 
-class ReportingType(str, Enum):
+class ReportType(str, Enum):
     VENDOR = "vendor"
     CUSTOMER = "customer"
     DISPATCH = "dispatch"
@@ -67,7 +67,7 @@ class ReportIssueCreate(BaseModel):
     customer_id: UUID | None = None
     description: str = Field(..., min_length=10, max_length=1000)
     issue_type: IssueType
-    reporting: ReportingType
+    report_type: ReportType
 
     class Config:
         from_attributes = True
@@ -89,7 +89,7 @@ class ReportIssueResponse(BaseModel):
     description: str
     issue_type: IssueType
     issue_status: IssueStatus
-    reporting: ReportingType
+    report_type: ReportType
     created_at: datetime
     updated_at: datetime
     

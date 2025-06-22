@@ -22,7 +22,8 @@ from app.routes import (
     order_routes,
     product_routes,
     marketplace_routes,
-    review_routes
+    review_routes,
+    notification_routes
 )
 
 from app.utils.cron_job import (
@@ -88,7 +89,7 @@ scheduler.add_job(
 
 scheduler.start()
 
-templates = Jinja2Templates(directory="templates")
+# templates = Jinja2Templates(directory="templates")
 
 
 # @asynccontextmanager
@@ -164,10 +165,10 @@ app = FastAPI(
     },
 )
 
-logfire.configure(service_name="ServiPal")
-logfire.debug("App Debug mode on")
-logfire.instrument_fastapi(app=app)
-logfire.instrument_sqlalchemy(engine=engine)
+# logfire.configure(service_name="ServiPal")
+# logfire.debug("App Debug mode on")
+# logfire.instrument_fastapi(app=app)
+# logfire.instrument_sqlalchemy(engine=engine)
 
 origins = ["http://localhost:3000", "https://servipal-admin.vercel.app"]
 
@@ -186,12 +187,6 @@ app.add_middleware(
     expose_headers=["Set-Cookie"],
 )
 templates = Jinja2Templates(directory="templates")
-
-# logfire.configure(project_name="QuickPickup", service_name="QuickPickup")
-# logfire.debug("App Debug mode on")
-# logfire.instrument_fastapi(app=app)
-
-# SQLAlchemyInstrumentor().instrument(engine=engine)
 
 
 @app.get("/api/db", tags=["Health Status"])
@@ -235,3 +230,4 @@ app.include_router(order_routes.router)
 app.include_router(payment_routes.router)
 app.include_router(product_routes.router)
 app.include_router(marketplace_routes.router)
+app.include_router(notification_routes.router)

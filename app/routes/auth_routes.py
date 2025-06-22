@@ -9,6 +9,7 @@ from fastapi import (
     status,
 )
 from fastapi.security import OAuth2PasswordRequestForm
+from fastapi_mail import FastMail, MessageSchema
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -29,6 +30,7 @@ from app.schemas.user_schemas import (
     CreateUserSchema,
 )
 from app.services import auth_service
+from app.config.config import email_conf
 
 
 router = APIRouter(prefix="/api/auth", tags=["Authentication"])
@@ -215,4 +217,59 @@ async def logout_all(
     """Logout from all devices"""
     await auth_service.logout_all_sessions(db, current_user.id)
 
-    return {"message": "Successfully logged out from all devices"}
+    return {"message": f" You're logged out from all devices"}
+
+
+@router.get("/test-email")
+async def test_email():
+    """Send a test password reset email to verify email and template setup."""
+    message = MessageSchema(
+        subject="Password Reset Request",
+        recipients=['hopearemoh@yahoo.com'],
+        template_body={
+            "reset_url": "https://example.com/reset-password?token=123456",
+            "user": 'Hope Aremoh',
+            "expires_in": "24 hours",
+            "code": "123456"
+        },
+        subtype="html",
+    )
+    fm = FastMail(email_conf)
+    await fm.send_message(message, template_name="email.html")
+    return {"message": f"Test email sent to {'Hope Aremoh'}"}
+
+
+@router.get("/test-resend-email")
+async def test_resend_email():
+    """Send a dummy verification email to a hardcoded recipient for testing."""
+    message = MessageSchema(
+        subject="Verify Your Email",
+        recipients=["hopemoh2020@gmail.com"],
+        template_body={
+            "code": "654321",
+            "expires_in": "10 minutes",
+        },
+        subtype="html",
+    )
+    fm = FastMail(email_conf)
+    await fm.send_message(message, template_name="email.html")
+    return {"message": "Dummy verification email sent to Hope Aremoh"}
+
+
+@router.get("/test-welcome-email")
+async def test_welcome_email():
+    """Send a dummy welcome email to a hardcoded recipient for testing."""
+    message = MessageSchema(
+        subject="Welcome to ServiPal!",
+        recipients=["kenneth.aremoh@gmail.com"],
+        template_body={
+            "title": "Welcome to ServiPal",
+            "name": "kenneth.aremoh@gmail.com".split('@')[0],
+            "body": "Thank you for joining our platform. We're excited to have you!",
+            "code": "",
+        },
+        subtype="html",
+    )
+    fm = FastMail(email_conf)
+    await fm.send_message(message, template_name="welcome_email.html")
+    return {"message": "Dummy welcome email sent to Hope Aremoh"}
