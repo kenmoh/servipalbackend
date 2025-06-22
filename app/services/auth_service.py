@@ -148,10 +148,10 @@ async def create_user(
         email_code, phone_code = await generate_verification_codes(user, db)
 
         # Send verification code to phone and email
-        background_tasks.add_task(
-            send_verification_codes, user, email_code, phone_code, db
-        )
-
+        # background_tasks.add_task(
+        #     send_verification_codes, user, email_code, phone_code, db
+        # )
+        await send_verification_codes(email_code=email_code, phone_code=phone_code, db=db)
         return user
     except IntegrityError as e:
         await db.rollback()
@@ -302,9 +302,11 @@ async def create_new_rider(
         email_code, phone_code = await generate_verification_codes(new_rider, db)
 
         # Send verification code to phone and email
-        background_tasks.add_task(
-            send_verification_codes, new_rider, email_code, phone_code, db
-        )
+        # background_tasks.add_task(
+        #     send_verification_codes, new_rider, email_code, phone_code, db
+        # )
+        await send_verification_codes(email_code=email_code, phone_code=phone_code, db=db)
+
         invalidate_rider_cache(current_user.id)
         return UserBase(**rider_dict)
     except IntegrityError as e:
@@ -701,6 +703,35 @@ async def generate_2fa_code(user: User, db: AsyncSession) -> str:
     return formatted_code
 
 
+async def generate_resend_verification_code(email: str, db: AsyncSession):
+    user_result = await db.execute(select(User).where(User.email == email))
+    user = user_result.scalar_one_or_none()
+
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found",
+        )
+        # Generate codes
+    email_code = f"{secrets.randbelow(1000000):06d}"
+    phone_code = f"{secrets.randbelow(1000000):06d}"
+
+    # Set expiration time (10 minutes from now)
+    expires = datetime.now() + timedelta(minutes=25)
+
+    # Update user record with codes and expiration
+    user.email_verification_code = email_code
+    user.profile.phone_verification_code = phone_code
+
+    user.email_verification_expires = expires
+    user.profile.phone_verification_expires = expires
+
+    await db.commit()
+
+    return email_code, phone_code
+
+
+
 async def generate_verification_codes(user: User, db: AsyncSession) -> tuple[str, str]:
     """Generate verification codes for both email and phone"""
 
@@ -709,7 +740,7 @@ async def generate_verification_codes(user: User, db: AsyncSession) -> tuple[str
     phone_code = f"{secrets.randbelow(1000000):06d}"
 
     # Set expiration time (10 minutes from now)
-    expires = datetime.now() + timedelta(minutes=10)
+    expires = datetime.now() + timedelta(minutes=25)
 
     # Update user record with codes and expiration
     user.email_verification_code = email_code

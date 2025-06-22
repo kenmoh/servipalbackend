@@ -33,7 +33,7 @@ from app.services.notification_service import (
     get_new_notifications,
 )
 
-router = APIRouter(prefix="/notifications", tags=["notifications"])
+router = APIRouter(prefix="/notifications", tags=["Notifications"])
 
 
 @router.post("/broadcast", response_model=NotificationResponseSchema)
