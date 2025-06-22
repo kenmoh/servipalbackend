@@ -51,7 +51,7 @@ def upgrade() -> None:
     op.add_column('reviews', sa.Column('order_id', sa.Uuid(), nullable=True))
     op.add_column('reviews', sa.Column('delivery_id', sa.Uuid(), nullable=True))
     op.add_column('reviews', sa.Column('reviewee_id', sa.Uuid(), nullable=True))
-    op.add_column('reviews', sa.Column('review_type', postgresql.ENUM('ORDER', 'RIDER', name='reviewertype',
+    op.add_column('reviews', sa.Column('review_type', postgresql.ENUM('ORDER', 'PRODUCT', name='reviewertype',
             checkfirst=True), nullable=False))
     op.alter_column('reviews', 'item_id',
                existing_type=sa.UUID(),
