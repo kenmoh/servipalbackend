@@ -1,11 +1,8 @@
+from uuid import UUID
 from datetime import datetime
 from decimal import Decimal
 from enum import Enum
-from tkinter.tix import MAIN
-from fastapi import Form
-from pydantic import BaseModel, Field
-from typing import Optional
-from uuid import UUID
+from pydantic import BaseModel
 
 
 class FoodGroup(str, Enum):
