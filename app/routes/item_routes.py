@@ -12,6 +12,7 @@ from app.schemas.item_schemas import (
     LaundryMenuResponseSchema,
     MenuItemCreate,
     RestaurantMenuResponseSchema,
+    ItemType,
 )
 from app.services import item_service
 
@@ -45,9 +46,10 @@ async def create_menu_item(
     name: str = Form(...),
     description: str = Form(None),
     price: Decimal = Form(...),
+    side: Decimal = Form(None),
     category_id: UUID | None = Form(None),
     group: UUID | None = Form(None),
-    item_type: ItemType = Form(...)
+    item_type: ItemType = Form(...),
     images: list[UploadFile] = File(...),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),

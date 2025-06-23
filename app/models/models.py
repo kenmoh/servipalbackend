@@ -382,6 +382,7 @@ class Item(Base):
     description: Mapped[str] = mapped_column(nullable=True)
     price: Mapped[Decimal] = mapped_column(default=0.00, nullable=False)
     sizes: Mapped[str] = mapped_column(nullable=True)
+    side: Mapped[str] = mapped_column(nullable=True)
     colors: Mapped[list[str]] = mapped_column(ARRAY(String), nullable=True)
     stock: Mapped[int] = mapped_column(nullable=True)
     in_stock: Mapped[bool] = mapped_column(default=True)
