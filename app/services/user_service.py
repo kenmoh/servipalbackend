@@ -2,7 +2,7 @@ from decimal import Decimal
 from datetime import datetime
 from sqlalchemy import cast
 from sqlalchemy.dialects import postgresql
-from app.schemas.item_schemas import ItemType
+from app.schemas.item_schemas import FoodGroup, ItemType
 from app.models.models import Delivery, User, Item, Category, RefreshToken, Session
 from sqlalchemy.orm import selectinload
 from sqlalchemy import func, select, distinct, delete, update
@@ -19,6 +19,7 @@ from app.schemas.delivery_schemas import DeliveryStatus
 
 from app.schemas.schemas import DispatchRiderSchema
 from app.schemas.status_schema import AccountStatus, UserType
+from app.utils.logger_config import setup_logger
 from app.utils.s3_service import add_image, update_image, delete_s3_object
 from app.config.config import redis_client, settings
 from app.models.materialize_model import VendorReviewStats
@@ -41,7 +42,7 @@ from app.schemas.user_schemas import (
     
 )
 
-logger = logging.getLogger(__name__)
+logger = setup_logger()
 
 
 def get_cached_user(user_id: UUID) -> dict:
@@ -243,6 +244,7 @@ async def get_users(db: AsyncSession) -> list[UserProfileResponse]:
         return [UserProfileResponse(**user_data) for user_data in users_data]
 
     except Exception as e:
+        logger.error(f"Failed to retrieve users: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to retrieve users: {str(e)}",
@@ -287,41 +289,42 @@ async def update_profile(
             status_code=status.HTTP_404_NOT_FOUND, detail="User not found"
         )
 
+    # Only check for conflicts if the new value is different from the current value
+    conflict_filters = []
+    if profile_data.phone_number and profile_data.phone_number != profile.phone_number:
+        conflict_filters.append(Profile.phone_number == profile_data.phone_number)
+    if profile_data.business_name and profile_data.business_name != profile.business_name:
+        conflict_filters.append(Profile.business_name == profile_data.business_name)
     if (
-        profile.phone_number
-        or profile.business_name
-        or profile.business_registration_number
-    ) is not None:
-        # Check if email is already taken by another user
+        profile_data.business_registration_number
+        and profile_data.business_registration_number != profile.business_registration_number
+    ):
+        conflict_filters.append(Profile.business_registration_number == profile_data.business_registration_number)
+
+    if conflict_filters:
         stmt = select(Profile).where(
-            or_(
-                Profile.phone_number == profile_data.phone_number,
-                Profile.business_name == profile_data.business_name,
-                Profile.business_registration_number
-                == profile_data.business_registration_number,
-            )
-            & (Profile.user_id != current_user.id)
+            or_(*conflict_filters),
+            Profile.user_id != current_user.id
         )
         result = await db.execute(stmt)
         if result.scalar_one_or_none():
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
-                detail="Phone number or business name or business registration number  already registered",
+                detail="Phone number or business name or business registration number already registered",
             )
 
-        if profile:
-            # Update profile fields
-            for field, value in profile_data.model_dump(exclude_unset=True).items():
-                setattr(profile, field, value)
+    # Update profile fields
+    for field, value in profile_data.model_dump(exclude_unset=True).items():
+        setattr(profile, field, value)
 
-        await db.commit()
-        await db.refresh(profile)
+    await db.commit()
+    await db.refresh(profile)
 
-        # Invalidate cached data
-        invalidate_user_cache(current_user.id)
-        redis_client.delete("all_users")
+    # Invalidate cached data
+    invalidate_user_cache(current_user.id)
+    redis_client.delete("all_users")
 
-        return profile
+    return profile
 
 
 async def update_rider_profile(
@@ -371,11 +374,31 @@ async def update_rider_profile(
 
     profile = rider.profile
     if not profile:
+        logger.error(f"Profile not found for rider {rider_id}")
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Rider profile not found"
         )
 
-    # Check for unique constraints if updating phone details
+    # Only check for conflicts if the new value is different from the current value
+    conflict_filters = []
+    if profile_data.phone_number and profile_data.phone_number != profile.phone_number:
+        conflict_filters.append(Profile.phone_number == profile_data.phone_number)
+    if profile_data.bike_number and profile_data.bike_number != profile.bike_number:
+        conflict_filters.append(Profile.bike_number == profile_data.bike_number)
+
+    if conflict_filters:
+        stmt = select(Profile).where(
+            or_(*conflict_filters),
+            Profile.user_id != rider_id
+        )
+        result = await db.execute(stmt)
+        if result.scalar_one_or_none():
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Phone number or bike number already registered",
+            )
+
+    # Update profile fields
     profile.full_name = profile_data.full_name
     profile.phone_number = profile_data.phone_number
     profile.bike_number = profile_data.bike_number
@@ -392,6 +415,7 @@ async def update_rider_profile(
         return profile
 
     except Exception as e:
+        logger.error(f"Error updating rider profile: {str(e)}")
         await db.rollback()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -431,7 +455,7 @@ async def get_user_with_profile(db: AsyncSession, user_id: UUID) -> ProfileSchem
             "bank_account_number": profile.bank_account_number or None,
             "bank_name": profile.bank_name or None,
             "full_name": profile.full_name or None,
-            "store_name": user.profile.store_name or None,
+            "store_name": profile.store_name or None,
             "business_name": profile.business_name or None,
             "business_address": profile.business_address or None,
             "business_registration_number": profile.business_registration_number
@@ -452,7 +476,7 @@ async def get_user_with_profile(db: AsyncSession, user_id: UUID) -> ProfileSchem
         # Re-raise HTTP exceptions as-is
         raise
     except Exception as e:
-        # logging.error(f"Error retrieving user with profile: {str(e)}", exc_info=True)
+        logging.error(f"Error retrieving user with profile: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to retrieve user data: {str(e)}",
@@ -764,6 +788,7 @@ async def upload_image_profile(
                 backdrop_image_url=profile.profile_image.backdrop_image_url,
             )
         else:
+            logger.error("Failed to create/update profile image")
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="Failed to create/update profile image",
@@ -897,32 +922,6 @@ async def get_users_by_laundry_services(
 
 
 
-
-
-
-async def get_vendor_average_rating(user_id, db: AsyncSession) -> Decimal:
-    stmt = (
-        select(User)
-        .join(Item, Item.user_id == user_id)
-        .options(
-            selectinload(User.items).selectinload(Item.reviews),
-        )
-    )
-
-    result = await db.execute(stmt)
-    user = result.scalar_one_or_none()
-
-    ratings = []
-
-    for item in user.items:
-        for review in item.reviews:
-            ratings.append(review.rating)
-
-    average_rating = Decimal(sum(ratings) / len(ratings)) or 0.00
-
-    return average_rating
-
-
 async def get_dispatcher_riders(
     db: AsyncSession, dispatcher_id: UUID, skip: int = 0, limit: int = 10
 ) -> list[DispatchRiderSchema]:
@@ -995,58 +994,58 @@ async def get_dispatcher_riders(
         )
 
 
-async def delete_rider(rider_id: UUID, db: AsyncSession, current_user: User) -> None:
-    """
-    Delete rider using CASCADE DELETE (requires proper cascade setup in models).
-    This is more efficient as it relies on database cascading.
-    """
+# async def delete_rider(rider_id: UUID, db: AsyncSession, current_user: User) -> None:
+#     """
+#     Delete rider using CASCADE DELETE (requires proper cascade setup in models).
+#     This is more efficient as it relies on database cascading.
+#     """
 
-    if current_user.user_type != UserType.DISPATCH:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only dispatch users can delete riders",
-        )
+#     if current_user.user_type != UserType.DISPATCH:
+#         raise HTTPException(
+#             status_code=status.HTTP_403_FORBIDDEN,
+#             detail="Only dispatch users can delete riders",
+#         )
 
-    try:
-        stmt = select(User).where(
-            User.id == rider_id, User.dispatcher_id == current_user.id
-        )
-        result = await db.execute(stmt)
-        rider = result.scalar_one_or_none()
+#     try:
+#         stmt = select(User).where(
+#             User.id == rider_id, User.dispatcher_id == current_user.id
+#         )
+#         result = await db.execute(stmt)
+#         rider = result.scalar_one_or_none()
 
-        if not rider:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND, detail="Rider not found"
-            )
+#         if not rider:
+#             raise HTTPException(
+#                 status_code=status.HTTP_404_NOT_FOUND, detail="Rider not found"
+#             )
 
-        if rider.user_type != UserType.RIDER:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST, detail="User is not a rider"
-            )
+#         if rider.user_type != UserType.RIDER:
+#             raise HTTPException(
+#                 status_code=status.HTTP_400_BAD_REQUEST, detail="User is not a rider"
+#             )
 
-        await db.delete(rider)
-        await db.commit()
+#         await db.delete(rider)
+#         await db.commit()
 
-        # Clear caches
-        invalidate_user_cache(rider_id)
-        invalidate_user_cache(current_user.id)
-        redis_client.delete("all_users")
+#         # Clear caches
+#         invalidate_user_cache(rider_id)
+#         invalidate_user_cache(current_user.id)
+#         redis_client.delete("all_users")
 
-        logger.info(
-            f"Rider {rider_id} deleted with cascade by dispatch user {current_user.id}"
-        )
+#         logger.info(
+#             f"Rider {rider_id} deleted with cascade by dispatch user {current_user.id}"
+#         )
 
-        return None
+#         return None
 
-    except HTTPException:
-        raise
-    except Exception as e:
-        await db.rollback()
-        logger.error(f"Error deleting rider {rider_id}: {str(e)}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to delete rider",
-        )
+#     except HTTPException:
+#         raise
+#     except Exception as e:
+#         await db.rollback()
+#         logger.error(f"Error deleting rider {rider_id}: {str(e)}")
+#         raise HTTPException(
+#             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+#             detail="Failed to delete rider",
+#         )
 
 
 async def delete_rider(rider_id: UUID, db: AsyncSession, current_user: User) -> None:
@@ -1091,12 +1090,6 @@ async def delete_rider(rider_id: UUID, db: AsyncSession, current_user: User) -> 
             update(Delivery).where(Delivery.rider_id == rider_id).values(rider_id=None)
         )
 
-        # # Delete profile image
-        # await db.execute(delete(ProfileImage).where(ProfileImage.profile_id == rider_id))
-
-        # # Delete profile
-        # await db.execute(delete(Profile).where(Profile.user_id == rider_id))
-
         # Finally delete the user
         await db.delete(rider)
         await db.commit()
@@ -1137,7 +1130,7 @@ async def register_notification(
     cache_key = f"notification_token:{current_user.notification_token}"
     cached_data = redis_client.get(cache_key)
     if cached_data:
-        return Notification(**rider)
+        return Notification(**cached_data)
 
     result = await db.execute(select(User).where(User.id == current_user.id))
     user = result.scalar_one_or_none()
@@ -1182,7 +1175,7 @@ async def get_current_user_notification_token(current_user: UUID, db: AsyncSessi
 
 
 
-async def get_restaurant_menu(db: AsyncSession, restaurant_id: UUID) -> list[RestaurantMenuResponseSchema]:
+async def get_restaurant_menu(db: AsyncSession, restaurant_id: UUID, food_group: FoodGroup = FoodGroup.MAIN_COURSE) -> list[RestaurantMenuResponseSchema]:
     """
     Retrieve all menu items for a specific restaurant with Redis caching.
     
@@ -1197,7 +1190,7 @@ async def get_restaurant_menu(db: AsyncSession, restaurant_id: UUID) -> list[Res
     Raises:
         SQLAlchemyError: If database query fails
     """
-    cache_key = f"restaurant_menu:{restaurant_id}"
+    cache_key = f"restaurant_menu:{restaurant_id}:{food_group}"
 
     
     # Check cache first
@@ -1208,7 +1201,7 @@ async def get_restaurant_menu(db: AsyncSession, restaurant_id: UUID) -> list[Res
         return [RestaurantMenuResponseSchema(**item) for item in menu_data]
     try:
         # Query menu items with eager loading of images
-        menu_stmt = select(Item).where(Item.user_id == restaurant_id, Item.item_type==ItemType.FOOD).options(selectinload(Item.images))
+        menu_stmt = select(Item).where(Item.user_id == restaurant_id, Item.item_type==ItemType.FOOD,Item.food_group==food_group).options(selectinload(Item.images))
         result = await db.execute(menu_stmt)
         menus = result.unique().scalars().all()
         
@@ -1222,6 +1215,7 @@ async def get_restaurant_menu(db: AsyncSession, restaurant_id: UUID) -> list[Res
                 'item_type': menu.item_type,
                 'description': menu.description,
                 'price': menu.price, 
+                'group': menu.food_group,
                 'images': [
                     {
                         'id': image.id, 
@@ -1301,13 +1295,7 @@ async def get_laundry_menu(db: AsyncSession, laundry_id: UUID) -> list[LaundryMe
         return [LaundryMenuResponseSchema(**item) for item in menu_list]
         
     except Exception as e:
-        # Log the error (you might want to use proper logging here)
-        print(f"Error fetching laundry menu: {e}")
+        logger.error(f"Error fetching laundry menu: {e}")
         raise
 
  
-
-
-
-
-# <<<<< ---------- REVIEW SYSTEM ---------- >>>>>

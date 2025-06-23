@@ -33,6 +33,21 @@ class ItemType(str, Enum):
     PRODUCT = "product"
 
 
+class ItemImageSchema(BaseModel):
+    id: UUID
+    item_id: UUID
+    url: str
+
+
+
+class MenuItemCreate(BaseModel):
+    name: str
+    description: str
+    price: Decimal
+    category_id: UUID | None = None
+    group: FoodGroup | None = None
+
+ 
 class ItemCreate(BaseModel):
     name: str
     description: str | None = None
@@ -44,56 +59,58 @@ class ItemCreate(BaseModel):
     stock: int | None = None
 
 
-class ItemCreateResponse(BaseModel):
-    name: str
-    description: str | None = None
-    price: Decimal
-    item_type: ItemType
-    colors: list[str] = []
-    stock: int | None = None
-    sizes: str | None = None
 
 
-class ItemImageSchema(BaseModel):
+class ItemResponse(ItemCreate):
     id: UUID
-    item_id: UUID
-    url: str
-
-
-class ReviewResponseSchema(BaseModel):
-    item_id: UUID
-    rating: int
-    comment: str
-    created_at: datetime
-
-
-class ItemResponse(ItemCreateResponse):
-    id: UUID
-    user_id: UUID
+    user_id: UUID   
     images: list[ItemImageSchema]
-    reviews: list[ReviewResponseSchema] = []
+
 
     class Config:
         from_attributes = True
 
 
-class MenuSchema(BaseModel):
-    id: UUID
-    name: str
-    description: str
-    price: Decimal
-    image_url: str
+
+
+
+
  
 
 
-class MenuResponseSchema(BaseModel):
-    vendor_id: UUID
-    menu_item: list[MenuSchema]
-    # total_items: int
+# class ReviewResponseSchema(BaseModel):
+#     item_id: UUID
+#     rating: int
+#     comment: str
+#     created_at: datetime
+
+
+# class ItemResponse(ItemCreate):
+#     id: UUID
+#     user_id: UUID
+#     images: list[ItemImageSchema]
+#     reviews: list[ReviewResponseSchema] = []
+
+#     class Config:
+#         from_attributes = True
+
+
+# class MenuResponseSchema(BaseModel):
+#     id: UUID
+#     vendor_id: UUID
+#     name: str
+#     description: str
+#     price: Decimal
+#     item_type: ItemType
+#     group: FoodGroup
+#     image_url: list[ItemImageSchema]
+ 
 
 class MenuBase(BaseModel):
     id: UUID
+    vendor_id: UUID
     name: str
+    description: str | None = None
     item_type: ItemType
     price: Decimal
     images: list[ItemImageSchema]
@@ -101,10 +118,8 @@ class MenuBase(BaseModel):
 
 
 class RestaurantMenuResponseSchema(MenuBase):
-    restaurant_id: UUID
-    description: str
+    group: FoodGroup
    
 
-
 class LaundryMenuResponseSchema(MenuBase):
-    laundry_id: str
+    pass

@@ -97,28 +97,16 @@ async def create_user(
     user_exists = user_exists_result.scalar_one_or_none()
 
     # If user exists, check if email or phone number is already registered
-    if user_exists:
+    if user_exists.email == user_data.email or user_exists.profile.phone_number == user_data.phone_number:
         raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT, detail="Email already registered"
-        )
-
-    # Check if phone number is already registered
-    phone_exists_result = await db.execute(
-        select(Profile).where(Profile.phone_number == user_data.phone_number)
-    )
-    phone_exists = phone_exists_result.scalar_one_or_none()
-
-    if phone_exists:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="Phone number already registered",
+            status_code=status.HTTP_409_CONFLICT, detail="Email or phone number already registered"
         )
 
     try:
         # Create the user
         user = User(
             email=user_data.email.lower(),
-            password=hash_password(user_data.password),  # Hash password
+            password=hash_password(user_data.password),
             user_type=user_data.user_type,
             updated_at=datetime.now(),
         )
@@ -239,26 +227,14 @@ async def create_new_rider(
     validate_password(data.password)
 
     # Check if email already exists
-    email_result = await db.execute(
+    user_exists_result = await db.execute(
         select(User).options(joinedload(User.profile)).where(User.email == data.email)
     )
-    email_exists = email_result.scalar_one_or_none()
+    user_exists = user_exists_result.scalar_one_or_none()
 
-    if email_exists:
+    if user_exists.email == data.email or user_exists.profile.phone_number == data.phone_number:
         raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT, detail="Email already registered"
-        )
-
-    # Check if phone number already exists
-    phone_result = await db.execute(
-        select(Profile).where(Profile.phone_number == data.phone_number)
-    )
-    phone_exists = phone_result.scalar_one_or_none()
-
-    if phone_exists:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="Phone number already registered",
+            status_code=status.HTTP_409_CONFLICT, detail="Email already or phone number already registered"
         )
 
     # Create new rider and assign to current dispatch

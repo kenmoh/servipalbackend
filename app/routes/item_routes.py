@@ -1,5 +1,4 @@
 from uuid import UUID
-from typing import List, Annotated
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, File, UploadFile, status, Form
@@ -10,9 +9,9 @@ from app.models.models import User
 from app.schemas.item_schemas import (
     CategoryCreate,
     CategoryResponse,
-    ItemCreate,
-    ItemResponse,
-    ItemType,
+    LaundryMenuResponseSchema,
+    MenuItemCreate,
+    RestaurantMenuResponseSchema,
 )
 from app.services import item_service
 
@@ -39,129 +38,147 @@ async def create_new_category(
 
 
 @router.post(
-    "",
-    response_model=ItemResponse,
+    "/menu-item-create",
     status_code=status.HTTP_201_CREATED,
-    summary="Create a new item",
-    description="Allows VENDOR users to create a new item associated with their account and a category.",
 )
-async def create_new_item(
+async def create_menu_item(
     name: str = Form(...),
     description: str = Form(None),
     price: Decimal = Form(...),
-    item_type: ItemType = Form(...),
     category_id: UUID | None = Form(None),
-    images: List[UploadFile] = File(...),
+    group: UUID | None = Form(None),
+    images: list[UploadFile] = File(...),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
-) -> ItemResponse:
+) -> RestaurantMenuResponseSchema | LaundryMenuResponseSchema:
     """
-    Endpoint to create a new item.
+    Endpoint to create a new food item.
     - Requires authenticated VENDOR user.
     - The specified category_id must exist.
     """
 
-    item_data = ItemCreate(
+    item_data = MenuItemCreate(
         name=name,
         description=description,
         price=price,
-        item_type=item_type,
         images=images,
         category_id=category_id,
+        food_group=group
     )
 
-    return await item_service.create_item(
+    return await item_service.create_menu_item(
         db=db, current_user=current_user, item_data=item_data, images=images
     )
 
 
-@router.get(
-    "",
-    status_code=status.HTTP_200_OK,
-    response_model=List[ItemResponse],
-    summary="Get items for current user",
-    description="Retrieves all items belonging to the currently authenticated VENDOR user.",
+@router.post(
+    "/laundry-item-create",
+    status_code=status.HTTP_201_CREATED,
 )
-async def read_user_items(
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-) -> List[ItemResponse]:
-    """
-    Endpoint to get all items for the logged-in VENDOR user.
-    """
-    return await item_service.get_items_by_current_user(db, current_user)
+# async def create_laundry_item(
+#     name: str = Form(...),
+#     description: str = Form(None),
+#     price: Decimal = Form(...),
+#     images: list[UploadFile] = File(...),
+#     db: AsyncSession = Depends(get_db),
+#     current_user: User = Depends(get_current_user),
+# ) -> LaundryMenuResponseSchema:
+#     """
+#     Endpoint to create a new laundry item.
+#     - Requires authenticated VENDOR user.
+#     - The specified category_id must exist.
+#     """
+
+#     item_data = LaundryItemCreate(
+#         name=name,
+#         description=description,
+#         price=price,
+#         images=images,
+#     )
+
+#     return await item_service.create_laundry_item(
+#         db=db, current_user=current_user, item_data=item_data, images=images
+#     )
+
 
 
 @router.get("/categories", status_code=status.HTTP_200_OK)
 async def get_categories(
     db: AsyncSession = Depends(get_db),
-) -> List[CategoryResponse]:
+) -> list[CategoryResponse]:
     """
     Endpoint to get all categories.
     """
     return await item_service.get_categories(db)
 
 
-@router.get(
-    "/{vendor_id}",
-    summary="Get vendor items",
-    description="Retrieves all items belonging to a VENDOR user.",
-    status_code=status.HTTP_200_OK,
-)
-async def read_vendor_items(
-    vendor_id: UUID,
-    db: AsyncSession = Depends(get_db),
-) -> List[ItemResponse]:
-    """
-    Endpoint to get all items for the logged-in VENDOR user.
-    """
+# @router.get(
+#     "/{vendor_id}/restaurant",
+#     status_code=status.HTTP_200_OK,
+# )
+# async def get_restaurant_menu(
+#     vendor_id: UUID,
+#     db: AsyncSession = Depends(get_db),
+# ) -> list[RestaurantMenuResponseSchema]:
+#     """
+#     Endpoint to get all items for the logged-in VENDOR user.
+#     """
 
-    return await item_service.get_items_by_user_id(db=db, user_id=vendor_id)
+#     return await item_service.get_restaurant_menu(db=db, vendor_id=vendor_id)
+
+
+# @router.get(
+#     "/{vendor_id}/lundry",
+#     status_code=status.HTTP_200_OK,
+# )
+# async def get_lundry_menu(
+#     vendor_id: UUID,
+#     db: AsyncSession = Depends(get_db),
+# ) -> list[LaundryMenuResponseSchema]:
+#     """
+#     Endpoint to get all items for the logged-in VENDOR user.
+#     """
+
+#     return await item_service.get_laundry_menu(db=db, user_id=vendor_id)
 
 
 @router.get(
     "/{item_id}/item",
-    response_model=ItemResponse,
-    tags=["Items"],
-    summary="Get a specific item by ID",
     status_code=status.HTTP_200_OK,
-    description="Retrieves a specific item by its ID, if it belongs to the currently authenticated VENDOR user.",
+   
 )
-async def read_item(
+async def get_menu_item_by_id(
     item_id: UUID,
     db: AsyncSession = Depends(get_db)
-) -> ItemResponse:
+) -> RestaurantMenuResponseSchema | LaundryMenuResponseSchema:
     """
     Endpoint to retrieve a specific item by its UUID.
     - Requires authenticated VENDOR user.
     - Returns 404 if the item is not found or does not belong to the user.
     """
-    return await item_service.get_item_by_id(db, item_id)
+    return await item_service.get_menu_item_by_id(db, item_id)
 
 
 
 @router.put(
-    "/{item_id}",
-    response_model=ItemResponse,
-    tags=["Items"],
-    summary="Update an item",
+    "/{item_id}/update",
     status_code=status.HTTP_202_ACCEPTED,
-    description="Updates an existing item belonging to the currently authenticated VENDOR user.",
+   
 )
-async def update_existing_item(
+async def update_menu_item(
     item_id: UUID,
-    item_data: ItemCreate,  # Using ItemCreate for update allows changing all fields
+    item_data: MenuItemCreate, 
     db: AsyncSession = Depends(get_db),
     images: list[UploadFile] = File(None),
     current_user: User = Depends(get_current_user),
-) -> ItemResponse:
+) -> RestaurantMenuResponseSchema | LaundryMenuResponseSchema:
     """
     Endpoint to update an existing item.
     - Requires authenticated VENDOR user.
     - Returns 404 if the item is not found or does not belong to the user.
     - Returns 404 if the target category_id does not exist.
     """
-    return await item_service.update_item(
+    return await item_service.update_menu_item(
         db,
         current_user,
         item_id,
@@ -171,12 +188,10 @@ async def update_existing_item(
 
 
 @router.delete(
-    "/{item_id}",
+    "/{item_id}/delete",
     status_code=status.HTTP_204_NO_CONTENT,
-    summary="Delete an item",
-    description="Deletes an existing item belonging to the currently authenticated VENDOR user.",
 )
-async def delete_existing_item(
+async def delete_item(
     item_id: UUID,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),

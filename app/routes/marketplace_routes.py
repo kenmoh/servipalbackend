@@ -37,6 +37,7 @@ async def get_marketplace_items(
 async def get_marketplace_item(
     item_id: UUID,
     current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
 ):
     return await marketplace_service.get_marketplace_item(
        db=db, item_id=item_id

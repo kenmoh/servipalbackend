@@ -161,7 +161,7 @@ app = FastAPI(
     contact={
         "name": "ServiPal",
         "url": "https://servipal.com",
-        "email": "kenneth.aremoh@gmail.com",
+        "email": "servipal@servi-pal.com",
     },
 )
 
