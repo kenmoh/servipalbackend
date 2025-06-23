@@ -47,6 +47,7 @@ async def create_menu_item(
     price: Decimal = Form(...),
     category_id: UUID | None = Form(None),
     group: UUID | None = Form(None),
+    item_type: ItemType = Form(...)
     images: list[UploadFile] = File(...),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -62,6 +63,7 @@ async def create_menu_item(
         description=description,
         price=price,
         images=images,
+        item_type=item_type,
         category_id=category_id,
         food_group=group
     )
@@ -71,10 +73,10 @@ async def create_menu_item(
     )
 
 
-@router.post(
-    "/laundry-item-create",
-    status_code=status.HTTP_201_CREATED,
-)
+# @router.post(
+#     "/laundry-item-create",
+#     status_code=status.HTTP_201_CREATED,
+# )
 # async def create_laundry_item(
 #     name: str = Form(...),
 #     description: str = Form(None),

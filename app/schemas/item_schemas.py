@@ -44,6 +44,7 @@ class MenuItemCreate(BaseModel):
     name: str
     description: str
     price: Decimal
+    item_type: ItemType
     category_id: UUID | None = None
     group: FoodGroup | None = None
 
