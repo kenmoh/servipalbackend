@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload, selectinload
 from sqlalchemy import select, delete, update
 from sqlalchemy.exc import IntegrityError
-import asyncpg
+import asyncpg.exceptions
 
 from app.models.models import Item, Category, ItemImage, User
 from app.schemas.item_schemas import (
@@ -209,10 +209,10 @@ async def create_menu_item(
 
     except IntegrityError as e:
         # Check if it's a UniqueViolationError
-        if isinstance(e.orig, asyncpg.UniqueViolationError):
-            if 'uq_name_user_non_package' in str(e) or 'uq_name_user_non_package' in str(e):
-                raise HTTPException(status_code=status.HTTP_409_CONFLICT,
-                                    detail='You already have an item with this name.')
+        if isinstance(e.orig, asyncpg.exceptions.UniqueViolationError):
+            # if 'uq_name_user_non_package' in str(e) or 'uq_name_user_non_package' in str(e):
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT,
+                                detail='You already have an item with this name.')
         # If it's a different integrity error, let it fall through to the general exception
         await db.rollback()
         raise HTTPException(
