@@ -110,7 +110,7 @@ class ItemResponse(ItemCreate):
 
 class MenuBase(BaseModel):
     id: UUID
-    vendor_id: UUID
+    user_id: UUID
     name: str
     description: str | None = None
     item_type: ItemType

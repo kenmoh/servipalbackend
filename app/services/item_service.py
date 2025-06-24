@@ -328,7 +328,7 @@ async def get_restaurant_menu(
             menu_response.append(
                 {
                     "id": str(item.id),
-                    "vendor_id": item.user_id,
+                    "user_id": item.user_id,
                     "name": item.name,
                     "description": item.description,
                     "price": str(item.price),
