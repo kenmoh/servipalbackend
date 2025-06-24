@@ -148,7 +148,7 @@ async def create_user(
         email_code, phone_code = await generate_verification_codes(user, db)
         
         # Send verification code to phone and email
-        await send_verification_codes(email_code=email_code, phone_code=phone_code, db=db)
+        await send_verification_codes(user=user, email_code=email_code, phone_code=phone_code, db=db)
         
         return user
         
@@ -827,21 +827,56 @@ async def generate_verification_codes(user: User, db: AsyncSession) -> tuple[str
     return email_code, phone_code
 
 
+# async def send_verification_codes(
+#     email_code: str, phone_code: str, db: AsyncSession
+# ) -> dict:
+#     """Send verification codes via email and SMS"""
+
+#     stmt = select(User).options(joinedload(User.profile))
+#     result = await db.execute(stmt)
+#     user = result.scalar_one_or_none()
+
+#     if not user.profile.phone_number and not user.email:
+#         raise HTTPException(
+#             status_code=status.HTTP_400_BAD_REQUEST,
+#             detail="User phone number or email not found",
+#         )
+
+#     # Send email code
+#     message = MessageSchema(
+#         subject="Verify Your Email",
+#         recipients=[user.email],
+#         template_body={"code": email_code, "expires_in": "10 minutes"},
+#         subtype="html",
+#     )
+
+#     fm = FastMail(email_conf)
+#     await fm.send_message(message, template_name="email.html")
+
+#     # Send SMS code (using Termii)
+#     await send_sms(
+#         phone_number=user.profile.phone_number,
+#         phone_code=f"Your verification code is: {phone_code}. This code will expire in 10 minutes.",
+#     )
+
+#     return {"message": "Verification codes sent to your email and phone"}
+
+
 async def send_verification_codes(
-    email_code: str, phone_code: str, db: AsyncSession
+    user: User, email_code: str, phone_code: str, db: AsyncSession
 ) -> dict:
     """Send verification codes via email and SMS"""
-
-    stmt = select(User).options(joinedload(User.profile))
-    result = await db.execute(stmt)
-    user = result.scalar_one_or_none()
-
+    
+    # Load the profile if not already loaded
+    if not user.profile:
+        await db.refresh(user, ["profile"])
+    
     if not user.profile.phone_number and not user.email:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="User phone number or email not found",
         )
-
+    
     # Send email code
     message = MessageSchema(
         subject="Verify Your Email",
@@ -849,16 +884,14 @@ async def send_verification_codes(
         template_body={"code": email_code, "expires_in": "10 minutes"},
         subtype="html",
     )
-
     fm = FastMail(email_conf)
     await fm.send_message(message, template_name="email.html")
-
+    
     # Send SMS code (using Termii)
     await send_sms(
         phone_number=user.profile.phone_number,
         phone_code=f"Your verification code is: {phone_code}. This code will expire in 10 minutes.",
     )
-
     return {"message": "Verification codes sent to your email and phone"}
 
 
@@ -924,24 +957,6 @@ def invalidate_rider_cache(dispatcher_id: UUID):
         # logger.info(f"Cache invalidated for pattern: {pattern}")
 
 
-# async def verify_email_and_phone_number(db: AsyncSession, email_code: str, phone_code: str):
-#     result = await db.execute(select(User).options(selectinload(User.profile))
-#                               .where(User.email_verification_code == email_code, User.phone_verification_code == phone_code))
-
-#     user = result.scalar_one_or_none()
-
-#     if not user:
-#         raise HTTPException(
-#             status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
-
-#     if user.email_verification_code == email_code and user.phone_verification_code == phone_code:
-#         user.is_email_verified = True
-#         user.account_status = AccountStatus.CONFIRMED
-#         user.profile.is_phone_verified = True
-#         await db.commit()
-#         await db.refresh(user)
-
-#     return user
 
 
 async def send_welcome_email(user):
