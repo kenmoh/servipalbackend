@@ -89,15 +89,25 @@ async def create_user(
     validate_password(user_data.password)
 
     # Check if email already exists
+    # user_exists_result = await db.execute(
+    #     select(User)
+    #     .options(joinedload(User.profile))
+    #     .where(User.email == user_data.email)
+    # )
+    # user_exists = user_exists_result.scalar_one_or_none()
+
     user_exists_result = await db.execute(
-        select(User)
-        .options(joinedload(User.profile))
-        .where(User.email == user_data.email)
-    )
+    select(User)
+    .options(joinedload(User.profile))
+    .where(
+        or_(
+            User.email == user_data.email,
+            User.profile.has(Profile.phone_number == user_data.phone_number))))
     user_exists = user_exists_result.scalar_one_or_none()
+    
 
     # If user exists, check if email or phone number is already registered
-    if user_exists.email == user_data.email or user_exists.profile.phone_number == user_data.phone_number:
+    if user_exists:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT, detail="Email or phone number already registered"
         )

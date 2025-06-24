@@ -189,6 +189,7 @@ async def get_restaurant_reviews_endpoint(
 @router.get("/restaurants/{restaurant_id}/menu", status_code=status.HTTP_200_OK)
 async def get_restaurant_menu(
     restaurant_id: UUID,
+    food_group: FoodGroup,
     db: AsyncSession = Depends(get_db),
 
 ) -> list[RestaurantMenuResponseSchema]:
@@ -196,7 +197,7 @@ async def get_restaurant_menu(
     Get restaurant menu with individual item reviews.
     Used when customer visits a specific restaurant.
     """
-    return await user_service.get_restaurant_menu(db=db, restaurant_id=restaurant_id)
+    return await user_service.get_restaurant_menu(db=db, food_group=food_group, restaurant_id=restaurant_id)
 
 
 @router.get("/laundry/{laundry_id}/menu", status_code=status.HTTP_200_OK)
