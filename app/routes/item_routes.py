@@ -46,7 +46,7 @@ async def create_menu_item(
     name: str = Form(...),
     description: str = Form(None),
     price: Decimal = Form(...),
-    side: Decimal = Form(None),
+    side: str = Form(None),
     category_id: UUID | None = Form(None),
     group: UUID | None = Form(None),
     item_type: ItemType = Form(...),
