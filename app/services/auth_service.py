@@ -87,31 +87,34 @@ async def create_user(
     """
     # validate password
     validate_password(user_data.password)
-
+    
     # Check if email already exists
-    # user_exists_result = await db.execute(
-    #     select(User)
-    #     .options(joinedload(User.profile))
-    #     .where(User.email == user_data.email)
-    # )
-    # user_exists = user_exists_result.scalar_one_or_none()
-
-    user_exists_result = await db.execute(
-    select(User)
-    .options(joinedload(User.profile))
-    .where(
-        or_(
-            User.email == user_data.email,
-            User.profile.has(Profile.phone_number == user_data.phone_number))))
-    user_exists = user_exists_result.scalar_one_or_none()
-
-
-    # If user exists, check if email or phone number is already registered
-    if user_exists:
+    email_exists_result = await db.execute(
+        select(User).where(User.email == user_data.email)
+    )
+    email_exists = email_exists_result.scalar_one_or_none()
+    
+    if email_exists:
         raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT, detail="Email or phone number already registered"
+            status_code=status.HTTP_409_CONFLICT, 
+            detail="Email or Phone number already registered"
         )
-
+    
+    # Check if phone number already exists
+    # Format the phone number first
+    formatted_phone = f"234{user_data.phone_number[1:] if user_data.phone_number.startswith('0') else user_data.phone_number}"
+    
+    phone_exists_result = await db.execute(
+        select(Profile).where(Profile.phone_number == formatted_phone)
+    )
+    phone_exists = phone_exists_result.scalar_one_or_none()
+    
+    if phone_exists:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT, 
+            detail="Email or Phone number already registered"
+        )
+    
     try:
         # Create the user
         user = User(
@@ -120,44 +123,127 @@ async def create_user(
             user_type=user_data.user_type,
             updated_at=datetime.now(),
         )
-
         # Add user to database
         db.add(user)
         await db.flush()
-
+        
         profile = Profile(
             user_id=user.id,
-            phone_number=f"234{user_data.phone_number[1:] if user_data.phone_number.startswith(str(0)) else user_data.phone_number}",
+            phone_number=formatted_phone,
         )
         db.add(profile)
-
+        
         if user.user_type != UserType.RIDER:
             # Create user wallet
             wallet = Wallet(id=user.id, balance=0, escrow_balance=0)
             db.add(wallet)
-
+            
         await db.commit()
         await db.refresh(profile)
         await db.refresh(user)
-
+        
         redis_client.delete("all_users")
-
+        
         # Generate and send verification codes
         email_code, phone_code = await generate_verification_codes(user, db)
-
+        
         # Send verification code to phone and email
-        # background_tasks.add_task(
-        #     send_verification_codes, user, email_code, phone_code, db
-        # )
         await send_verification_codes(email_code=email_code, phone_code=phone_code, db=db)
-        # await send_sms(phone_number=profile.phone_number, phone_code=profile.ph)
+        
         return user
+        
     except IntegrityError as e:
         await db.rollback()
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="Email or phone number already registered",
         )
+
+
+# async def create_user(
+#     db: AsyncSession, user_data: CreateUserSchema, background_tasks: BackgroundTasks
+# ) -> UserBase:
+#     """
+#     Create a new user in the database.
+#     Args:
+#         db: Database session
+#         user_data: User data from request
+#     Returns:
+#         The newly created user
+#     """
+#     # validate password
+#     validate_password(user_data.password)
+
+#     # Check if email already exists
+#     # user_exists_result = await db.execute(
+#     #     select(User)
+#     #     .options(joinedload(User.profile))
+#     #     .where(User.email == user_data.email)
+#     # )
+#     # user_exists = user_exists_result.scalar_one_or_none()
+
+#     user_exists_result = await db.execute(
+#     select(User)
+#     .options(joinedload(User.profile))
+#     .where(
+#         or_(
+#             User.email == user_data.email,
+#             User.profile.has(Profile.phone_number == user_data.phone_number))))
+#     user_exists = user_exists_result.scalar_one_or_none()
+
+
+#     # If user exists, check if email or phone number is already registered
+#     if user_exists:
+#         raise HTTPException(
+#             status_code=status.HTTP_409_CONFLICT, detail="Email or phone number already registered"
+#         )
+
+#     try:
+#         # Create the user
+#         user = User(
+#             email=user_data.email.lower(),
+#             password=hash_password(user_data.password),
+#             user_type=user_data.user_type,
+#             updated_at=datetime.now(),
+#         )
+
+#         # Add user to database
+#         db.add(user)
+#         await db.flush()
+
+#         profile = Profile(
+#             user_id=user.id,
+#             phone_number=f"234{user_data.phone_number[1:] if user_data.phone_number.startswith(str(0)) else user_data.phone_number}",
+#         )
+#         db.add(profile)
+
+#         if user.user_type != UserType.RIDER:
+#             # Create user wallet
+#             wallet = Wallet(id=user.id, balance=0, escrow_balance=0)
+#             db.add(wallet)
+
+#         await db.commit()
+#         await db.refresh(profile)
+#         await db.refresh(user)
+
+#         redis_client.delete("all_users")
+
+#         # Generate and send verification codes
+#         email_code, phone_code = await generate_verification_codes(user, db)
+
+#         # Send verification code to phone and email
+#         # background_tasks.add_task(
+#         #     send_verification_codes, user, email_code, phone_code, db
+#         # )
+#         await send_verification_codes(email_code=email_code, phone_code=phone_code, db=db)
+#         # await send_sms(phone_number=profile.phone_number, phone_code=profile.ph)
+#         return user
+#     except IntegrityError as e:
+#         await db.rollback()
+#         raise HTTPException(
+#             status_code=status.HTTP_409_CONFLICT,
+#             detail="Email or phone number already registered",
+#         )
 
 
 # CREATE RIDER
