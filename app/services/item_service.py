@@ -333,7 +333,7 @@ async def get_restaurant_menu(
                     "description": item.description,
                     "price": str(item.price),
                     "item_type": item.item_type,
-                    'group': item.food_group,
+                    'food_group': item.food_group,
                     "image_url": [{
                         'id': img.id,
                         "url": img.url,
