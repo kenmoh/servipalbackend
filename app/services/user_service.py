@@ -1215,7 +1215,7 @@ async def get_restaurant_menu(db: AsyncSession, restaurant_id: UUID, food_group:
                 'item_type': menu.item_type,
                 'description': menu.description,
                 'price': menu.price, 
-                'group': menu.food_group,
+                'food_group': menu.food_group,
                 'images': [
                     {
                         'id': image.id, 
