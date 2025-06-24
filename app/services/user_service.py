@@ -538,7 +538,7 @@ async def get_restaurant_vendors(
             .outerjoin(ProfileImage, ProfileImage.profile_id == User.id)
             .outerjoin(review_stats_subq, review_stats_subq.c.vendor_id == User.id)
             .outerjoin(item_count_subq, item_count_subq.c.vendor_id == User.id)
-            .where(User.user_type == UserType.VENDOR)
+            .where(User.user_type == UserType.RESTAURANT_VENDOR)
         )
 
         result = await db.execute(stmt)
@@ -869,7 +869,7 @@ async def get_users_by_laundry_services(
             .outerjoin(ProfileImage, ProfileImage.profile_id == User.id)
             .outerjoin(review_stats_subq, review_stats_subq.c.vendor_id == User.id)
             .outerjoin(item_count_subq, item_count_subq.c.vendor_id == User.id)
-            .where(User.user_type == UserType.VENDOR)
+            .where(User.user_type == UserType.LAUNDRY_VENDOR)
         )
 
         result = await db.execute(stmt)
