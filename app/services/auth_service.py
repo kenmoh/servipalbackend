@@ -777,31 +777,40 @@ async def generate_2fa_code(user: User, db: AsyncSession) -> str:
 
 
 async def generate_resend_verification_code(email: str, db: AsyncSession):
-    user_result = await db.execute(select(User).where(User.email == email))
+    # Load user with profile relationship
+    user_result = await db.execute(
+        select(User).options(joinedload(User.profile)).where(User.email == email)
+    )
     user = user_result.scalar_one_or_none()
-
+    
     if not user:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="User not found",
         )
-        # Generate codes
+    
+    if not user.profile:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="User profile not found",
+        )
+    
+    # Generate codes
     email_code = f"{secrets.randbelow(1000000):06d}"
     phone_code = f"{secrets.randbelow(1000000):06d}"
-
-    # Set expiration time (10 minutes from now)
+    
+    # Set expiration time (25 minutes from now)
     expires = datetime.now() + timedelta(minutes=25)
-
+    
     # Update user record with codes and expiration
     user.email_verification_code = email_code
     user.profile.phone_verification_code = phone_code
-
     user.email_verification_expires = expires
     user.profile.phone_verification_expires = expires
-
+    
     await db.commit()
-
-    return email_code, phone_code
+    
+    return user, email_code, phone_code  # Return user object too
 
 
 
@@ -900,13 +909,22 @@ async def verify_user_contact(
 ) -> dict:
     """Verify both email and phone codes"""
     now = datetime.now()
-    # Load user with profile
-    stmt = select(User).options(joinedload(User.profile))
+        
+    # Load specific user with profile
+    stmt = select(User).options(joinedload(User.profile)).where(User.id == user_id)
     result = await db.execute(stmt)
-    user = result.scalars().first()
+    user = result.scalar_one_or_none()
+    
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, 
+            detail="User not found"
+        )
+    
     if not user.profile:
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail="User profile not found"
+            status_code=status.HTTP_400_BAD_REQUEST, 
+            detail="User profile not found"
         )
     # Check if codes are expired
     email_expired = (
