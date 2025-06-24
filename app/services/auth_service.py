@@ -8,7 +8,7 @@ from fastapi import BackgroundTasks, HTTPException, Request, status
 from fastapi_mail import FastMail, MessageSchema
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import func, select, update
+from sqlalchemy import func, select, update, or_
 from sqlalchemy.orm import joinedload
 from passlib.context import CryptContext
 
@@ -104,7 +104,7 @@ async def create_user(
             User.email == user_data.email,
             User.profile.has(Profile.phone_number == user_data.phone_number))))
     user_exists = user_exists_result.scalar_one_or_none()
-    
+
 
     # If user exists, check if email or phone number is already registered
     if user_exists:
