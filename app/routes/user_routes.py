@@ -31,7 +31,7 @@ from app.schemas.user_schemas import (
     UpdateRider,
 )
 from app.services import user_service
-from app.schemas.item_schemas import RestaurantMenuResponseSchema, LaundryMenuResponseSchema
+from app.schemas.item_schemas import RestaurantMenuResponseSchema, LaundryMenuResponseSchema, FoodGroup
 
 
 
