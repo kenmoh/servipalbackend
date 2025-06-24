@@ -26,7 +26,8 @@ class TransactionType(str, Enum):
 class UserType(str, Enum):
     CUSTOMER: str = os.getenv("CUSTOMER")
     DISPATCH: str = os.getenv("DISPATCH")
-    VENDOR: str = os.getenv("VENDOR")
+    RESTAURANT_VENDOR: str = os.getenv("RESTAURANT_VENDOR")
+    LAUNDRY_VENDOR: str = os.getenv("LAUNDRY_VENDOR")
     RIDER: str = os.getenv("RIDER")
     ADMIN: str = os.getenv("ADMIN")
 

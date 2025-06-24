@@ -328,7 +328,7 @@ async def get_restaurant_menu(
             menu_response.append(
                 {
                     "id": str(item.id),
-                    "user_id": item.user_id,
+                    "restaurant_id": item.user_id,
                     "name": item.name,
                     "description": item.description,
                     "price": str(item.price),
@@ -389,7 +389,7 @@ async def get_laundry_menu(
             menu_response.append(
                 {
                     "id": str(item.id),
-                    "vendor_id": item.user_id,
+                    "laundry_id": item.user_id,
                     "name": item.name,
                     "description": item.description or None,
                     "price": str(item.price),

@@ -110,7 +110,6 @@ class ItemResponse(ItemCreate):
 
 class MenuBase(BaseModel):
     id: UUID
-    user_id: UUID
     name: str
     description: str | None = None
     item_type: ItemType
@@ -120,8 +119,9 @@ class MenuBase(BaseModel):
 
 
 class RestaurantMenuResponseSchema(MenuBase):
+    restaurant_id: UUID
     food_group: FoodGroup
    
 
 class LaundryMenuResponseSchema(MenuBase):
-    pass
+    laundry_id: UUID

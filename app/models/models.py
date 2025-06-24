@@ -39,6 +39,7 @@ from app.schemas.status_schema import (
     PaymentStatus,
     RequireDeliverySchema,
     TransactionType,
+    UserType,
 )
 
 from app.schemas.review_schema import ReviewType, IssueType,IssueStatus, ReportType
@@ -72,7 +73,7 @@ class User(Base):
     order_cancel_count: Mapped[int] = mapped_column(nullable=True, default=0)
     reset_token: Mapped[Optional[str]] = mapped_column(nullable=True, unique=True)
     reset_token_expires: Mapped[Optional[datetime]] = mapped_column(nullable=True)
-    user_type: Mapped[str] = mapped_column(nullable=False)
+    user_type: Mapped[UserType] = mapped_column(nullable=False, default=UserType.CUSTOMER)
 
     is_email_verified: Mapped[bool] = mapped_column(default=False, nullable=True)
     email_verification_code: Mapped[str] = mapped_column(nullable=True)
