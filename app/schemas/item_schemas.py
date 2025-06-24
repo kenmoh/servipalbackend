@@ -46,7 +46,7 @@ class MenuItemCreate(BaseModel):
     price: Decimal
     item_type: ItemType
     category_id: UUID | None = None
-    group: FoodGroup | None = None
+    food_group: FoodGroup | None = None
 
  
 class ItemCreate(BaseModel):
@@ -120,7 +120,7 @@ class MenuBase(BaseModel):
 
 
 class RestaurantMenuResponseSchema(MenuBase):
-    group: FoodGroup
+    food_group: FoodGroup
    
 
 class LaundryMenuResponseSchema(MenuBase):

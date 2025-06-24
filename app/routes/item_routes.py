@@ -48,7 +48,7 @@ async def create_menu_item(
     price: Decimal = Form(...),
     side: str = Form(None),
     category_id: UUID | None = Form(None),
-    group: UUID | None = Form(None),
+    food_group: UUID | None = Form(None),
     item_type: ItemType = Form(...),
     images: list[UploadFile] = File(...),
     db: AsyncSession = Depends(get_db),
@@ -67,7 +67,7 @@ async def create_menu_item(
         images=images,
         item_type=item_type,
         category_id=category_id,
-        food_group=group
+        food_group=food_group
     )
 
     return await item_service.create_menu_item(
