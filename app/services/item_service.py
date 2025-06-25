@@ -184,7 +184,7 @@ async def create_menu_item(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Permission denied! You have either been blocked or your account is not confirmed.",
         )
-    if current_user.user_type in [UserType.RESTAURANT_VENDOR, UserType.LAUNDRY_VENDOR] and not current_user.profile.business_name or not current_user.profile.phone_number
+    if current_user.user_type in [UserType.RESTAURANT_VENDOR, UserType.LAUNDRY_VENDOR] and not current_user.profile.business_name or not current_user.profile.phone_number:
 
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
