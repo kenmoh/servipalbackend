@@ -249,6 +249,142 @@ async def create_user(
 # CREATE RIDER
 
 
+# async def create_new_rider(
+#     data: RiderCreate,
+#     db: AsyncSession,
+#     current_user: User,
+#     background_tasks: BackgroundTasks,
+# ) -> UserBase:
+#     """
+#     Creates a new rider user and assigns them to the current dispatch user.
+
+#     Args:
+#         data (RiderCreate): The rider details.
+#         db: The database session.
+#         current_user: The current user.
+#         background_tasks: Background tasks runner.
+
+#     Returns:
+#         UserBase: The newly created rider user details.
+#     """
+
+#     stmt = (
+#         select(func.count())
+#         .select_from(User)
+#         .where(User.dispatcher_id == current_user.id)
+#     )
+#     riders_result = await db.execute(stmt)
+#     riders_count = riders_result.scalar()
+
+#     # Check user permissions and restrictions
+#     if current_user.is_blocked:
+#         raise HTTPException(
+#             status_code=status.HTTP_403_FORBIDDEN,
+#             detail="You cannot create rider due to suspension!",
+#         )
+#     if not current_user.is_verified and riders_count > 1:
+#         raise HTTPException(
+#             status_code=status.HTTP_403_FORBIDDEN,
+#             detail="Please verify your business to add more riders",
+#         )
+
+#     if current_user.account_status == AccountStatus.PENDING:
+#         raise HTTPException(
+#             status_code=status.HTTP_403_FORBIDDEN, detail="Please verify your account!"
+#         )
+
+#     if current_user.user_type != UserType.DISPATCH:
+#         raise HTTPException(
+#             status_code=status.HTTP_403_FORBIDDEN,
+#             detail="Only a dispatch user can create rider.",
+#         )
+
+#     if not current_user.profile.business_registration_number and riders_count > 2:
+#         raise HTTPException(
+#             status_code=status.HTTP_403_FORBIDDEN,
+#             detail="Please update your company registration number to add more riders.",
+#         )
+
+#     if (
+#         not current_user.profile.business_name
+#         or not current_user.profile.business_address
+#     ):
+#         raise HTTPException(
+#             status_code=status.HTTP_403_FORBIDDEN,
+#             detail="Please update your profile with your company name and phone number.",
+#         )
+
+#     # validate password
+#     validate_password(data.password)
+
+#     email = await db.scalar(
+#     select(User.email).where(User.email_verification_code == email_verification_code)
+#     )
+
+#     phone_number, bike_number = await db.execute(
+#     select(Profile.phone_number, Profile.bike_number).where(Profile.phone_verification_code == phone_code)
+# ).fetchone() or (None, None)
+
+#     if email or phone_number or bike_number:
+#         raise HTTPException(
+#             status_code=status.HTTP_409_CONFLICT, detail="Email already or phone number or bike number already registered"
+#         )
+
+#     # Create new rider and assign to current dispatch
+#     try:
+#         new_rider = User(
+#             email=data.email.lower(),
+#             password=hash_password(data.password),
+#             user_type=UserType.RIDER,
+#             dispatcher_id=current_user.id,
+#             created_at=datetime.today(),
+#             updated_at=datetime.today(),
+#         )
+
+#         db.add(new_rider)
+#         await db.flush()
+
+#         rider_profile = Profile(
+#             user_id=new_rider.id,
+#             full_name=data.full_name,
+#             phone_number=f"234{data.phone_number[1:] if data.phone_number.startswith(str(0)) else data.phone_number}",
+#             bike_number=data.bike_number,
+#             created_at=datetime.today(),
+#             updated_at=datetime.today(),
+#             business_address=current_user.profile.business_address,
+#             business_name=current_user.profile.business_name,
+#             # add company email
+#             # add company phone
+#         )
+#         db.add(rider_profile)
+
+#         await db.commit()
+#         await db.refresh(new_rider)
+
+#         rider_dict = {
+#             "user_type": new_rider.user_type,
+#             "email": new_rider.email,
+#         }
+
+#         redis_client.delete("all_users")
+
+#         # Generate and send verification codes
+#         email_code, phone_code = await generate_verification_codes(new_rider, db)
+
+#         # Send verification code to phone and email
+#         # background_tasks.add_task(
+#         #     send_verification_codes, new_rider, email_code, phone_code, db
+#         # )
+#         await send_verification_codes(email_code=email_code, phone_code=phone_code, db=db)
+
+#         invalidate_rider_cache(current_user.id)
+#         return UserBase(**rider_dict)
+#     except IntegrityError as e:
+#         await db.rollback()
+#         raise HTTPException(
+#             status_code=status.HTTP_409_CONFLICT, detail="Rider with this data exists!"
+#         )
+
 async def create_new_rider(
     data: RiderCreate,
     db: AsyncSession,
@@ -257,24 +393,26 @@ async def create_new_rider(
 ) -> UserBase:
     """
     Creates a new rider user and assigns them to the current dispatch user.
-
-    Args:
-        data (RiderCreate): The rider details.
-        db: The database session.
-        current_user: The current user.
-        background_tasks: Background tasks runner.
-
-    Returns:
-        UserBase: The newly created rider user details.
+    Optimized version with reduced database queries.
     """
-
-    stmt = (
-        select(func.count())
-        .select_from(User)
-        .where(User.dispatcher_id == current_user.id)
+    
+    # Single query to check all existing data at once
+    existing_data_query = select(
+        func.count(User.id).filter(User.dispatcher_id == current_user.id).label('riders_count'),
+        func.count(User.id).filter(User.email == data.email.lower()).label('email_exists'),
+        func.count(Profile.id).filter(Profile.phone_number == f"234{data.phone_number[1:] if data.phone_number.startswith('0') else data.phone_number}").label('phone_exists'),
+        func.count(Profile.id).filter(Profile.bike_number == data.bike_number).label('bike_exists')
+    ).select_from(
+        User.__table__.outerjoin(Profile.__table__, User.id == Profile.user_id)
     )
-    riders_result = await db.execute(stmt)
-    riders_count = riders_result.scalar()
+    
+    result = await db.execute(existing_data_query)
+    counts = result.fetchone()
+    
+    riders_count = counts.riders_count
+    email_exists = counts.email_exists > 0
+    phone_exists = counts.phone_exists > 0 
+    bike_exists = counts.bike_exists > 0
 
     # Check user permissions and restrictions
     if current_user.is_blocked:
@@ -282,7 +420,8 @@ async def create_new_rider(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="You cannot create rider due to suspension!",
         )
-    if not current_user.is_verified and riders_count > 1:
+    
+    if not current_user.is_verified and riders_count > 2:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Please verify your business to add more riders",
@@ -290,7 +429,8 @@ async def create_new_rider(
 
     if current_user.account_status == AccountStatus.PENDING:
         raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN, detail="Please verify your account!"
+            status_code=status.HTTP_403_FORBIDDEN, 
+            detail="Please verify your account!"
         )
 
     if current_user.user_type != UserType.DISPATCH:
@@ -299,15 +439,10 @@ async def create_new_rider(
             detail="Only a dispatch user can create rider.",
         )
 
-    if not current_user.profile.business_registration_number and riders_count > 1:
+    if not current_user.profile.business_registration_number and riders_count > 2:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Please update your company registration number to add more riders.",
-        )
-    if not current_user.user_type == UserType.DISPATCH:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only dispatch company users can create riders!",
         )
 
     if (
@@ -319,18 +454,22 @@ async def create_new_rider(
             detail="Please update your profile with your company name and phone number.",
         )
 
-    # validate password
+    # Validate password
     validate_password(data.password)
 
-    # Check if email already exists
-    user_exists_result = await db.execute(
-        select(User).options(joinedload(User.profile)).where(User.email == data.email)
-    )
-    user_exists = user_exists_result.scalar_one_or_none()
-
-    if user_exists.email == data.email or user_exists.profile.phone_number == data.phone_number:
+    # Check for existing email, phone, or bike number
+    if email_exists or phone_exists or bike_exists:
+        conflicts = []
+        if email_exists:
+            conflicts.append("email")
+        if phone_exists:
+            conflicts.append("phone number")
+        if bike_exists:
+            conflicts.append("bike number")
+        
         raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT, detail="Email already or phone number already registered"
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"{' and '.join(conflicts)} already registered"
         )
 
     # Create new rider and assign to current dispatch
@@ -347,17 +486,17 @@ async def create_new_rider(
         db.add(new_rider)
         await db.flush()
 
+        formatted_phone = f"234{data.phone_number[1:] if data.phone_number.startswith('0') else data.phone_number}"
+        
         rider_profile = Profile(
             user_id=new_rider.id,
             full_name=data.full_name,
-            phone_number=f"234{data.phone_number[1:] if data.phone_number.startswith(str(0)) else data.phone_number}",
+            phone_number=formatted_phone,
             bike_number=data.bike_number,
             created_at=datetime.today(),
             updated_at=datetime.today(),
             business_address=current_user.profile.business_address,
             business_name=current_user.profile.business_name,
-            # add company email
-            # add company phone
         )
         db.add(rider_profile)
 
@@ -374,18 +513,16 @@ async def create_new_rider(
         # Generate and send verification codes
         email_code, phone_code = await generate_verification_codes(new_rider, db)
 
-        # Send verification code to phone and email
-        # background_tasks.add_task(
-        #     send_verification_codes, new_rider, email_code, phone_code, db
-        # )
         await send_verification_codes(email_code=email_code, phone_code=phone_code, db=db)
 
         invalidate_rider_cache(current_user.id)
         return UserBase(**rider_dict)
+        
     except IntegrityError as e:
         await db.rollback()
         raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT, detail="Rider with this data exists!"
+            status_code=status.HTTP_409_CONFLICT, 
+            detail="Rider with this data exists!"
         )
 
 
