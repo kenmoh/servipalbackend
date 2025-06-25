@@ -171,9 +171,9 @@ async def create_menu_item(
     images: list[UploadFile],
 ) -> RestaurantMenuResponseSchema | LaundryMenuResponseSchema:
     """Creates a new item for the current VENDOR user."""
-    if current_user.user_type != UserType.VENDOR:
+    if current_user.user_type not in [UserType.RESTAURANT_VENDOR, UserType.LAUNDRY_VENDOR]:
         raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN, detail="Only vendor and customer users are allowed to perform this action "
+            status_code=status.HTTP_403_FORBIDDEN, detail="Only Restaurant and Laundry vendors are allowed to perform this action "
         )
     if (
         current_user.is_blocked
@@ -184,6 +184,13 @@ async def create_menu_item(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Permission denied! You have either been blocked or your account is not confirmed.",
         )
+    if current_user.user_type in [UserType.RESTAURANT_VENDOR, UserType.LAUNDRY_VENDOR] and not current_user.profile.business_name or not current_user.profile.phone_number
+
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Please update your profile",
+        )
+
 
     try:
         # Create item first

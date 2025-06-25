@@ -176,7 +176,7 @@ async def verify_user_contacts(
     )
 
 
-@router.put("/resend-verification")
+# @router.put("/resend-verification")
 # async def resend_verification_codes(email: EmailStr, db: AsyncSession = Depends(get_db)) -> dict:
 #     """Resend verification codes"""
 #     email_code, phone_code = await auth_service.generate_resend_verification_code(email=email, db=db)

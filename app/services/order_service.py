@@ -285,7 +285,7 @@ async def create_package_order(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Phone number and full name are required. Please update your profile!",
         )
-    if current_user.user_type == UserType.VENDOR and not (
+    if current_user.user_type in [UserType.RESTAURANT_VENDOR, LAUNDRY_VENDOR] and not (
         current_user.profile.business_name and current_user.profile.phone_number
     ):
         raise HTTPException(
@@ -455,7 +455,7 @@ async def order_food_or_request_laundy_service(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Phone number and full name are required. Please update your profile!",
         )
-    if current_user.user_type == UserType.VENDOR and not (
+    if current_user.user_type in [UserType.LAUNDRY_VENDOR, UserType.RESTAURANT_VENDOR] and not (
         current_user.profile.business_name and current_user.profile.phone_number
     ):
         raise HTTPException(
@@ -743,7 +743,7 @@ async def cancel_delivery(
 
     wallet = wallet_result.scalar_one_or_none()
 
-    if current_user.user_type in [UserType.CUSTOMER, UserType.VENDOR]:
+    if current_user.user_type in [UserType.CUSTOMER, UserType.LAUNDRY_VENDOR, UserType.RESTAURANT_VENDOR]:
         result = await db.execute(
             select(Delivery)
             .where(Delivery.id == delivery_id)
@@ -865,7 +865,7 @@ async def re_list_item_for_delivery(
 
     wallet = wallet_result.scalar_one_or_none()
 
-    if current_user.user_type in [UserType.CUSTOMER, UserType.VENDOR]:
+    if current_user.user_type in [UserType.CUSTOMER, UserType.LAUNDRY_VENDOR, UserType.RESTAURANT_VENDOR]:
         result = await db.execute(
             select(Delivery)
             .where(Delivery.id == delivery_id)
@@ -1150,7 +1150,7 @@ async def sender_confirm_delivery_received(
             status_code=status.HTTP_400_BAD_REQUEST, detail="Delivery not found."
         )
     if (
-        current_user.user_type not in [UserType.CUSTOMER, UserType.VENDOR]
+        current_user.user_type not in [UserType.CUSTOMER, UserType.LAUNDRY_VENDOR, UserType.RESTAURANT_VENDOR]
         and delivery.sender_id != current_user.id
     ):
         raise HTTPException(
@@ -1360,7 +1360,7 @@ async def vendor_mark_laundry_item_received(
         )
 
     if (
-        current_user.user_type != UserType.VENDOR
+        current_user.user_type in [UserType.LAUNDRY_VENDOR, UserType.RESTAURANT_VENDOR]
         and current_user.id != delivery.order.vendor_id
     ):
         raise HTTPException(
@@ -1524,7 +1524,7 @@ async def admin_modify_delivery_status(
     Raises:
         HTTPException: If user is not ADMIN, delivery not found, or update fails.
     """
-    if current_user.get("user_type") != UserType.ADMIN.value:
+    if current_user.get("user_type") != UserType.ADMIN:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Permission denied. Only ADMIN users can modify delivery status directly.",
