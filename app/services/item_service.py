@@ -211,6 +211,8 @@ async def create_menu_item(
         await db.refresh(new_item)
 
         redis_client.delete(f"vendor_items:{current_user.id}")
+        redis_client.delete(f"restaurant_menu:{current_user.id}:{item_data.food_group}")
+        redis_client.delete(f"laundry_menu:{current_user.id}")
 
         return new_item
 

@@ -1210,7 +1210,7 @@ async def get_restaurant_menu(db: AsyncSession, restaurant_id: UUID, food_group:
         for menu in menus:
             menu_dict = {
                 'id': menu.id,  
-                'vendor_id': menu.user_id,
+                'user_id': menu.user_id,
                 'name': menu.name,
                 'item_type': menu.item_type,
                 'description': menu.description,
@@ -1274,7 +1274,7 @@ async def get_laundry_menu(db: AsyncSession, laundry_id: UUID) -> list[MenuRespo
         for menu in menus:
             menu_dict = {
                 'id': menu.id,  
-                'vendor_id': menu.user_id,
+                'user_id': menu.user_id,
                 'name': menu.name,
                 'item_type': menu.item_type,
                 'price': menu.price, 

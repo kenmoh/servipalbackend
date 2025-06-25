@@ -119,6 +119,6 @@ class MenuBase(BaseModel):
 
 
 class MenuResponseSchema(MenuBase):
-    vendor_id: UUID
+    user_id: UUID
     food_group: FoodGroup | None = None
    
