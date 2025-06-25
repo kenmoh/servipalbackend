@@ -544,7 +544,7 @@ async def create_new_rider(
         )
 
         db.add(new_rider)
-        await db.flush()  # This will trigger email uniqueness constraint if violated
+        await db.flush()
 
         rider_profile = Profile(
             user_id=new_rider.id,
@@ -558,7 +558,7 @@ async def create_new_rider(
         )
         db.add(rider_profile)
 
-        await db.commit()  # This will trigger phone/bike uniqueness constraints if violated
+        await db.commit()
         await db.refresh(new_rider)
 
         rider_dict = {
@@ -571,7 +571,7 @@ async def create_new_rider(
         # Generate and send verification codes
         email_code, phone_code = await generate_verification_codes(new_rider, db)
 
-        await send_verification_codes(email_code=email_code, phone_code=phone_code, db=db)
+        await send_verification_codes(user=new_rider, email_code=email_code, phone_code=phone_code, db=db)
 
         invalidate_rider_cache(current_user.id)
         return UserBase(**rider_dict)
@@ -579,7 +579,6 @@ async def create_new_rider(
     except IntegrityError as e:
         await db.rollback()
         
-        # Parse the constraint violation to provide specific error messages
         error_msg = str(e).lower()
         
         if "email" in error_msg and "unique" in error_msg:
@@ -1298,7 +1297,7 @@ async def verify_user_contact(
         
     # Load specific user with profile
     email = await db.scalar(
-    select(User.email).where(User.email_verification_code == email_verification_code)
+    select(User.email).where(User.email_verification_code == email_code)
     )
 
     phone_number = await db.scalar(
