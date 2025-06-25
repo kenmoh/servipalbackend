@@ -5,7 +5,7 @@ from sqlalchemy.dialects import postgresql
 from app.schemas.item_schemas import FoodGroup, ItemType
 from app.models.models import Delivery, User, Item, Category, RefreshToken, Session
 from sqlalchemy.orm import selectinload
-from sqlalchemy import func, select, distinct, delete, update
+from sqlalchemy import func, select, distinct, delete, update, and_
 from typing import List, Optional
 from uuid import UUID
 import json
