@@ -9,7 +9,7 @@ from fastapi_mail import FastMail, MessageSchema
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import func, select, update, or_
-from sqlalchemy.orm import joinedload
+from sqlalchemy.orm import joinedload, selectinload
 from passlib.context import CryptContext
 
 from app.schemas.status_schema import AccountStatus, UserType
