@@ -1289,32 +1289,98 @@ async def send_verification_codes(
     return {"message": "Verification codes sent to your email and phone"}
 
 
+# async def verify_user_contact(
+#     email_code: str, phone_code: str, db: AsyncSession
+# ) -> dict:
+#     """Verify both email and phone codes"""
+#     now = datetime.now()
+        
+#     # Load specific user with profile
+#     email = await db.scalar(
+#     select(User.email).where(User.email_verification_code == email_code)
+#     )
+
+#     phone_number = await db.scalar(
+#     select(Profile.phone_number).where(Profile.phone_verification_code == phone_code)
+#     )
+    
+#     if not email:
+#         raise HTTPException(
+#             status_code=status.HTTP_404_NOT_FOUND, 
+#             detail="User email or phone number not found"
+#         )
+    
+#     if not phone_number:
+#         raise HTTPException(
+#             status_code=status.HTTP_400_BAD_REQUEST, 
+#             detail="User Email or Phone number not found"
+#         )
+#     # Check if codes are expired
+#     email_expired = (
+#         user.email_verification_expires is not None
+#         and user.email_verification_expires < now
+#     )
+#     phone_expired = (
+#         user.profile.phone_verification_expires is not None
+#         and user.profile.phone_verification_expires < now
+#     )
+#     if email_expired or phone_expired:
+#         raise HTTPException(
+#             status_code=status.HTTP_400_BAD_REQUEST,
+#             detail="Verification codes have expired",
+#         )
+#     # Verify email code
+#     if email_code != user.email_verification_code:
+#         raise HTTPException(
+#             status_code=status.HTTP_400_BAD_REQUEST,
+#             detail="Invalid email verification code",
+#         )
+#     # Verify phone code
+#     if phone_code != user.profile.phone_verification_code:
+#         raise HTTPException(
+#             status_code=status.HTTP_400_BAD_REQUEST,
+#             detail="Invalid phone verification code",
+#         )
+#     # Update verification status
+#     user.is_email_verified = True
+#     user.profile.is_phone_verified = True
+#     user.account_status = AccountStatus.CONFIRMED
+#     user.email_verification_code = None
+#     user.profile.phone_verification_code = None
+#     user.email_verification_expires = None
+#     user.profile.phone_verification_expires = None
+#     await db.commit()
+#     await send_welcome_email(user)
+#     return {"message": "Email and phone verified successfully"}
+
+
 async def verify_user_contact(
     email_code: str, phone_code: str, db: AsyncSession
 ) -> dict:
     """Verify both email and phone codes"""
     now = datetime.now()
-        
-    # Load specific user with profile
-    email = await db.scalar(
-    select(User.email).where(User.email_verification_code == email_code)
-    )
-
-    phone_number = await db.scalar(
-    select(Profile.phone_number).where(Profile.phone_verification_code == phone_code)
+    
+    # Single query to get user with profile and verify both codes exist
+    user_query = (
+        select(User)
+        .options(selectinload(User.profile))
+        .where(User.email_verification_code == email_code)
     )
     
-    if not email:
+    user = await db.scalar(user_query)
+    
+    if not user:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, 
-            detail="User email or phone number not found"
+            detail="Invalid email verification code"
         )
     
-    if not phone_number:
+    if not user.profile or user.profile.phone_verification_code != phone_code:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, 
-            detail="User Email or Phone number not found"
+            detail="Invalid phone verification code"
         )
+    
     # Check if codes are expired
     email_expired = (
         user.email_verification_expires is not None
@@ -1324,23 +1390,13 @@ async def verify_user_contact(
         user.profile.phone_verification_expires is not None
         and user.profile.phone_verification_expires < now
     )
+    
     if email_expired or phone_expired:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Verification codes have expired",
         )
-    # Verify email code
-    if email_code != user.email_verification_code:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invalid email verification code",
-        )
-    # Verify phone code
-    if phone_code != user.profile.phone_verification_code:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invalid phone verification code",
-        )
+    
     # Update verification status
     user.is_email_verified = True
     user.profile.is_phone_verified = True
@@ -1349,8 +1405,10 @@ async def verify_user_contact(
     user.profile.phone_verification_code = None
     user.email_verification_expires = None
     user.profile.phone_verification_expires = None
+    
     await db.commit()
     await send_welcome_email(user)
+    
     return {"message": "Email and phone verified successfully"}
 
 
