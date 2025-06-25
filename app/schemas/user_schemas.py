@@ -363,7 +363,6 @@ class UserBase(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
-
 class ProfileSchema(BaseModel):
     user_id: UUID | None = None
     phone_number: str
@@ -465,9 +464,6 @@ class VendorUserResponse(BaseModel):
     rating: RatingSchema
 
 
-
 class ProfileImageResponseSchema(BaseModel):
     profile_image_url: str | None = None
     backdrop_image_url: str | None = None
-
-

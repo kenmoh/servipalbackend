@@ -53,7 +53,7 @@ from app.utils.utils import (
     get_dispatch_id,
     get_payment_link,
     send_push_notification,
-    get_user_notification_token
+    get_user_notification_token,
 )
 from app.config.config import redis_client, settings
 from app.utils.s3_service import add_image
@@ -80,8 +80,7 @@ async def filter_delivery_by_delivery_type(
         .options(
             joinedload(Delivery.order).options(
                 selectinload(Order.order_items).options(
-                    joinedload(OrderItem.item).options(
-                        selectinload(Item.images))
+                    joinedload(OrderItem.item).options(selectinload(Item.images))
                 ),
                 joinedload(Order.delivery),
             )
@@ -115,51 +114,39 @@ async def get_delivery_by_order_id(
 ) -> DeliveryResponse:
     """Get delivery by order ID"""
 
-    cached_order = redis_client.get(f"delivery:{order_id}")
-    if cached_order:
-        return DeliveryResponse(**json.loads(cached_order))
+    # cached_order = redis_client.get(f"delivery:{order_id}")
+    # if cached_order:
+    #     return DeliveryResponse(**json.loads(cached_order))
 
     try:
-        # Query order with its delivery and order items
-        # order_stmt = (
-        #     select(Order)
-        #     .options(
-        #         selectinload(Order.delivery),
-        #         selectinload(Order.order_items).selectinload(
-        #             OrderItem.item).selectinload(Item.images)
-        #     )
-        #     .where(Order.id == order_id)
-        # )
-
         order_stmt = (
-        select(Order)
-        .options(
-            selectinload(Order.delivery),
-            selectinload(Order.order_items).selectinload(OrderItem.item).selectinload(Item.images),
-            joinedload(Order.vendor).joinedload(User.profile),
+            select(Order)
+            .options(
+                selectinload(Order.delivery),
+                selectinload(Order.order_items)
+                .selectinload(OrderItem.item)
+                .selectinload(Item.images),
+                joinedload(Order.vendor).joinedload(User.profile),
+            )
+            .where(Order.id == order_id)
         )
-        .where(Order.id == order_id)
-    )
-
-
 
         order_result = await db.execute(order_stmt)
         order = order_result.scalar_one_or_none()
 
         if not order:
             raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Order not found"
+                status_code=status.HTTP_404_NOT_FOUND, detail="Order not found"
             )
 
         oder_response = format_delivery_response(order, order.delivery)
 
         # Cache the formatted response
-        redis_client.setex(
-            f"delivery:{order_id}",
-            timedelta(seconds=settings.REDIS_EX),
-            json.dumps(oder_response.model_dump(), default=str),
-        )
+        # redis_client.setex(
+        #     f"delivery:{order_id}",
+        #     timedelta(seconds=settings.REDIS_EX),
+        #     json.dumps(oder_response.model_dump(), default=str),
+        # )
 
         return oder_response
 
@@ -168,20 +155,16 @@ async def get_delivery_by_order_id(
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error retrieving delivery: {str(e)}"
+            detail=f"Error retrieving delivery: {str(e)}",
         )
 
 
-
-
-async def get_all_orders(
-    db: AsyncSession
-) -> list[DeliveryResponse]:
+async def get_all_orders(db: AsyncSession) -> list[DeliveryResponse]:
     """
     Get all orders with their deliveries (if any) with caching
     """
     cache_key = ALL_DELIVERY
-    
+
     # Try cache first with error handling
     try:
         cached_deliveries = redis_client.get(cache_key)
@@ -192,28 +175,27 @@ async def get_all_orders(
             print(f"Cache MISS for key: {cache_key}")
     except Exception as e:
         print(f"Cache error: {e}")
-    
+
     stmt = (
         select(Order)
         .options(
             selectinload(Order.order_items).options(
-                joinedload(OrderItem.item).options(
-                    selectinload(Item.images))
+                joinedload(OrderItem.item).options(selectinload(Item.images))
             ),
             joinedload(Order.delivery),
-            joinedload(Order.vendor).joinedload(User.profile)
+            joinedload(Order.vendor).joinedload(User.profile),
         )
-        .order_by(Order.created_at.desc()) 
+        .order_by(Order.created_at.desc())
     )
-    
+
     result = await db.execute(stmt)
     orders = result.unique().scalars().all()
-    
+
     # Format responses - delivery will be None for orders without delivery
     delivery_responses = [
         format_delivery_response(order, order.delivery) for order in orders
     ]
-    
+
     # Cache the formatted responses with error handling
     try:
         redis_client.setex(
@@ -224,55 +206,55 @@ async def get_all_orders(
         print(f"Cache SET for key: {cache_key}")
     except Exception as e:
         print(f"Cache set error: {e}")
-    
-    return delivery_responses
-
-
-async def get_all_deliveries(
-    db: AsyncSession, skip: int = 0, limit: int = 20
-) -> list[DeliveryResponse]:
-    """
-    Get all deliveries with pagination and caching
-    """
-    cache_key = ALL_DELIVERY
-
-    # Try cache first
-    cached_deliveries = redis_client.get(cache_key)
-    if cached_deliveries:
-        return [DeliveryResponse(**d) for d in json.loads(cached_deliveries)]
-
-    stmt = (
-        select(Delivery)
-        .options(
-            joinedload(Delivery.order).options(
-                selectinload(Order.order_items).options(
-                    joinedload(OrderItem.item).options(
-                        selectinload(Item.images))
-                ),
-                joinedload(Order.delivery),
-            )
-        )
-        .offset(skip)
-        .limit(limit)
-        .order_by(Delivery.created_at.desc())
-    )
-
-    result = await db.execute(stmt)
-    deliveries = result.unique().scalars().all()
-
-    # Format responses
-    delivery_responses = [
-        format_delivery_response(delivery.order, delivery) for delivery in deliveries
-    ]
-
-    # Cache the formatted responses
-    redis_client.setex(
-        cache_key,
-        timedelta(seconds=CACHE_TTL),
-        json.dumps([d.model_dump() for d in delivery_responses], default=str),
-    )
 
     return delivery_responses
+
+
+# async def get_all_deliveries(
+#     db: AsyncSession, skip: int = 0, limit: int = 20
+# ) -> list[DeliveryResponse]:
+#     """
+#     Get all deliveries with pagination and caching
+#     """
+#     cache_key = ALL_DELIVERY
+
+#     # Try cache first
+#     cached_deliveries = redis_client.get(cache_key)
+#     if cached_deliveries:
+#         return [DeliveryResponse(**d) for d in json.loads(cached_deliveries)]
+
+#     stmt = (
+#         select(Delivery)
+#         .options(
+#             joinedload(Delivery.order).options(
+#                 selectinload(Order.order_items).options(
+#                     joinedload(OrderItem.item).options(
+#                         selectinload(Item.images))
+#                 ),
+#                 joinedload(Order.delivery),
+#             )
+#         )
+#         .offset(skip)
+#         .limit(limit)
+#         .order_by(Delivery.created_at.desc())
+#     )
+
+#     result = await db.execute(stmt)
+#     deliveries = result.unique().scalars().all()
+
+#     # Format responses
+#     delivery_responses = [
+#         format_delivery_response(delivery.order, delivery) for delivery in deliveries
+#     ]
+
+#     # Cache the formatted responses
+#     redis_client.setex(
+#         cache_key,
+#         timedelta(seconds=CACHE_TTL),
+#         json.dumps([d.model_dump() for d in delivery_responses], default=str),
+#     )
+
+#     return delivery_responses
 
 
 async def create_package_order(
@@ -285,7 +267,10 @@ async def create_package_order(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Phone number and full name are required. Please update your profile!",
         )
-    if current_user.user_type in [UserType.RESTAURANT_VENDOR, LAUNDRY_VENDOR] and not (
+    if current_user.user_type in [
+        UserType.RESTAURANT_VENDOR,
+        UserType.LAUNDRY_VENDOR,
+    ] and not (
         current_user.profile.business_name and current_user.profile.phone_number
     ):
         raise HTTPException(
@@ -415,8 +400,7 @@ async def create_package_order(
             .where(Order.id == delivery_data.order_id)
             .options(
                 selectinload(Order.order_items).options(
-                    joinedload(OrderItem.item).options(
-                        selectinload(Item.images))
+                    joinedload(OrderItem.item).options(selectinload(Item.images))
                 )
             )
         )
@@ -455,7 +439,10 @@ async def order_food_or_request_laundy_service(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Phone number and full name are required. Please update your profile!",
         )
-    if current_user.user_type in [UserType.LAUNDRY_VENDOR, UserType.RESTAURANT_VENDOR] and not (
+    if current_user.user_type in [
+        UserType.LAUNDRY_VENDOR,
+        UserType.RESTAURANT_VENDOR,
+    ] and not (
         current_user.profile.business_name and current_user.profile.phone_number
     ):
         raise HTTPException(
@@ -487,8 +474,7 @@ async def order_food_or_request_laundy_service(
         for item in order_item.order_items
     ]
     items_result = await db.execute(
-        select(Item).where(Item.id.in_(item_ids)).where(
-            Item.user_id == vendor_id)
+        select(Item).where(Item.id.in_(item_ids)).where(Item.user_id == vendor_id)
     )
     items_data = {item.id: item for item in items_result.scalars().all()}
 
@@ -515,8 +501,7 @@ async def order_food_or_request_laundy_service(
         item_data = items_data[item_uuid]
 
         # Price and type calculation
-        total_price += Decimal(item_data.price) * \
-            Decimal(order_item_detail.quantity)
+        total_price += Decimal(item_data.price) * Decimal(order_item_detail.quantity)
         item_types.add(item_data.item_type)
 
     # Validate single item type
@@ -632,8 +617,7 @@ async def order_food_or_request_laundy_service(
                 .where(Order.id == order_id)
                 .options(
                     selectinload(Order.order_items).options(
-                        joinedload(OrderItem.item).options(
-                            selectinload(Item.images))
+                        joinedload(OrderItem.item).options(selectinload(Item.images))
                     )
                 )
             )
@@ -646,8 +630,7 @@ async def order_food_or_request_laundy_service(
                 .where(Order.id == order_id)
                 .options(
                     selectinload(Order.order_items).options(
-                        joinedload(OrderItem.item).options(
-                            selectinload(Item.images))
+                        joinedload(OrderItem.item).options(selectinload(Item.images))
                     )
                 )
             )
@@ -674,64 +657,6 @@ async def order_food_or_request_laundy_service(
         )
 
 
-async def get_order_with_items(
-    db: AsyncSession, order_id: UUID
-) -> OrderItemResponseSchema:
-    """
-    Fetches an order and its associated items based on the order ID.
-    Args:
-        supabase: Supabase client instance.
-        order_id: The ID of the order to fetch.
-    Returns:
-        A dictionary containing the order details and associated items.
-    Raises:
-        Exception: If the order is not found.
-    """
-    #  # Try cache first
-    # cached_order = await get_cached_order(order_id)
-    # if cached_order:
-    #     return OrderItemResponseSchema(**cached_order)
-
-    # If not in cache, fetch from database
-    stmt = (
-        select(Order)
-        .options(joinedload(Order.items), joinedload(Order.delivery))
-        .where(Order.id == order_id)
-    )
-
-    result = await db.execute(stmt)
-    order = result.scalar_one_or_none()
-
-    if not order:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Order not found"
-        )
-
-    # Format response
-    order_data = {
-        "id": order.id,
-        "items": [
-            {
-                "id": item.id,
-                "name": item.name,
-                "price": str(item.price),
-                "quantity": item.quantity,
-                "url": item.url,
-            }
-            for item in order.items
-        ],
-        "total_price": str(order.total_price),
-        "status": order.status,
-        "created_at": order.created_at,
-    }
-
-    # Cache the formatted response
-    set_cached_order(order_id, order_data)
-    redis_client.delete(f"{ALL_DELIVERY}")
-
-    return OrderItemResponseSchema(**order_data)
-
-
 async def cancel_delivery(
     db: AsyncSession, delivery_id: UUID, current_user: User
 ) -> DeliveryStatusUpdateSchema:
@@ -743,7 +668,11 @@ async def cancel_delivery(
 
     wallet = wallet_result.scalar_one_or_none()
 
-    if current_user.user_type in [UserType.CUSTOMER, UserType.LAUNDRY_VENDOR, UserType.RESTAURANT_VENDOR]:
+    if current_user.user_type in [
+        UserType.CUSTOMER,
+        UserType.LAUNDRY_VENDOR,
+        UserType.RESTAURANT_VENDOR,
+    ]:
         result = await db.execute(
             select(Delivery)
             .where(Delivery.id == delivery_id)
@@ -830,9 +759,10 @@ async def cancel_delivery(
             invalidate_delivery_cache(delivery.id)
             redis_client.delete(f"{ALL_DELIVERY}")
 
-            token = await get_user_notification_token(
-                db=db, user_id=delivery.vendor_id)
-            rider_token = await get_user_notification_token(db=db, user_id=delivery.rider_id)
+            token = await get_user_notification_token(db=db, user_id=delivery.vendor_id)
+            rider_token = await get_user_notification_token(
+                db=db, user_id=delivery.rider_id
+            )
 
             if token:
                 await send_push_notification(
@@ -865,7 +795,11 @@ async def re_list_item_for_delivery(
 
     wallet = wallet_result.scalar_one_or_none()
 
-    if current_user.user_type in [UserType.CUSTOMER, UserType.LAUNDRY_VENDOR, UserType.RESTAURANT_VENDOR]:
+    if current_user.user_type in [
+        UserType.CUSTOMER,
+        UserType.LAUNDRY_VENDOR,
+        UserType.RESTAURANT_VENDOR,
+    ]:
         result = await db.execute(
             select(Delivery)
             .where(Delivery.id == delivery_id)
@@ -910,36 +844,53 @@ async def re_list_item_for_delivery(
             )
 
 
+# For orders without delivery
 async def vendor_or_owner_mark_order_delivered_or_received(
     db: AsyncSession, order_id: UUID, current_user: User
 ) -> DeliveryStatusUpdateSchema:
-    
-    order_result = await db.execute(select(Order).where(Order.id==order_id).where(or_(Order.owner_id==current_user.id, Order.vendor_id==current_user.id)))
+    order_result = await db.execute(
+        select(Order)
+        .where(Order.id == order_id)
+        .where(
+            or_(Order.owner_id == current_user.id, Order.vendor_id == current_user.id)
+        )
+    )
 
     order = order_result.scalar_one_or_none()
 
     if not order:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Order not found"
+            status_code=status.HTTP_404_NOT_FOUND, detail="Order not found"
         )
 
     vendor_wallet = await fetch_wallet(db, order.vendor_id)
-    owner_wallet = await fetch_wallet(db, order.owner_id)
 
     try:
+        if (
+            order.vendor_id == current_user.id
+            and order.order_status == OrderStatus.DELIVERED
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"You already mark this order as delivered.",
+            )
 
-        if order.vendor_id == current_user.id and order.order_status == OrderStatus.DELIVERED:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f'You already mark this order as delivered.')
-
-        if order.vendor_id == current_user.id and order.order_status == OrderStatus.PENDING:
-            await db.execute(update(Order).where(Order.id == order_id).values({
-                'order_status': OrderStatus.DELIVERED
-            }).returning(Order.order_status))
+        if (
+            order.vendor_id == current_user.id
+            and order.order_status == OrderStatus.PENDING
+        ):
+            await db.execute(
+                update(Order)
+                .where(Order.id == order_id)
+                .values({"order_status": OrderStatus.DELIVERED})
+                .returning(Order.order_status)
+            )
             await db.commit()
             await db.refresh(order)
 
-            owner_token = await get_user_notification_token(db=db, user_id=order.owner_id)
+            owner_token = await get_user_notification_token(
+                db=db, user_id=order.owner_id
+            )
 
             if owner_token:
                 await send_push_notification(
@@ -949,22 +900,28 @@ async def vendor_or_owner_mark_order_delivered_or_received(
                     navigate_to="/(app)/delivery/orders",
                 )
 
-                
                 redis_client.delete(f"delivery:{order_id}")
                 redis_client.delete(f"{ALL_DELIVERY}")
 
                 return DeliveryStatusUpdateSchema(delivery_status=order.order_status)
 
-
-        if order.owner_id==current_user.id:
+        if order.owner_id == current_user.id:
             if order.order_status == OrderStatus.RECEIVED:
-                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f'You already mark this order as received.')
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"You already mark this order as received.",
+                )
             if order.order_status != OrderStatus.DELIVERED:
-                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=f'Order is not yet delivered.')
-            await db.execute(update(Order).where(Order.id==order_id).values({
-                    'order_status': OrderStatus.RECEIVED
-                }).returning(Order.order_status))
-
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail=f"Order is not yet delivered.",
+                )
+            await db.execute(
+                update(Order)
+                .where(Order.id == order_id)
+                .values({"order_status": OrderStatus.RECEIVED})
+                .returning(Order.order_status)
+            )
 
             vendor_amount = order.amount_due_vendor
 
@@ -973,8 +930,8 @@ async def vendor_or_owner_mark_order_delivered_or_received(
                 .where(Wallet.id == order.vendor_id)
                 .values(
                     {
-                    "balance": vendor_wallet.balance + vendor_amount,
-                    "escrow_balance": vendor_wallet.escrow_balance - vendor_amount
+                        "balance": vendor_wallet.balance + vendor_amount,
+                        "escrow_balance": vendor_wallet.escrow_balance - vendor_amount,
                     }
                 )
             )
@@ -983,15 +940,13 @@ async def vendor_or_owner_mark_order_delivered_or_received(
                 update(Wallet)
                 .where(Wallet.id == order.owner_id)
                 .values(
-
                     {"escrow_balance": vendor_wallet.escrow_balance - order.total_price}
                 )
             )
             await db.commit()
-            await db.refresh(order)       
+            await db.refresh(order)
 
             token = await get_user_notification_token(db=db, user_id=order.vendor_id)
-            
 
             if token:
                 await send_push_notification(
@@ -1006,7 +961,10 @@ async def vendor_or_owner_mark_order_delivered_or_received(
 
             return DeliveryStatusUpdateSchema(delivery_status=order.order_status)
     except Exception as e:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f'Error updating status. {e}')
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error updating status. {e}",
+        )
 
 
 async def rider_accept_delivery_order(
@@ -1067,7 +1025,6 @@ async def rider_accept_delivery_order(
     # Get wallets
     dispatch_wallet = await fetch_wallet(db, delivery.dispatch_id)
     vendor_wallet = await fetch_wallet(db, delivery.vendor_id)
-    sender_wallet = await fetch_wallet(db, delivery.sender_id)
 
     # Amount mounts to move to escrow
     dispatch_amount = delivery.amount_due_dispatch
@@ -1130,8 +1087,8 @@ async def rider_accept_delivery_order(
             navigate_to="/(app)/delivery/orders",
         )
 
-    redis_client.delete(f"delivery:{delivery_id}")
-    redis_client.delete(f"{ALL_DELIVERY}")
+    # redis_client.delete(f"delivery:{delivery_id}")
+    # redis_client.delete(f"{ALL_DELIVERY}")
 
     return DeliveryStatusUpdateSchema(delivery_status=delivery.delivery_status)
 
@@ -1150,7 +1107,8 @@ async def sender_confirm_delivery_received(
             status_code=status.HTTP_400_BAD_REQUEST, detail="Delivery not found."
         )
     if (
-        current_user.user_type not in [UserType.CUSTOMER, UserType.LAUNDRY_VENDOR, UserType.RESTAURANT_VENDOR]
+        current_user.user_type
+        not in [UserType.CUSTOMER, UserType.LAUNDRY_VENDOR, UserType.RESTAURANT_VENDOR]
         and delivery.sender_id != current_user.id
     ):
         raise HTTPException(
@@ -1333,15 +1291,14 @@ async def sender_confirm_delivery_received(
                 navigate_to="/(app)/delivery/orders",
             )
 
-        redis_client.delete(f"delivery:{delivery_id}")
-        redis_client.delete(f"{ALL_DELIVERY}")
+        # redis_client.delete(f"delivery:{delivery_id}")
+        # redis_client.delete(f"{ALL_DELIVERY}")
 
         return DeliveryStatusUpdateSchema(delivery_status=delivery.delivery_status)
 
     except Exception as e:
         await db.rollback()
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
 
 async def vendor_mark_laundry_item_received(
@@ -1368,8 +1325,7 @@ async def vendor_mark_laundry_item_received(
         )
 
     if delivery.delivery_status != DeliveryStatus.DELIVERED:
-        raise HTTPException(
-            status_code=400, detail="Delivery is not yet completed.")
+        raise HTTPException(status_code=400, detail="Delivery is not yet completed.")
 
     profile = get_user_profile(delivery.sender_id, db=db)
 
@@ -1394,16 +1350,6 @@ async def vendor_mark_laundry_item_received(
                 }
             )
         )
-
-        # await db.execute(
-        #     update(Wallet)
-        #     .where(Wallet.id == delivery.sender_id)
-        #     .values(
-        #         {
-        #             "escrow_balance": sender_wallet.escrow_balance - dispatch_amount,
-        #         }
-        #     )
-        # )
 
         await db.commit()
         await db.refresh(delivery)
@@ -1442,15 +1388,14 @@ async def vendor_mark_laundry_item_received(
                 navigate_to="/(app)/delivery",
             )
 
-        redis_client.delete(f"delivery:{delivery_id}")
-        redis_client.delete(f"{ALL_DELIVERY}")
+        # redis_client.delete(f"delivery:{delivery_id}")
+        # redis_client.delete(f"{ALL_DELIVERY}")
 
         return DeliveryStatusUpdateSchema(delivery_status=delivery.delivery_status)
 
     except Exception as e:
         await db.rollback()
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
 
 async def rider_mark_delivered(
@@ -1500,8 +1445,8 @@ async def rider_mark_delivered(
             navigate_to="/(app)/delivery",
         )
 
-    redis_client.delete(f"delivery:{delivery_id}")
-    redis_client.delete(f"{ALL_DELIVERY}")
+    # redis_client.delete(f"delivery:{delivery_id}")
+    # redis_client.delete(f"{ALL_DELIVERY}")
     return DeliveryStatusUpdateSchema(delivery_status=delivery.delivery_status)
 
 
@@ -1664,9 +1609,9 @@ async def calculate_delivery_fee(distance: Decimal, db: AsyncSession) -> Decimal
     if distance <= 1:
         return delivery_fee.base_delivery_fee + delivery_fee.delivery_fee_per_km
 
-    return (distance * delivery_fee.delivery_fee_per_km) + delivery_fee.base_delivery_fee
-
-
+    return (
+        distance * delivery_fee.delivery_fee_per_km
+    ) + delivery_fee.base_delivery_fee
 
 
 async def calculate_amount_due_dispatch(
@@ -1854,7 +1799,8 @@ def format_delivery_response(
         "user_id": str(order.owner_id),
         "order_number": order.order_number,
         "vendor_id": str(order.vendor_id),
-        "business_name": order.vendor.profile.business_name or order.vendor.profile.full_name,
+        "business_name": order.vendor.profile.business_name
+        or order.vendor.profile.full_name,
         "order_type": order.order_type.value,
         "require_delivery": order.require_delivery,
         "total_price": str(order.total_price),

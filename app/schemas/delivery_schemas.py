@@ -59,4 +59,3 @@ class DeliverySchema(BaseModel):
 class DeliveryResponse(BaseModel):
     delivery: DeliverySchema | None = None
     order: OrderResponseSchema
-

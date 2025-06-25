@@ -78,7 +78,9 @@ class NotificationMessageCreateSchema(BaseModel):
 class BroadcastNotificationCreateSchema(BaseModel):
     title: str
     content: str
-    recipient_ids: List[UUID] = Field(..., description="List of user IDs to send broadcast to")
+    recipient_ids: List[UUID] = Field(
+        ..., description="List of user IDs to send broadcast to"
+    )
 
 
 class IndividualNotificationCreateSchema(BaseModel):
@@ -128,4 +130,4 @@ class NotificationStatsSchema(BaseModel):
     unread_notifications: int
     broadcast_notifications: int
     individual_notifications: int
-    report_thread_notifications: int 
+    report_thread_notifications: int

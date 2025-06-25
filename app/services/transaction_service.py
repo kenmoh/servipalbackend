@@ -35,7 +35,7 @@ from app.utils.utils import (
     verify_transaction_tx_ref,
     flutterwave_base_url,
     send_push_notification,
-    get_user_notification_token
+    get_user_notification_token,
 )
 from app.config.config import settings, redis_client
 
@@ -294,7 +294,9 @@ async def handle_payment_webhook(
             logging.warning(f"Order not found for txRef: {tx_ref}")
             return {"message": "Order not found"}
 
-        owner_token = await get_user_notification_token(db=db, user_id=db_order.owner_id)
+        owner_token = await get_user_notification_token(
+            db=db, user_id=db_order.owner_id
+        )
 
         # Check if the payment is valid and not already processed
         if (
@@ -310,12 +312,11 @@ async def handle_payment_webhook(
                 background_task.add_task(update_database, db_order, db)
 
                 if sender_token:
-
                     await send_push_notification(
-                    tokens=[owner_token],
-                    title="Payment Received",
-                    message=f"Your payment of ₦{db_order.total_price} has been received.",
-            )
+                        tokens=[owner_token],
+                        title="Payment Received",
+                        message=f"Your payment of ₦{db_order.total_price} has been received.",
+                    )
                 return {"message": "Success"}
 
         return {"message": "Payment validation failed"}
@@ -375,13 +376,12 @@ async def fund_wallet_callback(request: Request, db: AsyncSession):
 
             token = await get_user_notification_token(db=db, user_id=wallet.id)
 
-
             if token:
-
                 await send_push_notification(
                     tokens=[token],
                     title="Payment Received",
-                    message=f"Your payment of ₦{amount_to_add} has been received.")
+                    message=f"Your payment of ₦{amount_to_add} has been received.",
+                )
 
             return {
                 "payment_status": transaction.status,
@@ -472,7 +472,8 @@ async def order_payment_callback(request: Request, db: AsyncSession):
             await send_push_notification(
                 tokens=[token],
                 title="Payment Received",
-                message=f"Your payment of ₦{total_price} has been received.")
+                message=f"Your payment of ₦{total_price} has been received.",
+            )
 
     delivery_stmt = select(Delivery.id).where(Delivery.order_id == UUID(tx_ref))
     delivery_result = await db.execute(delivery_stmt)

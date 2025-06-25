@@ -13,12 +13,13 @@ from app.schemas.review_schema import (
     ReviewType,
     ReportIssueResponse,
     ReportIssueUpdate,
-    ReportIssueCreate
+    ReportIssueCreate,
 )
 from app.services import review_service
 
 router = APIRouter(prefix="/api/reviews", tags=["Reviews"])
 report = APIRouter(prefix="/api/reports", tags=["Reports"])
+
 
 @router.post(
     "",
@@ -32,7 +33,9 @@ async def create_new_review(
     """
     Endpoint to create a new review
     """
-    return await review_service.create_review(db=db, current_user=current_user, data=data)
+    return await review_service.create_review(
+        db=db, current_user=current_user, data=data
+    )
 
 
 @report.post(
@@ -47,7 +50,9 @@ async def create_report(
     """
     Endpoint to create a new review
     """
-    return await review_service.create_report(db=db, current_user=current_user, report_data=report_data)
+    return await review_service.create_report(
+        db=db, current_user=current_user, report_data=report_data
+    )
 
 
 @router.get(
@@ -62,7 +67,9 @@ async def get_user_reviews(
     """
     Endpoint to get current user reviews
     """
-    return await review_service.fetch_vendor_reviews(db=db, vendor_id=vendor_id, current_user=current_user)
+    return await review_service.fetch_vendor_reviews(
+        db=db, vendor_id=vendor_id, current_user=current_user
+    )
 
 
 @report.get(
@@ -79,8 +86,6 @@ async def get_reports_by_user(
     return await review_service.get_reports_by_user(db=db, current_user=current_user)
 
 
-
-
 @report.get(
     "/{report_id}/detail",
     status_code=status.HTTP_200_OK,
@@ -92,9 +97,11 @@ async def get_report_by_id(
     current_user: User = Depends(get_current_user),
 ) -> ReportIssueResponse:
     """
-   Get report details
+    Get report details
     """
-    return await review_service.get_report_by_id(db=db, current_user=current_user, report_id=report_id)
+    return await review_service.get_report_by_id(
+        db=db, current_user=current_user, report_id=report_id
+    )
 
 
 @report.put(
@@ -110,4 +117,6 @@ async def update_report_status(
     """
     Update report by user
     """
-    return await review_service.update_report_status(db=db, update_data=update_data, report_id=report_id, current_user=current_user)
+    return await review_service.update_report_status(
+        db=db, update_data=update_data, report_id=report_id, current_user=current_user
+    )

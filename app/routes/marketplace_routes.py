@@ -14,7 +14,6 @@ from app.schemas.item_schemas import ItemResponse
 router = APIRouter(prefix="/marketplace", tags=["Marketplace"])
 
 
-
 @router.get(
     "",
     response_model=list[ItemResponse],
@@ -24,9 +23,8 @@ router = APIRouter(prefix="/marketplace", tags=["Marketplace"])
 async def get_marketplace_items(
     db: AsyncSession = Depends(get_db),
 ):
-    return await marketplace_service.get_marketplace_items(
-       db=db
-    )
+    return await marketplace_service.get_marketplace_items(db=db)
+
 
 @router.get(
     "/{item_id}/marketplace",
@@ -39,9 +37,8 @@ async def get_marketplace_item(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    return await marketplace_service.get_marketplace_item(
-       db=db, item_id=item_id
-    )
+    return await marketplace_service.get_marketplace_item(db=db, item_id=item_id)
+
 
 @router.post(
     "/{product_id}/buy",
@@ -69,7 +66,6 @@ async def buy_listed_product(
         buyer=current_user,
         buy_request=buy_request,
     )
-    
 
 
 @router.put(
@@ -103,6 +99,7 @@ async def owner_mark_item_received(
         order_id=order_id, current_user=current_user, db=db
     )
 
+
 @router.put(
     "/{order_id}/item-rejected",
     response_model=OrderStatus,
@@ -119,7 +116,6 @@ async def owner_mark_item_rejected(
     )
 
 
-
 @router.put(
     "/{order_id}/vendor-received-rejected-item",
     response_model=OrderStatus,
@@ -134,4 +130,3 @@ async def vendor_mark_rejected_item_received(
     return await marketplace_service.vendor_mark_rejected_item_received(
         order_id=order_id, current_user=current_user, db=db
     )
-    

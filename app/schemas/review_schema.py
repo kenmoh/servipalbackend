@@ -4,10 +4,9 @@ from enum import Enum
 from pydantic import BaseModel, Field
 
 
-
 class ReviewType(str, Enum):
-    ORDER = 'order'
-    PRODUCT = 'product'
+    ORDER = "order"
+    PRODUCT = "product"
 
 
 class ReviewCreate(BaseModel):
@@ -18,6 +17,7 @@ class ReviewCreate(BaseModel):
     comment: str
     review_type: ReviewType
 
+
 class ReviewResponse(BaseModel):
     id: UUID
     reviewer_id: UUID
@@ -26,10 +26,12 @@ class ReviewResponse(BaseModel):
     comment: str
     created_at: datetime
 
+
 class ReviewerProfile(BaseModel):
     id: UUID
     full_name: str
     profile_image_url: str
+
 
 class VendorReviewResponse(BaseModel):
     id: UUID
@@ -40,12 +42,13 @@ class VendorReviewResponse(BaseModel):
 
 
 class IssueType(str, Enum):
-    DAMAGED_ITEMS='damage_items'
+    DAMAGED_ITEMS = "damage_items"
     WRONG_ITEMS = "wrong_items"
     LATE_DELIVERY = "late_delivery"
-    RIDER_BEHAVIOUR = 'rider_behaviour'
-    CUSTOMER_BEHAVIOUR = 'customer_behaviour'
-    OTHERS='Others'
+    RIDER_BEHAVIOUR = "rider_behaviour"
+    CUSTOMER_BEHAVIOUR = "customer_behaviour"
+    OTHERS = "Others"
+
 
 class IssueStatus(str, Enum):
     PENDING = "pending"
@@ -53,10 +56,12 @@ class IssueStatus(str, Enum):
     RESOLVED = "resolved"
     DISMISSED = "dismissed"
 
+
 class ReportType(str, Enum):
     VENDOR = "vendor"
     CUSTOMER = "customer"
     DISPATCH = "dispatch"
+
 
 class ReportIssueCreate(BaseModel):
     order_id: UUID | None = None
@@ -80,11 +85,11 @@ class ReportResponseSchema(ReportIssueCreate):
 
 class ReportIssueResponse(BaseModel):
     id: UUID
-    order_id: UUID | None 
-    delivery_id: UUID | None 
-    dispatch_id: UUID | None 
-    vendor_id: UUID | None 
-    customer_id: UUID | None 
+    order_id: UUID | None
+    delivery_id: UUID | None
+    dispatch_id: UUID | None
+    vendor_id: UUID | None
+    customer_id: UUID | None
     reporter_id: UUID
     description: str
     issue_type: IssueType
@@ -92,16 +97,16 @@ class ReportIssueResponse(BaseModel):
     report_type: ReportType
     created_at: datetime
     updated_at: datetime
-    
+
     # Related user information
     # vendor: User | None  = None
     # customer: User | None  = None
     # dispatch: User | None  = None
     # reporter: User | None  = None
 
+
 class ReportIssueUpdate(BaseModel):
     issue_status: IssueStatus
-
 
 
 class ReportListResponse(BaseModel):

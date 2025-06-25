@@ -9,7 +9,7 @@ class FoodGroup(str, Enum):
     APPETIZER = "appetizer"
     MAIN_COURSE = "main_course"
     DESSERT = "dessert"
-    OTHERS='others'
+    OTHERS = "others"
 
 
 class CategoryType(str, Enum):
@@ -39,7 +39,6 @@ class ItemImageSchema(BaseModel):
     url: str
 
 
-
 class MenuItemCreate(BaseModel):
     name: str
     description: str
@@ -48,7 +47,7 @@ class MenuItemCreate(BaseModel):
     category_id: UUID | None = None
     food_group: FoodGroup | None = None
 
- 
+
 class ItemCreate(BaseModel):
     name: str
     description: str | None = None
@@ -61,23 +60,13 @@ class ItemCreate(BaseModel):
     stock: int | None = None
 
 
-
-
 class ItemResponse(ItemCreate):
     id: UUID
-    user_id: UUID   
+    user_id: UUID
     images: list[ItemImageSchema]
-
 
     class Config:
         from_attributes = True
-
-
-
-
-
-
- 
 
 
 # class ReviewResponseSchema(BaseModel):
@@ -106,7 +95,7 @@ class ItemResponse(ItemCreate):
 #     item_type: ItemType
 #     group: FoodGroup
 #     image_url: list[ItemImageSchema]
- 
+
 
 class MenuBase(BaseModel):
     id: UUID
@@ -117,8 +106,6 @@ class MenuBase(BaseModel):
     images: list[ItemImageSchema]
 
 
-
 class MenuResponseSchema(MenuBase):
     user_id: UUID
     food_group: FoodGroup | None = None
-   

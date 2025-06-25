@@ -10,7 +10,12 @@ from asyncpg.exceptions import UniqueViolationError
 from sqlalchemy.exc import IntegrityError
 
 from app.models.models import Item, User, Category, ItemImage
-from app.schemas.product_schemas import ProductCreate, ProductUpdate, ProductResponse, ProductImage
+from app.schemas.product_schemas import (
+    ProductCreate,
+    ProductUpdate,
+    ProductResponse,
+    ProductImage,
+)
 from app.schemas.item_schemas import ItemType
 from app.config.config import redis_client, settings
 from app.utils.s3_service import upload_multiple_images
@@ -87,9 +92,7 @@ async def create_product(
 
 
 async def get_product_by_id(
-    db: AsyncSession, 
-    product_id: UUID, 
-    background_task: BackgroundTasks | None = None
+    db: AsyncSession, product_id: UUID, background_task: BackgroundTasks | None = None
 ) -> ProductResponse | None:
     """
     Retrieves a single product by its ID, including seller and category info.
@@ -111,13 +114,13 @@ async def get_product_by_id(
     # Not in cache, query database
     stmt = (
         select(Item)
-        .where(Item.id == product_id, Item.item_type==ItemType.PRODUCT)
+        .where(Item.id == product_id, Item.item_type == ItemType.PRODUCT)
         .options(selectinload(Item.images), selectinload(Item.category))
     )
 
     result = await db.execute(stmt)
     product = result.scalar_one_or_none()
-    
+
     if not product:
         return None
 
@@ -131,23 +134,18 @@ async def get_product_by_id(
             settings.REDIS_EX,
             json.dumps(product_response.model_dump(), default=str),
         )
-    
+
     return product_response
 
 
-
-async def get_products(
-    db: AsyncSession
-) -> list[ProductResponse]:
-
-
+async def get_products(db: AsyncSession) -> list[ProductResponse]:
     cache_key = "all_products"
 
     cached_products = redis_client.get(cache_key)
     if cached_products:
-        print(f"Cache HIT for key: {cache_key}") 
+        print(f"Cache HIT for key: {cache_key}")
         return [ProductResponse(**product) for product in json.loads(cached_products)]
-  
+
     # Get ALL products and cache them
     stmt = (
         select(Item)
@@ -158,55 +156,55 @@ async def get_products(
     result = await db.execute(stmt)
     products = result.scalars().all()
 
-    product_responses = [convert_item_to_product_response(product) for product in products]
+    product_responses = [
+        convert_item_to_product_response(product) for product in products
+    ]
 
-    
     if product_responses:
         redis_client.setex(
             cache_key,
             settings.REDIS_EX,
-            json.dumps([product.model_dump() for product in product_responses], default=str),
+            json.dumps(
+                [product.model_dump() for product in product_responses], default=str
+            ),
         )
-        print(f'CACHE SET FOR {cache_key}')
+        print(f"CACHE SET FOR {cache_key}")
     return product_responses
-    
 
 
 async def get_user_products(
-    db: AsyncSession,
-    current_user: User
+    db: AsyncSession, current_user: User
 ) -> list[ProductResponse]:
-
-
     cache_key = f"products:{current_user.id}"
 
     cached_products = redis_client.get(cache_key)
     if cached_products:
         return [ProductResponse(**product) for product in json.loads(cached_products)]
-  
+
     # Get ALL products and cache them
     stmt = (
         select(Item)
-        .where(Item.item_type == ItemType.PRODUCT, Item.user_id==current_user.id)
+        .where(Item.item_type == ItemType.PRODUCT, Item.user_id == current_user.id)
         .options(selectinload(Item.images))
         .order_by(Item.created_at.desc())
     )
     result = await db.execute(stmt)
     products = result.scalars().all()
 
-    product_responses = [convert_item_to_product_response(product) for product in products]
+    product_responses = [
+        convert_item_to_product_response(product) for product in products
+    ]
 
-    
     if product_responses:
         redis_client.setex(
             cache_key,
             settings.REDIS_EX,
-            json.dumps([product.model_dump() for product in product_responses], default=str),
+            json.dumps(
+                [product.model_dump() for product in product_responses], default=str
+            ),
         )
 
     return product_responses
-    
-
 
 
 async def update_product(
@@ -334,6 +332,7 @@ async def delete_product(
 
 # <<<<< ---------- CACHE UTILITY FOR PRODUCTS ---------- >>>>>
 
+
 def invalidate_product_cache(product_id: UUID, seller_id: UUID = None) -> None:
     """Invalidate product related caches"""
     redis_client.delete(f"product:{str(product_id)}")
@@ -342,19 +341,13 @@ def invalidate_product_cache(product_id: UUID, seller_id: UUID = None) -> None:
         redis_client.delete(f"seller_products:{str(seller_id)}")
 
 
-
 def convert_item_to_product_response(item) -> ProductResponse:
     """Convert SQLAlchemy Item to ProductResponse"""
     # Convert ItemImage objects to ProdutImage objects
     images = [
-        ProductImage(
-            id=img.id,
-            url=img.url,
-            item_id=img.item_id 
-        )
-        for img in item.images
+        ProductImage(id=img.id, url=img.url, item_id=img.item_id) for img in item.images
     ]
-    
+
     return ProductResponse(
         id=item.id,
         user_id=item.user_id,  # This will be aliased to seller_id
@@ -369,5 +362,5 @@ def convert_item_to_product_response(item) -> ProductResponse:
         in_stock=item.in_stock,
         images=images,
         created_at=item.created_at,
-        updated_at=item.updated_at
+        updated_at=item.updated_at,
     )

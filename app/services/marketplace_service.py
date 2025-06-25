@@ -7,7 +7,7 @@ from uuid import UUID
 from fastapi import HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import insert, select, update
-from sqlalchemy.orm import selectinload,joinedload
+from sqlalchemy.orm import selectinload, joinedload
 from sqlalchemy.sql.expression import and_
 from app.models.models import (
     ChargeAndCommission,
@@ -30,7 +30,6 @@ from app.schemas.status_schema import (
 from app.services.order_service import fetch_wallet
 from app.utils.utils import get_fund_wallet_payment_link, get_user_notification_token
 from app.config.config import redis_client
-
 
 
 async def get_marketplace_items(db: AsyncSession) -> list[ItemResponse]:
@@ -72,7 +71,8 @@ async def get_marketplace_items(db: AsyncSession) -> list[ItemResponse]:
 
     # Cache the results
     if item_list_dict:
-        redis_client.setex("marketplace_items",
+        redis_client.setex(
+            "marketplace_items",
             CACHE_TTL,
             json.dumps(item_list_dict, default=str),
         )
@@ -112,18 +112,18 @@ async def get_marketplace_item(item_id: UUID, db: AsyncSession) -> ItemResponse:
         "images": [
             {"id": img.id, "url": img.url, "item_id": img.item_id}
             for img in item.images
-        ]
+        ],
     }
 
     # Cache the results
     if item_dict:
-        redis_client.setex(f"marketplace_items:{item_id}",
+        redis_client.setex(
+            f"marketplace_items:{item_id}",
             CACHE_TTL,
             json.dumps(item_dict, default=str),
         )
 
     return ItemResponse(**item_dict)
-
 
 
 async def buy_product(
@@ -184,8 +184,7 @@ async def buy_product(
         )
 
     total_cost = product.price * buy_request.quantity
-    amount_due_vendor = total_cost - \
-        (total_cost * charge.product_commission_percentage)
+    amount_due_vendor = total_cost - (total_cost * charge.product_commission_percentage)
 
     try:
         # Create order
@@ -542,8 +541,7 @@ def get_cached_order(order_id: UUID) -> Optional[dict]:
 def set_cached_order(order_id: UUID, order_data: dict) -> None:
     """Set order in cache"""
     redis_client.setex(
-        f"product:{str(order_id)}", CACHE_TTL, json.dumps(
-            order_data, default=str)
+        f"product:{str(order_id)}", CACHE_TTL, json.dumps(order_data, default=str)
     )
 
 

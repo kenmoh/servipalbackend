@@ -34,7 +34,6 @@ from app.services import user_service
 from app.schemas.item_schemas import MenuResponseSchema, FoodGroup
 
 
-
 router = APIRouter(prefix="/api/users", tags=["Users"])
 
 
@@ -90,13 +89,15 @@ async def get_user_details(
 ) -> ProfileSchema:
     return await user_service.get_user_with_profile(db=db, user_id=user_id)
 
+
 @router.get("/{user_id}/current-user-profile", status_code=status.HTTP_200_OK)
 async def get_current_user_details(
-    user_id:UUID,
+    user_id: UUID,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> UserProfileResponse:
     return await user_service.get_current_user_details(db=db, user_id=user_id)
+
 
 @router.get("/{user_id}/rider-profile", status_code=status.HTTP_200_OK)
 async def get_rider_details(
@@ -130,7 +131,7 @@ async def get_restaurants(
 )
 async def get_laundry_vendors(
     db: AsyncSession = Depends(get_db)
-)-> list[VendorUserResponse]:
+) -> list[VendorUserResponse]:
     """
     Get users who provide laundry services.
     """
@@ -191,26 +192,27 @@ async def get_restaurant_menu(
     restaurant_id: UUID,
     food_group: FoodGroup,
     db: AsyncSession = Depends(get_db),
-
 ) -> list[MenuResponseSchema]:
     """
     Get restaurant menu with individual item reviews.
     Used when customer visits a specific restaurant.
     """
-    return await user_service.get_restaurant_menu(db=db, food_group=food_group, restaurant_id=restaurant_id)
+    return await user_service.get_restaurant_menu(
+        db=db, food_group=food_group, restaurant_id=restaurant_id
+    )
 
 
 @router.get("/laundry/{laundry_id}/menu", status_code=status.HTTP_200_OK)
 async def get_laundry_menu(
     laundry_id: UUID,
     db: AsyncSession = Depends(get_db),
-
 ) -> list[MenuResponseSchema]:
     """
     Get restaurant menu with individual item reviews.
     Used when customer visits a specific restaurant.
     """
     return await user_service.get_laundry_menu(db=db, laundry_id=laundry_id)
+
 
 @router.delete("/{rider_id}/delete", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_rider_endpoint(
@@ -238,8 +240,8 @@ async def register_for_push_notification(
 async def get_push_notification(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
-)-> Notification:
+) -> Notification:
     """Delete Push Token"""
     return await user_service.get_current_user_notification_token(
-      db=db, current_user=current_user
+        db=db, current_user=current_user
     )

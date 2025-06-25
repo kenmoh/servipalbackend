@@ -57,8 +57,7 @@ async def create_category(
                 detail=f"Category with name '{data.name}' already exists.",
             )
 
-        new_category = Category(**data.model_dump(),
-                                category_type=CategoryType.PRODUCT)
+        new_category = Category(**data.model_dump(), category_type=CategoryType.PRODUCT)
         db.add(new_category)
         await db.commit()
         await db.refresh(new_category)
@@ -95,6 +94,7 @@ async def get_categories(db: AsyncSession) -> list[CategoryResponse]:
         set_cached_categories(categories)
 
     return categories
+
 
 # async def create_item(
 #     db: AsyncSession,
@@ -171,26 +171,31 @@ async def create_menu_item(
     images: list[UploadFile],
 ) -> MenuResponseSchema:
     """Creates a new item for the current VENDOR user."""
-    if current_user.user_type not in [UserType.RESTAURANT_VENDOR, UserType.LAUNDRY_VENDOR]:
+    if current_user.user_type not in [
+        UserType.RESTAURANT_VENDOR,
+        UserType.LAUNDRY_VENDOR,
+    ]:
         raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN, detail="Only Restaurant and Laundry vendors are allowed to perform this action "
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only Restaurant and Laundry vendors are allowed to perform this action ",
         )
     if (
         current_user.is_blocked
         or current_user.account_status != AccountStatus.CONFIRMED
     ):
-
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Permission denied! You have either been blocked or your account is not confirmed.",
         )
-    if current_user.user_type in [UserType.RESTAURANT_VENDOR, UserType.LAUNDRY_VENDOR] and not current_user.profile.business_name or not current_user.profile.phone_number:
-
+    if (
+        current_user.user_type in [UserType.RESTAURANT_VENDOR, UserType.LAUNDRY_VENDOR]
+        and not current_user.profile.business_name
+        or not current_user.profile.phone_number
+    ):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Please update your profile",
         )
-
 
     try:
         # Create item first
@@ -219,9 +224,13 @@ async def create_menu_item(
     except IntegrityError as e:
         # Check if it's a UniqueViolationError
         if isinstance(e.orig, asyncpg.exceptions.UniqueViolationError):
-            if 'uq_name_user_non_package' in str(e) or 'uq_name_user_non_package' in str(e):
-                raise HTTPException(status_code=status.HTTP_409_CONFLICT,
-                                    detail='You already have an item with this name.')
+            if "uq_name_user_non_package" in str(
+                e
+            ) or "uq_name_user_non_package" in str(e):
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="You already have an item with this name.",
+                )
         # If it's a different integrity error, let it fall through to the general exception
         await db.rollback()
         raise HTTPException(
@@ -303,8 +312,7 @@ async def create_menu_item(
 
 
 async def get_restaurant_menu(
-    db: AsyncSession, vendor_id: UUID,
-    food_group: FoodGroup = FoodGroup.MAIN_COURSE
+    db: AsyncSession, vendor_id: UUID, food_group: FoodGroup = FoodGroup.MAIN_COURSE
 ) -> list[MenuResponseSchema]:
     """
     Get restaurant menu items with their individual reviews.
@@ -322,7 +330,7 @@ async def get_restaurant_menu(
             .where(
                 Item.user_id == vendor_id,
                 Item.item_type == ItemType.FOOD,
-                Item.food_group == food_group
+                Item.food_group == food_group,
             )
             .order_by(Item.name)
         )
@@ -333,7 +341,6 @@ async def get_restaurant_menu(
         # Format menu with reviews
         menu_response = []
         for item in menu_items:
-
             menu_response.append(
                 {
                     "id": str(item.id),
@@ -342,12 +349,11 @@ async def get_restaurant_menu(
                     "description": item.description,
                     "price": str(item.price),
                     "item_type": item.item_type,
-                    'food_group': item.food_group,
-                    "image_url": [{
-                        'id': img.id,
-                        "url": img.url,
-                        'item_id': img.item_id
-                    } for img in item.images]
+                    "food_group": item.food_group,
+                    "image_url": [
+                        {"id": img.id, "url": img.url, "item_id": img.item_id}
+                        for img in item.images
+                    ],
                 }
             )
 
@@ -357,15 +363,16 @@ async def get_restaurant_menu(
         return MenuResponseSchema(**menu_response)
 
     except Exception as e:
-        logger.error(
-            f"Error fetching restaurant menu {vendor_id}: {str(e)}"
-        )
+        logger.error(f"Error fetching restaurant menu {vendor_id}: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to fetch restaurant menu",
         )
+
+
 async def get_laundry_menu(
-    db: AsyncSession, vendor_id: UUID,
+    db: AsyncSession,
+    vendor_id: UUID,
 ) -> list[MenuResponseSchema]:
     """
     Get restaurant menu items with their individual reviews.
@@ -394,7 +401,6 @@ async def get_laundry_menu(
         # Format menu with reviews
         menu_response = []
         for item in menu_items:
-
             menu_response.append(
                 {
                     "id": str(item.id),
@@ -403,30 +409,31 @@ async def get_laundry_menu(
                     "description": item.description or None,
                     "price": str(item.price),
                     "item_type": item.item_type,
-                    "image_url": [{
-                        'id': img.id,
-                        "url": img.url,
-                        'item_id': img.item_id
-                    } for img in item.images]
+                    "image_url": [
+                        {"id": img.id, "url": img.url, "item_id": img.item_id}
+                        for img in item.images
+                    ],
                 }
             )
 
         # Cache the menu
-        redis_client.setex(key, settings.REDIS_EX, json.dumps(menu_response, default=str))
+        redis_client.setex(
+            key, settings.REDIS_EX, json.dumps(menu_response, default=str)
+        )
 
         return [MenuResponseSchema(**menu) for menu in menu_response]
 
     except Exception as e:
-        logger.error(
-            f"Error fetching restaurant menu {vendor_id}: {str(e)}"
-        )
+        logger.error(f"Error fetching restaurant menu {vendor_id}: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to fetch restaurant menu",
         )
 
 
-async def get_menu_item_by_id(db: AsyncSession, menu_item_id: UUID) -> MenuResponseSchema:
+async def get_menu_item_by_id(
+    db: AsyncSession, menu_item_id: UUID
+) -> MenuResponseSchema:
     """Retrieves a specific item by ID belonging to the current VENDOR user."""
 
     cache_key = f"item:{menu_item_id}"
@@ -434,14 +441,13 @@ async def get_menu_item_by_id(db: AsyncSession, menu_item_id: UUID) -> MenuRespo
     # Try cache first
     cached_item = redis_client.get(cache_key)
     if cached_item:
-        return MenuResponseSchema(**json.loads(cached_item)) or MenuResponseSchema(**json.loads(cached_item))
-
+        return MenuResponseSchema(**json.loads(cached_item)) or MenuResponseSchema(
+            **json.loads(cached_item)
+        )
 
     # Query database
     stmt = (
-        select(Item)
-        .where(Item.id == menu_item_id)
-        .options(selectinload(Item.images))
+        select(Item).where(Item.id == menu_item_id).options(selectinload(Item.images))
     )
     result = await db.execute(stmt)
     menu_item = result.unique().scalar_one_or_none()
@@ -459,22 +465,18 @@ async def get_menu_item_by_id(db: AsyncSession, menu_item_id: UUID) -> MenuRespo
         "description": menu_item.description or None,
         "price": str(menu_item.price),
         "item_type": menu_item.item_type,
-        'group': menu_item.food_group or None,
-        "image_url": [{
-            'id': img.id,
-            "url": img.url,
-            'item_id': img.item_id
-        } for img in menu_item.images]
+        "group": menu_item.food_group or None,
+        "image_url": [
+            {"id": img.id, "url": img.url, "item_id": img.item_id}
+            for img in menu_item.images
+        ],
     }
 
     # Cache the serialized item
-    redis_client.setex(cache_key, settings.REDIS_EX,
-                       json.dumps(menu_item, default=str))
+    redis_client.setex(cache_key, settings.REDIS_EX, json.dumps(menu_item, default=str))
 
     # Return response model
     return MenuResponseSchema(**menu_item)
-
-
 
 
 async def update_menu_item(
@@ -494,16 +496,22 @@ async def update_menu_item(
         # Use cached data for validation (optional)
         if cached_item.get("vendor_id") != str(current_user.id):
             raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND, detail=f'Item not found')
+                status_code=status.HTTP_404_NOT_FOUND, detail=f"Item not found"
+            )
         # Continue to update in DB for consistency
     else:
         # Not in cache, query DB
-        db_item = await get_item_by_id(db=db, item_id=menu_item_id, current_user=current_user)
+        db_item = await get_item_by_id(
+            db=db, item_id=menu_item_id, current_user=current_user
+        )
         if not db_item:
             raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND, detail=f'Item not found')
+                status_code=status.HTTP_404_NOT_FOUND, detail=f"Item not found"
+            )
 
-    update_data = item_data.model_dump(exclude_unset=True)  # Only update provided fields
+    update_data = item_data.model_dump(
+        exclude_unset=True
+    )  # Only update provided fields
     stmt = (
         update(Item)
         .where(Item.id == menu_item_id, Item.user_id == current_user.id)
@@ -564,14 +572,16 @@ async def delete_item(db: AsyncSession, current_user: User, item_id: UUID) -> No
     if cached_item:
         if cached_item.get("user_id") != str(current_user.id):
             raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND, detail='Item not found')
+                status_code=status.HTTP_404_NOT_FOUND, detail="Item not found"
+            )
         # Continue to delete in DB for consistency
     else:
         # Not in cache, query DB
         item = await get_item_by_id(db=db, current_user=current_user, item_id=item_id)
         if not item or item.user_id != current_user.id:
             raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND, detail='Item not found')
+                status_code=status.HTTP_404_NOT_FOUND, detail="Item not found"
+            )
 
     try:
         # Get all image URLs before deleting the item
@@ -581,8 +591,7 @@ async def delete_item(db: AsyncSession, current_user: User, item_id: UUID) -> No
         item_images = image_result.scalars().all()
 
         # Delete item (this will cascade delete ItemImage records due to FK constraint)
-        stmt = delete(Item).where(Item.id == item_id,
-                                  Item.user_id == current_user.id)
+        stmt = delete(Item).where(Item.id == item_id, Item.user_id == current_user.id)
         await db.execute(stmt)
 
         # Delete images from S3
@@ -607,7 +616,6 @@ async def delete_item(db: AsyncSession, current_user: User, item_id: UUID) -> No
 
 
 async def get_item_by_id(db: AsyncSession, item_id: UUID, current_user: User):
-
     stmt = (
         select(Item)
         .where(Item.id == item_id, Item.user_id == current_user.id)
@@ -630,8 +638,7 @@ def get_cached_item(item_id: UUID) -> dict:
 def set_cached_item(item_id: UUID, item_data: dict) -> None:
     """Set item in cache"""
     redis_client.setex(
-        f"item:{str(item_id)}", settings.REDIS_EX, json.dumps(
-            item_data, default=str)
+        f"item:{str(item_id)}", settings.REDIS_EX, json.dumps(item_data, default=str)
     )
 
 
@@ -659,8 +666,9 @@ def set_cached_categories(categories: list) -> None:
         for category in categories
     ]
     redis_client.setex(
-        "all_categories", settings.REDIS_EX, json.dumps(
-            categories_dict_list, default=str)
+        "all_categories",
+        settings.REDIS_EX,
+        json.dumps(categories_dict_list, default=str),
     )
 
 

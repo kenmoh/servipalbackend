@@ -23,7 +23,6 @@ from urllib.parse import urlparse
 DEBUG = settings.DEBUG
 
 
-
 # Parse and clean test database URL
 test_db_url = settings.TEST_DATABASE_URL
 parsed_url = urlparse(test_db_url)

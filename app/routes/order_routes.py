@@ -23,7 +23,6 @@ from app.services import order_service
 router = APIRouter(prefix="/api/orders", tags=["Orders"])
 
 
-
 @router.get("", status_code=status.HTTP_200_OK)
 async def get_all_orders(
     db: AsyncSession = Depends(get_db),
@@ -31,16 +30,14 @@ async def get_all_orders(
     return await order_service.get_all_orders(db=db)
 
 
-
-@router.get("/deliveries", status_code=status.HTTP_200_OK)
-async def get_deliveries(
-    db: AsyncSession = Depends(get_db),
-    skip: int = 0,
-    limit: int = 35,
-    current_user: User = Depends(get_current_user),
-) -> list[DeliveryResponse]:
-    return await order_service.get_all_deliveries(db=db, skip=skip, limit=limit)
-
+# @router.get("/deliveries", status_code=status.HTTP_200_OK)
+# async def get_deliveries(
+#     db: AsyncSession = Depends(get_db),
+#     skip: int = 0,
+#     limit: int = 35,
+#     current_user: User = Depends(get_current_user),
+# ) -> list[DeliveryResponse]:
+#     return await order_service.get_all_deliveries(db=db, skip=skip, limit=limit)
 
 
 @router.post(
@@ -129,12 +126,17 @@ async def sender_confirm_delivery_received(
 
 
 @router.put("/{order_id}/update-status", status_code=status.HTTP_202_ACCEPTED)
-async def update_order_status(order_id: UUID, db: AsyncSession=Depends(get_db), current_user: User = Depends(get_current_user))-> DeliveryStatusUpdateSchema:
+async def update_order_status(
+    order_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> DeliveryStatusUpdateSchema:
     return await order_service.vendor_or_owner_mark_order_delivered_or_received(
-             db=db,
-            current_user=current_user,
-            order_id=order_id,
-        )
+        db=db,
+        current_user=current_user,
+        order_id=order_id,
+    )
+
 
 @router.put("/{delivery_id}/accept-delivery", status_code=status.HTTP_202_ACCEPTED)
 async def rider_accept_delivery(

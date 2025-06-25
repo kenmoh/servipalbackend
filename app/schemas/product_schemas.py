@@ -11,6 +11,7 @@ class ProductImage(BaseModel):
     url: str
     item_id: UUID
 
+
 # Base schema with common fields
 class ProductBase(BaseModel):
     name: str = Form(...)
@@ -41,7 +42,7 @@ class ProductResponse(BaseModel):
     name: str
     description: str
     price: Decimal
-    stock: int | None = None 
+    stock: int | None = None
     category_id: UUID
     sizes: str | None = None
     colors: list[str] = []

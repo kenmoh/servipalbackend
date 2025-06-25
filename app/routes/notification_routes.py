@@ -49,7 +49,7 @@ async def create_broadcast(
     #         status_code=status.HTTP_403_FORBIDDEN,
     #         detail="Only admins can create broadcast notifications"
     #     )
-    
+
     return await create_broadcast_notification(
         db=db,
         sender=current_user,
@@ -70,7 +70,7 @@ async def create_individual(
     #         status_code=status.HTTP_403_FORBIDDEN,
     #         detail="Only admins can create individual notifications"
     #     )
-    
+
     return await create_individual_notification(
         db=db,
         sender=current_user,
@@ -91,7 +91,7 @@ async def create_report_thread(
     #         status_code=status.HTTP_403_FORBIDDEN,
     #         detail="Only admins can create report thread notifications"
     #     )
-    
+
     return await create_report_thread_notification(
         db=db,
         sender=current_user,
@@ -119,7 +119,9 @@ async def add_message(
 async def get_notifications(
     skip: int = Query(0, ge=0),
     limit: int = Query(20, ge=1, le=100),
-    mark_read: bool = Query(False, description="Mark notifications as read when fetched"),
+    mark_read: bool = Query(
+        False, description="Mark notifications as read when fetched"
+    ),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -157,13 +159,13 @@ async def mark_read(
         notification_id=notification_id,
         user=current_user,
     )
-    
+
     if success:
         return {"message": "Notification marked as read"}
     else:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Notification not found or already read"
+            detail="Notification not found or already read",
         )
 
 
@@ -179,7 +181,7 @@ async def mark_read_on_view(
         notification_id=notification_id,
         user=current_user,
     )
-    
+
     if success:
         return {"message": "Notification marked as read on view"}
     else:
@@ -198,7 +200,7 @@ async def mark_thread_read(
         notification_id=notification_id,
         user=current_user,
     )
-    
+
     if success:
         return {"message": "Thread messages marked as read"}
     else:
@@ -215,13 +217,13 @@ async def mark_all_read(
         db=db,
         user=current_user,
     )
-    
+
     if success:
         return {"message": "All notifications marked as read"}
     else:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to mark notifications as read"
+            detail="Failed to mark notifications as read",
         )
 
 
@@ -236,7 +238,7 @@ async def get_notification(
     # For now, we'll return a placeholder
     raise HTTPException(
         status_code=status.HTTP_501_NOT_IMPLEMENTED,
-        detail="Get specific notification endpoint not implemented yet"
+        detail="Get specific notification endpoint not implemented yet",
     )
 
 
@@ -253,10 +255,10 @@ async def delete_notification(
     #         status_code=status.HTTP_403_FORBIDDEN,
     #         detail="Only admins can delete notifications"
     #     )
-    
+
     raise HTTPException(
         status_code=status.HTTP_501_NOT_IMPLEMENTED,
-        detail="Delete notification endpoint not implemented yet"
+        detail="Delete notification endpoint not implemented yet",
     )
 
 
@@ -280,55 +282,55 @@ async def stream_notifications_sse(
 ):
     """
     Server-Sent Events (SSE) endpoint for real-time notifications
-    
+
     Frontend Usage:
     ```javascript
     const eventSource = new EventSource('/api/notifications/stream');
-    
+
     eventSource.addEventListener('notification', function(event) {
         const notifications = JSON.parse(event.data);
         // Handle new notifications
         showNotifications(notifications);
     });
-    
+
     eventSource.addEventListener('unread_count', function(event) {
         const data = JSON.parse(event.data);
         // Update badge count
         updateBadge(data.unread_count);
     });
-    
+
     eventSource.addEventListener('error', function(event) {
         console.error('SSE Error:', event.data);
     });
     ```
     """
-    
+
     async def event_generator():
         try:
             while True:
                 # Check if client is still connected
                 if await request.is_disconnected():
                     break
-                
+
                 # Get new notifications
                 new_notifications = await get_new_notifications(db, current_user)
-                
+
                 # Get unread count
                 badge_data = await get_unread_badge_count(db, current_user)
-                
+
                 # Send notification events
                 if new_notifications:
                     yield f"event: notification\ndata: {json.dumps(new_notifications)}\n\n"
-                
+
                 # Send badge count updates
                 yield f"event: unread_count\ndata: {json.dumps(badge_data)}\n\n"
-                
+
                 await asyncio.sleep(5)  # Check every 5 seconds
-                
+
         except Exception as e:
             # Send error event
             yield f"event: error\ndata: {json.dumps({'message': 'Stream error occurred'})}\n\n"
-    
+
     return StreamingResponse(
         event_generator(),
         media_type="text/event-stream",
@@ -337,25 +339,26 @@ async def stream_notifications_sse(
             "Connection": "keep-alive",
             "Access-Control-Allow-Origin": "*",
             "Access-Control-Allow-Headers": "Cache-Control",
-        }
+        },
     )
 
+
 # Frontend Integration Examples:
-# 
+#
 # 1. When user opens notifications page:
 # GET /notifications?mark_read=true
-# 
+#
 # 2. When user taps on a specific notification:
 # PUT /notifications/{notification_id}/view
-# 
+#
 # 3. When user manually marks as read:
 # PUT /notifications/{notification_id}/read
-# 
+#
 # 4. Mark all as read:
 # PUT /notifications/read-all
-# 
+#
 # 5. Get unread badge count:
 # GET /notifications/badge-count
-# 
+#
 # 6. Real-time streaming:
-# GET /notifications/stream 
+# GET /notifications/stream

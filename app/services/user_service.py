@@ -23,7 +23,16 @@ from app.utils.logger_config import setup_logger
 from app.utils.s3_service import add_image, update_image, delete_s3_object
 from app.config.config import redis_client, settings
 from app.models.materialize_model import VendorReviewStats
-from app.models.models import User, Wallet, Profile, ProfileImage, Transaction, Review, Order, Item
+from app.models.models import (
+    User,
+    Wallet,
+    Profile,
+    ProfileImage,
+    Transaction,
+    Review,
+    Order,
+    Item,
+)
 from app.schemas.review_schema import ReviewType
 from app.schemas.item_schemas import MenuResponseSchema
 from app.schemas.user_schemas import (
@@ -39,7 +48,6 @@ from app.schemas.user_schemas import (
     CreateReviewSchema,
     ProfileSchema,
     UpdateRider,
-    
 )
 
 logger = setup_logger()
@@ -88,13 +96,17 @@ async def get_rider_profile(db: AsyncSession, user_id: UUID) -> RiderProfileSche
     }
 
     redis_client.set(
-        f"rider_id:{rider.id}", json.dumps(rider_dict, default=str), ex=settings.REDIS_EX
+        f"rider_id:{rider.id}",
+        json.dumps(rider_dict, default=str),
+        ex=settings.REDIS_EX,
     )
 
     return rider_dict
 
 
-async def get_current_user_details(db: AsyncSession, user_id: UUID) -> UserProfileResponse:
+async def get_current_user_details(
+    db: AsyncSession, user_id: UUID
+) -> UserProfileResponse:
     """
     Retrieves all users with their profiles.
 
@@ -126,33 +138,42 @@ async def get_current_user_details(db: AsyncSession, user_id: UUID) -> UserProfi
             "email": user.email,
             "user_type": user.user_type,
             "id": user.id,
-
-            "profile": {"phone_number": user.profile.phone_number,
-                        "user_id": user.id,
-                        "bike_number": getattr(user.profile, "bike_number", None),
-                        "bank_account_number": getattr(
-                            user.profile, "bank_account_number", None
-                        ),
-                        "bank_name": getattr(user.profile, "bank_name", None),
-                        "full_name": user.profile.full_name,
-                        "store_name": user.profile.store_name,
-                        "business_name": getattr(user.profile, "business_name", None),
-                        "business_address": getattr(user.profile, "business_address", None),
-                        "backdrop_image_url": getattr(user.profile.profile_image, 'backdrop_image_url', None),
-                        "profile_image_url": getattr(user.profile.profile_image, 'profile_image_url', None),
-                        "business_registration_number": getattr(
-                            user.profile, "business_registration_number", None
-                        ),
-                        "closing_hours": user.profile.closing_hours.isoformat()
-                        if getattr(user.profile, "closing_hours", None)
-                        else None,
-                        "opening_hours": user.profile.opening_hours.isoformat()
-                        if getattr(user.profile, "opening_hours", None)
-                        else None,}
+            "profile": {
+                "phone_number": user.profile.phone_number,
+                "user_id": user.id,
+                "bike_number": getattr(user.profile, "bike_number", None),
+                "bank_account_number": getattr(
+                    user.profile, "bank_account_number", None
+                ),
+                "bank_name": getattr(user.profile, "bank_name", None),
+                "full_name": user.profile.full_name,
+                "store_name": user.profile.store_name,
+                "business_name": getattr(user.profile, "business_name", None),
+                "business_address": getattr(user.profile, "business_address", None),
+                "backdrop_image_url": getattr(
+                    user.profile.profile_image, "backdrop_image_url", None
+                ),
+                "profile_image_url": getattr(
+                    user.profile.profile_image, "profile_image_url", None
+                ),
+                "business_registration_number": getattr(
+                    user.profile, "business_registration_number", None
+                ),
+                "closing_hours": user.profile.closing_hours.isoformat()
+                if getattr(user.profile, "closing_hours", None)
+                else None,
+                "opening_hours": user.profile.opening_hours.isoformat()
+                if getattr(user.profile, "opening_hours", None)
+                else None,
+            },
         }
 
         # Cache the users data
-        redis_client.set(f"current_useer_profile:{user_id}", json.dumps(user_profile_dict, default=str), ex=settings.REDIS_EX)
+        redis_client.set(
+            f"current_useer_profile:{user_id}",
+            json.dumps(user_profile_dict, default=str),
+            ex=settings.REDIS_EX,
+        )
 
         # Convert to response objects
         return UserProfileResponse(**user_profile_dict)
@@ -162,7 +183,6 @@ async def get_current_user_details(db: AsyncSession, user_id: UUID) -> UserProfi
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to retrieve users: {str(e)}",
         )
-
 
 
 async def get_users(db: AsyncSession) -> list[UserProfileResponse]:
@@ -194,7 +214,9 @@ async def get_users(db: AsyncSession) -> list[UserProfileResponse]:
 
         if not users:
             # Cache empty result to avoid repeated DB queries
-            redis_client.set("all_users", json.dumps([], default=str), ex=settings.REDIS_EX)
+            redis_client.set(
+                "all_users", json.dumps([], default=str), ex=settings.REDIS_EX
+            )
             return []
 
         # Convert to  response format
@@ -209,7 +231,7 @@ async def get_users(db: AsyncSession) -> list[UserProfileResponse]:
             # Add profile if exists
             if user.profile:
                 user_data["profile"] = {
-                "user_id": user.id,
+                    "user_id": user.id,
                     "phone_number": user.profile.phone_number,
                     "bike_number": getattr(user.profile, "bike_number", None),
                     "bank_account_number": getattr(
@@ -220,8 +242,12 @@ async def get_users(db: AsyncSession) -> list[UserProfileResponse]:
                     "store_name": user.profile.store_name,
                     "business_name": getattr(user.profile, "business_name", None),
                     "business_address": getattr(user.profile, "business_address", None),
-                    "backdrop_image_url": getattr(user.profile.profile_image, 'backdrop_image_url', None),
-                    "profile_image_url": getattr(user.profile.profile_image, 'profile_image_url', None),
+                    "backdrop_image_url": getattr(
+                        user.profile.profile_image, "backdrop_image_url", None
+                    ),
+                    "profile_image_url": getattr(
+                        user.profile.profile_image, "profile_image_url", None
+                    ),
                     "business_registration_number": getattr(
                         user.profile, "business_registration_number", None
                     ),
@@ -238,7 +264,9 @@ async def get_users(db: AsyncSession) -> list[UserProfileResponse]:
             users_data.append(user_data)
 
         # Cache the users data
-        redis_client.set("all_users", json.dumps(users_data, default=str), ex=settings.REDIS_EX)
+        redis_client.set(
+            "all_users", json.dumps(users_data, default=str), ex=settings.REDIS_EX
+        )
 
         # Convert to response objects
         return [UserProfileResponse(**user_data) for user_data in users_data]
@@ -293,18 +321,24 @@ async def update_profile(
     conflict_filters = []
     if profile_data.phone_number and profile_data.phone_number != profile.phone_number:
         conflict_filters.append(Profile.phone_number == profile_data.phone_number)
-    if profile_data.business_name and profile_data.business_name != profile.business_name:
+    if (
+        profile_data.business_name
+        and profile_data.business_name != profile.business_name
+    ):
         conflict_filters.append(Profile.business_name == profile_data.business_name)
     if (
         profile_data.business_registration_number
-        and profile_data.business_registration_number != profile.business_registration_number
+        and profile_data.business_registration_number
+        != profile.business_registration_number
     ):
-        conflict_filters.append(Profile.business_registration_number == profile_data.business_registration_number)
+        conflict_filters.append(
+            Profile.business_registration_number
+            == profile_data.business_registration_number
+        )
 
     if conflict_filters:
         stmt = select(Profile).where(
-            or_(*conflict_filters),
-            Profile.user_id != current_user.id
+            or_(*conflict_filters), Profile.user_id != current_user.id
         )
         result = await db.execute(stmt)
         if result.scalar_one_or_none():
@@ -388,8 +422,7 @@ async def update_rider_profile(
 
     if conflict_filters:
         stmt = select(Profile).where(
-            or_(*conflict_filters),
-            Profile.user_id != rider_id
+            or_(*conflict_filters), Profile.user_id != rider_id
         )
         result = await db.execute(stmt)
         if result.scalar_one_or_none():
@@ -441,7 +474,11 @@ async def get_user_with_profile(db: AsyncSession, user_id: UUID) -> ProfileSchem
         return ProfileSchema(**cached_user)
 
     try:
-        result = await db.execute(select(Profile).options(selectinload(Profile.profile_image)).where(Profile.user_id == user_id))
+        result = await db.execute(
+            select(Profile)
+            .options(selectinload(Profile.profile_image))
+            .where(Profile.user_id == user_id)
+        )
         profile = result.scalar_one_or_none()
         if not profile:
             raise HTTPException(
@@ -463,8 +500,7 @@ async def get_user_with_profile(db: AsyncSession, user_id: UUID) -> ProfileSchem
             "closing_hours": profile.closing_hours or None,
             "opening_hours": profile.opening_hours or None,
             "profile_image_url": profile.profile_image.profile_image_url,
-            "backdrop_image_url": profile.backdrop_image_url or None
-
+            "backdrop_image_url": profile.backdrop_image_url or None,
         }
 
         # Cache the user data using your existing function
@@ -485,10 +521,10 @@ async def get_user_with_profile(db: AsyncSession, user_id: UUID) -> ProfileSchem
 
 # <<<<< --------- GET USER BY FOOD CATEGORY ---------- >>>>>
 
+
 async def get_restaurant_vendors(
     db: AsyncSession, category_id: UUID | None = None
 ) -> list[VendorUserResponse]:
-
     cache_key = f"restaurant_vendors:{category_id if category_id else 'all'}"
     cached_data = redis_client.get(cache_key)
     if cached_data:
@@ -507,37 +543,43 @@ async def get_restaurant_vendors(
             .group_by(Order.vendor_id)
             .subquery()
         )
-        
+
         # Main query
         stmt = (
             select(
                 User,
                 Profile,
                 ProfileImage,
-                func.coalesce(review_stats_subq.c.average_rating, 0).label("avg_rating"),
-                func.coalesce(review_stats_subq.c.review_count, 0).label("review_count"),
+                func.coalesce(review_stats_subq.c.average_rating, 0).label(
+                    "avg_rating"
+                ),
+                func.coalesce(review_stats_subq.c.review_count, 0).label(
+                    "review_count"
+                ),
             )
             .join(Profile, Profile.user_id == User.id)
             .outerjoin(ProfileImage, ProfileImage.profile_id == User.id)
             .outerjoin(review_stats_subq, review_stats_subq.c.vendor_id == User.id)
             .where(User.user_type == UserType.RESTAURANT_VENDOR)
         )
-        
+
         # If category_id is provided, filter vendors to only those with items in that category
         if category_id:
             vendors_with_category_items = (
                 select(Item.user_id)
                 .where(
                     and_(
-                        Item.item_type == ItemType.FOOD,
-                        Item.category_id == category_id
+                        Item.item_type == ItemType.FOOD, Item.category_id == category_id
                     )
                 )
                 .distinct()
                 .subquery()
             )
-            stmt = stmt.join(vendors_with_category_items, vendors_with_category_items.c.user_id == User.id)
-        
+            stmt = stmt.join(
+                vendors_with_category_items,
+                vendors_with_category_items.c.user_id == User.id,
+            )
+
         result = await db.execute(stmt)
         rows = result.all()
         response = []
@@ -566,17 +608,16 @@ async def get_restaurant_vendors(
                 },
             }
             response.append(vendor_dict)
-        
+
         # Cache result
         redis_client.setex(
-            cache_key,
-            settings.REDIS_EX,
-            json.dumps(response, default=str)
+            cache_key, settings.REDIS_EX, json.dumps(response, default=str)
         )
         return response
     except Exception as e:
         logger.error(f"Error fetching vendors: {str(e)}")
         raise
+
 
 # async def get_restaurant_vendors(
 #     db: AsyncSession, category_id: UUID | None = None
@@ -906,9 +947,8 @@ async def upload_image_profile(
 
 # <<<<< --------- GET LAUNDRY SERVICE PROVIDERS ---------- >>>>>
 
-async def get_users_by_laundry_services(
-    db: AsyncSession
-) -> list[VendorUserResponse]:
+
+async def get_users_by_laundry_services(db: AsyncSession) -> list[VendorUserResponse]:
     """
     Fetch all vendors who offer laundry services with:
     - basic info
@@ -937,13 +977,10 @@ async def get_users_by_laundry_services(
         )
 
         # Laundry item count subquery
-        item_count_subq = (
-            select(
-                Item.user_id.label("vendor_id"),
-                func.count(Item.id).label("total_items"),
-            )
-            .where(Item.item_type == ItemType.LAUNDRY)
-        )
+        item_count_subq = select(
+            Item.user_id.label("vendor_id"),
+            func.count(Item.id).label("total_items"),
+        ).where(Item.item_type == ItemType.LAUNDRY)
 
         item_count_subq = item_count_subq.group_by(Item.user_id).subquery()
 
@@ -953,8 +990,12 @@ async def get_users_by_laundry_services(
                 User,
                 Profile,
                 ProfileImage,
-                func.coalesce(review_stats_subq.c.average_rating, 0).label("avg_rating"),
-                func.coalesce(review_stats_subq.c.review_count, 0).label("review_count"),
+                func.coalesce(review_stats_subq.c.average_rating, 0).label(
+                    "avg_rating"
+                ),
+                func.coalesce(review_stats_subq.c.review_count, 0).label(
+                    "review_count"
+                ),
                 func.coalesce(item_count_subq.c.total_items, 0).label("total_items"),
             )
             .join(Profile, Profile.user_id == User.id)
@@ -1011,7 +1052,6 @@ async def get_users_by_laundry_services(
     except Exception as e:
         logger.error(f"Error fetching laundry vendors: {str(e)}")
         raise
-
 
 
 async def get_dispatcher_riders(
@@ -1075,7 +1115,9 @@ async def get_dispatcher_riders(
             riders.append(rider_data)
 
         # Cache the results
-        redis_client.setex(cache_key, settings.REDIS_EX, json.dumps(riders, default=str))
+        redis_client.setex(
+            cache_key, settings.REDIS_EX, json.dumps(riders, default=str)
+        )
         return [DispatchRiderSchema(**rider) for rider in riders]
 
     except Exception as e:
@@ -1217,8 +1259,6 @@ async def register_notification(
     db: AsyncSession,
     current_user: User,
 ) -> Notification:
-
-
     cache_key = f"notification_token:{current_user.notification_token}"
     cached_data = redis_client.get(cache_key)
     if cached_data:
@@ -1226,65 +1266,71 @@ async def register_notification(
 
     result = await db.execute(select(User).where(User.id == current_user.id))
     user = result.scalar_one_or_none()
-    
+
     if user is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
-    
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="User not found"
+        )
+
     # Check if token already exists and is the same
     if user.notification_token == push_token.notification_token:
         # Token already exists and is the same, just return it
         return user.notification_token
-    
+
     # Update the notification token (either add new or update existing)
     await db.execute(
         update(User)
         .where(User.id == current_user.id)
         .values({"notification_token": push_token.notification_token})
     )
-    
+
     await db.commit()
 
     # Cache the new token
-    redis_client.setex(cache_key, 3600, push_token.notification_token) 
-    
+    redis_client.setex(cache_key, 3600, push_token.notification_token)
+
     return user.notification_token
 
 
-
-async def get_current_user_notification_token(current_user: UUID, db: AsyncSession)-> Notification:
-
-    result = await db.execute(select(User).where(User.id==current_user.id))
+async def get_current_user_notification_token(
+    current_user: UUID, db: AsyncSession
+) -> Notification:
+    result = await db.execute(select(User).where(User.id == current_user.id))
 
     user = result.scalar_one_or_none()
 
     if not user:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail='User not found')
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="User not found"
+        )
 
     if not user.notification_token:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Notification token not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Notification token not found"
+        )
 
     return {"notification_token": user.notification_token}
 
 
-
-async def get_restaurant_menu(db: AsyncSession, restaurant_id: UUID, food_group: FoodGroup = FoodGroup.MAIN_COURSE) -> list[MenuResponseSchema]:
+async def get_restaurant_menu(
+    db: AsyncSession, restaurant_id: UUID, food_group: FoodGroup = FoodGroup.MAIN_COURSE
+) -> list[MenuResponseSchema]:
     """
     Retrieve all menu items for a specific restaurant with Redis caching.
-    
+
     Args:
         db: Async database session
         restaurant_id: UUID of the restaurant
-        
-        
+
+
     Returns:
         List of MenuResponseSchema objects
-        
+
     Raises:
         SQLAlchemyError: If database query fails
     """
     cache_key = f"restaurant_menu:{restaurant_id}:{food_group}"
 
-    
     # Check cache first
     cached_data = redis_client.get(cache_key)
     if cached_data:
@@ -1293,62 +1339,69 @@ async def get_restaurant_menu(db: AsyncSession, restaurant_id: UUID, food_group:
         return [MenuResponseSchema(**item) for item in menu_data]
     try:
         # Query menu items with eager loading of images
-        menu_stmt = select(Item).where(Item.user_id == restaurant_id, Item.item_type==ItemType.FOOD,Item.food_group==food_group).options(selectinload(Item.images))
+        menu_stmt = (
+            select(Item)
+            .where(
+                Item.user_id == restaurant_id,
+                Item.item_type == ItemType.FOOD,
+                Item.food_group == food_group,
+            )
+            .options(selectinload(Item.images))
+        )
         result = await db.execute(menu_stmt)
         menus = result.unique().scalars().all()
-        
+
         # Transform each menu item to response schema
         menu_list = []
         for menu in menus:
             menu_dict = {
-                'id': menu.id,  
-                'user_id': menu.user_id,
-                'name': menu.name,
-                'item_type': menu.item_type,
-                'description': menu.description,
-                'price': menu.price, 
-                'food_group': menu.food_group,
-                'images': [
-                    {
-                        'id': image.id, 
-                        'item_id': image.item_id, 
-                        'url': image.url
-                    } for image in menu.images
-                ]
+                "id": menu.id,
+                "user_id": menu.user_id,
+                "name": menu.name,
+                "item_type": menu.item_type,
+                "description": menu.description,
+                "price": menu.price,
+                "food_group": menu.food_group,
+                "images": [
+                    {"id": image.id, "item_id": image.item_id, "url": image.url}
+                    for image in menu.images
+                ],
             }
             menu_list.append(menu_dict)
-        
+
         # Cache the data
-        redis_client.setex(cache_key, settings.REDIS_EX, json.dumps(menu_list, default=str))
-        
+        redis_client.setex(
+            cache_key, settings.REDIS_EX, json.dumps(menu_list, default=str)
+        )
+
         # Convert to Pydantic models for return
         return [MenuResponseSchema(**item) for item in menu_list]
-        
+
     except Exception as e:
         # Log the error (you might want to use proper logging here)
         print(f"Error fetching restaurant menu: {e}")
         raise
 
 
-
-async def get_laundry_menu(db: AsyncSession, laundry_id: UUID) -> list[MenuResponseSchema]:
+async def get_laundry_menu(
+    db: AsyncSession, laundry_id: UUID
+) -> list[MenuResponseSchema]:
     """
     Retrieve all menu items for a specific restaurant with Redis caching.
-    
+
     Args:
         db: Async database session
         laundry_id: UUID of the laundry vendorr
-        
-        
+
+
     Returns:
         List of MenuResponseSchema objects
-        
+
     Raises:
         SQLAlchemyError: If database query fails
     """
     cache_key = f"laundry_menu:{laundry_id}"
 
-    
     # Check cache first
     cached_data = redis_client.get(cache_key)
     if cached_data:
@@ -1357,37 +1410,38 @@ async def get_laundry_menu(db: AsyncSession, laundry_id: UUID) -> list[MenuRespo
         return [MenuResponseSchema(**item) for item in menu_data]
     try:
         # Query menu items with eager loading of images
-        menu_stmt = select(Item).where(Item.user_id == laundry_id, Item.item_type==ItemType.LAUNDRY).options(selectinload(Item.images))
+        menu_stmt = (
+            select(Item)
+            .where(Item.user_id == laundry_id, Item.item_type == ItemType.LAUNDRY)
+            .options(selectinload(Item.images))
+        )
         result = await db.execute(menu_stmt)
         menus = result.unique().scalars().all()
-        
+
         # Transform each menu item to response schema
         menu_list = []
         for menu in menus:
             menu_dict = {
-                'id': menu.id,  
-                'user_id': menu.user_id,
-                'name': menu.name,
-                'item_type': menu.item_type,
-                'price': menu.price, 
-                'images': [
-                    {
-                        'id': image.id, 
-                        'item_id': image.item_id, 
-                        'url': image.url
-                    } for image in menu.images
-                ]
+                "id": menu.id,
+                "user_id": menu.user_id,
+                "name": menu.name,
+                "item_type": menu.item_type,
+                "price": menu.price,
+                "images": [
+                    {"id": image.id, "item_id": image.item_id, "url": image.url}
+                    for image in menu.images
+                ],
             }
             menu_list.append(menu_dict)
-        
+
         # Cache the data
-        redis_client.setex(cache_key, settings.REDIS_EX, json.dumps(menu_list, default=str))
-        
+        redis_client.setex(
+            cache_key, settings.REDIS_EX, json.dumps(menu_list, default=str)
+        )
+
         # Convert to Pydantic models for return
         return [MenuResponseSchema(**item) for item in menu_list]
-        
+
     except Exception as e:
         logger.error(f"Error fetching laundry menu: {e}")
         raise
-
- 

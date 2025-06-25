@@ -12,7 +12,7 @@ from app.schemas.item_schemas import (
     MenuItemCreate,
     MenuResponseSchema,
     ItemType,
-    FoodGroup
+    FoodGroup,
 )
 from app.services import item_service
 
@@ -67,7 +67,7 @@ async def create_menu_item(
         images=images,
         item_type=item_type,
         category_id=category_id,
-        food_group=food_group
+        food_group=food_group,
     )
 
     return await item_service.create_menu_item(
@@ -103,7 +103,6 @@ async def create_menu_item(
 #     return await item_service.create_laundry_item(
 #         db=db, current_user=current_user, item_data=item_data, images=images
 #     )
-
 
 
 @router.get("/categories", status_code=status.HTTP_200_OK)
@@ -149,11 +148,9 @@ async def get_categories(
 @router.get(
     "/{item_id}/item",
     status_code=status.HTTP_200_OK,
-   
 )
 async def get_menu_item_by_id(
-    item_id: UUID,
-    db: AsyncSession = Depends(get_db)
+    item_id: UUID, db: AsyncSession = Depends(get_db)
 ) -> MenuResponseSchema:
     """
     Endpoint to retrieve a specific item by its UUID.
@@ -163,15 +160,13 @@ async def get_menu_item_by_id(
     return await item_service.get_menu_item_by_id(db, item_id)
 
 
-
 @router.put(
     "/{item_id}/update",
     status_code=status.HTTP_202_ACCEPTED,
-   
 )
 async def update_menu_item(
     item_id: UUID,
-    item_data: MenuItemCreate, 
+    item_data: MenuItemCreate,
     db: AsyncSession = Depends(get_db),
     images: list[UploadFile] = File(None),
     current_user: User = Depends(get_current_user),

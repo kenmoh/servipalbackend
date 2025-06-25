@@ -23,7 +23,7 @@ from app.routes import (
     product_routes,
     marketplace_routes,
     review_routes,
-    notification_routes
+    notification_routes,
 )
 
 from app.utils.cron_job import (
