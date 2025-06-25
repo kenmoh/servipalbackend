@@ -118,10 +118,7 @@ class MenuBase(BaseModel):
 
 
 
-class RestaurantMenuResponseSchema(MenuBase):
-    restaurant_id: UUID
-    food_group: FoodGroup
+class MenuResponseSchema(MenuBase):
+    vendor_id: UUID
+    food_group: FoodGroup | None = None
    
-
-class LaundryMenuResponseSchema(MenuBase):
-    laundry_id: UUID

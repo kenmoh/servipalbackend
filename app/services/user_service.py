@@ -25,7 +25,7 @@ from app.config.config import redis_client, settings
 from app.models.materialize_model import VendorReviewStats
 from app.models.models import User, Wallet, Profile, ProfileImage, Transaction, Review, Order, Item
 from app.schemas.review_schema import ReviewType
-from app.schemas.item_schemas import RestaurantMenuResponseSchema, LaundryMenuResponseSchema
+from app.schemas.item_schemas import MenuResponseSchema
 from app.schemas.user_schemas import (
     Notification,
     ProfileSchema,
@@ -1175,7 +1175,7 @@ async def get_current_user_notification_token(current_user: UUID, db: AsyncSessi
 
 
 
-async def get_restaurant_menu(db: AsyncSession, restaurant_id: UUID, food_group: FoodGroup = FoodGroup.MAIN_COURSE) -> list[RestaurantMenuResponseSchema]:
+async def get_restaurant_menu(db: AsyncSession, restaurant_id: UUID, food_group: FoodGroup = FoodGroup.MAIN_COURSE) -> list[MenuResponseSchema]:
     """
     Retrieve all menu items for a specific restaurant with Redis caching.
     
@@ -1185,7 +1185,7 @@ async def get_restaurant_menu(db: AsyncSession, restaurant_id: UUID, food_group:
         
         
     Returns:
-        List of RestaurantMenuResponseSchema objects
+        List of MenuResponseSchema objects
         
     Raises:
         SQLAlchemyError: If database query fails
@@ -1198,7 +1198,7 @@ async def get_restaurant_menu(db: AsyncSession, restaurant_id: UUID, food_group:
     if cached_data:
         menu_data = json.loads(cached_data)
         # Convert back to Pydantic models
-        return [RestaurantMenuResponseSchema(**item) for item in menu_data]
+        return [MenuResponseSchema(**item) for item in menu_data]
     try:
         # Query menu items with eager loading of images
         menu_stmt = select(Item).where(Item.user_id == restaurant_id, Item.item_type==ItemType.FOOD,Item.food_group==food_group).options(selectinload(Item.images))
@@ -1210,7 +1210,7 @@ async def get_restaurant_menu(db: AsyncSession, restaurant_id: UUID, food_group:
         for menu in menus:
             menu_dict = {
                 'id': menu.id,  
-                'restaurant_id': menu.user_id,
+                'vendor_id': menu.user_id,
                 'name': menu.name,
                 'item_type': menu.item_type,
                 'description': menu.description,
@@ -1230,7 +1230,7 @@ async def get_restaurant_menu(db: AsyncSession, restaurant_id: UUID, food_group:
         redis_client.setex(cache_key, settings.REDIS_EX, json.dumps(menu_list, default=str))
         
         # Convert to Pydantic models for return
-        return [RestaurantMenuResponseSchema(**item) for item in menu_list]
+        return [MenuResponseSchema(**item) for item in menu_list]
         
     except Exception as e:
         # Log the error (you might want to use proper logging here)
@@ -1239,7 +1239,7 @@ async def get_restaurant_menu(db: AsyncSession, restaurant_id: UUID, food_group:
 
 
 
-async def get_laundry_menu(db: AsyncSession, laundry_id: UUID) -> list[LaundryMenuResponseSchema]:
+async def get_laundry_menu(db: AsyncSession, laundry_id: UUID) -> list[MenuResponseSchema]:
     """
     Retrieve all menu items for a specific restaurant with Redis caching.
     
@@ -1249,7 +1249,7 @@ async def get_laundry_menu(db: AsyncSession, laundry_id: UUID) -> list[LaundryMe
         
         
     Returns:
-        List of LaundryMenuResponseSchema objects
+        List of MenuResponseSchema objects
         
     Raises:
         SQLAlchemyError: If database query fails
@@ -1262,7 +1262,7 @@ async def get_laundry_menu(db: AsyncSession, laundry_id: UUID) -> list[LaundryMe
     if cached_data:
         menu_data = json.loads(cached_data)
         # Convert back to Pydantic models
-        return [LaundryMenuResponseSchema(**item) for item in menu_data]
+        return [MenuResponseSchema(**item) for item in menu_data]
     try:
         # Query menu items with eager loading of images
         menu_stmt = select(Item).where(Item.user_id == laundry_id, Item.item_type==ItemType.LAUNDRY).options(selectinload(Item.images))
@@ -1274,7 +1274,7 @@ async def get_laundry_menu(db: AsyncSession, laundry_id: UUID) -> list[LaundryMe
         for menu in menus:
             menu_dict = {
                 'id': menu.id,  
-                'laundry_id': menu.user_id,
+                'vendor_id': menu.user_id,
                 'name': menu.name,
                 'item_type': menu.item_type,
                 'price': menu.price, 
@@ -1292,7 +1292,7 @@ async def get_laundry_menu(db: AsyncSession, laundry_id: UUID) -> list[LaundryMe
         redis_client.setex(cache_key, settings.REDIS_EX, json.dumps(menu_list, default=str))
         
         # Convert to Pydantic models for return
-        return [LaundryMenuResponseSchema(**item) for item in menu_list]
+        return [MenuResponseSchema(**item) for item in menu_list]
         
     except Exception as e:
         logger.error(f"Error fetching laundry menu: {e}")

@@ -31,7 +31,7 @@ from app.schemas.user_schemas import (
     UpdateRider,
 )
 from app.services import user_service
-from app.schemas.item_schemas import RestaurantMenuResponseSchema, LaundryMenuResponseSchema, FoodGroup
+from app.schemas.item_schemas import MenuResponseSchema, FoodGroup
 
 
 
@@ -192,7 +192,7 @@ async def get_restaurant_menu(
     food_group: FoodGroup,
     db: AsyncSession = Depends(get_db),
 
-) -> list[RestaurantMenuResponseSchema]:
+) -> list[MenuResponseSchema]:
     """
     Get restaurant menu with individual item reviews.
     Used when customer visits a specific restaurant.
@@ -205,7 +205,7 @@ async def get_laundry_menu(
     laundry_id: UUID,
     db: AsyncSession = Depends(get_db),
 
-) -> list[LaundryMenuResponseSchema]:
+) -> list[MenuResponseSchema]:
     """
     Get restaurant menu with individual item reviews.
     Used when customer visits a specific restaurant.

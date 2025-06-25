@@ -9,9 +9,8 @@ from app.models.models import User
 from app.schemas.item_schemas import (
     CategoryCreate,
     CategoryResponse,
-    LaundryMenuResponseSchema,
     MenuItemCreate,
-    RestaurantMenuResponseSchema,
+    MenuResponseSchema,
     ItemType,
     FoodGroup
 )
@@ -54,7 +53,7 @@ async def create_menu_item(
     images: list[UploadFile] = File(...),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
-) -> RestaurantMenuResponseSchema | LaundryMenuResponseSchema:
+) -> MenuResponseSchema:
     """
     Endpoint to create a new food item.
     - Requires authenticated VENDOR user.
@@ -155,7 +154,7 @@ async def get_categories(
 async def get_menu_item_by_id(
     item_id: UUID,
     db: AsyncSession = Depends(get_db)
-) -> RestaurantMenuResponseSchema | LaundryMenuResponseSchema:
+) -> MenuResponseSchema:
     """
     Endpoint to retrieve a specific item by its UUID.
     - Requires authenticated VENDOR user.
@@ -176,7 +175,7 @@ async def update_menu_item(
     db: AsyncSession = Depends(get_db),
     images: list[UploadFile] = File(None),
     current_user: User = Depends(get_current_user),
-) -> RestaurantMenuResponseSchema | LaundryMenuResponseSchema:
+) -> MenuResponseSchema:
     """
     Endpoint to update an existing item.
     - Requires authenticated VENDOR user.

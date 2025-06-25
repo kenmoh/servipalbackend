@@ -16,11 +16,11 @@ from app.schemas.item_schemas import (
     CategoryCreate,
     CategoryResponse,
     FoodGroup,
-    LaundryMenuResponseSchema,
+    MenuResponseSchema,
     MenuItemCreate,
     ItemType,
     CategoryType,
-    RestaurantMenuResponseSchema,
+    MenuResponseSchema,
 )
 from app.schemas.status_schema import AccountStatus, UserType
 from app.config.config import redis_client, settings
@@ -169,7 +169,7 @@ async def create_menu_item(
     current_user: User,
     item_data: MenuItemCreate,
     images: list[UploadFile],
-) -> RestaurantMenuResponseSchema | LaundryMenuResponseSchema:
+) -> MenuResponseSchema:
     """Creates a new item for the current VENDOR user."""
     if current_user.user_type not in [UserType.RESTAURANT_VENDOR, UserType.LAUNDRY_VENDOR]:
         raise HTTPException(
@@ -240,7 +240,7 @@ async def create_menu_item(
 #     current_user: User,
 #     item_data: MenuItemCreate,
 #     images: list[UploadFile],
-# ) -> LaundryMenuResponseSchema:
+# ) -> MenuResponseSchema:
 #     """Creates a new item for the current VENDOR user."""
 #     if current_user.user_type != UserType.VENDOR:
 #         raise HTTPException(
@@ -303,7 +303,7 @@ async def create_menu_item(
 async def get_restaurant_menu(
     db: AsyncSession, vendor_id: UUID,
     food_group: FoodGroup = FoodGroup.MAIN_COURSE
-) -> list[RestaurantMenuResponseSchema]:
+) -> list[MenuResponseSchema]:
     """
     Get restaurant menu items with their individual reviews.
     This is for when customer visits a specific restaurant.
@@ -312,7 +312,7 @@ async def get_restaurant_menu(
         # Try cache first
         cached_menu = get_cached_menu(vendor_id, food_group)
         if cached_menu:
-            return [RestaurantMenuResponseSchema(**m) for m in cached_menu]
+            return [MenuResponseSchema(**m) for m in cached_menu]
 
         # Get menu items with their reviews
         menu_query = (
@@ -352,7 +352,7 @@ async def get_restaurant_menu(
         # Cache the menu
         set_cached_menu(vendor_id, food_group, menu_response)
 
-        return RestaurantMenuResponseSchema(**menu_response)
+        return MenuResponseSchema(**menu_response)
 
     except Exception as e:
         logger.error(
@@ -364,7 +364,7 @@ async def get_restaurant_menu(
         )
 async def get_laundry_menu(
     db: AsyncSession, vendor_id: UUID,
-) -> list[LaundryMenuResponseSchema]:
+) -> list[MenuResponseSchema]:
     """
     Get restaurant menu items with their individual reviews.
     This is for when customer visits a specific restaurant.
@@ -374,7 +374,7 @@ async def get_laundry_menu(
         key = f"laundry_menu:{vendor_id}"
         cached_menu = redis_client.get(key)
         if cached_menu:
-            return [LaundryMenuResponseSchema(**m) for m in json.loads(cached_menu)]
+            return [MenuResponseSchema(**m) for m in json.loads(cached_menu)]
 
         # Get menu items with their reviews
         menu_query = (
@@ -412,7 +412,7 @@ async def get_laundry_menu(
         # Cache the menu
         redis_client.setex(key, settings.REDIS_EX, json.dumps(menu_response, default=str))
 
-        return [RestaurantMenuResponseSchema(**menu) for menu in menu_response]
+        return [MenuResponseSchema(**menu) for menu in menu_response]
 
     except Exception as e:
         logger.error(
@@ -424,7 +424,7 @@ async def get_laundry_menu(
         )
 
 
-async def get_menu_item_by_id(db: AsyncSession, menu_item_id: UUID) -> RestaurantMenuResponseSchema | LaundryMenuResponseSchema:
+async def get_menu_item_by_id(db: AsyncSession, menu_item_id: UUID) -> MenuResponseSchema:
     """Retrieves a specific item by ID belonging to the current VENDOR user."""
 
     cache_key = f"item:{menu_item_id}"
@@ -432,7 +432,7 @@ async def get_menu_item_by_id(db: AsyncSession, menu_item_id: UUID) -> Restauran
     # Try cache first
     cached_item = redis_client.get(cache_key)
     if cached_item:
-        return RestaurantMenuResponseSchema(**json.loads(cached_item)) or LaundryMenuResponseSchema(**json.loads(cached_item))
+        return MenuResponseSchema(**json.loads(cached_item)) or MenuResponseSchema(**json.loads(cached_item))
 
 
     # Query database
@@ -470,7 +470,7 @@ async def get_menu_item_by_id(db: AsyncSession, menu_item_id: UUID) -> Restauran
                        json.dumps(menu_item, default=str))
 
     # Return response model
-    return RestaurantMenuResponseSchema(**menu_item) or LaundryMenuResponseSchema(**menu_item)
+    return MenuResponseSchema(**menu_item)
 
 
 
@@ -481,7 +481,7 @@ async def update_menu_item(
     menu_item_id: UUID,
     item_data: MenuItemCreate,
     images: list[UploadFile] = None,
-) -> RestaurantMenuResponseSchema | LaundryMenuResponseSchema:
+) -> MenuResponseSchema:
     """Updates an existing item belonging to the current VENDOR user.
     Handles both item data and image updates.
     """
