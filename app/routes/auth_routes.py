@@ -88,13 +88,12 @@ async def logout(
 @router.post("/register", status_code=status.HTTP_201_CREATED)
 async def create_user(
     user_data: CreateUserSchema,
-    background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
 ) -> UserBase:
     """Logout user by revoking their refresh token"""
 
     return await auth_service.create_user(
-        db=db, user_data=user_data, background_tasks=background_tasks
+        db=db, user_data=user_data
     )
 
 

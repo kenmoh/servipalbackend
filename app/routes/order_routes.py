@@ -30,16 +30,6 @@ async def get_all_orders(
     return await order_service.get_all_orders(db=db)
 
 
-# @router.get("/deliveries", status_code=status.HTTP_200_OK)
-# async def get_deliveries(
-#     db: AsyncSession = Depends(get_db),
-#     skip: int = 0,
-#     limit: int = 35,
-#     current_user: User = Depends(get_current_user),
-# ) -> list[DeliveryResponse]:
-#     return await order_service.get_all_deliveries(db=db, skip=skip, limit=limit)
-
-
 @router.post(
     "/send-item", response_model=DeliveryResponse, status_code=status.HTTP_201_CREATED
 )

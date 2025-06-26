@@ -117,7 +117,7 @@ async def test_registration_validation(
         "email": "invalid_email",
         # Use a valid password from test_user_data
         "password": test_user_data["vendor"]["password"],
-        "user_type": UserType.VENDOR.value,
+        "user_type": UserType.LAUNDRY_VENDOR,
     }
     response = await async_client.post(f"{BASE_URL}/auth/register", json=invalid_user)
     assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
@@ -126,7 +126,7 @@ async def test_registration_validation(
     invalid_user = {
         "email": "newvendor@example.com",  # Use a unique email
         "password": "short",
-        "user_type": UserType.VENDOR.value,
+        "user_type": UserType.RESTAURANT_VENDOR,
     }
     response = await async_client.post(f"{BASE_URL}/auth/register", json=invalid_user)
     assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY

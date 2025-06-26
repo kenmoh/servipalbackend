@@ -210,52 +210,6 @@ async def get_all_orders(db: AsyncSession) -> list[DeliveryResponse]:
     return delivery_responses
 
 
-# async def get_all_deliveries(
-#     db: AsyncSession, skip: int = 0, limit: int = 20
-# ) -> list[DeliveryResponse]:
-#     """
-#     Get all deliveries with pagination and caching
-#     """
-#     cache_key = ALL_DELIVERY
-
-#     # Try cache first
-#     cached_deliveries = redis_client.get(cache_key)
-#     if cached_deliveries:
-#         return [DeliveryResponse(**d) for d in json.loads(cached_deliveries)]
-
-#     stmt = (
-#         select(Delivery)
-#         .options(
-#             joinedload(Delivery.order).options(
-#                 selectinload(Order.order_items).options(
-#                     joinedload(OrderItem.item).options(
-#                         selectinload(Item.images))
-#                 ),
-#                 joinedload(Order.delivery),
-#             )
-#         )
-#         .offset(skip)
-#         .limit(limit)
-#         .order_by(Delivery.created_at.desc())
-#     )
-
-#     result = await db.execute(stmt)
-#     deliveries = result.unique().scalars().all()
-
-#     # Format responses
-#     delivery_responses = [
-#         format_delivery_response(delivery.order, delivery) for delivery in deliveries
-#     ]
-
-#     # Cache the formatted responses
-#     redis_client.setex(
-#         cache_key,
-#         timedelta(seconds=CACHE_TTL),
-#         json.dumps([d.model_dump() for d in delivery_responses], default=str),
-#     )
-
-#     return delivery_responses
-
 
 async def create_package_order(
     db: AsyncSession, data: PackageCreate, image: UploadFile, current_user: User
@@ -833,6 +787,7 @@ async def re_list_item_for_delivery(
                 await db.refresh(delivery)
 
                 invalidate_delivery_cache(delivery.id)
+                redis_client.delete(ALL_DELIVERY)
                 return DeliveryStatusUpdateSchema(
                     delivery_status=delivery.delivery_status
                 )
@@ -1088,7 +1043,7 @@ async def rider_accept_delivery_order(
         )
 
     # redis_client.delete(f"delivery:{delivery_id}")
-    # redis_client.delete(f"{ALL_DELIVERY}")
+    redis_client.delete(f"{ALL_DELIVERY}")
 
     return DeliveryStatusUpdateSchema(delivery_status=delivery.delivery_status)
 
@@ -1292,7 +1247,7 @@ async def sender_confirm_delivery_received(
             )
 
         # redis_client.delete(f"delivery:{delivery_id}")
-        # redis_client.delete(f"{ALL_DELIVERY}")
+        redis_client.delete(f"{ALL_DELIVERY}")
 
         return DeliveryStatusUpdateSchema(delivery_status=delivery.delivery_status)
 
@@ -1389,7 +1344,7 @@ async def vendor_mark_laundry_item_received(
             )
 
         # redis_client.delete(f"delivery:{delivery_id}")
-        # redis_client.delete(f"{ALL_DELIVERY}")
+        redis_client.delete(f"{ALL_DELIVERY}")
 
         return DeliveryStatusUpdateSchema(delivery_status=delivery.delivery_status)
 
@@ -1499,6 +1454,7 @@ async def admin_modify_delivery_status(
         redis_client.delete("all_deliveries")
 
         redis_client.delete(f"delivery:{delivery_id}")
+        redis_client.delete(ALL_DELIVERY)
 
         return DeliveryStatusUpdateSchema(delivery_status=new_status)
 
