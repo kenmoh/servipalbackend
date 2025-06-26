@@ -9,10 +9,15 @@ class ReviewType(str, Enum):
     PRODUCT = "product"
 
 
+class MessageType(str, Enum):
+    BROADCAST = "broadcast"
+    REPORT = "report"
+
+
 class ReviewCreate(BaseModel):
     order_id: UUID | None = None
     item_id: UUID | None = None
-    reviewee_id: UUID
+    defendant_id: UUID
     rating: int = Field(..., ge=1, le=5)
     comment: str
     review_type: ReviewType
@@ -20,8 +25,8 @@ class ReviewCreate(BaseModel):
 
 class ReviewResponse(BaseModel):
     id: UUID
-    reviewer_id: UUID
-    reviewee_id: UUID
+    complainant_id: UUID
+    complainant: UUID
     rating: int
     comment: str
     created_at: datetime
@@ -41,7 +46,7 @@ class VendorReviewResponse(BaseModel):
     reviewer: ReviewerProfile
 
 
-class IssueType(str, Enum):
+class ReportType(str, Enum):
     DAMAGED_ITEMS = "damage_items"
     WRONG_ITEMS = "wrong_items"
     LATE_DELIVERY = "late_delivery"
@@ -57,10 +62,10 @@ class IssueStatus(str, Enum):
     DISMISSED = "dismissed"
 
 
-class ReportType(str, Enum):
-    VENDOR = "vendor"
-    CUSTOMER = "customer"
-    DISPATCH = "dispatch"
+# class ReportType(str, Enum):
+#     VENDOR = "vendor"
+#     CUSTOMER = "customer"
+#     DISPATCH = "dispatch"
 
 
 class ReportIssueCreate(BaseModel):
@@ -71,7 +76,7 @@ class ReportIssueCreate(BaseModel):
     reporter_id: UUID | None = None
     customer_id: UUID | None = None
     description: str = Field(..., min_length=10, max_length=1000)
-    issue_type: IssueType
+    # issue_type: IssueType
     report_type: ReportType
 
     class Config:
@@ -92,7 +97,7 @@ class ReportIssueResponse(BaseModel):
     customer_id: UUID | None
     reporter_id: UUID
     description: str
-    issue_type: IssueType
+    # issue_type: IssueType
     issue_status: IssueStatus
     report_type: ReportType
     created_at: datetime

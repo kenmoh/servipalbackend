@@ -238,3 +238,36 @@ app.include_router(notification_routes.router)
 mcp = FastApiMCP(app,  include_tags=["Notifications", "Reports"])
 
 mcp.mount()
+
+
+"""
+MCP_URL = https://servipalbackend.onrender.com/mcp
+
+For any MCP client supporting SSE, you will simply need to provide the MCP url.
+
+All the most popular MCP clients (Claude Desktop, Cursor & Windsurf) use the following config format:
+{
+  "mcpServers": {
+    "fastapi-mcp": {
+      "url": "http://localhost:8000/mcp"
+    }
+  }
+}
+
+
+For any MCP client supporting SSE, you will simply need to provide the MCP url.
+
+All the most popular MCP clients (Claude Desktop, Cursor & Windsurf) use the following config format:
+{
+  "mcpServers": {
+    "fastapi-mcp": {
+      "command": "npx",
+      "args": [
+        "mcp-remote",
+        "http://localhost:8000/mcp",
+        "8080"  // Optional port number. Necessary if you want your OAuth to work and you don't have dynamic client registration.
+      ]
+    }
+  }
+}
+"""

@@ -1,3 +1,4 @@
+from re import L
 from typing import Optional
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 from sqlalchemy.dialects import postgresql
@@ -42,7 +43,7 @@ from app.schemas.status_schema import (
     UserType,
 )
 
-from app.schemas.review_schema import ReviewType, IssueType, IssueStatus, ReportType
+from app.schemas.review_schema import MessageType, ReviewType, IssueStatus, ReportType
 
 
 logging.basicConfig(level=logging.INFO)
@@ -170,71 +171,15 @@ class User(Base):
         foreign_keys="[Review.reviewee_id]",
     )
 
-    issues_as_vendor: Mapped[list["ReportIssue"]] = relationship(
-        "ReportIssue",
-        foreign_keys="ReportIssue.vendor_id",
-        back_populates="vendor",
-        lazy="selectin",
+    sent_messages: Mapped[list["Message"]] = relationship(
+        "Message",
+        back_populates="admin",
+        foreign_keys="Message.complainant_id",
         cascade="all, delete-orphan",
-    )
-
-    issues_as_customer: Mapped[list["ReportIssue"]] = relationship(
-        "ReportIssue",
-        foreign_keys="ReportIssue.customer_id",
-        back_populates="customer",
-        lazy="selectin",
-        cascade="all, delete-orphan",
-    )
-
-    issues_as_dispatch: Mapped[list["ReportIssue"]] = relationship(
-        "ReportIssue",
-        foreign_keys="ReportIssue.dispatch_id",
-        back_populates="dispatch",
-        lazy="selectin",
-        cascade="all, delete-orphan",
-    )
-
-    issues_reported: Mapped[list["ReportIssue"]] = relationship(
-        "ReportIssue",
-        foreign_keys="ReportIssue.reporter_id",
-        back_populates="reporter",
-        lazy="selectin",
-        cascade="all, delete-orphan",
-    )
-
-    notifications_sent: Mapped[list["Notification"]] = relationship(
-        "Notification",
-        foreign_keys="[Notification.sender_id]",
-        back_populates="sender",
-        lazy="selectin",
-        cascade="all, delete-orphan",
-    )
-
-    notifications_received: Mapped[list["Notification"]] = relationship(
-        "Notification",
-        foreign_keys="[Notification.recipient_id]",
-        back_populates="recipient",
         lazy="selectin",
     )
 
-    notification_messages_sent: Mapped[list["NotificationMessage"]] = relationship(
-        "NotificationMessage",
-        foreign_keys="[NotificationMessage.sender_id]",
-        back_populates="sender",
-        lazy="selectin",
-        cascade="all, delete-orphan",
-    )
-
-    broadcast_notifications_received: Mapped[
-        list["NotificationRecipient"]
-    ] = relationship(
-        "NotificationRecipient",
-        foreign_keys="[NotificationRecipient.recipient_id]",
-        back_populates="recipient",
-        lazy="selectin",
-    )
-
-
+    
 class Profile(Base):
     __tablename__ = "profile"
 
@@ -493,8 +438,8 @@ class Order(Base):
     user_reviews: Mapped[list["Review"]] = relationship(
         back_populates="order", cascade="all, delete-orphan"
     )
-    issues: Mapped[list["ReportIssue"]] = relationship(
-        "ReportIssue",
+    issues: Mapped[list["Report"]] = relationship(
+        "Report",
         back_populates="order",
         lazy="selectin",
         cascade="all, delete-orphan",
@@ -563,8 +508,8 @@ class Delivery(Base):
     sender: Mapped["User"] = relationship(
         back_populates="deliveries_as_sender", foreign_keys=[sender_id]
     )
-    issues: Mapped[list["ReportIssue"]] = relationship(
-        "ReportIssue",
+    issues: Mapped[list["Report"]] = relationship(
+        "Report",
         back_populates="delivery",
         lazy="selectin",
         cascade="all, delete-orphan",
@@ -639,306 +584,8 @@ class Review(Base):
     )
 
 
-class ReportIssue(Base):
-    __tablename__ = "issues"
-
-    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
-
-    # Foreign keys to either Order or Delivery
-    order_id: Mapped[Optional[UUID]] = mapped_column(
-        ForeignKey("orders.id"), nullable=True
-    )
-    delivery_id: Mapped[Optional[UUID]] = mapped_column(
-        ForeignKey("deliveries.id"), nullable=True
-    )
-
-    # The user being reported (based on context)
-    dispatch_id: Mapped[Optional[UUID]] = mapped_column(
-        ForeignKey("users.id"), nullable=True
-    )
-    vendor_id: Mapped[Optional[UUID]] = mapped_column(
-        ForeignKey("users.id"), nullable=True
-    )
-    customer_id: Mapped[Optional[UUID]] = mapped_column(
-        ForeignKey("users.id"), nullable=True
-    )
-
-    # Reporter
-    reporter_id: Mapped[UUID] = mapped_column(ForeignKey("users.id"), nullable=False)
-
-    description: Mapped[str]
-    issue_type: Mapped[IssueType]
-    issue_status: Mapped[IssueStatus] = mapped_column(default=IssueStatus.PENDING)
-    report_type: Mapped[ReportType]
-
-    created_at: Mapped[datetime] = mapped_column(default=datetime.now)
-    updated_at: Mapped[datetime] = mapped_column(
-        default=datetime.now, onupdate=datetime.now
-    )
-
-    __table_args__ = (
-        # One report per reporter per order (if vendor is involved)
-        UniqueConstraint(
-            "reporter_id", "order_id", "vendor_id", name="uq_reporter_order_report"
-        ),
-        # One report per reporter per delivery (if dispatch is involved)
-        UniqueConstraint(
-            "reporter_id",
-            "delivery_id",
-            "dispatch_id",
-            name="uq_reporter_delivery_report",
-        ),
-    )
-
-    vendor: Mapped[Optional["User"]] = relationship(
-        "User",
-        foreign_keys=[vendor_id],
-        back_populates="issues_as_vendor",
-        lazy="joined",
-    )
-
-    customer: Mapped[Optional["User"]] = relationship(
-        "User",
-        foreign_keys=[vendor_id],
-        back_populates="issues_as_customer",
-        lazy="joined",
-    )
-
-    dispatch: Mapped[Optional["User"]] = relationship(
-        "User",
-        foreign_keys=[dispatch_id],
-        back_populates="issues_as_dispatch",
-        lazy="joined",
-    )
-
-    reporter: Mapped["User"] = relationship(
-        "User",
-        foreign_keys=[reporter_id],
-        back_populates="issues_reported",
-        lazy="joined",
-    )
-
-    order: Mapped[Optional["Order"]] = relationship(
-        "Order", back_populates="issues", lazy="selectin"
-    )
-
-    delivery: Mapped[Optional["Delivery"]] = relationship(
-        "Delivery", back_populates="issues", lazy="selectin"
-    )
-
-    notifications: Mapped[list["Notification"]] = relationship(
-        "Notification",
-        back_populates="report_issue",
-        lazy="selectin",
-        cascade="all, delete-orphan",
-    )
-
-
-class Notification(Base):
-    __tablename__ = "notifications"
-
-    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
-
-    # Notification type: broadcast, individual, report_thread
-    notification_type: Mapped[str] = mapped_column(
-        nullable=False
-    )  # "broadcast", "individual", "report_thread"
-
-    # For individual notifications
-    recipient_id: Mapped[Optional[UUID]] = mapped_column(
-        ForeignKey("users.id"), nullable=True
-    )
-
-    # For report thread notifications
-    report_issue_id: Mapped[Optional[UUID]] = mapped_column(
-        ForeignKey("issues.id"), nullable=True
-    )
-
-    # Sender (admin or user)
-    sender_id: Mapped[UUID] = mapped_column(ForeignKey("users.id"), nullable=False)
-
-    # Content
-    title: Mapped[str] = mapped_column(nullable=False)
-    content: Mapped[str] = mapped_column(Text, nullable=False)
-
-    # Status
-    is_read: Mapped[bool] = mapped_column(default=False)
-    is_broadcast: Mapped[bool] = mapped_column(default=False)
-
-    created_at: Mapped[datetime] = mapped_column(default=datetime.now)
-    updated_at: Mapped[datetime] = mapped_column(
-        default=datetime.now, onupdate=datetime.now
-    )
-
-    # Relationships
-    sender: Mapped["User"] = relationship(
-        "User",
-        foreign_keys=[sender_id],
-        back_populates="notifications_sent",
-        lazy="joined",
-    )
-
-    recipient: Mapped[Optional["User"]] = relationship(
-        "User",
-        foreign_keys=[recipient_id],
-        back_populates="notifications_received",
-        lazy="joined",
-    )
-
-    report_issue: Mapped[Optional["ReportIssue"]] = relationship(
-        "ReportIssue", back_populates="notifications", lazy="selectin"
-    )
-
-    # Thread messages for this notification
-    thread_messages: Mapped[list["NotificationMessage"]] = relationship(
-        "NotificationMessage",
-        back_populates="notification",
-        cascade="all, delete-orphan",
-        lazy="selectin",
-        order_by="NotificationMessage.created_at",
-    )
-
-    # Recipients for broadcast notifications
-    recipients: Mapped[list["NotificationRecipient"]] = relationship(
-        "NotificationRecipient",
-        back_populates="notification",
-        lazy="selectin",
-        cascade="all, delete-orphan",
-    )
-
-
-class NotificationMessage(Base):
-    __tablename__ = "notification_messages"
-
-    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
-
-    # Parent notification
-    notification_id: Mapped[UUID] = mapped_column(
-        ForeignKey("notifications.id", ondelete="CASCADE")
-    )
-
-    # Message sender
-    sender_id: Mapped[UUID] = mapped_column(ForeignKey("users.id"), nullable=False)
-
-    # Message role (reporter, reportee, admin)
-    sender_role: Mapped[str] = mapped_column(
-        nullable=False
-    )  # "reporter", "reportee", "admin"
-
-    # Message content
-    content: Mapped[str] = mapped_column(Text, nullable=False)
-
-    # Read status
-    is_read: Mapped[bool] = mapped_column(default=False)
-
-    created_at: Mapped[datetime] = mapped_column(default=datetime.now)
-    updated_at: Mapped[datetime] = mapped_column(
-        default=datetime.now, onupdate=datetime.now
-    )
-
-    # Relationships
-    notification: Mapped["Notification"] = relationship(
-        "Notification", back_populates="thread_messages", lazy="joined"
-    )
-
-    sender: Mapped["User"] = relationship(
-        "User",
-        foreign_keys=[sender_id],
-        back_populates="notification_messages_sent",
-        lazy="joined",
-    )
-
-
-class NotificationRecipient(Base):
-    __tablename__ = "notification_recipients"
-
-    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
-
-    # For broadcast notifications - track who received it
-    notification_id: Mapped[UUID] = mapped_column(
-        ForeignKey("notifications.id", ondelete="CASCADE")
-    )
-    recipient_id: Mapped[UUID] = mapped_column(
-        ForeignKey("users.id", ondelete="CASCADE")
-    )
-
-    # Read status for this specific recipient
-    is_read: Mapped[bool] = mapped_column(default=False)
-
-    created_at: Mapped[datetime] = mapped_column(default=datetime.now)
-    updated_at: Mapped[datetime] = mapped_column(
-        default=datetime.now, onupdate=datetime.now
-    )
-
-    # Relationships
-    notification: Mapped["Notification"] = relationship(
-        "Notification", back_populates="recipients", lazy="joined"
-    )
-
-    recipient: Mapped["User"] = relationship(
-        "User",
-        foreign_keys=[recipient_id],
-        back_populates="broadcast_notifications_received",
-        lazy="joined",
-    )
-
-    __table_args__ = (
-        UniqueConstraint(
-            "notification_id", "recipient_id", name="uq_notification_recipient"
-        ),
-    )
-
-
-# Add relationships to existing User model
-# Add these to the User class relationships section:
-
-# notifications_sent: Mapped[list["Notification"]] = relationship(
-#     "Notification",
-#     foreign_keys="[Notification.sender_id]",
-#     back_populates="sender",
-#     lazy="selectin",
-#     cascade="all, delete-orphan"
-# )
-
-# notifications_received: Mapped[list["Notification"]] = relationship(
-#     "Notification",
-#     foreign_keys="[Notification.recipient_id]",
-#     back_populates="recipient",
-#     lazy="selectin"
-# )
-
-# notification_messages_sent: Mapped[list["NotificationMessage"]] = relationship(
-#     "NotificationMessage",
-#     foreign_keys="[NotificationMessage.sender_id]",
-#     back_populates="sender",
-#     lazy="selectin",
-#     cascade="all, delete-orphan"
-# )
-
-# broadcast_notifications_received: Mapped[list["NotificationRecipient"]] = relationship(
-#     "NotificationRecipient",
-#     foreign_keys="[NotificationRecipient.recipient_id]",
-#     back_populates="recipient",
-#     lazy="selectin"
-# )
-
-# Add relationship to ReportIssue model:
-# notifications: Mapped[list["Notification"]] = relationship(
-#     "Notification",
-#     back_populates="report_issue",
-#     lazy="selectin",
-#     cascade="all, delete-orphan"
-# )
-
-# Add relationship to Notification model:
-# recipients: Mapped[list["NotificationRecipient"]] = relationship(
-#     "NotificationRecipient",
-#     back_populates="notification",
-#     lazy="selectin",
-#     cascade="all, delete-orphan"
-# )
 """
-const demoNotifications = [
+demoNotifications = [
     {
         id: "1",
         type: "broadcast",
@@ -1007,3 +654,137 @@ const demoNotifications = [
 ];
 
 """
+
+
+
+class Report(Base):
+    """Report model for handling user reports/issues"""
+    __tablename__ = "reports"
+    
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+
+    # Foreign keys to either Order or Delivery
+    order_id: Mapped[Optional[UUID]] = mapped_column(
+        ForeignKey("orders.id"), nullable=True
+    )
+    delivery_id: Mapped[Optional[UUID]] = mapped_column(
+        ForeignKey("deliveries.id"), nullable=True
+    )
+
+
+    complainant_id: Mapped[UUID] = mapped_column(ForeignKey("users.id"), nullable=False)
+    defendant_id: Mapped[UUID] = mapped_column(ForeignKey("users.id"), nullable=False)
+
+    report_type: Mapped[ReportType] = mapped_column(default=ReportType.OTHERS)
+    description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    report_status: Mapped[IssueStatus] = mapped_column(default=IssueStatus.PENDING)
+
+    created_at: Mapped[datetime] = mapped_column(default=datetime.now)
+    updated_at: Mapped[datetime] = mapped_column(
+        default=datetime.now, onupdate=datetime.now
+    )
+    
+    # Relationships
+    defendant: Mapped["User"] = relationship("User", foreign_keys=[defendant_id], back_populates="reports_received")
+    messages: Mapped[list["Message"]] = relationship(
+        "Message",
+        back_populates="report",
+        cascade="all, delete-orphan",
+        lazy="selectin"
+    )
+
+    complainant: Mapped["User"] = relationship(
+        "User",
+        foreign_keys=[complainant_id],
+        back_populates="issues_reported",
+        lazy="joined",
+    )
+
+    order: Mapped[Optional["Order"]] = relationship(
+        "Order", back_populates="issues", lazy="selectin"
+    )
+
+    delivery: Mapped[Optional["Delivery"]] = relationship(
+        "Delivery", back_populates="issues", lazy="selectin")
+    __table_args__ = (
+        # One report per reporter per order (if vendor is involved)
+        UniqueConstraint(
+            "complainant_id", "order_id", "defendant_id", name="uq_reporter_order_report"
+        ),
+        # One report per reporter per delivery (if dispatch is involved)
+        UniqueConstraint(
+            "complainant_id",
+            "delivery_id",
+            # "dispatch_id",
+            name="uq_reporter_delivery_report",
+        ),
+    )
+
+class Message(Base):
+    """Message model for both broadcast messages and report thread messages"""
+    __tablename__ = "messages"
+    
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+
+    message_type: Mapped[MessageType] = mapped_column(default=MessageType.BROADCAST)
+    title: Mapped[Optional[str]] = mapped_column(String(200), nullable=True)
+    content: Mapped[str] = mapped_column(Text)
+    complainant_id: Mapped[UUID] = mapped_column(ForeignKey("users.id"), nullable=True)
+    defendant_id: Mapped[UUID] = mapped_column(ForeignKey("users.id"), nullable=True)
+    admin_id: Mapped[UUID] = mapped_column(ForeignKey("users.id"), nullable=True)
+    
+    # For report messages
+    report_id: Mapped[Optional[UUID]] = mapped_column(ForeignKey("reports.id"), nullable=True)
+    role: Mapped[Optional[UserType]] = mapped_column(nullable=True)
+    
+    # For broadcast/individual messages
+    target_user_id: Mapped[Optional[UUID]] = mapped_column(ForeignKey("users.id"), nullable=True)
+    is_global: Mapped[bool] = mapped_column(default=False)
+    
+    created_at: Mapped[datetime] = mapped_column(default=datetime.now)
+    updated_at: Mapped[datetime] = mapped_column(
+        default=datetime.now, onupdate=datetime.now
+    )
+    
+    # Relationships
+    admin: Mapped["User"] = relationship(
+        "User",
+        foreign_keys=[admin_id],
+        back_populates="sent_messages"
+    )
+    target_user: Mapped[Optional["User"]] = relationship(
+        "User",
+        foreign_keys=[target_user_id]
+    )
+    complainant: Mapped[Optional["User"]] = relationship(
+        "User",
+        foreign_keys=[complainant_id]
+    )
+    defendant: Mapped[Optional["User"]] = relationship(
+        "User",
+        foreign_keys=[defendant_id]
+    )
+    report: Mapped[Optional["Report"]] = relationship(
+        "Report",
+        back_populates="messages"
+    )
+    read_status: Mapped[list["MessageReadStatus"]] = relationship(
+        "MessageReadStatus",
+        back_populates="message",
+        cascade="all, delete-orphan"
+    )
+
+class MessageReadStatus(Base):
+    """Track read status of messages per user"""
+    __tablename__ = "message_read_status"
+    
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    message_id: Mapped[UUID] = mapped_column(ForeignKey("messages.id"), nullable=False)
+    user_id: Mapped[UUID] = mapped_column(ForeignKey("users.id"), nullable=False)
+    read: Mapped[bool] = mapped_column(default=False)
+    read_at: Mapped[Optional[datetime]] = mapped_column(default=datetime.now)
+    
+    # Relationships
+    message: Mapped["Message"] = relationship("Message", back_populates="read_status")
+    user: Mapped["User"] = relationship("User")
+    
