@@ -36,7 +36,7 @@ from app.services.notification_service import (
 router = APIRouter(prefix="/notifications", tags=["Notifications"])
 
 
-@router.post("/broadcast", response_model=NotificationResponseSchema)
+@router.post("/broadcast", response_model=NotificationResponseSchema, operation_id='broadcast')
 async def create_broadcast(
     broadcast_data: BroadcastNotificationCreateSchema,
     db: AsyncSession = Depends(get_db),
@@ -57,7 +57,7 @@ async def create_broadcast(
     )
 
 
-@router.post("/individual", response_model=NotificationResponseSchema)
+@router.post("/individual", response_model=NotificationResponseSchema, operation_id='individual')
 async def create_individual(
     notification_data: IndividualNotificationCreateSchema,
     db: AsyncSession = Depends(get_db),
@@ -78,7 +78,7 @@ async def create_individual(
     )
 
 
-@router.post("/report-thread", response_model=NotificationResponseSchema)
+@router.post("/report-thread", response_model=NotificationResponseSchema, operation_id='report-thread')
 async def create_report_thread(
     notification_data: ReportThreadNotificationCreateSchema,
     db: AsyncSession = Depends(get_db),
@@ -99,7 +99,7 @@ async def create_report_thread(
     )
 
 
-@router.post("/{notification_id}/messages", response_model=NotificationMessageSchema)
+@router.post("/{notification_id}/messages", response_model=NotificationMessageSchema, operation_id='notification_detail')
 async def add_message(
     notification_id: UUID,
     message_data: NotificationMessageCreateSchema,
@@ -115,7 +115,7 @@ async def add_message(
     )
 
 
-@router.get("/")
+@router.get("/", operation_id='all_notification')
 async def get_notifications(
     skip: int = Query(0, ge=0),
     limit: int = Query(20, ge=1, le=100),
@@ -135,7 +135,7 @@ async def get_notifications(
     )
 
 
-@router.get("/stats", response_model=NotificationStatsSchema)
+@router.get("/stats", response_model=NotificationStatsSchema, operation_id='notification_stats')
 async def get_stats(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -147,7 +147,7 @@ async def get_stats(
     )
 
 
-@router.put("/{notification_id}/read")
+@router.put("/{notification_id}/read", operation_id='read_message')
 async def mark_read(
     notification_id: UUID,
     db: AsyncSession = Depends(get_db),
@@ -169,7 +169,7 @@ async def mark_read(
         )
 
 
-@router.put("/{notification_id}/view")
+@router.put("/{notification_id}/view", operation_id='view_message')
 async def mark_read_on_view(
     notification_id: UUID,
     db: AsyncSession = Depends(get_db),
@@ -188,7 +188,7 @@ async def mark_read_on_view(
         return {"message": "Notification not found or access denied"}
 
 
-@router.put("/{notification_id}/thread/read")
+@router.put("/{notification_id}/thread/read", operation_id='read_one')
 async def mark_thread_read(
     notification_id: UUID,
     db: AsyncSession = Depends(get_db),
@@ -207,7 +207,7 @@ async def mark_thread_read(
         return {"message": "Thread not found or access denied"}
 
 
-@router.put("/read-all")
+@router.put("/read-all", operation_id='read_all')
 async def mark_all_read(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -227,7 +227,7 @@ async def mark_all_read(
         )
 
 
-@router.get("/{notification_id}", response_model=NotificationResponseSchema)
+@router.get("/{notification_id}", response_model=NotificationResponseSchema, operation_id='notification_id')
 async def get_notification(
     notification_id: UUID,
     db: AsyncSession = Depends(get_db),
@@ -242,7 +242,7 @@ async def get_notification(
     )
 
 
-@router.delete("/{notification_id}")
+@router.delete("/{notification_id}", operation_id='delete_notification')
 async def delete_notification(
     notification_id: UUID,
     db: AsyncSession = Depends(get_db),
@@ -262,7 +262,7 @@ async def delete_notification(
     )
 
 
-@router.get("/badge-count")
+@router.get("/badge-count", operation_id='get_badge_count')
 async def get_badge_count(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -274,7 +274,7 @@ async def get_badge_count(
     )
 
 
-@router.get("/stream")
+@router.get("/stream", operation_id='stream')
 async def stream_notifications_sse(
     request: Request,
     db: AsyncSession = Depends(get_db),

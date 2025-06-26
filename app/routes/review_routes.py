@@ -40,7 +40,7 @@ async def create_new_review(
 
 @report.post(
     "",
-    status_code=status.HTTP_201_CREATED,
+    status_code=status.HTTP_201_CREATED, operation_id='report'
 )
 async def create_report(
     report_data: ReportIssueCreate,
@@ -58,6 +58,7 @@ async def create_report(
 @router.get(
     "/{vendor_id}/vendor-reviews",
     status_code=status.HTTP_200_OK,
+
 )
 async def get_user_reviews(
     vendor_id: UUID,
@@ -75,6 +76,7 @@ async def get_user_reviews(
 @report.get(
     "",
     status_code=status.HTTP_200_OK,
+    operation_id='get_user_report'
 )
 async def get_reports_by_user(
     db: AsyncSession = Depends(get_db),
@@ -88,6 +90,7 @@ async def get_reports_by_user(
 
 @report.get(
     "/{report_id}/detail",
+    operation_id='report_detail',
     status_code=status.HTTP_200_OK,
 )
 async def get_report_by_id(
@@ -107,6 +110,7 @@ async def get_report_by_id(
 @report.put(
     "/{report_id}/update",
     status_code=status.HTTP_202_ACCEPTED,
+    operation_id='update_report'
 )
 async def update_report_status(
     report_id: UUID,

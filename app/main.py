@@ -7,6 +7,7 @@ import logfire
 
 
 from fastapi import Depends, FastAPI
+from fastapi_mcp import FastApiMCP
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import text
@@ -231,3 +232,9 @@ app.include_router(payment_routes.router)
 app.include_router(product_routes.router)
 app.include_router(marketplace_routes.router)
 app.include_router(notification_routes.router)
+
+
+
+mcp = FastApiMCP(app,  include_tags=["Notifications", "Reports"])
+
+mcp.mount()
