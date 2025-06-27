@@ -13,7 +13,9 @@ from app.schemas.review_schema import (
     ReviewType,
     ReportIssueResponse,
     ReportIssueUpdate,
-    ReportIssueCreate,
+    ReportCreate,
+    ReportResponseSchema,
+    ReportMessage
 )
 from app.services import review_service
 
@@ -38,15 +40,12 @@ async def create_new_review(
     )
 
 
-@report.post(
-    "",
-    status_code=status.HTTP_201_CREATED, operation_id='report'
-)
+@report.post("", status_code=status.HTTP_201_CREATED, operation_id="report")
 async def create_report(
-    report_data: ReportIssueCreate,
+    report_data: ReportCreate,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
-) -> ReportIssueResponse:
+) -> ReportResponseSchema:
     """
     Endpoint to create a new review
     """
@@ -58,7 +57,6 @@ async def create_report(
 @router.get(
     "/{vendor_id}/vendor-reviews",
     status_code=status.HTTP_200_OK,
-
 )
 async def get_user_reviews(
     vendor_id: UUID,
@@ -73,15 +71,11 @@ async def get_user_reviews(
     )
 
 
-@report.get(
-    "",
-    status_code=status.HTTP_200_OK,
-    operation_id='get_user_report'
-)
+@report.get("", status_code=status.HTTP_200_OK, operation_id="get_user_report")
 async def get_reports_by_user(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
-) -> list[ReportIssueResponse]:
+) -> list[ReportMessage]:
     """
     Endpoint to get current user reviews
     """
@@ -90,7 +84,7 @@ async def get_reports_by_user(
 
 @report.get(
     "/{report_id}/detail",
-    operation_id='report_detail',
+    operation_id="report_detail",
     status_code=status.HTTP_200_OK,
 )
 async def get_report_by_id(
@@ -110,7 +104,7 @@ async def get_report_by_id(
 @report.put(
     "/{report_id}/update",
     status_code=status.HTTP_202_ACCEPTED,
-    operation_id='update_report'
+    operation_id="update_report",
 )
 async def update_report_status(
     report_id: UUID,
@@ -124,3 +118,15 @@ async def update_report_status(
     return await review_service.update_report_status(
         db=db, update_data=update_data, report_id=report_id, current_user=current_user
     )
+
+
+@report.get("/unread-badge-count", status_code=status.HTTP_200_OK)
+async def get_unread_badge_count(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Get unread badge count for current user (report messages)
+    """
+    count = await review_service.get_unread_badge_count(db=db, current_user=current_user)
+    return {"unread_count": count}

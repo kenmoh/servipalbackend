@@ -355,7 +355,8 @@ async def update_profile(
     await db.refresh(profile)
 
     # Invalidate cached data
-    invalidate_user_cache(current_user.id)
+    redis_client.delete(f"current_useer_profile:{current_user.id}")
+    redis_client.get(f"user:{current_user.id}")
     redis_client.delete("all_users")
 
     return profile

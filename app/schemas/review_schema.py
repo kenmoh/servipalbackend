@@ -1,6 +1,8 @@
 from datetime import datetime
+from typing import Union
 from uuid import UUID
 from enum import Enum
+import dateutil
 from pydantic import BaseModel, Field
 
 
@@ -9,15 +11,24 @@ class ReviewType(str, Enum):
     PRODUCT = "product"
 
 
+class ReportedUserType(str, Enum):
+    VENDOR = "vendor"
+    DISPATCH = "dispatch"
+    CUSTOMER = "customer"
+
+
 class MessageType(str, Enum):
     BROADCAST = "broadcast"
     REPORT = "report"
 
+class ReportTag(str, Enum):
+    COMPLAINANT = 'complainant'
+    DEFENDANT= 'defendanat'
 
 class ReviewCreate(BaseModel):
     order_id: UUID | None = None
     item_id: UUID | None = None
-    defendant_id: UUID
+    # delivery_id: UUID
     rating: int = Field(..., ge=1, le=5)
     comment: str
     review_type: ReviewType
@@ -55,7 +66,7 @@ class ReportType(str, Enum):
     OTHERS = "Others"
 
 
-class IssueStatus(str, Enum):
+class ReportStatus(str, Enum):
     PENDING = "pending"
     INVESTIGATING = "investigating"
     RESOLVED = "resolved"
@@ -68,22 +79,22 @@ class IssueStatus(str, Enum):
 #     DISPATCH = "dispatch"
 
 
-class ReportIssueCreate(BaseModel):
+class ReportCreate(BaseModel):
     order_id: UUID | None = None
     delivery_id: UUID | None = None
-    dispatch_id: UUID | None = None
-    vendor_id: UUID | None = None
-    reporter_id: UUID | None = None
-    customer_id: UUID | None = None
-    description: str = Field(..., min_length=10, max_length=1000)
-    # issue_type: IssueType
+    # defendant_id: UUID | None = None
+    # complainant_id: UUID | None = None
+    # admin_user_id: UUID | None = None
+    description: str = Field(..., min_length=10, max_length=500)
     report_type: ReportType
+    reported_user_type: ReportedUserType
+    # report_tag: ReportTag
 
     class Config:
         from_attributes = True
 
 
-class ReportResponseSchema(ReportIssueCreate):
+class ReportResponseSchema(ReportCreate):
     created_at: datetime
     updated_at: datetime
 
@@ -97,21 +108,14 @@ class ReportIssueResponse(BaseModel):
     customer_id: UUID | None
     reporter_id: UUID
     description: str
-    # issue_type: IssueType
-    issue_status: IssueStatus
+    issue_status: ReportStatus
     report_type: ReportType
     created_at: datetime
     updated_at: datetime
 
-    # Related user information
-    # vendor: User | None  = None
-    # customer: User | None  = None
-    # dispatch: User | None  = None
-    # reporter: User | None  = None
-
 
 class ReportIssueUpdate(BaseModel):
-    issue_status: IssueStatus
+    issue_status: ReportStatus
 
 
 class ReportListResponse(BaseModel):
@@ -121,3 +125,64 @@ class ReportListResponse(BaseModel):
     size: int
     has_next: bool
     has_prev: bool
+
+
+class MessageCreate(BaseModel):
+    message_type: MessageType
+    title: str | None = None
+    content: str
+    sender_id: UUID | None
+    # defendant_id: UUID | None
+    # admin_user_id: UUID | None
+    report_id: UUID | None
+    target_user_id: UUID | None
+    is_global: bool = False
+
+
+
+class SenderInfo(BaseModel):
+    name: str
+    avatar: str| None = None
+
+
+# Message in a thread (for report messages)
+class ThreadMessage(BaseModel):
+    sender: SenderInfo
+    message_type: MessageType
+    role: str 
+    date: datetime
+    content: str
+    read: bool
+
+
+# Broadcast/individual notification message
+class BroadcastMessage(BaseModel):
+    id: str
+    message_type: str  # 'broadcast'
+    read: bool
+    sender: SenderInfo
+    date: str  # ISO date string
+    title: str
+    content: str
+
+
+# Report/threaded notification message
+class ReportMessage(BaseModel):
+    id: UUID
+    complainant_id: UUID
+    report_type: ReportedUserType
+    report_tag: ReportTag
+    report_status: ReportStatus
+    description: str
+    created_at: datetime
+    thread: list[ThreadMessage]
+
+
+
+# Union type for notification messages
+MessageResponse = Union[BroadcastMessage, ReportMessage]
+
+
+# List return schema
+class MessageListResponse(BaseModel):
+    messages: list[MessageResponse]

@@ -92,9 +92,7 @@ async def create_user(
 ) -> UserBase:
     """Logout user by revoking their refresh token"""
 
-    return await auth_service.create_user(
-        db=db, user_data=user_data
-    )
+    return await auth_service.create_user(db=db, user_data=user_data)
 
 
 @router.post(

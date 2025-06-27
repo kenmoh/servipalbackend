@@ -1,33 +1,50 @@
-import json
+import datetime
 
+from fastapi import HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import or_, select, and_, update
 from sqlalchemy.orm import selectinload
-from fastapi import HTTPException, status, BackgroundTasks
+
 
 from app.schemas.review_schema import (
+    MessageCreate,
+    MessageType,
+    ReportCreate,
+    ReportMessage,
+    ReportTag,
     ReviewCreate,
     ReviewResponse,
     ReviewerProfile,
     ReviewType,
+    ReportedUserType,
     VendorReviewResponse,
     ReportType,
-    IssueStatus,
-    ReportIssueCreate,
-    ReportIssueUpdate,
+    ReportStatus,
     ReportIssueResponse,
+    ReportResponseSchema,
+    ThreadMessage,
+    SenderInfo
 )
-from app.models.models import User, Review, Delivery, Order, ReportIssue, Profile
-from app.schemas.status_schema import DeliveryStatus, OrderStatus
+from app.models.models import (
+    Message,
+    MessageReadStatus,
+    User,
+    Review,
+    Delivery,
+    Order,
+    UserReport,
+    Profile,
+)
+from app.schemas.status_schema import DeliveryStatus, OrderStatus, UserType
 from app.config.config import redis_client, settings
 
-from app.services.notification_service import create_automatic_report_thread
+# from app.services.notification_service import create_automatic_report_thread
 
 from sqlalchemy.exc import NoResultFound
 from uuid import UUID
 
 
-def convert_report_to_response(report: ReportIssue) -> ReportIssueResponse:
+def convert_report_to_response(report: ReportType) -> ReportIssueResponse:
     """Convert a ReportIssue SQLAlchemy model to ReportIssueResponse Pydantic model"""
     return ReportIssueResponse(
         id=report.id,
@@ -189,276 +206,343 @@ async def fetch_vendor_reviews(
     # Only cache if we have a full page
     if response_list:
         await redis_client.setex(
-            cache_key, [r.dict() for r in response_list], default=str
+            cache_key, [r.model_dump() for r in response_list], default=str
         )
 
     return response_list
 
 
+
 async def create_report(
-    db: AsyncSession, report_data: ReportIssueCreate, current_user: User
-) -> ReportIssueResponse:
-    """Create a new report based on order_id or delivery_id"""
-
-    try:
-        # Validate that either order_id or delivery_id is provided
-        if not report_data.order_id and not report_data.delivery_id:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Either order_id or delivery_id must be provided",
-            )
-
-        if report_data.order_id and report_data.delivery_id:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Cannot provide both order_id and delivery_id",
-            )
-
-        # Validate that the reported user ID matches the reporting type
-        reported_user_id = None
-        if report_data.reporting == ReportType.VENDOR:
-            if not report_data.vendor_id:
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="vendor_id is required when reporting a vendor",
-                )
-            reported_user_id = report_data.vendor_id
-
-        elif report_data.reporting == ReportType.CUSTOMER:
-            if not report_data.customer_id:
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="customer_id is required when reporting a customer",
-                )
-            reported_user_id = report_data.customer_id
-
-        elif report_data.reporting == ReportType.DISPATCH:
-            if not report_data.dispatch_id:
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="dispatch_id is required when reporting a dispatch",
-                )
-            reported_user_id = report_data.dispatch_id
-
-        # Check if reporter is trying to report themselves
-        if reported_user_id == current_user.id:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="You cannot report yourself",
-            )
-
-        # Check for existing report (based on unique constraints)
-        existing_report = None
-
-        if report_data.order_id and report_data.vendor_id:
-            stmt = select(ReportIssue).where(
-                and_(
-                    ReportIssue.reporter_id == current_user.id,
-                    ReportIssue.order_id == report_data.order_id,
-                    ReportIssue.vendor_id == report_data.vendor_id,
-                )
-            )
-            result = await db.execute(stmt)
-            existing_report = result.scalar_one_or_none()
-
-        elif report_data.delivery_id and report_data.dispatch_id:
-            stmt = select(ReportIssue).where(
-                and_(
-                    ReportIssue.reporter_id == current_user.id,
-                    ReportIssue.delivery_id == report_data.delivery_id,
-                    ReportIssue.dispatch_id == report_data.dispatch_id,
-                )
-            )
-            result = await db.execute(stmt)
-            existing_report = result.scalar_one_or_none()
-
-        if existing_report:
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail="You have already reported this issue",
-            )
-
-        # Create the new report
-        new_report = ReportIssue(
-            order_id=report_data.order_id,
-            delivery_id=report_data.delivery_id,
-            dispatch_id=report_data.dispatch_id,
-            vendor_id=report_data.vendor_id,
-            customer_id=report_data.customer_id,
-            reporter_id=current_user.id,
-            issue_status=IssueStatus.PENDING,
-            description=report_data.description,
-            issue_type=report_data.issue_type,
-            reporting=report_data.reporting,
+    db: AsyncSession, order_id: UUID, current_user: User, report_data: ReportCreate
+) -> ReportResponseSchema:
+    """Create a new report with automatic admin acknowledgment message"""
+    order_stmt = (
+        select(Order)
+        .options(
+            selectinload(Order.delivery),
         )
-
-        db.add(new_report)
-        await db.commit()
-        await db.refresh(new_report)
-
-        # Clear Redis cache (ensure redis_client is properly initialized)
-
-        redis_client.delete(f"user_report:{current_user.id}")
-
-        # Create automatic report thread
-        await create_automatic_report_thread(db, new_report)
-
-        return new_report
-
-    except HTTPException:
-        # Re-raise HTTP exceptions as-is
-        raise
-    except Exception as e:
-        # Rollback the transaction on any other error
-        await db.rollback()
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"An error occurred while creating the report: {str(e)}",
-        )
-
-
-async def get_reports_by_user(
-    db: AsyncSession,
-    current_user: User,
-    background_task: BackgroundTasks | None = None,
-) -> list[ReportIssueResponse]:
-    """
-    Fetch all reports involving a user (as reported user or reporter) with Redis caching.
-
-    Args:
-        db: Database session
-        redis: Redis client
-        current_user: The user whose reports to fetch
-        background_tasks: Optional FastAPI background tasks
-        force_refresh: If True, bypass cache and force refresh from database
-
-    Returns:
-        List of ReportIssueResponse objects
-    """
-    cache_key = f"user_reports:{current_user.id}"
-
-    # Try cache first (unless force_refresh is True)
-    cached_reports = redis_client.get(cache_key)
-    if cached_reports:
-        cached_data = json.loads(cached_reports)
-        return [ReportIssueResponse.model_validate(report) for report in cached_data]
-
-    # Build query
-    user_filters = or_(
-        ReportIssue.vendor_id == current_user.id,
-        ReportIssue.customer_id == current_user.id,
-        ReportIssue.dispatch_id == current_user.id,
-        ReportIssue.reporter_id == current_user.id,
-    )
-    query = (
-        select(ReportIssue).where(user_filters).order_by(ReportIssue.created_at.desc())
+        .where(Order.id == order_id)
     )
 
-    # Execute query
-    result = await db.execute(query)
-    reports = result.scalars().all()
+    order_result = await db.execute(order_stmt)
+    order = order_result.scalar_one_or_none()
 
-    # Convert to response models
-    report_responses = [convert_report_to_response(report) for report in reports]
-
-    # Prepare data for caching
-    reports_data = [report.model_dump() for report in report_responses]
-
-    # Cache the results (either in background or directly)
-    background_task.add_task(
-        redis_client.setex, cache_key, settings.REDIS_EX, json.dumps(reports_data)
+    defendant_id = (
+        order.owner_id
+        if report_data.reported_user_type == ReportedUserType.CUSTOMER
+        else order.vendor_id
+        if report_data.reported_user_type == ReportedUserType.VENDOR
+        else order.delivery.dispatch_id
+    )
+    delivery_id = (
+        order.delivery.id
+        if report_data.reported_user_type == ReportedUserType.DISPATCH
+        else None
     )
 
-    return report_responses
-
-
-async def get_report_by_id(
-    db: AsyncSession,
-    current_user: User,
-    report_id: UUID,
-    background_task: BackgroundTasks | None = None,
-) -> ReportIssueResponse | None:
-    """
-    Get a specific report by ID with Redis caching.
-
-    Args:
-        db: Database session
-        current_user: The authenticated user
-        report_id: ID of the report to fetch
-        background_tasks: Optional FastAPI background tasks
-
-    Returns:
-        ReportIssueResponse if found and accessible by user, None otherwise
-    """
-    cache_key = f"report:{report_id}"
-
-    # Try to get from cache first
-    cached_report = redis_client.get(cache_key)
-    if cached_report:
-        return ReportIssueResponse.model_validate_json(cached_report)
-
-    # Build query with user access filters
-    user_filters = or_(
-        ReportIssue.vendor_id == current_user.id,
-        ReportIssue.customer_id == current_user.id,
-        ReportIssue.dispatch_id == current_user.id,
-        ReportIssue.reporter_id == current_user.id,
+    # Create the report
+    report = UserReport(
+        reported_user_type=report_data.reported_user_type,
+        report_type=report_data.report_type,
+        description=report_data.description,
+        complainant_id=current_user.id,
+        defendant_id=defendant_id,
+        delivery_id=delivery_id,
+        order_id=order_id,
+        report_tag=ReportTag.COMPLAINANT,
+        report_status=ReportStatus.PENDING
     )
-    stmt = select(ReportIssue).where(ReportIssue.id == report_id, user_filters)
+    db.add(report)
+    await db.flush()  # Get the report ID
 
-    # Execute query
-    result = await db.execute(stmt)
-    report = result.scalar_one_or_none()
-
-    if not report:
-        return None
-
-    # Convert to response model
-    report_response = convert_report_to_response(report)
-
-    # Cache the response (as JSON string)
-    report_json = report_response.model_dump_json()
-
-    background_task.add_task(
-        redis_client.setex, cache_key, settings.REDIS_EX, report_json
+    # Auto-generate admin acknowledgment message
+    admin_message = Message(
+        type=MessageType.REPORT,
+        content="Thank you for your report. We have received your complaint and our team is currently investigating this matter. We will review all details and take appropriate action. You will be notified of any updates or resolutions.",
+        report_id=report.id,
+        role=UserType.ADMIN,
     )
+    db.add(admin_message)
+    
+    report.report_status = ReportStatus.INVESTIGATING
+    await db.commit()
 
-    return report_response
+    return report
 
 
-async def update_report_status(
-    db: AsyncSession,
-    report_id: UUID,
-    update_data: ReportIssueUpdate,
-    current_user: User,
-) -> ReportIssueUpdate:
-    """Update report status (typically by admin or involved parties)"""
-
-    cache_key = f"report_id:{report_id}"
-
-    # report = await get_report_by_id(db, report_id)
-    report_result = await db.execute(
-        select(ReportIssue).where(
-            ReportIssue.id == report_id, ReportIssue.reporter_id == current_user.id
-        )
+async def add_message_to_report(
+    db: AsyncSession, report_id: UUID, current_user: User, message: MessageCreate
+) -> Message:
+    """Add a message to an existing report thread and mark report as unread."""
+    # Add the message
+    message_obj = Message(
+        message_type=MessageType.REPORT,
+        content=message.content,
+        sender_id=current_user.id,
+        report_id=report_id,
+        role=current_user.user_type,
     )
+    db.add(message_obj)
 
-    report = report_result.scalar_one_or_none()
-
-    if not report:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Report not found"
-        )
+    # Set report.is_read = False using direct update
     await db.execute(
-        update(ReportIssue)
-        .where(ReportIssue.id == report_id)
-        .values(issue_status=update_data.issue_status)
-        .returning(ReportIssue.issue_status)
+        update(UserReport)
+        .where(UserReport.id == report_id)
+        .values(is_read=False)
     )
 
     await db.commit()
+    return message_obj
+
+
+
+
+async def mark_message_as_read(db: AsyncSession, message_id: UUID, current_user: User):
+    """Mark a message as read for a specific user"""
+    # Check if read status already exists
+    stmt = select(MessageReadStatus).where(
+        and_(
+            MessageReadStatus.message_id == message_id,
+            MessageReadStatus.user_id == current_user.id,
+        )
+    )
+    result = await db.execute(stmt)
+    read_status = result.scalar_one_or_none()
+
+    if read_status:
+        read_status.read = True
+        read_status.read_at = datetime.now()
+    else:
+        read_status = MessageReadStatus(
+            message_id=message_id, user_id=current_user.id, read=True, read_at=datetime.now()
+        )
+        db.add(read_status)
+
+    await db.commit()
+
+
+async def get_user_messages(db: AsyncSession, current_user: User) -> list[ReportMessage]:
+    """Get all report threads for a user (complainant or defendant)"""
+    # Get reports where user is involved (complainant or defendant)
+    reports_stmt = (
+        select(UserReport)
+        .options(
+            selectinload(UserReport.messages).selectinload(Message.sender),
+            selectinload(UserReport.messages).selectinload(Message.read_status),
+            selectinload(UserReport.complainant),
+            selectinload(UserReport.defendant),
+        )
+        .where(
+            or_(UserReport.complainant_id == current_user.id, UserReport.defendant_id == current_user.id)
+        )
+        .order_by(UserReport.created_at.desc())
+    )
+
+    reports_result = await db.execute(reports_stmt)
+    reports = reports_result.scalars().all()
+
+    report_messages = []
+    for report in reports:
+        thread = []
+        for msg in sorted(report.messages, key=lambda x: x.created_at):
+            # Sender info
+            sender_name = None
+            sender_avatar = None
+            if msg.sender and msg.sender.profile:
+                sender_name = (
+                    msg.sender.profile.full_name
+                    or msg.sender.profile.business_name
+                    or "User"
+                )
+                if msg.sender.profile.profile_image:
+                    sender_avatar = msg.sender.profile.profile_image.profile_image_url
+            sender_info = SenderInfo(name=sender_name or "User", avatar=sender_avatar)
+
+            # Read status for current user
+            read_status = next((rs for rs in msg.read_status if rs.user_id == current_user.id), None)
+            is_msg_read = read_status.read if read_status else False
+
+            thread.append(
+                ThreadMessage(
+                    sender=sender_info,
+                    message_type=msg.message_type,
+                    role=msg.role.value if msg.role else None,
+                    date=msg.created_at,
+                    content=msg.content,
+                    read=is_msg_read,
+                )
+            )
+
+        report_messages.append(
+            ReportMessage(
+                id=report.id,
+                complainant_id=report.complainant_id,
+                report_type=report.reported_user_type,
+                report_tag=report.report_tag,
+                report_status=report.report_status,
+                description=report.description,
+                created_at=report.created_at,
+                thread=thread,
+            )
+        )
+
+    return report_messages
+
+
+async def mark_thread_as_read_for_user(db: AsyncSession, report_id: UUID, user: User):
+    # Get all messages in the report thread
+    stmt = select(Message).where(Message.report_id == report_id)
+    result = await db.execute(stmt)
+    messages = result.scalars().all()
+
+    for msg in messages:
+        stmt = select(MessageReadStatus).where(
+            MessageReadStatus.message_id == msg.id,
+            MessageReadStatus.user_id == user.id,
+        )
+        rs_result = await db.execute(stmt)
+        read_status = rs_result.scalar_one_or_none()
+        if read_status:
+            if not read_status.read:
+                read_status.read = True
+                read_status.read_at = datetime.datetime.now()
+        else:
+            db.add(MessageReadStatus(
+                message_id=msg.id, user_id=user.id, read=True, read_at=datetime.datetime.now()
+            ))
+
+    # Set report.is_read = True
+    await db.execute(
+        update(UserReport)
+        .where(UserReport.id == report_id)
+        .values(is_read=True)
+    )
+    await db.commit()
+
+
+async def delete_report_if_allowed(db: AsyncSession, report_id: UUID) -> None:
+    """Delete a report and its thread if status is dismissed or resolved."""
+    stmt = select(UserReport).where(UserReport.id == report_id)
+    result = await db.execute(stmt)
+    report = result.scalar_one_or_none()
+    if not report:
+        raise HTTPException(status_code=404, detail="Report not found")
+
+    if report.report_status not in [ReportStatus.DISMISSED, ReportStatus.RESOLVED]:
+        raise HTTPException(status_code=400, detail="Can only delete reports that are dismissed or resolved.")
+
+    # Optionally, check if current_user is allowed to delete (e.g., admin or complainant)
+    # if current_user.id != report.complainant_id and not current_user.is_admin:
+    #     raise HTTPException(status_code=403, detail="Not authorized to delete this report.")
+
+    await db.delete(report)
+    await db.commit()
+    return None
+
+
+async def update_report_status(db: AsyncSession, report_id: UUID, new_status: ReportStatus, current_user: User):
+    """Update the status of a report. Only admin or the complainant can update."""
+    stmt = select(UserReport).where(UserReport.id == report_id)
+    result = await db.execute(stmt)
+    report = result.scalar_one_or_none()
+    if not report:
+        raise HTTPException(status_code=404, detail="Report not found")
+
+    # Allow only admin or the complainant to update
+    is_admin = getattr(current_user, 'user_type', None) == UserType.ADMIN
+    if current_user.id != report.complainant_id and not is_admin:
+        raise HTTPException(status_code=403, detail="Not authorized to update this report.")
+
+    report.report_status = new_status
+    await db.commit()
     await db.refresh(report)
+    return {"success": True, "message": f"Report status updated to {new_status}."}
 
-    redis_client.delete(cache_key)
 
-    return {"issue_status": report.issue_status}
+async def get_report_by_id(db: AsyncSession, current_user: User, report_id: UUID) -> ReportMessage:
+    """Get a single report thread by ID, only if the user is involved."""
+    stmt = (
+        select(UserReport)
+        .options(
+            selectinload(UserReport.messages).selectinload(Message.sender),
+            selectinload(UserReport.messages).selectinload(Message.read_status),
+            selectinload(UserReport.complainant),
+            selectinload(UserReport.defendant),
+        )
+        .where(UserReport.id == report_id)
+    )
+    result = await db.execute(stmt)
+    report = result.scalar_one_or_none()
+    if not report:
+        raise HTTPException(status_code=404, detail="Report not found")
+    if current_user.id not in [report.complainant_id, report.defendant_id]:
+        raise HTTPException(status_code=403, detail="Not authorized to view this report.")
+
+    thread = []
+    for msg in sorted(report.messages, key=lambda x: x.created_at):
+        sender_name = None
+        sender_avatar = None
+        if msg.sender and msg.sender.profile:
+            sender_name = (
+                msg.sender.profile.full_name
+                or msg.sender.profile.business_name
+                or "User"
+            )
+            if msg.sender.profile.profile_image:
+                sender_avatar = msg.sender.profile.profile_image.profile_image_url
+        sender_info = SenderInfo(name=sender_name or "User", avatar=sender_avatar)
+        read_status = next((rs for rs in msg.read_status if rs.user_id == current_user.id), None)
+        is_msg_read = read_status.read if read_status else False
+        thread.append(
+            ThreadMessage(
+                sender=sender_info,
+                message_type=msg.message_type,
+                role=msg.role.value if msg.role else None,
+                date=msg.created_at,
+                content=msg.content,
+                read=is_msg_read,
+            )
+        )
+
+    return ReportMessage(
+        id=report.id,
+        complainant_id=report.complainant_id,
+        report_type=report.reported_user_type,
+        report_tag=report.report_tag,
+        report_status=report.report_status,
+        description=report.description,
+        created_at=report.created_at,
+        thread=thread,
+    )
+
+
+async def get_unread_badge_count(db: AsyncSession, current_user: User) -> int:
+    """Return the count of unread messages for the current user (report threads)."""
+    # Get all reports where user is involved
+    reports_stmt = select(UserReport.id).where(
+        or_(UserReport.complainant_id == current_user.id, UserReport.defendant_id == current_user.id)
+    )
+    reports_result = await db.execute(reports_stmt)
+    report_ids = [r[0] for r in reports_result.all()]
+    if not report_ids:
+        return 0
+
+    # Get all messages in those reports
+    messages_stmt = select(Message.id).where(Message.report_id.in_(report_ids))
+    messages_result = await db.execute(messages_stmt)
+    message_ids = [m[0] for m in messages_result.all()]
+    if not message_ids:
+        return 0
+
+    # Count unread MessageReadStatus for this user
+    unread_stmt = select(MessageReadStatus).where(
+        MessageReadStatus.message_id.in_(message_ids),
+        MessageReadStatus.user_id == current_user.id,
+        MessageReadStatus.read == False
+    )
+    unread_result = await db.execute(unread_stmt)
+    unread_count = len(unread_result.fetchall())
+    return unread_count
+
+

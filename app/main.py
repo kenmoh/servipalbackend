@@ -231,11 +231,10 @@ app.include_router(order_routes.router)
 app.include_router(payment_routes.router)
 app.include_router(product_routes.router)
 app.include_router(marketplace_routes.router)
-app.include_router(notification_routes.router)
+# app.include_router(notification_routes.router)
 
 
-
-mcp = FastApiMCP(app,  include_tags=["Notifications", "Reports"])
+mcp = FastApiMCP(app, include_tags=["Notifications", "Reports"])
 
 mcp.mount()
 

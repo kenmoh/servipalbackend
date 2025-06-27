@@ -210,7 +210,6 @@ async def get_all_orders(db: AsyncSession) -> list[DeliveryResponse]:
     return delivery_responses
 
 
-
 async def create_package_order(
     db: AsyncSession, data: PackageCreate, image: UploadFile, current_user: User
 ) -> DeliveryResponse:
