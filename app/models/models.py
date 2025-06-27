@@ -447,7 +447,7 @@ class Order(Base):
         back_populates="order", cascade="all, delete-orphan"
     )
     issues: Mapped[list["UserReport"]] = relationship(
-        "Report",
+        "UserReport",
         back_populates="order",
         lazy="selectin",
         cascade="all, delete-orphan",
@@ -517,7 +517,7 @@ class Delivery(Base):
         back_populates="deliveries_as_sender", foreign_keys=[sender_id]
     )
     issues: Mapped[list["UserReport"]] = relationship(
-        "Report",
+        "UserReport",
         back_populates="delivery",
         lazy="selectin",
         cascade="all, delete-orphan",
