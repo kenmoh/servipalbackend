@@ -100,14 +100,13 @@ async def create_user(
 )
 async def create_user(
     data: RiderCreate,
-    background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> UserBase:
     """Logout user by revoking their refresh token"""
 
     return await auth_service.create_new_rider(
-        db=db, data=data, current_user=current_user, background_tasks=background_tasks
+        db=db, data=data, current_user=current_user
     )
 
 
