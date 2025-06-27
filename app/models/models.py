@@ -781,7 +781,7 @@ class Message(Base):
    
    
     report: Mapped[Optional["UserReport"]] = relationship(
-        "Report", back_populates="messages"
+        "UserReport", back_populates="messages"
     )
     read_status: Mapped[list["MessageReadStatus"]] = relationship(
         "MessageReadStatus", back_populates="message", cascade="all, delete-orphan"
