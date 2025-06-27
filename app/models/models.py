@@ -187,6 +187,22 @@ class User(Base):
         lazy="selectin",
     )
 
+    reports_received: Mapped[list["UserReport"]] = relationship(
+        "UserReport",
+        back_populates="defendant",
+        foreign_keys="UserReport.defendant_id",
+        cascade="all, delete-orphan",
+        lazy="selectin",
+    )
+    issues_reported: Mapped[list["UserReport"]] = relationship(
+        "UserReport",
+        back_populates="complainant",
+        foreign_keys="UserReport.complainant_id",
+        cascade="all, delete-orphan",
+        lazy="selectin",
+    )
+
+
 
 class Profile(Base):
     __tablename__ = "profile"
