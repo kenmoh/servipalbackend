@@ -1,4 +1,5 @@
 import datetime
+import json
 
 from fastapi import HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -293,6 +294,12 @@ async def add_message_to_report(
     )
 
     await db.commit()
+    # Invalidate cache for both users
+    report = await db.get(UserReport, report_id)
+    redis_client.delete(f"user:{report.complainant_id}:report_threads")
+    redis_client.delete(f"user:{report.defendant_id}:report_threads")
+    redis_client.delete(f"report:{report_id}:thread:{report.complainant_id}")
+    redis_client.delete(f"report:{report_id}:thread:{report.defendant_id}")
     return message_obj
 
 
@@ -323,7 +330,13 @@ async def mark_message_as_read(db: AsyncSession, message_id: UUID, current_user:
 
 
 async def get_user_messages(db: AsyncSession, current_user: User) -> list[ReportMessage]:
-    """Get all report threads for a user (complainant or defendant)"""
+    cache_key = f"user:{current_user.id}:report_threads"
+    cached = redis_client.get(cache_key)
+    if cached:
+        try:
+            return [ReportMessage.model_validate(msg) for msg in json.loads(cached)]
+        except Exception:
+            redis_client.delete(cache_key)
     # Get reports where user is involved (complainant or defendant)
     reports_stmt = (
         select(UserReport)
@@ -338,7 +351,6 @@ async def get_user_messages(db: AsyncSession, current_user: User) -> list[Report
         )
         .order_by(UserReport.created_at.desc())
     )
-
     reports_result = await db.execute(reports_stmt)
     reports = reports_result.scalars().all()
 
@@ -346,7 +358,6 @@ async def get_user_messages(db: AsyncSession, current_user: User) -> list[Report
     for report in reports:
         thread = []
         for msg in sorted(report.messages, key=lambda x: x.created_at):
-            # Sender info
             sender_name = None
             sender_avatar = None
             if msg.sender and msg.sender.profile:
@@ -358,11 +369,8 @@ async def get_user_messages(db: AsyncSession, current_user: User) -> list[Report
                 if msg.sender.profile.profile_image:
                     sender_avatar = msg.sender.profile.profile_image.profile_image_url
             sender_info = SenderInfo(name=sender_name or "User", avatar=sender_avatar)
-
-            # Read status for current user
             read_status = next((rs for rs in msg.read_status if rs.user_id == current_user.id), None)
             is_msg_read = read_status.read if read_status else False
-
             thread.append(
                 ThreadMessage(
                     sender=sender_info,
@@ -373,7 +381,6 @@ async def get_user_messages(db: AsyncSession, current_user: User) -> list[Report
                     read=is_msg_read,
                 )
             )
-
         report_messages.append(
             ReportMessage(
                 id=report.id,
@@ -386,7 +393,7 @@ async def get_user_messages(db: AsyncSession, current_user: User) -> list[Report
                 thread=thread,
             )
         )
-
+    redis_client.setex(cache_key, settings.REDIS_EX, json.dumps([msg.model_dump() for msg in report_messages]))
     return report_messages
 
 
@@ -432,12 +439,14 @@ async def delete_report_if_allowed(db: AsyncSession, report_id: UUID) -> None:
     if report.report_status not in [ReportStatus.DISMISSED, ReportStatus.RESOLVED]:
         raise HTTPException(status_code=400, detail="Can only delete reports that are dismissed or resolved.")
 
-    # Optionally, check if current_user is allowed to delete (e.g., admin or complainant)
-    # if current_user.id != report.complainant_id and not current_user.is_admin:
-    #     raise HTTPException(status_code=403, detail="Not authorized to delete this report.")
 
     await db.delete(report)
     await db.commit()
+    # Invalidate cache for both users
+    redis_client.delete(f"user:{report.complainant_id}:report_threads")
+    redis_client.delete(f"user:{report.defendant_id}:report_threads")
+    redis_client.delete(f"report:{report_id}:thread:{report.complainant_id}")
+    redis_client.delete(f"report:{report_id}:thread:{report.defendant_id}")
     return None
 
 
@@ -457,11 +466,22 @@ async def update_report_status(db: AsyncSession, report_id: UUID, new_status: Re
     report.report_status = new_status
     await db.commit()
     await db.refresh(report)
+    # Invalidate cache for both users
+    redis_client.delete(f"user:{report.complainant_id}:report_threads")
+    redis_client.delete(f"user:{report.defendant_id}:report_threads")
+    redis_client.delete(f"report:{report_id}:thread:{report.complainant_id}")
+    redis_client.delete(f"report:{report_id}:thread:{report.defendant_id}")
     return {"success": True, "message": f"Report status updated to {new_status}."}
 
 
 async def get_report_by_id(db: AsyncSession, current_user: User, report_id: UUID) -> ReportMessage:
-    """Get a single report thread by ID, only if the user is involved."""
+    cache_key = f"report:{report_id}:thread:{current_user.id}"
+    cached = redis_client.get(cache_key)
+    if cached:
+        try:
+            return ReportMessage.model_validate(json.loads(cached))
+        except Exception:
+            redis_client.delete(cache_key)
     stmt = (
         select(UserReport)
         .options(
@@ -478,7 +498,6 @@ async def get_report_by_id(db: AsyncSession, current_user: User, report_id: UUID
         raise HTTPException(status_code=404, detail="Report not found")
     if current_user.id not in [report.complainant_id, report.defendant_id]:
         raise HTTPException(status_code=403, detail="Not authorized to view this report.")
-
     thread = []
     for msg in sorted(report.messages, key=lambda x: x.created_at):
         sender_name = None
@@ -504,8 +523,7 @@ async def get_report_by_id(db: AsyncSession, current_user: User, report_id: UUID
                 read=is_msg_read,
             )
         )
-
-    return ReportMessage(
+    report_message = ReportMessage(
         id=report.id,
         complainant_id=report.complainant_id,
         report_type=report.reported_user_type,
@@ -515,6 +533,8 @@ async def get_report_by_id(db: AsyncSession, current_user: User, report_id: UUID
         created_at=report.created_at,
         thread=thread,
     )
+    redis_client.setex(cache_key, settings.REDIS_EX, report_message.model_dump_json())
+    return report_message
 
 
 async def get_unread_badge_count(db: AsyncSession, current_user: User) -> int:
