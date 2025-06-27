@@ -1,7 +1,6 @@
 from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
 from sqlalchemy.ext.asyncio import AsyncSession
-from websockets import route
 
 from app.auth.auth import get_db, get_current_user
 from app.models.models import User
@@ -105,7 +104,7 @@ async def delete_report(
     return await review_service.delete_report_if_allowed(db=db, report_id=report_id, current_user=current_user) 
 
 
-@route.get("/unread-badge-count", status_code=status.HTTP_200_OK)
+@router.get("/unread-badge-count", status_code=status.HTTP_200_OK)
 async def get_unread_badge_count(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
