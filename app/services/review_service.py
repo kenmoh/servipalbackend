@@ -8,6 +8,7 @@ from sqlalchemy.orm import selectinload
 
 
 from app.schemas.review_schema import (
+    BadgeCount,
     MessageCreate,
     MessageType,
     ReportCreate,
@@ -540,7 +541,7 @@ async def get_report_by_id(db: AsyncSession, current_user: User, report_id: UUID
     return report_message
 
 
-async def get_unread_badge_count(db: AsyncSession, current_user: User) -> int:
+async def get_unread_badge_count(db: AsyncSession, current_user: User) -> BadgeCount:
     """Return the count of unread messages for the current user (report threads)."""
     # Get all reports where user is involved
     reports_stmt = select(UserReport.id).where(
@@ -566,6 +567,6 @@ async def get_unread_badge_count(db: AsyncSession, current_user: User) -> int:
     )
     unread_result = await db.execute(unread_stmt)
     unread_count = len(unread_result.fetchall())
-    return unread_count
+    return {'unread_count': unread_count}
 
 

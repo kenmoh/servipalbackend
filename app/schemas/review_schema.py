@@ -190,3 +190,7 @@ class MessageListResponse(BaseModel):
 class StatusUpdate(BaseModel):
     report_status: ReportStatus
 
+class BadgeCount(BaseModel):
+    unread_count: int
+
+

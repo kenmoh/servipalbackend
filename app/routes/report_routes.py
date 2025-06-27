@@ -1,6 +1,7 @@
 from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
 from sqlalchemy.ext.asyncio import AsyncSession
+from websockets import route
 
 from app.auth.auth import get_db, get_current_user
 from app.models.models import User
@@ -75,8 +76,8 @@ async def mark_report_thread_read(
     """
     Mark all messages in a report thread as read for the user
     """
-    await review_service.mark_thread_as_read_for_user(db, report_id, current_user)
-    return {"success": True}
+    return await review_service.mark_thread_as_read_for_user(db, report_id, current_user)
+
 
 
 @router.put("/{report_id}/status", status_code=status.HTTP_202_ACCEPTED)
@@ -102,3 +103,15 @@ async def delete_report(
     Delete a report and its thread if status is dismissed or resolved
     """
     return await review_service.delete_report_if_allowed(db=db, report_id=report_id, current_user=current_user) 
+
+
+@route.get("/unread-badge-count", status_code=status.HTTP_200_OK)
+async def get_unread_badge_count(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Get unread badge count for current user (report messages)
+    """
+    return await review_service.get_unread_badge_count(db=db, current_user=current_user)
+    

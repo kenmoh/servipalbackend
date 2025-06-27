@@ -120,13 +120,4 @@ async def get_user_reviews(
 #     )
 
 
-# @report.get("/unread-badge-count", status_code=status.HTTP_200_OK)
-# async def get_unread_badge_count(
-#     db: AsyncSession = Depends(get_db),
-#     current_user: User = Depends(get_current_user),
-# ):
-#     """
-#     Get unread badge count for current user (report messages)
-#     """
-#     count = await review_service.get_unread_badge_count(db=db, current_user=current_user)
-#     return {"unread_count": count}
+
