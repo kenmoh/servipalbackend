@@ -10,7 +10,8 @@ from app.schemas.review_schema import (
     ReportIssueResponse,
     ReportIssueUpdate,
     MessageCreate,
-    ReportStatus
+    ReportStatus,
+    StatusUpdate
 )
 from app.services import review_service
 
@@ -40,7 +41,7 @@ async def get_report_by_id(
     return await review_service.get_report_by_id(db=db, current_user=current_user, report_id=report_id)
 
 
-@router.post("", status_code=status.HTTP_201_CREATED)
+@router.post("/{order_id}/report}", status_code=status.HTTP_201_CREATED)
 async def create_report(
     report_data: ReportCreate,
     db: AsyncSession = Depends(get_db),
@@ -84,7 +85,7 @@ async def update_report_status(
     update_data: ReportIssueUpdate,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
-):
+)->StatusUpdate:
     """
     Update the status of a report (admin or complainant only)
     """

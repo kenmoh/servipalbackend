@@ -186,3 +186,7 @@ MessageResponse = Union[BroadcastMessage, ReportMessage]
 # List return schema
 class MessageListResponse(BaseModel):
     messages: list[MessageResponse]
+
+class StatusUpdate(BaseModel):
+    report_status: ReportStatus
+

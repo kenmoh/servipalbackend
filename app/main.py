@@ -24,7 +24,7 @@ from app.routes import (
     product_routes,
     marketplace_routes,
     review_routes,
-    notification_routes,
+    report_routes
 )
 
 from app.utils.cron_job import (
@@ -225,7 +225,7 @@ app.include_router(auth_routes.router)
 app.include_router(auth_routes.router)
 app.include_router(user_routes.router)
 app.include_router(review_routes.router)
-app.include_router(review_routes.report)
+app.include_router(report_routes.router)
 app.include_router(item_routes.router)
 app.include_router(order_routes.router)
 app.include_router(payment_routes.router)

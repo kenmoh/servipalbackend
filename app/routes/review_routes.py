@@ -71,62 +71,62 @@ async def get_user_reviews(
     )
 
 
-@report.get("", status_code=status.HTTP_200_OK, operation_id="get_user_report")
-async def get_reports_by_user(
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-) -> list[ReportMessage]:
-    """
-    Endpoint to get current user reviews
-    """
-    return await review_service.get_reports_by_user(db=db, current_user=current_user)
+# @report.get("", status_code=status.HTTP_200_OK, operation_id="get_user_report")
+# async def get_reports_by_user(
+#     db: AsyncSession = Depends(get_db),
+#     current_user: User = Depends(get_current_user),
+# ) -> list[ReportMessage]:
+#     """
+#     Endpoint to get current user reviews
+#     """
+#     return await review_service.get_reports_by_user(db=db, current_user=current_user)
 
 
-@report.get(
-    "/{report_id}/detail",
-    operation_id="report_detail",
-    status_code=status.HTTP_200_OK,
-)
-async def get_report_by_id(
-    report_id: UUID,
-    background_task: BackgroundTasks,
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-) -> ReportIssueResponse:
-    """
-    Get report details
-    """
-    return await review_service.get_report_by_id(
-        db=db, current_user=current_user, report_id=report_id
-    )
+# @report.get(
+#     "/{report_id}/detail",
+#     operation_id="report_detail",
+#     status_code=status.HTTP_200_OK,
+# )
+# async def get_report_by_id(
+#     report_id: UUID,
+#     background_task: BackgroundTasks,
+#     db: AsyncSession = Depends(get_db),
+#     current_user: User = Depends(get_current_user),
+# ) -> ReportIssueResponse:
+#     """
+#     Get report details
+#     """
+#     return await review_service.get_report_by_id(
+#         db=db, current_user=current_user, report_id=report_id
+#     )
 
 
-@report.put(
-    "/{report_id}/update",
-    status_code=status.HTTP_202_ACCEPTED,
-    operation_id="update_report",
-)
-async def update_report_status(
-    report_id: UUID,
-    update_data: ReportIssueUpdate,
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-) -> ReportIssueUpdate:
-    """
-    Update report by user
-    """
-    return await review_service.update_report_status(
-        db=db, update_data=update_data, report_id=report_id, current_user=current_user
-    )
+# @report.put(
+#     "/{report_id}/update",
+#     status_code=status.HTTP_202_ACCEPTED,
+#     operation_id="update_report",
+# )
+# async def update_report_status(
+#     report_id: UUID,
+#     update_data: ReportIssueUpdate,
+#     db: AsyncSession = Depends(get_db),
+#     current_user: User = Depends(get_current_user),
+# ) -> ReportIssueUpdate:
+#     """
+#     Update report by user
+#     """
+#     return await review_service.update_report_status(
+#         db=db, update_data=update_data, report_id=report_id, current_user=current_user
+#     )
 
 
-@report.get("/unread-badge-count", status_code=status.HTTP_200_OK)
-async def get_unread_badge_count(
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    """
-    Get unread badge count for current user (report messages)
-    """
-    count = await review_service.get_unread_badge_count(db=db, current_user=current_user)
-    return {"unread_count": count}
+# @report.get("/unread-badge-count", status_code=status.HTTP_200_OK)
+# async def get_unread_badge_count(
+#     db: AsyncSession = Depends(get_db),
+#     current_user: User = Depends(get_current_user),
+# ):
+#     """
+#     Get unread badge count for current user (report messages)
+#     """
+#     count = await review_service.get_unread_badge_count(db=db, current_user=current_user)
+#     return {"unread_count": count}

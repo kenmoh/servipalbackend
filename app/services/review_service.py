@@ -18,6 +18,7 @@ from app.schemas.review_schema import (
     ReviewerProfile,
     ReviewType,
     ReportedUserType,
+    StatusUpdate,
     VendorReviewResponse,
     ReportType,
     ReportStatus,
@@ -434,7 +435,7 @@ async def delete_report_if_allowed(db: AsyncSession, report_id: UUID) -> None:
     result = await db.execute(stmt)
     report = result.scalar_one_or_none()
     if not report:
-        raise HTTPException(status_code=404, detail="Report not found")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Report not found")
 
     if report.report_status not in [ReportStatus.DISMISSED, ReportStatus.RESOLVED]:
         raise HTTPException(status_code=400, detail="Can only delete reports that are dismissed or resolved.")
@@ -450,18 +451,18 @@ async def delete_report_if_allowed(db: AsyncSession, report_id: UUID) -> None:
     return None
 
 
-async def update_report_status(db: AsyncSession, report_id: UUID, new_status: ReportStatus, current_user: User):
+async def update_report_status(db: AsyncSession, report_id: UUID, new_status: ReportStatus, current_user: User)->StatusUpdate:
     """Update the status of a report. Only admin or the complainant can update."""
     stmt = select(UserReport).where(UserReport.id == report_id)
     result = await db.execute(stmt)
     report = result.scalar_one_or_none()
     if not report:
-        raise HTTPException(status_code=404, detail="Report not found")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Report not found")
 
     # Allow only admin or the complainant to update
     is_admin = getattr(current_user, 'user_type', None) == UserType.ADMIN
     if current_user.id != report.complainant_id and not is_admin:
-        raise HTTPException(status_code=403, detail="Not authorized to update this report.")
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized to update this report.")
 
     report.report_status = new_status
     await db.commit()
@@ -471,7 +472,9 @@ async def update_report_status(db: AsyncSession, report_id: UUID, new_status: Re
     redis_client.delete(f"user:{report.defendant_id}:report_threads")
     redis_client.delete(f"report:{report_id}:thread:{report.complainant_id}")
     redis_client.delete(f"report:{report_id}:thread:{report.defendant_id}")
-    return {"success": True, "message": f"Report status updated to {new_status}."}
+    return StatusUpdate.model_validate(new_status)
+
+    
 
 
 async def get_report_by_id(db: AsyncSession, current_user: User, report_id: UUID) -> ReportMessage:
@@ -495,7 +498,7 @@ async def get_report_by_id(db: AsyncSession, current_user: User, report_id: UUID
     result = await db.execute(stmt)
     report = result.scalar_one_or_none()
     if not report:
-        raise HTTPException(status_code=404, detail="Report not found")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Report not found")
     if current_user.id not in [report.complainant_id, report.defendant_id]:
         raise HTTPException(status_code=403, detail="Not authorized to view this report.")
     thread = []
