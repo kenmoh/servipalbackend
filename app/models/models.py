@@ -691,6 +691,7 @@ class UserReport(Base):
     order_id: Mapped[Optional[UUID]] = mapped_column(
         ForeignKey("orders.id"), nullable=True
     )
+    # REMOVE
     delivery_id: Mapped[Optional[UUID]] = mapped_column(
         ForeignKey("deliveries.id"), nullable=True
     )

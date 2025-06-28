@@ -238,11 +238,11 @@ async def create_report(
         if report_data.reported_user_type == ReportedUserType.VENDOR
         else order.delivery.dispatch_id
     )
-    delivery_id = (
-        order.delivery.id
-        if report_data.reported_user_type == ReportedUserType.DISPATCH
-        else None
-    )
+    # delivery_id = (
+    #     order.delivery.id
+    #     if report_data.reported_user_type == ReportedUserType.DISPATCH
+    #     else None
+    # )
 
     # Create the report
     report = UserReport(
@@ -251,7 +251,7 @@ async def create_report(
         description=report_data.description,
         complainant_id=current_user.id,
         defendant_id=defendant_id,
-        delivery_id=delivery_id,
+        # delivery_id=delivery_id,
         order_id=order_id,
         report_tag=ReportTag.COMPLAINANT,
         report_status=ReportStatus.PENDING
