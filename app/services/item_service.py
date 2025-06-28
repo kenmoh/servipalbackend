@@ -81,8 +81,8 @@ async def get_categories(db: AsyncSession) -> list[CategoryResponse]:
 
     # Try cache first
     cached_categories = get_cached_categories()
-    # if cached_categories:
-    #     return cached_categories
+    if cached_categories:
+        return cached_categories
 
     # If not in cache, fetch from database
     stmt = select(Category)
