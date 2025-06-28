@@ -73,22 +73,13 @@ class ReportStatus(str, Enum):
     DISMISSED = "dismissed"
 
 
-# class ReportType(str, Enum):
-#     VENDOR = "vendor"
-#     CUSTOMER = "customer"
-#     DISPATCH = "dispatch"
-
 
 class ReportCreate(BaseModel):
     order_id: UUID | None = None
     delivery_id: UUID | None = None
-    # defendant_id: UUID | None = None
-    # complainant_id: UUID | None = None
-    # admin_user_id: UUID | None = None
     description: str = Field(..., min_length=10, max_length=500)
     report_type: ReportType
     reported_user_type: ReportedUserType
-    # report_tag: ReportTag
 
     class Config:
         from_attributes = True
@@ -97,6 +88,8 @@ class ReportCreate(BaseModel):
 class ReportResponseSchema(ReportCreate):
     created_at: datetime
     updated_at: datetime
+    report_status: ReportStatus
+    report_tag: ReportTag
 
 
 class ReportIssueResponse(BaseModel):

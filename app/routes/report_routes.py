@@ -41,8 +41,9 @@ async def get_report_by_id(
     return await review_service.get_report_by_id(db=db, current_user=current_user, report_id=report_id)
 
 
-@router.post("/{order_id}/report}", status_code=status.HTTP_201_CREATED)
+@router.post("/{order_id}/report", status_code=status.HTTP_201_CREATED)
 async def create_report(
+    order_id: UUID,
     report_data: ReportCreate,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -50,7 +51,7 @@ async def create_report(
     """
     Create a new report
     """
-    return await review_service.create_report(db=db, current_user=current_user, report_data=report_data)
+    return await review_service.create_report(db=db, order_id=order_id, current_user=current_user, report_data=report_data)
 
 
 @router.post("/{report_id}/message", status_code=status.HTTP_201_CREATED)
