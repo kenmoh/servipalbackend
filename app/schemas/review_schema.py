@@ -76,7 +76,6 @@ class ReportStatus(str, Enum):
 
 class ReportCreate(BaseModel):
     order_id: UUID | None = None
-    delivery_id: UUID | None = None
     description: str = Field(..., min_length=10, max_length=500)
     report_type: ReportType
     reported_user_type: ReportedUserType
@@ -151,10 +150,10 @@ class ThreadMessage(BaseModel):
 # Broadcast/individual notification message
 class BroadcastMessage(BaseModel):
     id: str
-    message_type: str  # 'broadcast'
+    message_type:MessageType
     read: bool
     sender: SenderInfo
-    date: str  # ISO date string
+    date: str 
     title: str
     content: str
 

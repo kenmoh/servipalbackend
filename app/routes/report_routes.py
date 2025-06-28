@@ -11,7 +11,8 @@ from app.schemas.review_schema import (
     ReportIssueUpdate,
     MessageCreate,
     ReportStatus,
-    StatusUpdate
+    StatusUpdate,
+    ReportResponseSchema,
 )
 from app.services import review_service
 
@@ -47,7 +48,7 @@ async def create_report(
     report_data: ReportCreate,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
-) -> ReportIssueResponse:
+) -> ReportResponseSchema:
     """
     Create a new report
     """
