@@ -3,7 +3,7 @@ import json
 
 from fastapi import HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import or_, select, and_, update
+from sqlalchemy import or_, select, and_, update, insert
 from sqlalchemy.orm import selectinload
 
 
@@ -216,62 +216,131 @@ async def fetch_vendor_reviews(
 
 
 
+# async def create_report(
+#     db: AsyncSession, order_id: UUID, current_user: User, report_data: ReportCreate
+# ) -> ReportResponseSchema:
+#     """Create a new report with automatic admin acknowledgment message"""
+#     order_stmt = (
+#         select(Order)
+#         .options(
+#             selectinload(Order.delivery),
+#         )
+#         .where(Order.id == order_id)
+#     )
+
+#     order_result = await db.execute(order_stmt)
+#     order = order_result.scalar_one_or_none()
+
+#     defendant_id = (
+#         order.owner_id
+#         if report_data.reported_user_type == ReportedUserType.CUSTOMER
+#         else order.vendor_id
+#         if report_data.reported_user_type == ReportedUserType.VENDOR
+#         else order.delivery.dispatch_id
+#     )
+#     # delivery_id = (
+#     #     order.delivery.id
+#     #     if report_data.reported_user_type == ReportedUserType.DISPATCH
+#     #     else None
+#     # )
+
+#     # Create the report
+#     report = UserReport(
+#         reported_user_type=report_data.reported_user_type,
+#         report_type=report_data.report_type,
+#         description=report_data.description,
+#         complainant_id=current_user.id,
+#         defendant_id=defendant_id,
+#         # delivery_id=delivery_id,
+#         order_id=order_id,
+#         report_tag=ReportTag.COMPLAINANT,
+#         report_status=ReportStatus.PENDING
+#     )
+#     db.add(report)
+#     await db.flush()  # Get the report ID
+
+#     # Auto-generate admin acknowledgment message
+#     admin_message = Message(
+#         message_type=MessageType.REPORT,
+#         content="Thank you for your report. We have received your complaint and our team is currently investigating this matter. We will review all details and take appropriate action. You will be notified of any updates or resolutions.",
+#         report_id=report.id,
+#         role=UserType.ADMIN,
+#     )
+#     db.add(admin_message)
+    
+#     report.report_status = ReportStatus.INVESTIGATING
+#     await db.commit()
+
+#     return report
+
+
 async def create_report(
     db: AsyncSession, order_id: UUID, current_user: User, report_data: ReportCreate
 ) -> ReportResponseSchema:
     """Create a new report with automatic admin acknowledgment message"""
-    order_stmt = (
-        select(Order)
-        .options(
-            selectinload(Order.delivery),
+    try:
+        # Get the order with delivery information
+        order_stmt = (
+            select(Order)
+            .options(
+                selectinload(Order.delivery),
+            )
+            .where(Order.id == order_id)
         )
-        .where(Order.id == order_id)
-    )
-
-    order_result = await db.execute(order_stmt)
-    order = order_result.scalar_one_or_none()
-
-    defendant_id = (
-        order.owner_id
-        if report_data.reported_user_type == ReportedUserType.CUSTOMER
-        else order.vendor_id
-        if report_data.reported_user_type == ReportedUserType.VENDOR
-        else order.delivery.dispatch_id
-    )
-    # delivery_id = (
-    #     order.delivery.id
-    #     if report_data.reported_user_type == ReportedUserType.DISPATCH
-    #     else None
-    # )
-
-    # Create the report
-    report = UserReport(
-        reported_user_type=report_data.reported_user_type,
-        report_type=report_data.report_type,
-        description=report_data.description,
-        complainant_id=current_user.id,
-        defendant_id=defendant_id,
-        # delivery_id=delivery_id,
-        order_id=order_id,
-        report_tag=ReportTag.COMPLAINANT,
-        report_status=ReportStatus.PENDING
-    )
-    db.add(report)
-    await db.flush()  # Get the report ID
-
-    # Auto-generate admin acknowledgment message
-    admin_message = Message(
-        message_type=MessageType.REPORT,
-        content="Thank you for your report. We have received your complaint and our team is currently investigating this matter. We will review all details and take appropriate action. You will be notified of any updates or resolutions.",
-        report_id=report.id,
-        role=UserType.ADMIN,
-    )
-    db.add(admin_message)
-    
-    report.report_status = ReportStatus.INVESTIGATING
-    await db.commit()
-
-    return report
+        order_result = await db.execute(order_stmt)
+        order = order_result.scalar_one_or_none()
+        
+        if not order:
+            raise ValueError(f"Order with ID {order_id} not found")
+        
+        # Determine defendant_id based on reported user type
+        if report_data.reported_user_type == ReportedUserType.CUSTOMER:
+            defendant_id = order.owner_id
+        elif report_data.reported_user_type == ReportedUserType.VENDOR:
+            defendant_id = order.vendor_id
+        elif report_data.reported_user_type == ReportedUserType.DISPATCH:
+            if not order.delivery:
+                raise ValueError("Order has no delivery information for dispatch report")
+            defendant_id = order.delivery.dispatch_id
+        else:
+            raise ValueError(f"Invalid reported user type: {report_data.reported_user_type}")
+        
+        # Create the report
+        report = UserReport(
+            reported_user_type=report_data.reported_user_type,
+            report_type=report_data.report_type,
+            description=report_data.description,
+            complainant_id=current_user.id,
+            defendant_id=defendant_id,
+            order_id=order_id,
+            report_tag=ReportTag.COMPLAINANT,
+            report_status=ReportStatus.PENDING
+        )
+        
+        db.add(report)
+        await db.flush()  # Flush to get the report ID
+        
+        # Create admin acknowledgment message using insert
+        admin_message_stmt = insert(Message).values(
+            message_type=MessageType.REPORT,
+            content="Thank you for your report. We have received your complaint and our team is currently investigating this matter. We will review all details and take appropriate action. You will be notified of any updates or resolutions.",
+            report_id=report.id,
+            role=UserType.ADMIN,
+        )
+        await db.execute(admin_message_stmt)
+        
+        # Update report status to investigating
+        report.report_status = ReportStatus.INVESTIGATING
+        
+        # Commit all changes
+        await db.commit()
+        
+        return report
+        
+    except Exception as e:
+        # Rollback on any error
+        await db.rollback()
+        raise e
 
 
 async def add_message_to_report(
