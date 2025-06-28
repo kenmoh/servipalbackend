@@ -747,7 +747,7 @@ class UserReport(Base):
         # One report per reporter per delivery (if dispatch is involved)
         UniqueConstraint(
             "complainant_id",
-            "delivery_id",
+            "delivery_id", # REMOVE
             "defendant_id",
             name="uq_reporter_delivery_report",
         ),

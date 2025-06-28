@@ -278,6 +278,9 @@ async def create_report(
     db: AsyncSession, order_id: UUID, current_user: User, report_data: ReportCreate
 ) -> ReportResponseSchema:
     """Create a new report with automatic admin acknowledgment message"""
+    from sqlalchemy.exc import IntegrityError
+    from fastapi import HTTPException
+    
     try:
         # Get the order with delivery information
         order_stmt = (
@@ -305,6 +308,30 @@ async def create_report(
         else:
             raise ValueError(f"Invalid reported user type: {report_data.reported_user_type}")
         
+        # Proactive check for existing report
+        existing_report_stmt = select(UserReport).where(
+            UserReport.complainant_id == current_user.id,
+            UserReport.defendant_id == defendant_id,
+            UserReport.order_id == order_id
+        )
+        
+        # Add delivery_id check if it's a dispatch report
+        if report_data.reported_user_type == ReportedUserType.DISPATCH and order.delivery:
+            existing_report_stmt = existing_report_stmt.where(
+                UserReport.delivery_id == order.delivery.id
+            )
+        
+        existing_report_result = await db.execute(existing_report_stmt)
+        existing_report = existing_report_result.scalar_one_or_none()
+        
+        if existing_report:
+            report_target = "order" if report_data.reported_user_type != ReportedUserType.DISPATCH else "delivery"
+            raise HTTPException(
+                status_code=409,
+                detail=f"You have already submitted a report for this {report_target} against this user. "
+                       f"Report ID: {existing_report.id}. Please check your existing reports or contact support."
+            )
+        
         # Create the report
         report = UserReport(
             reported_user_type=report_data.reported_user_type,
@@ -313,6 +340,7 @@ async def create_report(
             complainant_id=current_user.id,
             defendant_id=defendant_id,
             order_id=order_id,
+            delivery_id=order.delivery.id if report_data.reported_user_type == ReportedUserType.DISPATCH else None,
             report_tag=ReportTag.COMPLAINANT,
             report_status=ReportStatus.PENDING
         )
@@ -337,10 +365,52 @@ async def create_report(
         
         return report
         
-    except Exception as e:
-        # Rollback on any error
+    except HTTPException:
+        # Re-raise HTTP exceptions as-is
         await db.rollback()
-        raise e
+        raise
+        
+    except IntegrityError as e:
+        # Rollback on constraint violation
+        await db.rollback()
+        
+        # Check which constraint was violated
+        error_msg = str(e.orig).lower()
+        
+        if "uq_reporter_order_report" in error_msg:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"You have already submitted a report for this order against this user. "
+                       f"Please check your existing reports or contact support if you need to update your report."
+            )
+        elif "uq_reporter_delivery_report" in error_msg:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"You have already submitted a report for this delivery against this user. "
+                       f"Please check your existing reports or contact support if you need to update your report."
+            )
+        else:
+            # Generic constraint violation
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="A report with these details already exists. Please check your existing reports."
+            )
+            
+    except ValueError as e:
+        # Handle validation errors (like missing order, invalid user type, etc.)
+        await db.rollback()
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+        
+    except Exception as e:
+        # Rollback on any other error
+        await db.rollback()
+        raise HTTPException(
+            status_code=500,
+            detail="An error occurred while creating the report. Please try again."
+        )
+
+
+
 
 
 async def add_message_to_report(
