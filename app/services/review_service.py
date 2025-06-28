@@ -261,7 +261,7 @@ async def create_report(
 
     # Auto-generate admin acknowledgment message
     admin_message = Message(
-        type=MessageType.REPORT,
+        message_type=MessageType.REPORT,
         content="Thank you for your report. We have received your complaint and our team is currently investigating this matter. We will review all details and take appropriate action. You will be notified of any updates or resolutions.",
         report_id=report.id,
         role=UserType.ADMIN,
