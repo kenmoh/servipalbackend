@@ -36,7 +36,7 @@ async def get_report_by_id(
     report_id: UUID,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
-) -> ReportIssueResponse:
+) -> ReportMessage:
     """
     Get report details by ID
     """

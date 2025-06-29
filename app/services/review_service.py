@@ -586,7 +586,7 @@ async def get_report_by_id(db: AsyncSession, current_user: User, report_id: UUID
     report = result.scalar_one_or_none()
     if not report:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Report not found")
-    if current_user.id not in [report.complainant_id, report.defendant_id]:
+    if current_user.id not in [report.complainant_id, report.defendant_id, UserType.ADMIN]:
         raise HTTPException(status_code=403, detail="Not authorized to view this report.")
     thread = []
     for msg in sorted(report.messages, key=lambda x: x.created_at):
@@ -620,6 +620,7 @@ async def get_report_by_id(db: AsyncSession, current_user: User, report_id: UUID
         report_tag=report.report_tag,
         report_status=report.report_status,
         description=report.description,
+        is_read=report.is_read,
         created_at=report.created_at,
         thread=thread,
     )
