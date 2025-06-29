@@ -70,12 +70,12 @@ async def add_message_to_report(
     return await review_service.add_message_to_report(db=db, report_id=report_id, current_user=current_user, message=message)
 
 
-@router.post("/{report_id}/mark_read", status_code=status.HTTP_200_OK)
+@router.post("/{report_id}/mark-read", status_code=status.HTTP_200_OK)
 async def mark_report_thread_read(
     report_id: UUID,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
-):
+)->bool:
     """
     Mark all messages in a report thread as read for the user
     """
