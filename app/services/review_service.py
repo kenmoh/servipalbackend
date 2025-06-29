@@ -327,7 +327,7 @@ async def create_report(
         if existing_report:
             report_target = "order" if report_data.reported_user_type != ReportedUserType.DISPATCH else "delivery"
             raise HTTPException(
-                status_code=409,
+                status_code=status.HTTP_409_CONFLICT,
                 detail=f"You have already submitted a report for this {report_target} against this user. "
                        f"Report ID: {existing_report.id}. Please check your existing reports or contact support."
             )
@@ -340,7 +340,7 @@ async def create_report(
             complainant_id=current_user.id,
             defendant_id=defendant_id,
             order_id=order_id,
-            delivery_id=order.delivery.id if report_data.reported_user_type == ReportedUserType.DISPATCH else None,
+            # delivery_id=order.delivery.id if report_data.reported_user_type == ReportedUserType.DISPATCH else None,
             report_tag=ReportTag.COMPLAINANT,
             report_status=ReportStatus.PENDING
         )
@@ -438,6 +438,7 @@ async def add_message_to_report(
     # Invalidate cache for both users
     report = await db.get(UserReport, report_id)
     redis_client.delete(f"user:{report.complainant_id}:report_threads")
+    redis_client.delete(f"user:{current_user.id}:report_threads")
     redis_client.delete(f"user:{report.defendant_id}:report_threads")
     redis_client.delete(f"report:{report_id}:thread:{report.complainant_id}")
     redis_client.delete(f"report:{report_id}:thread:{report.defendant_id}")
@@ -470,8 +471,8 @@ async def mark_message_as_read(db: AsyncSession, message_id: UUID, current_user:
     await db.commit()
 
 
-async def get_user_messages(db: AsyncSession, current_user: User) -> list[ReportMessage]:
-    cache_key = f"user:{current_user.id}:report_threads"
+async def get_user_messages(db: AsyncSession, user_id: UUID) -> list[ReportMessage]:
+    cache_key = f"user:{user_id}:report_threads"
     cached = redis_client.get(cache_key)
     if cached:
         try:
@@ -488,7 +489,7 @@ async def get_user_messages(db: AsyncSession, current_user: User) -> list[Report
             selectinload(UserReport.defendant),
         )
         .where(
-            or_(UserReport.complainant_id == current_user.id, UserReport.defendant_id == current_user.id)
+            or_(UserReport.complainant_id == user_id, UserReport.defendant_id == user_id)
         )
         .order_by(UserReport.created_at.desc())
     )
@@ -502,15 +503,16 @@ async def get_user_messages(db: AsyncSession, current_user: User) -> list[Report
             sender_name = None
             sender_avatar = None
             if msg.sender and msg.sender.profile:
+
                 sender_name = (
                     msg.sender.profile.full_name
                     or msg.sender.profile.business_name
-                    or "User"
+                    or "Admin"
                 )
                 if msg.sender.profile.profile_image:
                     sender_avatar = msg.sender.profile.profile_image.profile_image_url
             sender_info = SenderInfo(name=sender_name or "User", avatar=sender_avatar)
-            read_status = next((rs for rs in msg.read_status if rs.user_id == current_user.id), None)
+            read_status = next((rs for rs in msg.read_status if rs.user_id == user_id), None)
             is_msg_read = read_status.read if read_status else False
             thread.append(
                 ThreadMessage(
@@ -534,7 +536,7 @@ async def get_user_messages(db: AsyncSession, current_user: User) -> list[Report
                 thread=thread,
             )
         )
-    redis_client.setex(cache_key, settings.REDIS_EX, json.dumps([msg.model_dump() for msg in report_messages]))
+    redis_client.setex(cache_key, settings.REDIS_EX, json.dumps([msg.model_dump() for msg in report_messages], default=str))
     return report_messages
 
 

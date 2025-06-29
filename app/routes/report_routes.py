@@ -19,15 +19,16 @@ from app.services import review_service
 router = APIRouter(prefix="/api/reports", tags=["Reports"])
 
 
-@router.get("", status_code=status.HTTP_200_OK)
+@router.get("/{user_id}", status_code=status.HTTP_200_OK)
 async def get_reports_by_user(
+    user_id: UUID,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    
 ) -> list[ReportMessage]:
     """
     Get all reports for the current user (as complainant or defendant)
     """
-    return await review_service.get_user_messages(db=db, current_user=current_user)
+    return await review_service.get_user_messages(db=db, user_id=user_id)
 
 
 @router.get("/{report_id}", status_code=status.HTTP_200_OK)
