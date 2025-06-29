@@ -60,14 +60,14 @@ async def create_report(
 @router.post("/{report_id}/message", status_code=status.HTTP_201_CREATED)
 async def add_message_to_report(
     report_id: UUID,
-    message: MessageCreate,
+    message_data: MessageCreate,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 )->MessageCreate:
     """
     Add a message to a report thread
     """
-    return await review_service.add_message_to_report(db=db, report_id=report_id, current_user=current_user, message=message)
+    return await review_service.add_message_to_report(db=db, report_id=report_id, current_user=current_user, message_data=message_data)
 
 
 @router.post("/{report_id}/mark-read", status_code=status.HTTP_200_OK)

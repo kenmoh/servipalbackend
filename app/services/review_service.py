@@ -358,13 +358,13 @@ async def create_report(
 
 
 async def add_message_to_report(
-    db: AsyncSession, report_id: UUID, current_user: User, message: MessageCreate
+    db: AsyncSession, report_id: UUID, current_user: User, message_data: MessageCreate
 ) -> MessageCreate:
     """Add a message to an existing report thread and mark report as unread."""
     # Add the message
     message_obj = Message(
         message_type=MessageType.REPORT,
-        content=message.content,
+        content=message_data.content,
         sender_id=current_user.id,
         report_id=report_id,
         role=current_user.user_type,
