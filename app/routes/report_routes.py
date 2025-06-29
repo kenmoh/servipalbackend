@@ -13,6 +13,7 @@ from app.schemas.review_schema import (
     ReportStatus,
     StatusUpdate,
     ReportResponseSchema,
+    MessageResponse
 )
 from app.services import review_service
 
@@ -62,7 +63,7 @@ async def add_message_to_report(
     message: MessageCreate,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
-):
+)->MessageResponse:
     """
     Add a message to a report thread
     """

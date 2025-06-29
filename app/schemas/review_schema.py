@@ -147,6 +147,10 @@ class ThreadMessage(BaseModel):
     read: bool
 
 
+class MessageResponse(BaseModel):
+    content: str
+
+
 # Broadcast/individual notification message
 class BroadcastMessage(BaseModel):
     id: str
@@ -167,6 +171,7 @@ class ReportMessage(BaseModel):
     report_status: ReportStatus
     description: str
     created_at: datetime
+    is_read: bool
     thread: list[ThreadMessage]
 
 
