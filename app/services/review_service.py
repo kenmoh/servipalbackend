@@ -27,7 +27,7 @@ from app.schemas.review_schema import (
     ReportResponseSchema,
     ThreadMessage,
     SenderInfo,
-    MessageResponse
+    
 )
 from app.models.models import (
     Message,
@@ -359,7 +359,7 @@ async def create_report(
 
 async def add_message_to_report(
     db: AsyncSession, report_id: UUID, current_user: User, message: MessageCreate
-) -> MessageResponse:
+) -> MessageCreate:
     """Add a message to an existing report thread and mark report as unread."""
     # Add the message
     message_obj = Message(

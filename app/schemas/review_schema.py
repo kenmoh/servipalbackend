@@ -120,15 +120,7 @@ class ReportListResponse(BaseModel):
 
 
 class MessageCreate(BaseModel):
-    message_type: MessageType
-    title: str | None = None
     content: str
-    sender_id: UUID | None
-    # defendant_id: UUID | None
-    # admin_user_id: UUID | None
-    report_id: UUID | None
-    target_user_id: UUID | None
-    is_global: bool = False
 
 
 
@@ -145,10 +137,6 @@ class ThreadMessage(BaseModel):
     date: datetime
     content: str
     read: bool
-
-
-class MessageResponse(BaseModel):
-    content: str
 
 
 # Broadcast/individual notification message
