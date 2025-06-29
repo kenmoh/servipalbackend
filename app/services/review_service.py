@@ -414,12 +414,14 @@ async def mark_message_as_read(db: AsyncSession, report_id: UUID, current_user: 
         ).values({'is_read': True})
     )
     
-    # Mark all messages in this report as read
-    await db.execute(
-        update(Message).where(
-            Message.report_id == report_id
-        ).values({'read': True})
-    )
+    msg_result = await db.execute(select(Message).where(Message.report_id==report_id))
+
+    msg = msg_result.scalar_one_or_none()
+
+    await db.execute(update(MessageReadStatus).values({
+
+        'user_id':msg.sender_id, 'read': True,
+        }).where(MessageReadStatus.message_id==message.id))
     
     await db.commit()
 
