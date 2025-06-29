@@ -1263,7 +1263,7 @@ async def register_notification(
     cache_key = f"notification_token:{current_user.notification_token}"
     cached_data = redis_client.get(cache_key)
     if cached_data:
-        return Notification(**cached_data)
+        return cached_data
 
     result = await db.execute(select(User).where(User.id == current_user.id))
     user = result.scalar_one_or_none()

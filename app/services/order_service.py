@@ -571,7 +571,8 @@ async def order_food_or_request_laundy_service(
                 .options(
                     selectinload(Order.order_items).options(
                         joinedload(OrderItem.item).options(selectinload(Item.images))
-                    )
+                    ),
+                    joinedload(Order.vendor).joinedload(User.profile),
                 )
             )
             result = await db.execute(stmt)
@@ -584,7 +585,8 @@ async def order_food_or_request_laundy_service(
                 .options(
                     selectinload(Order.order_items).options(
                         joinedload(OrderItem.item).options(selectinload(Item.images))
-                    )
+                    ),
+                    joinedload(Order.vendor).joinedload(User.profile),
                 )
             )
             order = (await db.execute(stmt)).scalar_one()
