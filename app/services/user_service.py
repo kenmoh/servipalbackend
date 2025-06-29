@@ -1259,7 +1259,7 @@ async def register_notification(
     push_token: Notification,
     db: AsyncSession,
     current_user: User,
-) -> Notification:
+) -> str:
     cache_key = f"notification_token:{current_user.notification_token}"
     cached_data = redis_client.get(cache_key)
     if cached_data:
