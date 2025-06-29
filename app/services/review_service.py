@@ -370,7 +370,7 @@ async def add_message_to_report(
         role=current_user.user_type,
     )
     db.add(message_obj)
-    await db.flush(message_obj)
+    await db.flush()
 
     # Set report.is_read = False using direct update
     await db.execute(
@@ -421,7 +421,7 @@ async def mark_message_as_read(db: AsyncSession, report_id: UUID, current_user: 
     await db.execute(update(MessageReadStatus).values({
 
         'user_id':msg.sender_id, 'read': True,
-        }).where(MessageReadStatus.message_id==message.id))
+        }).where(MessageReadStatus.message_id==msg.id))
     
     await db.commit()
 
