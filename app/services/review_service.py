@@ -370,6 +370,7 @@ async def add_message_to_report(
         role=current_user.user_type,
     )
     db.add(message_obj)
+    await db.flush(message_obj)
 
     # Set report.is_read = False using direct update
     await db.execute(
@@ -377,6 +378,12 @@ async def add_message_to_report(
         .where(UserReport.id == report_id)
         .values(is_read=False)
     )
+
+    await db.execute(insert(MessageReadStatus).values({
+        'message_id': message_obj.id,
+        'user_id': message_obj.sender_id,
+        'read': False,
+        }))
 
     await db.commit()
     # Invalidate cache for both users
@@ -391,27 +398,25 @@ async def add_message_to_report(
 
 
 
-async def mark_message_as_read(db: AsyncSession, message_id: UUID, current_user: User):
+async def mark_message_as_read(db: AsyncSession, report_id: UUID, current_user: User):
     """Mark a message as read for a specific user"""
     # Check if read status already exists
-    stmt = select(MessageReadStatus).where(
-        and_(
-            MessageReadStatus.message_id == message_id,
-            MessageReadStatus.user_id == current_user.id,
-        )
-    )
-    result = await db.execute(stmt)
-    read_status = result.scalar_one_or_none()
+    await db.execute(update(MessageReadStatus).where(
+            and_(
+                MessageReadStatus.message_id == message_id,
+                MessageReadStatus.user_id == current_user.id,
+            )
+        ))
 
-    if read_status:
-        read_status.read = True
-        read_status.read_at = datetime.now()
-    else:
-        read_status = MessageReadStatus(
-            message_id=message_id, user_id=current_user.id, read=True, read_at=datetime.now()
-        )
-        db.add(read_status)
-
+    await db.execute(update(UserReport).where(or_(
+                and_(
+                    UserReport.id == report_id,
+                    UserReport.complainant_id == current_user.id,
+                ),  and_(
+                    UserReport.id == report_id,
+                    UserReport.defendant_id == current_user.id,
+                ))
+        ).values({'is_read': True}))
     await db.commit()
 
 

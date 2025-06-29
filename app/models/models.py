@@ -798,7 +798,7 @@ class MessageReadStatus(Base):
     message_id: Mapped[UUID] = mapped_column(ForeignKey("messages.id"), nullable=False)
     user_id: Mapped[UUID] = mapped_column(ForeignKey("users.id"), nullable=False)
     read: Mapped[bool] = mapped_column(default=False)
-    read_at: Mapped[Optional[datetime]] = mapped_column(default=datetime.now)
+    read_at: Mapped[Optional[datetime]] = mapped_column(default=datetime.now, onupdate=datetime.now)
 
     # Relationships
     message: Mapped["Message"] = relationship("Message", back_populates="read_status")

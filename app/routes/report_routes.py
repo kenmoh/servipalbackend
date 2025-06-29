@@ -79,7 +79,7 @@ async def mark_report_thread_read(
     """
     Mark all messages in a report thread as read for the user
     """
-    return await review_service.mark_thread_as_read_for_user(db, report_id, current_user)
+    return await review_service.mark_message_as_read(db=db, report_id=report_id, current_user=current_user)
 
 
 
