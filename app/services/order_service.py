@@ -169,7 +169,6 @@ async def get_all_orders(db: AsyncSession) -> list[DeliveryResponse]:
     try:
         cached_deliveries = redis_client.get(cache_key)
         if cached_deliveries:
-            print(f"Cache HIT for key: {cache_key}")
             return [DeliveryResponse(**d) for d in json.loads(cached_deliveries)]
         else:
             print(f"Cache MISS for key: {cache_key}")
@@ -561,6 +560,8 @@ async def order_food_or_request_laundy_service(
             f"order_details:{order_id}",
         ]
         redis_client.delete(*cache_keys)
+        redis_client.delete(ALL_DELIVERY)
+
 
         # Single optimized query to fetch complete order and delivery data
         if requires_delivery:
