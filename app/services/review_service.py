@@ -398,25 +398,29 @@ async def add_message_to_report(
 
 
 
-async def mark_message_as_read(db: AsyncSession, report_id: UUID, current_user: User)-> bool:
-    """Mark a message as read for a specific user"""
-    # Check if read status already exists
-    await db.execute(update(MessageReadStatus).where(
+async def mark_message_as_read(db: AsyncSession, report_id: UUID, current_user: User):
+    """Mark a report and all its messages as read for a specific user"""
+    
+    # Mark the report as read if user is involved
+    await db.execute(
+        update(UserReport).where(
             and_(
-                MessageReadStatus.message_id == message_id,
-                MessageReadStatus.user_id == current_user.id,
-            )
-        ))
-
-    await db.execute(update(UserReport).where(or_(
-                and_(
-                    UserReport.id == report_id,
+                UserReport.id == report_id,
+                or_(
                     UserReport.complainant_id == current_user.id,
-                ),  and_(
-                    UserReport.id == report_id,
-                    UserReport.defendant_id == current_user.id,
-                ))
-        ).values({'is_read': True}))
+                    UserReport.defendant_id == current_user.id
+                )
+            )
+        ).values({'is_read': True})
+    )
+    
+    # Mark all messages in this report as read
+    await db.execute(
+        update(Message).where(
+            Message.report_id == report_id
+        ).values({'read': True})
+    )
+    
     await db.commit()
 
 
