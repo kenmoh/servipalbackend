@@ -460,6 +460,7 @@ async def get_user_messages(db: AsyncSession, user_id: UUID) -> list[ReportMessa
             is_msg_read = read_status.read if read_status else False
             thread.append(
                 ThreadMessage(
+                    id=msg.id,
                     sender=sender_info,
                     message_type=msg.message_type,
                     role=msg.role.value if msg.role else None,
@@ -605,6 +606,7 @@ async def get_report_by_id(db: AsyncSession, current_user: User, report_id: UUID
         is_msg_read = read_status.read if read_status else False
         thread.append(
             ThreadMessage(
+                id= msg.id,
                 sender=sender_info,
                 message_type=msg.message_type,
                 role=msg.role.value if msg.role else None,

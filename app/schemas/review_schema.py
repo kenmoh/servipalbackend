@@ -131,6 +131,7 @@ class SenderInfo(BaseModel):
 
 # Message in a thread (for report messages)
 class ThreadMessage(BaseModel):
+    id: UUID
     sender: SenderInfo
     message_type: MessageType
     role: str 
