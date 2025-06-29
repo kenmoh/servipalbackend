@@ -630,11 +630,11 @@ async def get_report_by_id(db: AsyncSession, current_user: User, report_id: UUID
     return report_message
 
 
-async def get_unread_badge_count(db: AsyncSession, current_user: User) -> BadgeCount:
+async def get_unread_badge_count(db: AsyncSession, user_id: UUID) -> BadgeCount:
     """Return the count of unread messages for the current user (report threads)."""
     # Get all reports where user is involved
     reports_stmt = select(UserReport.id).where(
-        or_(UserReport.complainant_id == current_user.id, UserReport.defendant_id == current_user.id)
+        or_(UserReport.complainant_id == user_id, UserReport.defendant_id == user_id)
     )
     reports_result = await db.execute(reports_stmt)
     report_ids = [r[0] for r in reports_result.all()]
@@ -651,7 +651,7 @@ async def get_unread_badge_count(db: AsyncSession, current_user: User) -> BadgeC
     # Count unread MessageReadStatus for this user
     unread_stmt = select(MessageReadStatus).where(
         MessageReadStatus.message_id.in_(message_ids),
-        MessageReadStatus.user_id == current_user.id,
+        MessageReadStatus.user_id == user_id,
         MessageReadStatus.read == False
     )
     unread_result = await db.execute(unread_stmt)

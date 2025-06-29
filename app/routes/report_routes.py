@@ -10,6 +10,7 @@ from app.schemas.review_schema import (
     ReportIssueResponse,
     ReportIssueUpdate,
     MessageCreate,
+    BadgeCount,
     ReportStatus,
     StatusUpdate,
     ReportResponseSchema,
@@ -107,13 +108,14 @@ async def delete_report(
     return await review_service.delete_report_if_allowed(db=db, report_id=report_id, current_user=current_user) 
 
 
-@router.get("/unread-badge-count", status_code=status.HTTP_200_OK)
+@router.get("/{user_id}/unread-badge-count", status_code=status.HTTP_200_OK)
 async def get_unread_badge_count(
+    user_id: UUID,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
+    
+)-> BadgeCount:
     """
     Get unread badge count for current user (report messages)
     """
-    return await review_service.get_unread_badge_count(db=db, current_user=current_user)
+    return await review_service.get_unread_badge_count(db=db, user_id=user_id)
     
