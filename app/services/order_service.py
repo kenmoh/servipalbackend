@@ -561,6 +561,7 @@ async def order_food_or_request_laundy_service(
         ]
         redis_client.delete(*cache_keys)
         redis_client.delete(ALL_DELIVERY)
+        redis_client.delete('orders')
 
 
         # Single optimized query to fetch complete order and delivery data
