@@ -429,11 +429,14 @@ async def order_payment_callback(request: Request, db: AsyncSession):
         and verify_tranx.get("data", {}).get("status") == "successful"
     ):
         new_status = PaymentStatus.PAID
+        redis_client.delete('paid_pending_deliveries')
 
     elif tx_status == "cancelled":
         new_status = PaymentStatus.CANCELLED
+        redis_client.delete('paid_pending_deliveries')
     else:
         new_status = PaymentStatus.FAILED
+        redis_client.delete('paid_pending_deliveries')
 
     # Update payment status
     order_update_result = await db.execute(
@@ -443,6 +446,7 @@ async def order_payment_callback(request: Request, db: AsyncSession):
         .returning(Order.order_payment_status, Order.owner_id, Order.total_price)
     )
 
+    redis_client.delete('paid_pending_deliveries')
     # Fetch the actual row data
     order_data = order_update_result.fetchone()
     if not order_data:
@@ -477,13 +481,14 @@ async def order_payment_callback(request: Request, db: AsyncSession):
                 message=f"Your payment of ₦{total_price} has been received.",
             )
 
-    delivery_stmt = select(Delivery.id).where(Delivery.order_id == UUID(tx_ref))
-    delivery_result = await db.execute(delivery_stmt)
-    delivery_id = delivery_result.scalar_one_or_none()
+    # delivery_stmt = select(Order.id).where(Order.id == UUID(tx_ref))
+    # delivery_result = await db.execute(delivery_stmt)
+    # delivery_id = delivery_result.scalar_one_or_none()
 
-    if delivery_id:
-        redis_client.delete(f"delivery:{delivery_id}")
-    redis_client.delete("deliveries")
+    # if delivery_id:
+    #     redis_client.delete(f"delivery:{delivery_id}")
+    # redis_client.delete("deliveries")
+    
 
     return {"order_payment_status": order_data.order_payment_status}
 
