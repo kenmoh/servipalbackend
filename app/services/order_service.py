@@ -1910,7 +1910,7 @@ async def get_paid_pending_deliveries(db: AsyncSession) -> list[DeliveryResponse
         timedelta(seconds=settings.REDIS_EX),
         json.dumps([d.model_dump() for d in delivery_responses], default=str),
     )
-    return filter_paid_pending_deliveries(delivery_responses)
+    return delivery_responses
 
 
 async def get_user_related_orders(db: AsyncSession, user_id: UUID) -> list[DeliveryResponse]:
