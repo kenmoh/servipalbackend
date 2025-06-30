@@ -1885,6 +1885,11 @@ async def get_paid_pending_deliveries(db: AsyncSession) -> list[DeliveryResponse
     
     stmt = (
         select(Order)
+        .where(
+            Order.order_payment_status == 'paid',
+            Order.require_delivery == 'delivery',
+            Order.delivery.has(delivery_status='pending')
+            )
         .options(
             selectinload(Order.order_items).options(
                 joinedload(OrderItem.item).options(selectinload(Item.images))
@@ -1939,7 +1944,7 @@ async def get_user_related_orders(db: AsyncSession, user_id: UUID) -> list[Deliv
                 Delivery.rider_id == user_id,
             )
         )
-        .order_by(Order.created_at.desc())
+        .order_by(Order.updated_at.desc())
     )
     result = await db.execute(stmt)
     orders = result.unique().scalars().all()
@@ -1955,3 +1960,25 @@ async def get_user_related_orders(db: AsyncSession, user_id: UUID) -> list[Deliv
     )
 
     return delivery_responses
+
+
+
+    """
+
+  const { data, isLoading, error, refetch, isFetching, isPending, isFetched } = useQuery({
+    queryKey: ["deliveries"],
+    queryFn: () => fetchPaidPendingDeliveries(),
+    refetchOnWindowFocus: true,
+    refetchOnMount: true,
+    select: (data) => {
+      return (
+        data?.filter(
+          (order) =>
+            order.order.order_payment_status === "paid" &&
+            order.delivery?.delivery_status === "pending" && order?.order?.require_delivery === 'delivery'
+        ) || []
+      );
+    },
+
+  });
+  """
