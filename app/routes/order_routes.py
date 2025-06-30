@@ -246,7 +246,7 @@ async def get_paid_pending_deliveries(
     return await order_service.get_paid_pending_deliveries(db=db)
 
 
-@router.get("/user-related-deliveries/{user_id}", status_code=status.HTTP_200_OK)
+@router.get("/{user_id}/user-related-orders", status_code=status.HTTP_200_OK)
 async def get_user_related_deliveries(
     user_id: UUID,
     db: AsyncSession = Depends(get_db),
