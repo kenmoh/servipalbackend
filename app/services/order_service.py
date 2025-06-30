@@ -1886,9 +1886,11 @@ async def get_paid_pending_deliveries(db: AsyncSession) -> list[DeliveryResponse
     stmt = (
         select(Order)
         .where(
-            Order.order_payment_status == 'paid',
-            Order.require_delivery == 'delivery',
-            Order.delivery.has(delivery_status='pending')
+           and_(
+                Order.order_payment_status == 'paid',
+                Order.require_delivery == 'delivery',
+                Order.delivery.has(delivery_status='pending')
+            )
             )
         .options(
             selectinload(Order.order_items).options(
