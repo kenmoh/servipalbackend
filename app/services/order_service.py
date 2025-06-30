@@ -675,6 +675,8 @@ async def cancel_delivery(
             await db.refresh(delivery)
 
             invalidate_delivery_cache(delivery.id)
+            redis_client.delete('paid_pending_deliveries')
+            redis_client.delete(f'user_related_orders:{user_id}')
             return DeliveryStatusUpdateSchema(delivery_status=delivery.delivery_status)
 
     if current_user.user_type == UserType.RIDER:
@@ -741,6 +743,8 @@ async def cancel_delivery(
                 )
 
             redis_client.delete(f"{ALL_DELIVERY}")
+            redis_client.delete('paid_pending_deliveries')
+            redis_client.delete(f'user_related_orders:{user_id}')
 
             return DeliveryStatusUpdateSchema(delivery_status=delivery.delivery_status)
 
@@ -795,6 +799,8 @@ async def re_list_item_for_delivery(
 
                 invalidate_delivery_cache(delivery.id)
                 redis_client.delete(ALL_DELIVERY)
+                redis_client.delete('paid_pending_deliveries')
+                redis_client.delete(f'user_related_orders:{user_id}')
                 return DeliveryStatusUpdateSchema(
                     delivery_status=delivery.delivery_status
                 )
@@ -920,6 +926,8 @@ async def vendor_or_owner_mark_order_delivered_or_received(
 
             redis_client.delete(f"delivery:{order_id}")
             redis_client.delete(f"{ALL_DELIVERY}")
+            redis_client.delete('paid_pending_deliveries')
+            redis_client.delete(f'user_related_orders:{user_id}')
 
             return DeliveryStatusUpdateSchema(delivery_status=order.order_status)
     except Exception as e:
@@ -1051,6 +1059,8 @@ async def rider_accept_delivery_order(
 
     # redis_client.delete(f"delivery:{delivery_id}")
     redis_client.delete(f"{ALL_DELIVERY}")
+    redis_client.delete('paid_pending_deliveries')
+    redis_client.delete(f'user_related_orders:{user_id}')
 
     return DeliveryStatusUpdateSchema(delivery_status=delivery.delivery_status)
 
@@ -1255,6 +1265,8 @@ async def sender_confirm_delivery_received(
 
         # redis_client.delete(f"delivery:{delivery_id}")
         redis_client.delete(f"{ALL_DELIVERY}")
+        redis_client.delete('paid_pending_deliveries')
+        redis_client.delete(f'user_related_orders:{user_id}')
 
         return DeliveryStatusUpdateSchema(delivery_status=delivery.delivery_status)
 
@@ -1352,6 +1364,8 @@ async def vendor_mark_laundry_item_received(
 
         # redis_client.delete(f"delivery:{delivery_id}")
         redis_client.delete(f"{ALL_DELIVERY}")
+        redis_client.delete('paid_pending_deliveries')
+        redis_client.delete(f'user_related_orders:{user_id}')
 
         return DeliveryStatusUpdateSchema(delivery_status=delivery.delivery_status)
 
@@ -1407,8 +1421,10 @@ async def rider_mark_delivered(
             navigate_to="/(app)/delivery",
         )
 
-    # redis_client.delete(f"delivery:{delivery_id}")
-    # redis_client.delete(f"{ALL_DELIVERY}")
+    redis_client.delete(f"delivery:{delivery_id}")
+    redis_client.delete(ALL_DELIVERY)
+    redis_client.delete('paid_pending_deliveries')
+    redis_client.delete(f'user_related_orders:{user_id}')
     return DeliveryStatusUpdateSchema(delivery_status=delivery.delivery_status)
 
 
@@ -1462,6 +1478,8 @@ async def admin_modify_delivery_status(
 
         redis_client.delete(f"delivery:{delivery_id}")
         redis_client.delete(ALL_DELIVERY)
+        redis_client.delete('paid_pending_deliveries')
+        redis_client.delete(f'user_related_orders:{user_id}')
 
         return DeliveryStatusUpdateSchema(delivery_status=new_status)
 
@@ -1877,6 +1895,7 @@ async def get_paid_pending_deliveries(db: AsyncSession) -> list[DeliveryResponse
     """
 
     cache_key = 'paid_pending_deliveries'
+
 
     # Try cache first with error handling
     cached_deliveries = redis_client.get(cache_key)
