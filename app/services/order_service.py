@@ -1814,3 +1814,104 @@ def invalidate_order_cache(order_id: UUID) -> None:
     """Invalidate order cache"""
     redis_client.delete(f"order:{order_id}")
     redis_client.delete("all_orders")
+
+
+def filter_paid_pending_deliveries(deliveries: list[DeliveryResponse]) -> list[DeliveryResponse]:
+    """
+    Filters deliveries where:
+      - order_payment_status == 'paid'
+      - delivery.delivery_status == 'pending'
+      - order.require_delivery == 'delivery'
+    """
+    filtered = []
+    for d in deliveries:
+        order = getattr(d, 'order', None)
+        delivery = getattr(d, 'delivery', None)
+        if not order or not delivery:
+            continue
+        if (
+            order.get('order_payment_status') == 'paid'
+            and delivery.get('delivery_status') == 'pending'
+            and order.get('require_delivery') == 'delivery'
+        ):
+            filtered.append(d)
+    return filtered
+
+
+def filter_user_related_deliveries(deliveries: list[DeliveryResponse], user_id: UUID) -> list[DeliveryResponse]:
+    """
+    Filters deliveries where the user is involved as:
+      - order.user_id
+      - order.vendor_id
+      - delivery.dispatch_id
+      - delivery.rider_id
+    """
+    filtered = []
+    for d in deliveries:
+        order = getattr(d, 'order', None)
+        delivery = getattr(d, 'delivery', None)
+        if not order:
+            continue
+        if (
+            order.get('user_id') == user_id
+            or order.get('vendor_id') == user_id
+            or (delivery and (
+                delivery.get('dispatch_id') == user_id
+                or delivery.get('rider_id') == user_id
+            ))
+        ):
+            filtered.append(d)
+    return filtered
+
+
+async def get_paid_pending_deliveries(db: AsyncSession) -> list[DeliveryResponse]:
+    """
+    Returns deliveries where:
+      - order_payment_status == 'paid'
+      - delivery.delivery_status == 'pending'
+      - order.require_delivery == 'delivery'
+    """
+    stmt = (
+        select(Order)
+        .options(
+            selectinload(Order.order_items).options(
+                joinedload(OrderItem.item).options(selectinload(Item.images))
+            ),
+            joinedload(Order.delivery),
+            joinedload(Order.vendor).joinedload(User.profile),
+        )
+        .order_by(Order.created_at.desc())
+    )
+    result = await db.execute(stmt)
+    orders = result.unique().scalars().all()
+    delivery_responses = [
+        format_delivery_response(order, order.delivery) for order in orders
+    ]
+    return filter_paid_pending_deliveries(delivery_responses)
+
+
+async def get_user_related_orders(db: AsyncSession, user_id: UUID) -> list[DeliveryResponse]:
+    """
+    Returns deliveries where the user is involved as:
+      - order.user_id
+      - order.vendor_id
+      - delivery.dispatch_id
+      - delivery.rider_id
+    """
+    stmt = (
+        select(Order)
+        .options(
+            selectinload(Order.order_items).options(
+                joinedload(OrderItem.item).options(selectinload(Item.images))
+            ),
+            joinedload(Order.delivery),
+            joinedload(Order.vendor).joinedload(User.profile),
+        )
+        .order_by(Order.created_at.desc())
+    )
+    result = await db.execute(stmt)
+    orders = result.unique().scalars().all()
+    delivery_responses = [
+        format_delivery_response(order, order.delivery) for order in orders
+    ]
+    return filter_user_related_deliveries(delivery_responses, user_id)

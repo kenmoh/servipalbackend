@@ -237,3 +237,18 @@ async def add_review(
 
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+
+
+@router.get("/paid-pending-deliveries", status_code=status.HTTP_200_OK)
+async def get_paid_pending_deliveries(
+    db: AsyncSession = Depends(get_db),
+) -> list[DeliveryResponse]:
+    return await order_service.get_paid_pending_deliveries(db=db)
+
+
+@router.get("/user-related-deliveries/{user_id}", status_code=status.HTTP_200_OK)
+async def get_user_related_deliveries(
+    user_id: UUID,
+    db: AsyncSession = Depends(get_db),
+) -> list[DeliveryResponse]:
+    return await order_service.get_user_related_orders(db=db, user_id=user_id)
