@@ -1908,28 +1908,33 @@ async def get_paid_pending_deliveries(db: AsyncSession) -> list[DeliveryResponse
 async def get_user_related_orders(db: AsyncSession, user_id: UUID) -> list[DeliveryResponse]:
     """
     Returns deliveries where the user is involved as:
-      - order.user_id
+      - order.owner_id
       - order.vendor_id
       - delivery.dispatch_id
       - delivery.rider_id
     """
-
     cache_key = f'user_related_orders:{user_id}'
-     # Try cache first with error handling
     cached_orders = redis_client.get(cache_key)
     if cached_orders:
         return [DeliveryResponse(**d) for d in json.loads(cached_orders)]
 
-    # Try cache first'
-
     stmt = (
         select(Order)
+        .join(Delivery, isouter=True)
         .options(
             selectinload(Order.order_items).options(
                 joinedload(OrderItem.item).options(selectinload(Item.images))
             ),
             joinedload(Order.delivery),
             joinedload(Order.vendor).joinedload(User.profile),
+        )
+        .where(
+            or_(
+                Order.owner_id == user_id,
+                Order.vendor_id == user_id,
+                Delivery.dispatch_id == user_id,
+                Delivery.rider_id == user_id,
+            )
         )
         .order_by(Order.created_at.desc())
     )
@@ -1940,11 +1945,10 @@ async def get_user_related_orders(db: AsyncSession, user_id: UUID) -> list[Deliv
         format_delivery_response(order, order.delivery) for order in orders
     ]
 
-
     redis_client.setex(
         cache_key,
         timedelta(seconds=settings.REDIS_EX),
         json.dumps([d.model_dump() for d in delivery_responses], default=str),
     )
 
-    return filter_user_related_deliveries(delivery_responses, user_id)
+    return delivery_responses
