@@ -467,6 +467,8 @@ async def order_payment_callback(request: Request, db: AsyncSession):
         await db.commit()
 
         token = await get_user_notification_token(db=db, user_id=owner_id)
+        redis_client.delete(f'user_related_orders:{owner_id}')
+        redis_client.delete('paid_pending_deliveries')
 
         if token:
             await send_push_notification(
