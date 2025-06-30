@@ -166,14 +166,11 @@ async def get_all_orders(db: AsyncSession) -> list[DeliveryResponse]:
     cache_key = ALL_DELIVERY
 
     # Try cache first with error handling
-    try:
-        cached_deliveries = redis_client.get(cache_key)
-        if cached_deliveries:
-            return [DeliveryResponse(**d) for d in json.loads(cached_deliveries)]
-        else:
-            print(f"Cache MISS for key: {cache_key}")
-    except Exception as e:
-        print(f"Cache error: {e}")
+  
+    cached_deliveries = redis_client.get(cache_key)
+    if cached_deliveries:
+        return [DeliveryResponse(**d) for d in json.loads(cached_deliveries)]
+       
 
     stmt = (
         select(Order)
@@ -196,15 +193,13 @@ async def get_all_orders(db: AsyncSession) -> list[DeliveryResponse]:
     ]
 
     # Cache the formatted responses with error handling
-    try:
-        redis_client.setex(
-            cache_key,
-            timedelta(seconds=CACHE_TTL),
-            json.dumps([d.model_dump() for d in delivery_responses], default=str),
-        )
-        print(f"Cache SET for key: {cache_key}")
-    except Exception as e:
-        print(f"Cache set error: {e}")
+    
+    redis_client.setex(
+        cache_key,
+        timedelta(seconds=CACHE_TTL),
+        json.dumps([d.model_dump() for d in delivery_responses], default=str),
+    )
+
 
     return delivery_responses
 
@@ -360,6 +355,10 @@ async def create_package_order(
 
         delivery_stmt = select(Delivery).where(Delivery.id == delivery_data.id)
         delivery = (await db.execute(delivery_stmt)).scalar_one()
+
+        redis_client.delete('paid_pending_deliveries')
+        redis_client.delete(f'user_related_orders:{current_user.id}')
+        
 
         # REUSE the formatting function
         return format_delivery_response(order, delivery)
@@ -604,6 +603,8 @@ async def order_food_or_request_laundy_service(
                     message=f"You have a new order from {current_user.profile.full_name if current_user.profile.full_name else current_user.profile.business_name}",
                     navigate_to="/delivery/orders",
                 )
+            redis_client.delete('paid_pending_deliveries')
+            redis_client.delete(f'user_related_orders:{current_user.id}')
             return format_delivery_response(order, delivery=None)
 
     except Exception as e:
@@ -1871,6 +1872,14 @@ async def get_paid_pending_deliveries(db: AsyncSession) -> list[DeliveryResponse
       - delivery.delivery_status == 'pending'
       - order.require_delivery == 'delivery'
     """
+
+    cache_key = 'paid_pending_deliveries'
+
+    # Try cache first with error handling
+    cached_deliveries = redis_client.get(cache_key)
+    if cached_deliveries:
+        return [DeliveryResponse(**d) for d in json.loads(cached_deliveries)]
+    
     stmt = (
         select(Order)
         .options(
@@ -1887,6 +1896,12 @@ async def get_paid_pending_deliveries(db: AsyncSession) -> list[DeliveryResponse
     delivery_responses = [
         format_delivery_response(order, order.delivery) for order in orders
     ]
+
+    redis_client.setex(
+        cache_key,
+        timedelta(seconds=settings.REDIS_EX),
+        json.dumps([d.model_dump() for d in delivery_responses], default=str),
+    )
     return filter_paid_pending_deliveries(delivery_responses)
 
 
@@ -1898,6 +1913,15 @@ async def get_user_related_orders(db: AsyncSession, user_id: UUID) -> list[Deliv
       - delivery.dispatch_id
       - delivery.rider_id
     """
+
+    cache_key = f'user_related_orders:{user_id}'
+     # Try cache first with error handling
+    cached_orders = redis_client.get(cache_key)
+    if cached_orders:
+        return [DeliveryResponse(**d) for d in json.loads(cached_orders)]
+
+    # Try cache first'
+
     stmt = (
         select(Order)
         .options(
@@ -1911,7 +1935,16 @@ async def get_user_related_orders(db: AsyncSession, user_id: UUID) -> list[Deliv
     )
     result = await db.execute(stmt)
     orders = result.unique().scalars().all()
+
     delivery_responses = [
         format_delivery_response(order, order.delivery) for order in orders
     ]
+
+
+    redis_client.setex(
+        cache_key,
+        timedelta(seconds=settings.REDIS_EX),
+        json.dumps([d.model_dump() for d in delivery_responses], default=str),
+    )
+
     return filter_user_related_deliveries(delivery_responses, user_id)

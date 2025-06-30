@@ -30,6 +30,21 @@ async def get_all_orders(
     return await order_service.get_all_orders(db=db)
 
 
+@router.get("/paid-pending-deliveries", status_code=status.HTTP_200_OK)
+async def get_paid_pending_deliveries(
+    db: AsyncSession = Depends(get_db),
+) -> list[DeliveryResponse]:
+    return await order_service.get_paid_pending_deliveries(db=db)
+
+
+@router.get("/{user_id}/user-related-orders", status_code=status.HTTP_200_OK)
+async def get_user_related_deliveries(
+    user_id: UUID,
+    db: AsyncSession = Depends(get_db),
+) -> list[DeliveryResponse]:
+    return await order_service.get_user_related_orders(db=db, user_id=user_id)
+
+
 @router.post(
     "/send-item", response_model=DeliveryResponse, status_code=status.HTTP_201_CREATED
 )
@@ -239,16 +254,4 @@ async def add_review(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
 
-@router.get("/paid-pending-deliveries", status_code=status.HTTP_200_OK)
-async def get_paid_pending_deliveries(
-    db: AsyncSession = Depends(get_db),
-) -> list[DeliveryResponse]:
-    return await order_service.get_paid_pending_deliveries(db=db)
 
-
-@router.get("/{user_id}/user-related-orders", status_code=status.HTTP_200_OK)
-async def get_user_related_deliveries(
-    user_id: UUID,
-    db: AsyncSession = Depends(get_db),
-) -> list[DeliveryResponse]:
-    return await order_service.get_user_related_orders(db=db, user_id=user_id)
