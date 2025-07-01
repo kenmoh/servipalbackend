@@ -7,7 +7,7 @@ from fastapi import HTTPException, UploadFile, status
 import redis
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload, selectinload
-from sqlalchemy import select, delete, update
+from sqlalchemy import select, delete, update, and_
 from sqlalchemy.exc import IntegrityError
 import asyncpg.exceptions
 
@@ -489,29 +489,31 @@ async def update_menu_item(
     """Updates an existing item belonging to the current VENDOR user.
     Handles both item data and image updates.
     """
-    # Check cache for item
-    cache_key = f"item:{menu_item_id}"
-    cached_item = get_cached_item(cache_key)
-    if cached_item:
-        # Use cached data for validation (optional)
-        if cached_item.get("vendor_id") != str(current_user.id):
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND, detail=f"Item not found"
-            )
-        # Continue to update in DB for consistency
-    else:
-        # Not in cache, query DB
-        db_item = await get_item_by_id(
-            db=db, item_id=menu_item_id, current_user=current_user
+    # Fetch the current item from DB (not cache, to ensure accuracy)
+    db_item = await get_item_by_id(db=db, item_id=menu_item_id, current_user=current_user)
+    if not db_item:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail=f"Item not found"
         )
-        if not db_item:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND, detail=f"Item not found"
-            )
 
-    update_data = item_data.model_dump(
-        exclude_unset=True
-    )  # Only update provided fields
+    update_data = item_data.model_dump(exclude_unset=True)
+
+    # Only check for duplicate name if name is being changed
+    new_name = update_data.get("name")
+    if new_name and new_name != db_item.name:
+        # Check if another item with this name exists for this user
+        duplicate_stmt = select(Item).where(
+            and_(
+                Item.user_id == current_user.id,
+                Item.name == new_name,
+                Item.id != menu_item_id
+            )
+        )
+        duplicate_result = await db.execute(duplicate_stmt)
+        duplicate_item = duplicate_result.scalar_one_or_none()
+        if duplicate_item:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail='You already have an item with this name.')
+
     stmt = (
         update(Item)
         .where(Item.id == menu_item_id, Item.user_id == current_user.id)
@@ -550,9 +552,21 @@ async def update_menu_item(
         await db.refresh(updated_item)
 
         # Invalidate caches
-        redis_client.delete(cache_key)
+        invalidate_item_cache(menu_item_id)
 
         return updated_item
+
+    except IntegrityError as e:
+        # Check if it's a UniqueViolationError for item name per user
+        if hasattr(e, 'orig') and (
+            'uq_name_user_non_package' in str(e) or 'unique_name_user_non_package' in str(e)
+        ):
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail='You already have an item with this name.')
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Database integrity error: {str(e)}",
+        )
 
     except Exception as e:
         await db.rollback()
