@@ -39,6 +39,7 @@ async def fund_wallet_payment_callback(
 @router.post("/withdraw-funds", include_in_schema=True, status_code=status.HTTP_200_OK)
 async def withdraw_funds(
     bank_code: BankCode,
+    request: Request,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> WithdrawalShema:
@@ -78,3 +79,23 @@ async def init_bank_transfer(
     return await transaction_service.initiate_bank_transfer(
         db=db, current_user=current_user, order_id=order_id
     )
+
+
+@router.post("/{order_id}/pay-with-wallet", status_code=status.HTTP_200_OK)
+async def pay_with_wallet(
+    order_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> dict:
+    """
+    Pay for an order using the user's wallet.
+    """
+    return await transaction_service.pay_with_wallet(db=db, order_id=order_id, buyer=current_user)
+
+
+@router.post("/bank-transfer-callback", include_in_schema=False, status_code=status.HTTP_200_OK)
+async def bank_transfer_callback(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+):
+    return await transaction_service.bank_payment_transfer_callback(request=request, db=db)

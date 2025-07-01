@@ -1,5 +1,4 @@
 import asyncio
-from typing import Dict, Any
 import datetime
 from uuid import UUID
 import logging
@@ -8,7 +7,8 @@ import httpx
 from sqlalchemy import insert, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
-from pydantic import EmailStr
+
+import hmac
 
 from app.models.models import (
     ChargeAndCommission,
@@ -17,7 +17,7 @@ from app.models.models import (
     Wallet,
     Transaction,
     OrderItem,
-    Delivery,
+    
 )
 from app.schemas.marketplace_schemas import (
     TopUpRequestSchema,
@@ -145,132 +145,100 @@ async def top_up_wallet(
             )
 
 
-# --- Webhook Handler ---
+async def handle_charge_completed_callback(request: Request, db: AsyncSession, payload=None):
+    if payload is None:
+        payload = await request.json()
+    event = payload.get("event")
+    data = payload.get("data", {})
 
-# SUCCESS WEBHOOK
+    if event == "charge.completed" and data.get("status") == "successful":
+        payment_type = data.get("payment_type") or data.get("paymentType")
+        tx_ref = data.get("tx_ref") or data.get("txRef") or data.get("reference")
+        amount_paid = data.get("amount")
+        currency = data.get("currency")
 
-# async def handle_payment_webhook(
-#     request: Request,
-#     background_task: BackgroundTasks,
-#     db: AsyncSession,
-# ):
-#     """Handle webhooks for both normal payments and transfers"""
+        order = None
+        if tx_ref:
+            result = await db.execute(select(Order).where(Order.id == UUID(tx_ref)))
+            order = result.scalar_one_or_none()
 
-#     # Validate webhook signature
-#     signature = request.headers.get("verif-hash")
-#     if signature is None or signature != settings.FLW_SECRET_HASH:
-#         raise HTTPException(status_code=401, detail="Unauthorized")
+        if not order:
+            return {"status": "ignored", "reason": "Order not found"}
 
-#     # Get payload
-#     payload = await request.json()
+        if order.order_payment_status == PaymentStatus.PAID:
+            return {"status": "ignored", "reason": "Order already paid"}
 
-#     try:
-#         # Determine webhook type and extract transaction reference
-#         # Transfer webhooks have 'event.type' field
-#         is_transfer = 'event.type' in payload
+        # You can add different logic for card vs bank transfer if needed
+        if payment_type == "bank_transfer":
+            # Bank transfer-specific logic (if any)
+            pass
+        elif payment_type == "card":
+            # Card payment-specific logic (if any)
+            pass
 
-#         if is_transfer:
-#             # Handle transfer webhook (has 'event.type' field)
-#             tx_ref = payload.get('txRef')
-#             if not tx_ref:
-#                 logging.error(f"Missing txRef in transfer webhook payload: {payload}")
-#                 raise HTTPException(status_code=400, detail="Invalid transfer payload format")
+        # Mark order as paid
+        order.order_payment_status = PaymentStatus.PAID
+        await db.commit()
 
-#             # Validate transfer-specific required fields
-#             # For bank transfer webhooks, the data is at root level, not nested under 'data'
-#             required_fields = ["status", "amount", "currency", "txRef"]
-#             if not all(field in payload for field in required_fields):
-#                 logging.error(f"Missing required fields in transfer webhook payload: {payload}")
-#                 raise HTTPException(status_code=400, detail="Invalid transfer payload format")
+        # Send notifications to buyer and seller
+        buyer_token = await get_user_notification_token(db=db, user_id=order.owner_id)
+        seller_token = await get_user_notification_token(db=db, user_id=order.vendor_id)
+        amount_str = f"₦{amount_paid}" if currency == "NGN" else f"{amount_paid} {currency}"
+        if buyer_token:
+            await send_push_notification(
+                tokens=[buyer_token],
+                title="Payment Successful",
+                message=f"Your payment of {amount_str} was successful.",
+            )
+        if seller_token:
+            await send_push_notification(
+                tokens=[seller_token],
+                title="Order Paid",
+                message=f"You have received a new order payment of {amount_str}.",
+            )
 
-#             status_value = payload.get("status")
-#             amount_value = payload.get("amount")
-#             currency_value = payload.get("currency")
+        return {"status": "success", "order_id": str(order.id), "payment_type": payment_type}
 
-
-#         else:
-#             # Handle normal payment webhook (no 'event.type' field)
-#             tx_ref = payload.get("txRef")
-#             if not tx_ref:
-#                 logging.error(f"Missing txRef in payment webhook payload: {payload}")
-#                 raise HTTPException(status_code=400, detail="Invalid payment payload format")
-
-#             # Validate payment-specific required fields
-#             required_fields = ["status",  "amount", "currency"]
-#             if not all(field in payload for field in required_fields):
-#                 logging.error(f"Missing required fields in payment webhook payload: {payload}")
-#                 raise HTTPException(status_code=400, detail="Invalid payment payload format")
-
-#             status_value = payload.get("status")
-#             amount_value = payload.get("amount")
-#             currency_value = payload.get("currency")
-
-#         # Convert tx_ref to UUID if possible
-#         try:
-#             order_id = UUID(tx_ref)
-#         except (ValueError, TypeError):
-#             order_id = tx_ref
-
-#         # Get order from database
-#         stmt = select(Order).where(Order.id == order_id)
-#         result = await db.execute(stmt)
-#         db_order = result.scalar_one_or_none()
-
-#         if not db_order:
-#             logging.warning(f"Order not found for txRef: {tx_ref}")
-#             return {"message": "Order not found"}
-
-#         # Validate payment/transfer details
-#         is_valid_payment = (
-#             status_value == "successful"
-#             and amount_value == db_order.total_price
-#             and currency_value == "NGN"
-#             and db_order.payment_status != PaymentStatus.PAID
-#         )
-
-#         # For normal payments, also check total_price
-#         # if not is_transfer and payload.get("total_price") != db_order.total_price:
-#         #     is_valid_payment = False
-
-#         if is_valid_payment:
-#             # Verify transaction with payment provider
-#             verify_result = await verify_transaction_tx_ref(tx_ref)
-#             if verify_result.get("data", {}).get("status") == "successful":
-#                 # Update the database in the background with retry mechanism
-#                 background_task.add_task(update_database, db_order, db)
-#                 logging.info(f"{'Transfer' if is_transfer else 'Payment'} webhook processed successfully for txRef: {tx_ref}")
-#                 return {"message": "Success"}
-#             else:
-#                 logging.warning(f"Transaction verification failed for txRef: {tx_ref}")
-#                 return {"message": "Transaction verification failed"}
-#         else:
-#             logging.warning(f"Payment validation failed for txRef: {tx_ref}. Status: {status_value}, Amount: {amount_value}, Currency: {currency_value}")
-#             return {"message": "Payment validation failed"}
-
-#     except HTTPException:
-#         # Re-raise HTTP exceptions
-#         raise
-#     except Exception as e:
-#         logging.error(f"Error processing webhook: {e}", exc_info=True)
-#         raise HTTPException(
-#             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-#             detail="INTERNAL_SERVER_ERROR",
-#         )
+    return {"status": "ignored", "reason": "Not a successful charge.completed event"}
 
 
-async def handle_payment_webhook(
+async def handle_payment_webhook(request: Request, db: AsyncSession, background_task: BackgroundTasks = None):
+    payload = await request.json()
+    event = payload.get("event")
+    data = payload.get("data", {})
+
+    # verify webhook signature
+    secret_hash = settings.FLW_SECRET_HASH
+    signature = request.headers.get("verif-hash")
+    if not hmac.compare_digest(signature, secret_hash):
+        raise HTTPException(status_code=401, detail="Invalid signature")
+
+    if event == "charge.completed":
+        return await handle_charge_completed_callback(request, db, payload=payload)
+    elif event == "transfer.completed":
+        # Handle payout/withdrawal webhook (not implemented)
+        return {"status": "ignored", "reason": "Not implemented"}
+    # Add more event types as needed
+
+    return {"status": "ignored", "reason": "Unknown event"}
+
+
+async def handle_payment_webhook_old(
     request: Request,
     background_task: BackgroundTasks,
     db: AsyncSession,
 ):
+    # Get payload
+    payload = await request.json()
+    tx_ref = payload.get("txRef")
+   
+
+
     # Validate webhook signature
     signature = request.headers.get("verif-hash")
     if signature is None or signature != settings.FLW_SECRET_HASH:
         raise HTTPException(status_code=401, detail="Unauthorized")
 
-    # Get payload
-    payload = await request.json()
-    tx_ref = payload.get("txRef")
 
     # Validate required payload fields
     required_fields = ["status", "total_price", "amount", "currency", "txRef"]
@@ -311,7 +279,7 @@ async def handle_payment_webhook(
                 # Update the database in the background with retry mechanism
                 background_task.add_task(update_database, db_order, db)
 
-                if sender_token:
+                if owner_token:
                     await send_push_notification(
                         tokens=[owner_token],
                         title="Payment Received",
@@ -497,7 +465,7 @@ async def pay_with_wallet(
     db: AsyncSession,
     order_id: UUID,
     buyer: User,
-) -> PaymentStatus:
+) -> dict:
     """
     Handles pay with wallet.
 
@@ -507,7 +475,7 @@ async def pay_with_wallet(
         buyer: The authenticated user making the purchase.
 
     Returns:
-        The completed order with updated payment status.
+        A status object with payment status and balances.
 
     Raises:
         HTTPException: Various exceptions for validation errors.
@@ -529,7 +497,7 @@ async def pay_with_wallet(
     result_order = await db.execute(stmt_order)
     order = result_order.scalar_one_or_none()
 
-    if not check_order:
+    if not order:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Order not found"
         )
@@ -582,14 +550,14 @@ async def pay_with_wallet(
             "updated_at": current_time,
         },
         # Seller transaction (CREDIT)
-        {
-            "wallet_id": seller_wallet.id,
-            "amount": order.total_price,
-            "transaction_type": TransactionType.CREDIT,
-            "status": PaymentStatus.PAID,
-            "created_at": current_time,
-            "updated_at": current_time,
-        },
+        # {
+        #     "wallet_id": seller_wallet.id,
+        #     "amount": order.total_price,
+        #     "transaction_type": TransactionType.CREDIT,
+        #     "status": PaymentStatus.PAID,
+        #     "created_at": current_time,
+        #     "updated_at": current_time,
+        # },
     ]
 
     await db.execute(insert(Transaction), transaction_values)
@@ -597,9 +565,35 @@ async def pay_with_wallet(
     # Update order status
     order.order_payment_status = PaymentStatus.PAID
 
+    await db.commit()
     await db.refresh(order)
 
-    return order.payment_status
+    # Send notifications
+    buyer_token = await get_user_notification_token(db=db, user_id=buyer.id)
+    seller_token = await get_user_notification_token(db=db, user_id=order.vendor_id)
+    if buyer_token:
+        await send_push_notification(
+            tokens=[buyer_token],
+            title="Payment Successful",
+            message=f"Your payment of ₦{order.total_price} was successful.",
+        )
+    if seller_token:
+        await send_push_notification(
+            tokens=[seller_token],
+            title="Order Paid",
+            message=f"You have received a new order payment of ₦{order.total_price}.",
+        )
+
+    # Clear relevant caches
+    redis_client.delete(f'user_related_orders:{buyer.id}')
+    redis_client.delete(f'user_related_orders:{order.vendor_id}')
+    redis_client.delete('paid_pending_deliveries')
+    redis_client.delete('orders')
+
+    return {
+        "payment_status": order.order_payment_status,
+      
+    }
 
 
 async def initiate_bank_transfer(
@@ -692,15 +686,14 @@ async def make_withdrawal(
     user = result.unique().scalar_one_or_none()
 
     result = await db.execute(select(ChargeAndCommission))
-
-    charge = await result.scalars().fetchone()
+    charge = result.scalars().fetchone()
 
     if not user:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="User not found"
         )
 
-    if user.is_bloccked or user.rider_is_suspended_for_order_cancel:
+    if user.is_bloccked:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Your account is suspended. Please contact support.",
@@ -728,40 +721,33 @@ async def make_withdrawal(
         )
 
     try:
-        # Create withdrawal transaction
+        withdrawal_amount = user.wallet.balance
+        # Create withdrawal transaction (pending)
         withdrawal = Transaction(
             user_id=user.id,
             wallet_id=user.wallet.id,
-            amount=user.wallet.balance,
+            amount=withdrawal_amount,
             payment_status=PaymentStatus.PENDING,
             transaction_type=TransactionType.DEBIT,
         )
         db.add(withdrawal)
         await db.flush()
 
-        if withdrawal.amount > user.wallet.balance:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Insufficient funds in wallet",
-            )
+        # Deduct wallet balance immediately
+        user.wallet.balance -= withdrawal_amount
+        await db.flush()
 
         transfer_response = await transfer_money_to_user_account(
             bank_code=bank_code.bank_code,
-            amount=str(user.wallet.balance),
-            # narration=f"Wallet withdrawal of ₦ {previous_balance:,.2f}",
-            # reference=str(withdrawal.id),
+            amount=str(withdrawal_amount),
             account_number=user.profile.bank_account_number,
             beneficiary_name=user.profile.account_holder_name,
             charge=charge,
         )
 
         if transfer_response.get("status") == "success":
-            # Update wallet balance
-            user.wallet.balance -= withdrawal.amount
             withdrawal.payment_status = PaymentStatus.PAID
-
             await db.commit()
-
             return {
                 "status": "success",
                 "message": "Withdrawal processed successfully",
@@ -772,14 +758,14 @@ async def make_withdrawal(
                 "beneficiary": user.profile.account_holder_name,
                 "timestamp": withdrawal.created_at,
             }
-        elif transfer_response.get("status") in ["cancel", "failed"]:
-            user.wallet.balance += withdrawal.amount
+        else:
+            # Refund wallet and set transaction to FAILED
+            user.wallet.balance += withdrawal_amount
+            withdrawal.payment_status = PaymentStatus.FAILED
             await db.commit()
-
-            await db.rollback()
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"Bank transfer failed: {transfer_response.get('message', 'Unknown error occured')}",
+                detail=f"Bank transfer failed: {transfer_response.get('message', 'Unknown error occurred')}",
             )
 
     except Exception as e:
@@ -789,3 +775,42 @@ async def make_withdrawal(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to process withdrawal",
         )
+
+
+async def bank_payment_transfer_callback_old(request: Request, db: AsyncSession):
+    payload = await request.json()
+    event = payload.get("event")
+    data = payload.get("data", {})
+
+    # Optional: verify webhook signature for production
+    secret_hash = settings.FLW_SECRET_HASH
+    signature = request.headers.get("verif-hash")
+    # if signature is None or signature != settings.FLW_SECRET_HASH:
+    #     raise HTTPException(status_code=401, detail="Unauthorized")
+
+    if not hmac.compare_digest(signature, secret_hash):
+        raise HTTPException(status_code=401, detail="Invalid signature")
+
+    if event == "charge.completed" and data.get("status") == "successful":
+        tx_ref = data.get("tx_ref")
+
+        order = None
+        if tx_ref:
+            result = await db.execute(select(Order).where(Order.id == UUID(tx_ref)))
+            order = result.scalar_one_or_none()
+
+        if not order:
+            return {"status": "ignored", "reason": "Order not found"}
+
+        if order.order_payment_status == PaymentStatus.PAID:
+            return {"status": "ignored", "reason": "Order already paid"}
+
+        order.order_payment_status = PaymentStatus.PAID
+        await db.commit()
+
+        # Optionally, send notifications, update caches, etc.
+
+        return {"status": "success", "order_id": order.id}
+
+    return {"status": "ignored", "reason": "Not a successful charge.completed event"}
+
