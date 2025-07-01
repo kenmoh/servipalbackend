@@ -7,6 +7,8 @@ import logfire
 
 
 from fastapi import Depends, FastAPI
+from fastapi.openapi.docs import get_swagger_ui_html
+from fastapi.responses import FileResponse, RedirectResponse
 from fastapi_mcp import FastApiMCP
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.templating import Jinja2Templates
@@ -156,15 +158,53 @@ async def lifespan(application: FastAPI):
 app = FastAPI(
     title="ServiPal",
     lifespan=lifespan,
-    docs_url="/",
+    docs_url=None,
+    redoc_url=None,
     debug=True,
     summary="Item delivery, food ordering, P2P and laundry services application.",
     contact={
         "name": "ServiPal",
-        "url": "https://servipal.com",
+        "url": "https://servi-pal.com",
         "email": "servipal@servi-pal.com",
     },
 )
+
+
+FAVICON_URL = "https://mohdelivery.s3.us-east-1.amazonaws.com/favion/favicon.ico"
+
+# Override default Swagger UI with custom favicon
+@app.get("/docs", include_in_schema=False)
+def custom_swagger_ui_html():
+    return get_swagger_ui_html(
+        openapi_url=app.openapi_url,
+        title="ServiPal API",
+        # docs_url='/',
+        swagger_favicon_url=FAVICON_URL
+    )
+
+# Override default ReDoc with custom favicon (optional)
+@app.get("/redoc", include_in_schema=False)
+def custom_redoc_html():
+    return get_redoc_html(
+        openapi_url=app.openapi_url,
+        title="ServiPal API - ReDoc",
+        redoc_favicon_url=FAVICON_URL
+    )
+
+
+@app.get("/favicon.ico", include_in_schema=False)
+def favicon():
+    return RedirectResponse(url=FAVICON_URL)
+
+# Option 2: If you have a local favicon file, use this instead:
+# @app.get("/favicon.ico", include_in_schema=False)
+# def favicon():
+#     return FileResponse(path="path/to/your/favicon.ico", media_type="image/x-icon")
+
+# Your API routes go here
+@app.get("/api")
+def read_root():
+    return {"message": "Hello World"}
 
 logfire.configure(service_name="ServiPal")
 logfire.debug("App Debug mode on")

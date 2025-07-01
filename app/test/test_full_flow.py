@@ -4,7 +4,7 @@ from httpx import AsyncClient
 from uuid import uuid4
 from app.main import app
 from app.config.config import settings
-from app.schemas.user_schemas import CreateUserSchema
+from app.schemas.user_schemas import CreateUserSchema, UserType
 from app.schemas.notification_schemas import NotificationType
 
 pytestmark = pytest.mark.anyio
@@ -186,3 +186,158 @@ async def test_get_notification_stats(authorized_customer_client):
     stats = resp.json()
     assert "total_notifications" in stats
     assert "unread_notifications" in stats
+
+
+@pytest.mark.asyncio
+async def test_user_registration_and_login(async_client):
+    # Register user
+    user_data = {
+        "email": f"user_{uuid4()}@test.com",
+        "password": "testpassword",
+        "user_type": UserType.CUSTOMER,
+    }
+    resp = await async_client.post("/api/auth/register", json=user_data)
+    assert resp.status_code == 201
+    # Login
+    login_data = {"email": user_data["email"], "password": user_data["password"]}
+    resp = await async_client.post("/api/auth/login", data=login_data)
+    assert resp.status_code == 200
+    tokens = resp.json()
+    assert "access_token" in tokens
+    access_token = tokens["access_token"]
+    headers = {"Authorization": f"Bearer {access_token}"}
+    # Get profile
+    resp = await async_client.get("/api/users/me", headers=headers)
+    assert resp.status_code == 200
+    assert resp.json()["email"] == user_data["email"]
+
+
+@pytest.mark.asyncio
+async def test_vendor_registration_and_item_creation(async_client):
+    # Register vendor
+    vendor_data = {
+        "email": f"vendor_{uuid4()}@test.com",
+        "password": "testpassword",
+        "user_type": UserType.RESTAURANT_VENDOR,
+    }
+    resp = await async_client.post("/api/auth/register", json=vendor_data)
+    assert resp.status_code == 201
+    # Login
+    login_data = {"email": vendor_data["email"], "password": vendor_data["password"]}
+    resp = await async_client.post("/api/auth/login", data=login_data)
+    assert resp.status_code == 200
+    tokens = resp.json()
+    access_token = tokens["access_token"]
+    headers = {"Authorization": f"Bearer {access_token}"}
+    # Create item
+    item_data = {
+        "name": f"Test Item {uuid4()}",
+        "description": "A test item.",
+        "price": 1000,
+        "item_type": "food",
+        "category_id": None,
+        "food_group": "main_course"
+    }
+    resp = await async_client.post("/api/items", json=item_data, headers=headers)
+    assert resp.status_code in (200, 201)
+    item = resp.json()
+    assert item["name"].startswith("Test Item")
+
+
+@pytest.mark.asyncio
+async def test_order_creation_and_payment_flow(async_client):
+    # Register and login user
+    user_data = {
+        "email": f"user_{uuid4()}@test.com",
+        "password": "testpassword",
+        "user_type": UserType.CUSTOMER,
+    }
+    resp = await async_client.post("/api/auth/register", json=user_data)
+    assert resp.status_code == 201
+    login_data = {"email": user_data["email"], "password": user_data["password"]}
+    resp = await async_client.post("/api/auth/login", data=login_data)
+    tokens = resp.json()
+    user_token = tokens["access_token"]
+    user_headers = {"Authorization": f"Bearer {user_token}"}
+
+    # Register and login vendor
+    vendor_data = {
+        "email": f"vendor_{uuid4()}@test.com",
+        "password": "testpassword",
+        "user_type": UserType.RESTAURANT_VENDOR,
+    }
+    resp = await async_client.post("/api/auth/register", json=vendor_data)
+    assert resp.status_code == 201
+    login_data = {"email": vendor_data["email"], "password": vendor_data["password"]}
+    resp = await async_client.post("/api/auth/login", data=login_data)
+    tokens = resp.json()
+    vendor_token = tokens["access_token"]
+    vendor_headers = {"Authorization": f"Bearer {vendor_token}"}
+
+    # Vendor creates item
+    item_data = {
+        "name": f"Test Item {uuid4()}",
+        "description": "A test item.",
+        "price": 1000,
+        "item_type": "food",
+        "category_id": None,
+        "food_group": "main_course"
+    }
+    resp = await async_client.post("/api/items", json=item_data, headers=vendor_headers)
+    assert resp.status_code in (200, 201)
+    item = resp.json()
+    item_id = item["id"]
+
+    # User creates order
+    order_data = {
+        "order_items": [{"vendor_id": item["vendor_id"], "item_id": item_id, "quantity": 1}],
+        "pickup_coordinates": [6.45, 3.40],
+        "dropoff_coordinates": [6.45, 3.41],
+        "distance": 1.0,
+        "require_delivery": "delivery",
+        "duration": "30m",
+        "origin": "A",
+        "destination": "B",
+        "additional_info": "Test order"
+    }
+    resp = await async_client.post(f"/api/orders/{item['vendor_id']}", json=order_data, headers=user_headers)
+    assert resp.status_code in (200, 201)
+    order = resp.json()
+    assert order["order"]["order_status"] == "pending"
+
+    # Simulate payment (wallet or bank transfer)
+    # This part depends on your payment test setup; here we just check the endpoint exists
+    resp = await async_client.post(f"/api/payment/{order['order']['id']}/pay-with-wallet", headers=user_headers)
+    assert resp.status_code in (200, 201, 400, 422)  # Acceptable: insufficient funds, etc.
+
+
+@pytest.mark.asyncio
+async def test_error_handling(async_client):
+    # Try to get a non-existent order
+    resp = await async_client.get(f"/api/orders/{uuid4()}")
+    assert resp.status_code == 404
+    # Try to create item with duplicate name
+    vendor_data = {
+        "email": f"vendor_{uuid4()}@test.com",
+        "password": "testpassword",
+        "user_type": UserType.RESTAURANT_VENDOR,
+    }
+    resp = await async_client.post("/api/auth/register", json=vendor_data)
+    login_data = {"email": vendor_data["email"], "password": vendor_data["password"]}
+    resp = await async_client.post("/api/auth/login", data=login_data)
+    tokens = resp.json()
+    vendor_token = tokens["access_token"]
+    vendor_headers = {"Authorization": f"Bearer {vendor_token}"}
+    item_data = {
+        "name": "Duplicate Item",
+        "description": "A test item.",
+        "price": 1000,
+        "item_type": "food",
+        "category_id": None,
+        "food_group": "main_course"
+    }
+    resp = await async_client.post("/api/items", json=item_data, headers=vendor_headers)
+    assert resp.status_code in (200, 201)
+    resp = await async_client.post("/api/items", json=item_data, headers=vendor_headers)
+    assert resp.status_code == 409
+    assert "already have an item with this name" in resp.text
