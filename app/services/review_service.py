@@ -38,6 +38,7 @@ from app.models.models import (
     Order,
     UserReport,
     Profile,
+    UserReportReadStatus,
 )
 from app.schemas.status_schema import DeliveryStatus, OrderStatus, UserType
 from app.config.config import redis_client, settings
@@ -46,6 +47,8 @@ from app.config.config import redis_client, settings
 
 from sqlalchemy.exc import NoResultFound
 from uuid import UUID
+
+from app.utils.utils import get_user_notification_token, send_push_notification
 
 
 def convert_report_to_response(report: ReportType) -> ReportIssueResponse:
@@ -292,6 +295,12 @@ async def create_report(
         db.add(report)
         await db.flush()  # Flush to get the report ID
         
+        # Create UserReportReadStatus for both users
+        db.add_all([
+            UserReportReadStatus(report_id=report.id, user_id=current_user.id, is_read=True),
+            UserReportReadStatus(report_id=report.id, user_id=defendant_id, is_read=False),
+        ])
+        
         # Create admin acknowledgment message using insert
         admin_message_stmt = insert(Message).values(
             message_type=MessageType.REPORT,
@@ -306,6 +315,18 @@ async def create_report(
         
         # Commit all changes
         await db.commit()
+
+        token = await get_user_notification_token(db=db, user_id=report.defendant_id)
+      
+
+        if token:
+            await send_push_notification(
+                tokens=[token],
+                title="You have a new report",
+                message="You have been reported for your latest order. We want to here your own side before a final decision is made.",
+                navigate_to="/(app)/delivery/orders",
+            )
+
         
         return report
         
@@ -372,22 +393,17 @@ async def add_message_to_report(
     db.add(message_obj)
     await db.flush()
 
-    # Set report.is_read = False using direct update
+    # Set is_read=False for the recipient only
+    report = await db.get(UserReport, report_id)
+    recipient_id = report.complainant_id if current_user.id != report.complainant_id else report.defendant_id
     await db.execute(
-        update(UserReport)
-        .where(UserReport.id == report_id)
+        update(UserReportReadStatus)
+        .where(UserReportReadStatus.report_id == report_id, UserReportReadStatus.user_id == recipient_id)
         .values(is_read=False)
     )
 
-    await db.execute(insert(MessageReadStatus).values({
-        'message_id': message_obj.id,
-        'user_id': message_obj.sender_id,
-        'read': False,
-        }))
-
     await db.commit()
     # Invalidate cache for both users
-    report = await db.get(UserReport, report_id)
     redis_client.delete(f"user:{report.complainant_id}:report_threads")
     redis_client.delete(f"user:{current_user.id}:report_threads")
     redis_client.delete(f"user:{report.defendant_id}:report_threads")
@@ -400,29 +416,14 @@ async def add_message_to_report(
 
 async def mark_message_as_read(db: AsyncSession, report_id: UUID, current_user: User):
     """Mark a report and all its messages as read for a specific user"""
-    
-    # Mark the report as read if user is involved
+    # Mark the report as read for this user
     await db.execute(
-        update(UserReport).where(
-            and_(
-                UserReport.id == report_id,
-                or_(
-                    UserReport.complainant_id == current_user.id,
-                    UserReport.defendant_id == current_user.id
-                )
-            )
-        ).values({'is_read': True})
+        update(UserReportReadStatus)
+        .where(UserReportReadStatus.report_id == report_id, UserReportReadStatus.user_id == current_user.id)
+        .values(is_read=True)
     )
-    
-    msg_result = await db.execute(select(Message).where(Message.report_id==report_id))
-
-    msg = msg_result.scalar_one_or_none()
-
-    await db.execute(update(MessageReadStatus).values({
-
-        'user_id':msg.sender_id, 'read': True,
-        }).where(MessageReadStatus.message_id==msg.id))
-    
+    # Mark all messages in the thread as read for this user
+    await mark_thread_as_read_for_user(db, report_id, current_user)
     await db.commit()
 
 
@@ -642,28 +643,10 @@ async def get_report_by_id(db: AsyncSession, current_user: User, report_id: UUID
 
 
 async def get_unread_badge_count(db: AsyncSession, user_id: UUID) -> BadgeCount:
-    """Return the count of unread messages for the current user (report threads)."""
-    # Get all reports where user is involved
-    reports_stmt = select(UserReport.id).where(
-        or_(UserReport.complainant_id == user_id, UserReport.defendant_id == user_id)
-    )
-    reports_result = await db.execute(reports_stmt)
-    report_ids = [r[0] for r in reports_result.all()]
-    if not report_ids:
-        return 0
-
-    # Get all messages in those reports
-    messages_stmt = select(Message.id).where(Message.report_id.in_(report_ids))
-    messages_result = await db.execute(messages_stmt)
-    message_ids = [m[0] for m in messages_result.all()]
-    if not message_ids:
-        return 0
-
-    # Count unread MessageReadStatus for this user
-    unread_stmt = select(MessageReadStatus).where(
-        MessageReadStatus.message_id.in_(message_ids),
-        MessageReadStatus.user_id == user_id,
-        MessageReadStatus.read == False
+    """Return the count of unread reports for the current user (report threads)."""
+    unread_stmt = select(UserReportReadStatus).where(
+        UserReportReadStatus.user_id == user_id,
+        UserReportReadStatus.is_read == False
     )
     unread_result = await db.execute(unread_stmt)
     unread_count = len(unread_result.fetchall())

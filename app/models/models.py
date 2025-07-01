@@ -722,6 +722,13 @@ class UserReport(Base):
         lazy="selectin",
     )
 
+    read_status: Mapped[list["UserReportReadStatus"]] = relationship(
+        "UserReportReadStatus",
+        back_populates="report",
+        cascade="all, delete-orphan",
+        lazy="selectin",
+    )
+
     complainant: Mapped["User"] = relationship(
         "User",
         foreign_keys=[complainant_id],
@@ -802,4 +809,19 @@ class MessageReadStatus(Base):
 
     # Relationships
     message: Mapped["Message"] = relationship("Message", back_populates="read_status")
+    user: Mapped["User"] = relationship("User")
+
+
+class UserReportReadStatus(Base):
+    """Track read status of reports (threads) per user for badge and notification purposes."""
+    __tablename__ = "user_report_read_status"
+
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    report_id: Mapped[UUID] = mapped_column(ForeignKey("user_reports.id"), nullable=False)
+    user_id: Mapped[UUID] = mapped_column(ForeignKey("users.id"), nullable=False)
+    is_read: Mapped[bool] = mapped_column(default=False)
+    read_at: Mapped[Optional[datetime]] = mapped_column(default=datetime.now, onupdate=datetime.now)
+
+    # Relationships
+    report: Mapped["UserReport"] = relationship("UserReport", back_populates="read_status")
     user: Mapped["User"] = relationship("User")
