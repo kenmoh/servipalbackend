@@ -7,7 +7,7 @@ import logfire
 
 
 from fastapi import Depends, FastAPI
-from fastapi.openapi.docs import get_swagger_ui_html
+from fastapi.openapi.docs import get_swagger_ui_html, get_redoc_html
 from fastapi.responses import FileResponse, RedirectResponse
 from fastapi_mcp import FastApiMCP
 from fastapi.middleware.cors import CORSMiddleware
@@ -187,7 +187,7 @@ def custom_swagger_ui_html():
 def custom_redoc_html():
     return get_redoc_html(
         openapi_url=app.openapi_url,
-        title="ServiPal API - ReDoc",
+        title="ServiPal API",
         redoc_favicon_url=FAVICON_URL
     )
 
@@ -202,9 +202,9 @@ def favicon():
 #     return FileResponse(path="path/to/your/favicon.ico", media_type="image/x-icon")
 
 # Your API routes go here
-@app.get("/api")
+@app.get("/")
 def read_root():
-    return {"message": "Hello World"}
+    return {"message": "Welcome to ServiPal API"}
 
 logfire.configure(service_name="ServiPal")
 logfire.debug("App Debug mode on")
