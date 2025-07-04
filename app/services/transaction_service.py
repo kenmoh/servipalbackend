@@ -1,5 +1,5 @@
 import asyncio
-import datetime
+from datetime import datetime
 from uuid import UUID
 import logging
 from fastapi import BackgroundTasks, HTTPException, Request, status
@@ -87,8 +87,8 @@ async def top_up_wallet(
                 id=current_user.id,
                 balance=0,
                 escrow_balance=0,
-                created_at=datetime.utcnow(),
-                updated_at=datetime.utcnow(),
+                created_at=datetime.now(),
+                updated_at=datetime.now(),
             )
             db.add(wallet)
 
@@ -104,8 +104,8 @@ async def top_up_wallet(
             amount=topup_data.amount,
             transaction_type=TransactionType.CREDIT,
             status=PaymentStatus.PENDING,
-            created_at=datetime.utcnow(),
-            updated_at=datetime.utcnow(),
+            created_at=datetime.now(),
+            updated_at=datetime.now(),
         )
         db.add(transaction)
 
@@ -349,7 +349,7 @@ async def fund_wallet_callback(request: Request, db: AsyncSession):
                 await send_push_notification(
                     tokens=[token],
                     title="Payment Received",
-                    message=f"Your payment of ₦{amount_to_add} has been received.",
+                    message=f"Your wallet top-up of ₦{amount_to_add} has been received.",
                 )
 
             return {
@@ -539,7 +539,7 @@ async def pay_with_wallet(
     seller_wallet.escrow_balance += order.total_price
 
     # Create transactions in bulk
-    current_time = datetime.utcnow()
+    current_time = datetime.now()
     transaction_values = [
         # Buyer transaction (DEBIT)
         {
