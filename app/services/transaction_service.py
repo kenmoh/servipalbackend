@@ -21,6 +21,7 @@ from app.models.models import (
 )
 from app.schemas.marketplace_schemas import (
     TopUpRequestSchema,
+    TopUpResponseSchema,
     TransferDetailResponseSchema,
     BankCode,
     WithdrawalShema,
@@ -62,7 +63,7 @@ async def update_database(order, db: AsyncSession):
 
 async def top_up_wallet(
     db: AsyncSession, current_user: User, topup_data: TopUpRequestSchema
-) -> TopUpRequestSchema:
+) -> TopUpResponseSchema:
     """
     Initiates a wallet top-up transaction with improved error handling and efficiency.
 

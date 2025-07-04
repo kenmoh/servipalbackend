@@ -11,6 +11,7 @@ from app.schemas.marketplace_schemas import (
     TransferDetailResponseSchema,
     BankCode,
     WithdrawalShema,
+    TopUpResponseSchema
 )
 from app.services import transaction_service
 
@@ -64,7 +65,7 @@ async def fund_wallet(
     data: TopUpRequestSchema,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
-) -> TopUpRequestSchema:
+) -> TopUpResponseSchema:
     return await transaction_service.top_up_wallet(
         topup_data=data, db=db, current_user=current_user
     )
