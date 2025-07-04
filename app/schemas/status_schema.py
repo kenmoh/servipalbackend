@@ -97,6 +97,14 @@ class AccountStatus(str, Enum):
 #     PAY_WITH_WALLET: str = "paid with wallet"
 
 
+class PaymentMethod(str, Enum):
+    WALLET: str = "wallet"
+    CARD: str = "card"
+    BANK_TRANSFER: str = "bank_transfer"
+  
+
+
+
 class DisputeStatus(str, Enum):
     OPEN: str = "open"
     CLOSED: str = "closed"

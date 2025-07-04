@@ -27,7 +27,7 @@ from app.schemas.marketplace_schemas import (
     WithdrawalShema,
 )
 from app.schemas.order_schema import OrderResponseSchema
-from app.schemas.status_schema import PaymentStatus, TransactionType
+from app.schemas.status_schema import PaymentMethod, PaymentStatus, TransactionType
 from app.utils.logger_config import setup_logger
 from app.utils.utils import (
     get_bank_code,
@@ -103,7 +103,7 @@ async def top_up_wallet(
             wallet_id=wallet.id,
             amount=topup_data.amount,
             transaction_type=TransactionType.CREDIT,
-            status=PaymentStatus.PENDING,
+            payment_status=PaymentStatus.PENDING,
             created_at=datetime.now(),
             updated_at=datetime.now(),
         )
@@ -119,6 +119,7 @@ async def top_up_wallet(
 
         # Update transaction with payment link
         transaction.payment_link = payment_link
+        db.commit()
 
         refreshed_transaction = await db.get(Transaction, transaction.id)
 
@@ -146,6 +147,65 @@ async def top_up_wallet(
             )
 
 
+# async def handle_charge_completed_callback(request: Request, db: AsyncSession, payload=None):
+#     if payload is None:
+#         payload = await request.json()
+#     event = payload.get("event")
+#     data = payload.get("data", {})
+
+#     if event == "charge.completed" and data.get("status") == "successful":
+#         payment_type = data.get("payment_type") or data.get("paymentType")
+#         tx_ref = data.get("tx_ref") or data.get("txRef") or data.get("reference")
+#         amount_paid = data.get("amount")
+#         currency = data.get("currency")
+
+#         order = None
+#         if tx_ref:
+#             result = await db.execute(select(Order).where(Order.id == UUID(tx_ref)))
+#             order = result.scalar_one_or_none()
+
+#         if not order:
+#             return {"status": "ignored", "reason": "Order not found"}
+
+#         if order.order_payment_status == PaymentStatus.PAID:
+#             return {"status": "ignored", "reason": "Order already paid"}
+
+#         if payment_type == "bank_transfer":
+#             # Bank transfer-specific logic
+#             await db.execute(update(Transaction).where(Transaction.id == UUID(tx_ref)).values(payment_method=PaymentMethod.BANK_TRANSFER))
+#             db.commit()
+       
+#         elif payment_type == "card":
+#             # Card payment-specific logic 
+#             await db.execute(update(Transaction).where(Transaction.id == UUID(tx_ref)).values(payment_method=PaymentMethod.CARD))
+#             db.commit()
+
+#         # Mark order as paid
+#         order.order_payment_status = PaymentStatus.PAID
+#         await db.commit()
+
+#         # Send notifications to buyer and seller
+#         buyer_token = await get_user_notification_token(db=db, user_id=order.owner_id)
+#         seller_token = await get_user_notification_token(db=db, user_id=order.vendor_id)
+#         amount_str = f"₦{amount_paid}" if currency == "NGN" else f"{amount_paid} {currency}"
+#         if buyer_token:
+#             await send_push_notification(
+#                 tokens=[buyer_token],
+#                 title="Payment Successful",
+#                 message=f"Your payment of {amount_str} was successful.",
+#             )
+#         if seller_token:
+#             await send_push_notification(
+#                 tokens=[seller_token],
+#                 title="Order Paid",
+#                 message=f"You have received a new order payment of {amount_str}.",
+#             )
+
+#         return {"status": "success", "order_id": str(order.id), "payment_type": payment_type}
+
+#     return {"status": "ignored", "reason": "Not a successful charge.completed event"}
+
+
 async def handle_charge_completed_callback(request: Request, db: AsyncSession, payload=None):
     if payload is None:
         payload = await request.json()
@@ -158,50 +218,89 @@ async def handle_charge_completed_callback(request: Request, db: AsyncSession, p
         amount_paid = data.get("amount")
         currency = data.get("currency")
 
+        # Try to get Order first
         order = None
         if tx_ref:
             result = await db.execute(select(Order).where(Order.id == UUID(tx_ref)))
             order = result.scalar_one_or_none()
 
-        if not order:
-            return {"status": "ignored", "reason": "Order not found"}
+        if order:
+            # --- Handle Order Payment ---
+            if order.order_payment_status == PaymentStatus.PAID:
+                await db.execute(update(Transaction).where(Transaction.id == order.id).values(payment_method=payment_type))
+                await db.commit()
+                return {"status": "ignored", "reason": "Order already paid"}
 
-        if order.order_payment_status == PaymentStatus.PAID:
-            return {"status": "ignored", "reason": "Order already paid"}
+          
 
-        # You can add different logic for card vs bank transfer if needed
-        if payment_type == "bank_transfer":
-            # Bank transfer-specific logic (if any)
-            pass
-        elif payment_type == "card":
-            # Card payment-specific logic (if any)
-            pass
+            # Mark order as paid
+            order.order_payment_status = PaymentStatus.PAID
+            await db.execute(update(Transaction).where(Transaction.id == order.id).values(payment_method=payment_type))
+            await db.commit()
 
-        # Mark order as paid
-        order.order_payment_status = PaymentStatus.PAID
-        await db.commit()
+            # Send notifications
+            buyer_token = await get_user_notification_token(db=db, user_id=order.owner_id)
+            seller_token = await get_user_notification_token(db=db, user_id=order.vendor_id)
+            amount_str = f"₦{amount_paid}" if currency == "NGN" else f"{amount_paid} {currency}"
+            if buyer_token:
+                await send_push_notification(
+                    tokens=[buyer_token],
+                    title="Payment Successful",
+                    message=f"Your payment of {amount_str} was successful.",
+                )
+            if seller_token:
+                await send_push_notification(
+                    tokens=[seller_token],
+                    title="Order Paid",
+                    message=f"You have received a new order payment of {amount_str}.",
+                )
 
-        # Send notifications to buyer and seller
-        buyer_token = await get_user_notification_token(db=db, user_id=order.owner_id)
-        seller_token = await get_user_notification_token(db=db, user_id=order.vendor_id)
-        amount_str = f"₦{amount_paid}" if currency == "NGN" else f"{amount_paid} {currency}"
-        if buyer_token:
-            await send_push_notification(
-                tokens=[buyer_token],
-                title="Payment Successful",
-                message=f"Your payment of {amount_str} was successful.",
-            )
-        if seller_token:
-            await send_push_notification(
-                tokens=[seller_token],
-                title="Order Paid",
-                message=f"You have received a new order payment of {amount_str}.",
-            )
+            return {"status": "success", "order_id": str(order.id), "payment_type": payment_type}
 
-        return {"status": "success", "order_id": str(order.id), "payment_type": payment_type}
+        # --- If not an order, try as a wallet top-up transaction ---
+        transaction = None
+        if tx_ref:
+            result = await db.execute(select(Transaction).where(Transaction.id == UUID(tx_ref)))
+            transaction = result.scalar_one_or_none()
+
+        if transaction:
+            if transaction.payment_status == PaymentStatus.PAID:
+                transaction.payment_method = payment_type
+                await db.commit()
+                return {"status": "ignored", "reason": "Transaction already paid"}
+
+            # Mark transaction as paid
+            transaction.payment_status = PaymentStatus.PAID
+            transaction.payment_method = payment_type
+
+            # Update wallet balance
+            wallet = await db.get(Wallet, transaction.wallet_id)
+            if wallet:
+                # Get charge config
+                charge_stmt = select(ChargeAndCommission)
+                charge_result = await db.execute(charge_stmt)
+                charge = charge_result.scalar_one_or_none()
+                amount_to_add = calculate_net_amount(transaction.amount, charge)
+                wallet.balance += amount_to_add
+
+            await db.commit()
+            
+
+            # Notify user
+            token = await get_user_notification_token(db=db, user_id=wallet.id)
+            if token:
+                await send_push_notification(
+                    tokens=[token],
+                    title="Wallet Top-up",
+                    message=f"Your wallet top-up of ₦{amount_paid} was successful.",
+                )
+
+            return {"status": "success", "transaction_id": str(transaction.id), "payment_type": payment_type}
+
+        # If neither order nor transaction found
+        return {"status": "ignored", "reason": "Order/Transaction not found"}
 
     return {"status": "ignored", "reason": "Not a successful charge.completed event"}
-
 
 async def handle_payment_webhook(request: Request, db: AsyncSession, background_task: BackgroundTasks = None):
     payload = await request.json()

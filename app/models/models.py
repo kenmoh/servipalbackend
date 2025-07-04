@@ -37,6 +37,7 @@ from app.schemas.status_schema import (
     DeliveryStatus,
     OrderStatus,
     OrderType,
+    PaymentMethod,
     PaymentStatus,
     RequireDeliverySchema,
     TransactionType,
@@ -299,6 +300,7 @@ class Transaction(Base):
     payment_by: Mapped[str] = mapped_column(nullable=True)
     transaction_type: Mapped[TransactionType]
     payment_status: Mapped[PaymentStatus] = mapped_column(default=PaymentStatus.PENDING)
+    payment_method: Mapped[PaymentMethod] = mapped_column(nullable=True)
     payment_link: Mapped[str] = mapped_column(nullable=True)
     created_at: Mapped[datetime] = mapped_column(default=datetime.now)
     updated_at: Mapped[datetime] = mapped_column(
