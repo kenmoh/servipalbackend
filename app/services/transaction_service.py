@@ -27,7 +27,7 @@ from app.schemas.marketplace_schemas import (
     WithdrawalShema,
 )
 from app.schemas.order_schema import OrderResponseSchema
-from app.schemas.status_schema import PaymentMethod, PaymentStatus, TransactionType
+from app.schemas.status_schema import PaymentMethod, PaymentStatus, RequireDeliverySchema, TransactionType
 from app.utils.logger_config import setup_logger
 from app.utils.utils import (
     get_bank_code,
@@ -433,13 +433,18 @@ async def fund_wallet_callback(request: Request, db: AsyncSession):
     if not transaction:
         raise HTTPException(status_code=404, detail="Transaction not found")
 
-    verify_tranx = await verify_transaction_tx_ref(UUID(tx_ref))
-    if (
-        tx_status == "successful"
-        and verify_tranx.get("data", {}).get("status") == "successful"
-    ):
-        new_status = PaymentStatus.PAID
 
+    verify_tranx = await verify_transaction_tx_ref(tx_ref)
+    if verify_tranx is None:
+        logging.error(f"verify_transaction_tx_ref returned None for tx_ref: {tx_ref}")
+        raise HTTPException(status_code=502, detail="Failed to verify transaction status")
+
+    # Defensive: ensure verify_tranx is a dict and has 'data'
+    verify_data = verify_tranx.get("data") if isinstance(verify_tranx, dict) else None
+    verify_status = verify_data.get("status") if verify_data else None
+
+    if tx_status == "successful" and verify_status == "successful":
+        new_status = PaymentStatus.PAID
     elif tx_status == "cancelled":
         new_status = PaymentStatus.CANCELLED
     else:
@@ -626,7 +631,7 @@ async def pay_with_wallet(
     Raises:
         HTTPException: Various exceptions for validation errors.
     """
-    # Fetch order with related items and vendor in one efficient query
+    # Fetch order with related items, vendor, and delivery in one efficient query
     stmt_order = (
         select(Order)
         .where(
@@ -637,6 +642,7 @@ async def pay_with_wallet(
         .options(
             selectinload(Order.order_items).selectinload(OrderItem.item),
             selectinload(Order.vendor),
+            selectinload(Order.delivery),
         )
         .with_for_update()
     )
@@ -651,7 +657,7 @@ async def pay_with_wallet(
     # Fetch both wallets in parallel for better performance
     wallets_stmt = (
         select(Wallet)
-        .where(Wallet.id.in_([buyer.id, order.vendor_id]))
+        .where(Wallet.id.in_([buyer.id, order.vendor_id, order.delivery.dispatch_id]))
         .with_for_update()
     )
     result = await db.execute(wallets_stmt)
@@ -661,6 +667,7 @@ async def pay_with_wallet(
     wallets_by_id = {wallet.id: wallet for wallet in wallets}
     buyer_wallet = wallets_by_id.get(buyer.id)
     seller_wallet = wallets_by_id.get(order.vendor_id)
+    dispatch_wallet = wallets_by_id.get(order.delivery.dispatch_id)
 
     # Validate wallets
     if not buyer_wallet:
@@ -672,16 +679,49 @@ async def pay_with_wallet(
             status_code=status.HTTP_404_NOT_FOUND, detail="Seller wallet not found"
         )
 
+    # Determine amount to charge: total_price + delivery_fee if delivery required
+    amount_to_charge = order.total_price
+    if order.require_delivery == RequireDeliverySchema.DELIVERY:
+        if order.delivery and order.delivery.delivery_fee:
+            amount_to_charge += order.delivery.delivery_fee
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Delivery fee required but not found."
+            )
+
     # Check if buyer has enough funds
-    if buyer_wallet.balance < order.total_price:
+    if buyer_wallet.balance < amount_to_charge:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Insufficient funds in wallet",
         )
 
+
     # Process the payment
-    buyer_wallet.balance -= order.total_price
-    seller_wallet.escrow_balance += order.total_price
+    buyer_wallet.balance -= amount_to_charge
+    seller_wallet.escrow_balance += order.total_price  # Only vendor's share, not delivery fee
+
+    # Only credit dispatch if available and delivery fee is present
+    dispatch_transaction = None
+    if (
+        order.require_delivery == RequireDeliverySchema.DELIVERY
+        and order.delivery
+        and order.delivery.delivery_fee
+        and order.delivery.dispatch_id
+        and dispatch_wallet
+    ):
+        dispatch_wallet.escrow_balance += order.delivery.delivery_fee
+        dispatch_transaction = {
+            "wallet_id": dispatch_wallet.id,
+            "amount": order.delivery.delivery_fee,
+            "transaction_type": TransactionType.CREDIT,
+            "payment_status": PaymentStatus.PAID,
+            "created_at": current_time,
+            "payment_method": PaymentMethod.WALLET,
+            "payment_by": buyer.profile.full_name or buyer.profile.business_name,
+            "updated_at": current_time,
+        }
 
     # Create transactions in bulk
     current_time = datetime.now()
@@ -689,22 +729,30 @@ async def pay_with_wallet(
         # Buyer transaction (DEBIT)
         {
             "wallet_id": buyer_wallet.id,
-            "amount": order.total_price,
+            "amount": amount_to_charge,
             "transaction_type": TransactionType.DEBIT,
-            "status": PaymentStatus.PAID,
+            "payment_status": PaymentStatus.PAID,
             "created_at": current_time,
+            "payment_method": PaymentMethod.WALLET,
+            "payment_by": buyer.profile.full_name or buyer.profile.business_name,
             "updated_at": current_time,
         },
         # Seller transaction (CREDIT)
-        # {
-        #     "wallet_id": seller_wallet.id,
-        #     "amount": order.total_price,
-        #     "transaction_type": TransactionType.CREDIT,
-        #     "status": PaymentStatus.PAID,
-        #     "created_at": current_time,
-        #     "updated_at": current_time,
-        # },
+        {
+            "wallet_id": seller_wallet.id,
+            "amount": order.total_price,
+            "transaction_type": TransactionType.CREDIT,
+            "payment_status": PaymentStatus.PAID,
+            "created_at": current_time,
+            "payment_method": PaymentMethod.WALLET,
+            "payment_by": buyer.profile.full_name or buyer.profile.business_name,
+            "updated_at": current_time,
+        },
     ]
+
+    # Add dispatch transaction if applicable
+    if dispatch_transaction:
+        transaction_values.append(dispatch_transaction)
 
     await db.execute(insert(Transaction), transaction_values)
 
@@ -721,7 +769,7 @@ async def pay_with_wallet(
         await send_push_notification(
             tokens=[buyer_token],
             title="Payment Successful",
-            message=f"Your payment of ₦{order.total_price} was successful.",
+            message=f"Your payment of ₦{amount_to_charge} was successful.",
         )
     if seller_token:
         await send_push_notification(
@@ -738,6 +786,7 @@ async def pay_with_wallet(
 
     return {
         "payment_status": order.order_payment_status,
+        "charged_amount": amount_to_charge,
     }
 
 

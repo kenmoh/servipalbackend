@@ -651,19 +651,15 @@ async def cancel_delivery(
             await db.commit()
 
             # UPDATE USER WALLET
-            escrow_balance = (
-                (wallet.escrow_balance - delivery.delivery_fee)
-                if wallet.escrow_balance >= delivery.delivery_fee
-                else 0
-            )
+            new_escrow = max(wallet.escrow_balance - delivery.delivery_fee, 0)
+            new_balance = wallet.balance + max(wallet.escrow_balance - delivery.delivery_fee, 0)
             await db.execute(
                 update(Wallet)
                 .where(Wallet.id == current_user.sender_id)
                 .values(
                     {
-                        "balance": wallet.balance
-                        + (wallet.escrow_balance - delivery.delivery_fee),
-                        "escrow_balance": escrow_balance,
+                        "balance": new_balance,
+                        "escrow_balance": new_escrow,
                     }
                 )
             )
@@ -701,15 +697,11 @@ async def cancel_delivery(
             await db.commit()
 
             # UPDATE RIDER ESCROW BALANCE
-            escrow_balance = (
-                (wallet.escrow_balance - delivery.amount_due_dispatch)
-                if wallet.escrow_balance >= delivery.amount_due_dispatch
-                else 0
-            )
+            new_escrow = max(wallet.escrow_balance - delivery.amount_due_dispatch, 0)
             await db.execute(
                 update(Wallet)
                 .where(Wallet.id == current_user.sender_id)
-                .values({"escrow_balance": escrow_balance})
+                .values({"escrow_balance": new_escrow})
             )
 
             await db.commit()
@@ -779,14 +771,17 @@ async def re_list_item_for_delivery(
                 await db.commit()
 
                 # UPDATE USER WALLET
-                escrow_balance = wallet.escrow_balance + delivery.delivery_fee
+                new_escrow = wallet.escrow_balance + delivery.delivery_fee
+                new_balance = wallet.balance - delivery.delivery_fee
+                if new_balance < 0:
+                    raise HTTPException(status_code=400, detail="Insufficient balance to re-list delivery.")
                 await db.execute(
                     update(Wallet)
                     .where(Wallet.id == current_user.sender_id)
                     .values(
                         {
-                            "balance": wallet.balance - delivery.delivery_fee,
-                            "escrow_balance": escrow_balance,
+                            "balance": new_balance,
+                            "escrow_balance": new_escrow,
                         }
                     )
                 )
@@ -891,22 +886,24 @@ async def vendor_or_owner_mark_order_delivered_or_received(
 
             vendor_amount = order.amount_due_vendor
 
+            new_vendor_escrow = max(vendor_wallet.escrow_balance - vendor_amount, 0)
             await db.execute(
                 update(Wallet)
                 .where(Wallet.id == order.vendor_id)
                 .values(
                     {
                         "balance": vendor_wallet.balance + vendor_amount,
-                        "escrow_balance": vendor_wallet.escrow_balance - vendor_amount,
+                        "escrow_balance": new_vendor_escrow,
                     }
                 )
             )
 
+            new_owner_escrow = max(vendor_wallet.escrow_balance - order.total_price, 0)
             await db.execute(
                 update(Wallet)
                 .where(Wallet.id == order.owner_id)
                 .values(
-                    {"escrow_balance": vendor_wallet.escrow_balance - order.total_price}
+                    {"escrow_balance": new_owner_escrow}
                 )
             )
             await db.commit()
@@ -1122,29 +1119,27 @@ async def sender_confirm_delivery_received(
 
         if delivery.delivery_type == DeliveryType.PACKAGE:
             # update wallet
+            new_dispatch_escrow = max(dispatch_wallet.escrow_balance - dispatch_amount, 0)
             await db.execute(
                 update(Wallet)
                 .where(Wallet.id == delivery.dispatch_id)
                 .values(
                     {
                         "balance": dispatch_wallet.balance + dispatch_amount,
-                        "escrow_balance": dispatch_wallet.escrow_balance
-                        - dispatch_amount,
+                        "escrow_balance": new_dispatch_escrow,
                     }
                 )
             )
             await db.commit()
             await db.refresh(delivery)
 
+            new_sender_escrow = max(sender_wallet.escrow_balance - delivery.delivery_fee, 0)
             await db.execute(
                 update(Wallet)
                 .where(Wallet.id == delivery.sender_id)
                 .values(
                     {
-                        "escrow_balance": sender_wallet.escrow_balance
-                        - delivery.delivery_fee
-                        if sender_wallet.escrow_balance >= delivery.delivery_fee
-                        else 0,
+                        "escrow_balance": new_sender_escrow,
                     }
                 )
             )
@@ -1173,27 +1168,28 @@ async def sender_confirm_delivery_received(
 
         if delivery.delivery_type in [DeliveryType.FOOD, DeliveryType.LAUNDRY]:
             # update wallet
+            new_dispatch_escrow = max(dispatch_wallet.escrow_balance - dispatch_amount, 0)
             await db.execute(
                 update(Wallet)
                 .where(Wallet.id == delivery.dispatch_id)
                 .values(
                     {
                         "balance": dispatch_wallet.balance + dispatch_amount,
-                        "escrow_balance": dispatch_wallet.escrow_balance
-                        - dispatch_amount,
+                        "escrow_balance": new_dispatch_escrow,
                     }
                 )
             )
             await db.commit()
             await db.refresh(delivery)
 
+            new_vendor_escrow = max(vendor_wallet.escrow_balance - vendor_amount, 0)
             await db.execute(
                 update(Wallet)
                 .where(Wallet.id == delivery.vendor_id)
                 .values(
                     {
                         "balance": vendor_wallet.balance + vendor_amount,
-                        "escrow_balance": vendor_wallet.escrow_balance - vendor_amount,
+                        "escrow_balance": new_vendor_escrow,
                     }
                 )
             )
@@ -1201,13 +1197,13 @@ async def sender_confirm_delivery_received(
             await db.commit()
             await db.refresh(delivery)
 
+            new_sender_escrow = max(sender_wallet.escrow_balance - delivery.order.total_price, 0)
             await db.execute(
                 update(Wallet)
                 .where(Wallet.id == delivery.sender_id)
                 .values(
                     {
-                        "escrow_balance": sender_wallet.escrow_balance
-                        - delivery.order.total_price,
+                        "escrow_balance": new_sender_escrow,
                     }
                 )
             )
@@ -1312,13 +1308,14 @@ async def vendor_mark_laundry_item_received(
         dispatch_amount = delivery.amount_due_dispatch or 0
 
         # update wallet
+        new_dispatch_escrow = max(dispatch_wallet.escrow_balance - dispatch_amount, 0)
         await db.execute(
             update(Wallet)
             .where(Wallet.id == delivery.dispatch_id)
             .values(
                 {
                     "balance": dispatch_wallet.balance + dispatch_amount,
-                    "escrow_balance": dispatch_wallet.escrow_balance - dispatch_amount,
+                    "escrow_balance": new_dispatch_escrow,
                 }
             )
         )
@@ -1671,16 +1668,11 @@ async def update_wallet_balance(
     db: AsyncSession, wallet_id: UUID, new_balance: Decimal, escrow_balance: Decimal = 0
 ) -> None:
     """Updates a wallet's balance."""
-    escrow_balance = (
-        Decimal(escrow_balance - new_balance)
-        if Decimal(escrow_balance) >= Decimal(new_balance)
-        else Decimal(new_balance)
-    )
-
+    # Only update balance; do not touch escrow_balance here unless explicitly intended
     await db.execute(
         update(Wallet)
         .where(Wallet.id == wallet_id)
-        .values(balance=new_balance, escrow_balance=Decimal(escrow_balance))
+        .values(balance=new_balance)
     )
 
 
@@ -1688,10 +1680,12 @@ async def update_wallet_escrow_balance(
     db: AsyncSession, wallet_id: UUID, new_escrow_balance: Decimal
 ) -> None:
     """Updates a wallet's escrow balance."""
+    # Prevent escrow from going negative
+    safe_escrow = new_escrow_balance if new_escrow_balance >= 0 else 0
     stmt = (
         update(Wallet)
         .where(Wallet.id == wallet_id)
-        .values(escrow_balance=new_escrow_balance)
+        .values(escrow_balance=safe_escrow)
         .execution_options(synchronize_session="fetch")
     )
     await db.execute(stmt)
