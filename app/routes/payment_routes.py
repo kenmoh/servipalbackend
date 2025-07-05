@@ -39,7 +39,6 @@ async def fund_wallet_payment_callback(
 
 @router.post("/withdraw-funds", status_code=status.HTTP_200_OK)
 async def withdraw_funds(
-    request: Request,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> WithdrawalShema:

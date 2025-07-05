@@ -441,18 +441,18 @@ async def resolve_account_details(
             raise
 
 
-async def send_push_message(token, message, extra=None):
-    try:
-        response = AsyncPushClient().publish(
-            PushMessage(to=token, body=message, data=extra)
-        )
-        return response
-    except PushServerError:
-        # Encountered some likely formatting/validation error.
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Something went wrong!",
-        )
+# async def send_push_message(token, message, extra=None):
+#     try:
+#         response = AsyncPushClient().publish(
+#             PushMessage(to=token, body=message, data=extra)
+#         )
+#         return response
+#     except PushServerError:
+#         # Encountered some likely formatting/validation error.
+#         raise HTTPException(
+#             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+#             detail="Something went wrong!",
+#         )
 
 
 async def send_push_notification(
@@ -499,27 +499,3 @@ async def get_user_notification_token(db: AsyncSession, user_id):
         )
     return token
 
-
-# https://servipalbackend.onrender.com/api/payment/order-payment-callback?status=successful&tx_ref=12345&transaction_id=8976667
-# async def send_welcome_email(subject: str, email_to: EmailStr, body: dict, temp_name: str):
-#     message = MessageSchema(
-#         subject=subject,
-#         recipients=[email_to],
-#         template_body=body,
-#         subtype="html",
-#     )
-
-#     mail = FastMail(connection_config)
-#     await mail.send_message(message=message, template_name=temp_name)
-#     return JSONResponse(status_code=200, content={"message": "email has been sent"})
-
-
-async def refresh_vendor_review_stats_view(db: AsyncSession):
-    try:
-        await db.execute(
-            text("REFRESH MATERIALIZED VIEW CONCURRENTLY vendor_review_stats")
-        )
-        await db.commit()
-    except Exception as e:
-        await db.rollback()
-        raise Exception(f"Failed to refresh materialized view: {e}")
