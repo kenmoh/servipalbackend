@@ -280,7 +280,7 @@ async def get_users(db: AsyncSession) -> list[UserProfileResponse]:
 
 
 async def get_user_wallets(db: AsyncSession) -> list[WalletSchema]:
-    stmt = select(Wallet).options(selectinload(Wallet.transactions))
+    stmt = select(Wallet).options(selectinload(Wallet.transactions).order_by(Transaction.created_at.desc()))
     result = await db.execute(stmt)
     return result.scalars().all()
 
@@ -289,7 +289,7 @@ async def get_user_wallet(db: AsyncSession, current_user: User) -> WalletSchema:
     stmt = (
         select(Wallet)
         .where(Wallet.id == current_user.id)
-        .options(selectinload(Wallet.transactions))
+        .options(selectinload(Wallet.transactions).order_by(Transaction.created_at.desc()))
     )
     result = await db.execute(stmt)
     return result.scalar_one_or_none()
