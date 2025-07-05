@@ -93,10 +93,12 @@ async def top_up_wallet(
             )
             db.add(wallet)
 
-        if wallet.balance >= 1_00_000:
+        
+
+        if wallet.balance >= 100_000 or (topup_data.amount + wallet.balance) > 100_000:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Wallet balance cannot be more than NGN 100000",
+                detail=f"Wallet balance cannot be more than NGN 100, 000",
             )
 
         # Create the transaction record
@@ -407,65 +409,90 @@ async def fund_wallet_callback(request: Request, db: AsyncSession):
     result = await db.execute(stmt)
     transaction = result.scalar_one_or_none()
 
+    new_status = None
+
     if not transaction:
         raise HTTPException(status_code=404, detail="Transaction not found")
 
-    # Verify payment status
-    if tx_status == "successful":
-        # Verify with payment gateway
-        verify_result = await verify_transaction_tx_ref(UUID(tx_ref))
-        if verify_result.get("data", {}).get("status") == "successful":
-            # Get charge configuration (using proper query)
-            charge_stmt = select(ChargeAndCommission)
-            charge_result = await db.execute(charge_stmt)
-            charge = charge_result.scalar_one_or_none()
 
-            if not charge:
-                raise HTTPException(
-                    status_code=500, detail="Charge configuration not found"
-                )
-
-            # Get wallet
-            wallet = await get_wallet(transaction.wallet_id, db)
-
-            # Calculate the amount to add
-            # amount_to_add = calculate_net_amount(transaction.amount, charge)
-            amount_to_add = transaction.amount
-
-            # Update wallet balance
-            wallet.balance += amount_to_add
-
-            # Update transaction status
-            transaction.status = PaymentStatus.PAID
-
-            # Commit changes
-            await db.commit()
-            await db.refresh(transaction)
-            await db.refresh(wallet)
-
-            token = await get_user_notification_token(db=db, user_id=wallet.id)
-
-            if token:
-                await send_push_notification(
-                    tokens=[token],
-                    title="Payment Received",
-                    message=f"Your wallet top-up of ₦{amount_to_add} has been received.",
-                )
-
-            return {
-                "payment_status": transaction.status,
-                "wallet_balance": wallet.balance,
-                "amount_added": str(amount_to_add),
-            }
+    verify_tranx = await verify_transaction_tx_ref(UUID(tx_ref))
+    if (
+        tx_status == "successful"
+        and verify_tranx.get("data", {}).get("status") == "successful"
+    ):
+        new_status = PaymentStatus.PAID
 
     elif tx_status == "cancelled":
-        transaction.status = PaymentStatus.CANCELLED
+        new_status = PaymentStatus.CANCELLED
     else:
-        transaction.status = PaymentStatus.FAILED
+        new_status = PaymentStatus.FAILED
 
-    # Save status changes for non-successful transactions
-    await db.commit()
-    return {"payment_status": transaction.status}
+    try:
+        # Update transaction status
+        await db.execute(
+            update(Transaction)
+            .where(Transaction.id == UUID(tx_ref))
+            .values(payment_status=new_status)
+        )
+
+        await db.execute(update(Wallet).where(Wallet.id == transaction.wallet_id).values(balance=Wallet.balance + transaction.amount))
+        await db.commit()
+        await db.refresh(transaction)
+
+        return {'payment_status': new_status}
+    
+    except Exception as e:
+        logging.error(f"Error updating transaction status: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to update transaction status",
+        )
+        
+
+    # Get charge configuration (using proper query)
+    # charge_stmt = select(ChargeAndCommission)
+    # charge_result = await db.execute(charge_stmt)
+    # charge = charge_result.scalar_one_or_none()
+
+    # if not charge:
+    #     raise HTTPException(
+    #         status_code=500, detail="Charge configuration not found"
+    #     )
+
+    # Get wallet
+    # wallet = await get_wallet(transaction.wallet_id, db)
+
+    # # Calculate the amount to add
+    # # amount_to_add = calculate_net_amount(transaction.amount, charge)
+    # amount_to_add = transaction.amount
+
+    # # Update wallet balance
+    # wallet.balance += amount_to_add
+
+    # # Update transaction status
+    # transaction.status = PaymentStatus.PAID
+
+    # # Commit changes
+    # await db.commit()
+    # await db.refresh(transaction)
+    # await db.refresh(wallet)
+
+    # token = await get_user_notification_token(db=db, user_id=wallet.id)
+
+    # if token:
+    #     await send_push_notification(
+    #         tokens=[token],
+    #         title="Payment Received",
+    #         message=f"Your wallet top-up of ₦{amount_to_add} has been received.",
+    #     )
+
+    # return {
+    #     "payment_status": transaction.status,
+    #     "wallet_balance": wallet.balance,
+    #     "amount_added": str(amount_to_add),
+    # }
+
+
 
 
 # Helper function to calculate the net amount after charges
