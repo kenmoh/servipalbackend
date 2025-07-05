@@ -878,7 +878,7 @@ async def make_withdrawal(db: AsyncSession, current_user: User) -> WithdrawalShe
     user = result.unique().scalar_one_or_none()
 
     result = await db.execute(select(ChargeAndCommission))
-    charge = result.scalars().fetchone()
+    charge = result.scalars().first()
 
     if not user:
         raise HTTPException(
