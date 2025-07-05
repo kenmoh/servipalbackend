@@ -1015,7 +1015,7 @@ async def rider_accept_delivery_order(
         await db.commit()
         await db.refresh(delivery)
 
-        # Uodate vendour escrow
+        # # Update vendor escrow
         await db.execute(
             update(Wallet)
             .where(Wallet.id == delivery.vendor_id)
