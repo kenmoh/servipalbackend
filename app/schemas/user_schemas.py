@@ -67,6 +67,7 @@ class TransactionSchema(BaseModel):
     amount: Decimal
     payment_status: PaymentStatus
     payment_by: str
+    payment_link: str
     transaction_type: TransactionType
     created_at: datetime
 
