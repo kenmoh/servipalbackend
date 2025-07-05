@@ -119,11 +119,10 @@ async def top_up_wallet(
 
         # Update transaction with payment link
         transaction.payment_link = payment_link
-        db.commit()
+        await db.commit()
+        await db.refresh(transaction)
 
-        refreshed_transaction = await db.get(Transaction, transaction.id)
-
-        return TopUpRequestSchema.model_validate(refreshed_transaction)
+        return transaction
 
     except Exception as e:
         # Log error for debugging
@@ -838,7 +837,7 @@ async def make_withdrawal(
         await db.flush()
 
         transfer_response = await transfer_money_to_user_account(
-            bank_code=user.profile.bank_name,
+            bank_code=user.profile.bank_code,
             amount=str(withdrawal_amount),
             account_number=user.profile.bank_account_number,
             beneficiary_name=user.profile.account_holder_name,
