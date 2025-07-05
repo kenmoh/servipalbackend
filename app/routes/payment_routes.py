@@ -37,15 +37,14 @@ async def fund_wallet_payment_callback(
     return await transaction_service.fund_wallet_callback(request=request, db=db)
 
 
-@router.post("/withdraw-funds", include_in_schema=True, status_code=status.HTTP_200_OK)
+@router.post("/withdraw-funds", status_code=status.HTTP_200_OK)
 async def withdraw_funds(
-    bank_code: BankCode,
     request: Request,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> WithdrawalShema:
     return await transaction_service.make_withdrawal(
-        request=request, db=db, bank_code=bank_code
+        request=request, db=db
     )
 
 
