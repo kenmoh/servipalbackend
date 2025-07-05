@@ -557,6 +557,7 @@ async def order_payment_callback(request: Request, db: AsyncSession):
     else:
         new_status = PaymentStatus.FAILED
         redis_client.delete("paid_pending_deliveries")
+      
 
     # Update payment status
     order_update_result = await db.execute(
@@ -573,6 +574,7 @@ async def order_payment_callback(request: Request, db: AsyncSession):
         raise HTTPException(status_code=404, detail="Order not found")
 
     owner_id = order_data.owner_id
+    vendor_id = order_data.vendor_id
     total_price = order_data.total_price
 
     # Get the current escrow balance
@@ -593,6 +595,8 @@ async def order_payment_callback(request: Request, db: AsyncSession):
         token = await get_user_notification_token(db=db, user_id=owner_id)
         redis_client.delete(f"user_related_orders:{owner_id}")
         redis_client.delete("paid_pending_deliveries")
+        redis_client.delete(f"user_orders:{owner_id}")
+        redis_client.delete(f"user_orders:{vendor_id}")
 
         if token:
             await send_push_notification(
@@ -781,6 +785,8 @@ async def pay_with_wallet(
     # Clear relevant caches
     redis_client.delete(f"user_related_orders:{buyer.id}")
     redis_client.delete(f"user_related_orders:{order.vendor_id}")
+    redis_client.delete(f"user_orders:{order.owner_id}")
+    redis_client.delete(f"user_orders:{order.vendor_id}")
     redis_client.delete("paid_pending_deliveries")
     redis_client.delete("orders")
 
