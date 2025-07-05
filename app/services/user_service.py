@@ -280,19 +280,26 @@ async def get_users(db: AsyncSession) -> list[UserProfileResponse]:
 
 
 async def get_user_wallets(db: AsyncSession) -> list[WalletSchema]:
-    stmt = select(Wallet).options(selectinload(Wallet.transactions).order_by(Transaction.created_at.desc()))
+    stmt = select(Wallet).options(selectinload(Wallet.transactions))
     result = await db.execute(stmt)
-    return result.scalars().all()
+    wallets = result.scalars().all()
+    for wallet in wallets:
+        if hasattr(wallet, 'transactions') and wallet.transactions:
+            wallet.transactions.sort(key=lambda t: getattr(t, 'created_at', None), reverse=True)
+    return wallets
 
 
 async def get_user_wallet(db: AsyncSession, current_user: User) -> WalletSchema:
     stmt = (
         select(Wallet)
         .where(Wallet.id == current_user.id)
-        .options(selectinload(Wallet.transactions).order_by(Transaction.created_at.desc()))
+        .options(selectinload(Wallet.transactions))
     )
     result = await db.execute(stmt)
-    return result.scalar_one_or_none()
+    wallet = result.scalar_one_or_none()
+    if wallet and hasattr(wallet, 'transactions') and wallet.transactions:
+        wallet.transactions.sort(key=lambda t: getattr(t, 'created_at', None), reverse=True)
+    return wallet
 
 
 async def update_profile(
@@ -619,109 +626,6 @@ async def get_restaurant_vendors(
         logger.error(f"Error fetching vendors: {str(e)}")
         raise
 
-
-# async def get_restaurant_vendors(
-#     db: AsyncSession, category_id: UUID | None = None
-# ) -> list[VendorUserResponse]:
-
-
-#     cache_key = f"restaurant_vendors:{category_id if category_id else 'all'}"
-#     cached_data = redis_client.get(cache_key)
-#     if cached_data:
-#         return json.loads(cached_data)
-
-#     try:
-#         # Review stats subquery (for ORDER type reviews)
-#         review_stats_subq = (
-#             select(
-#                 Order.vendor_id.label("vendor_id"),
-#                 func.avg(Review.rating).label("average_rating"),
-#                 func.count(Review.id).label("review_count"),
-#             )
-#             .join(Review, Review.order_id == Order.id)
-#             .where(Review.review_type == ReviewType.ORDER)
-#             .group_by(Order.vendor_id)
-#             .subquery()
-#         )
-
-#         # Food item count subquery
-#         item_count_subq = (
-#             select(
-#                 Item.user_id.label("vendor_id"),
-#                 func.count(Item.id).label("total_items"),
-#             )
-#             .where(Item.item_type == ItemType.FOOD)
-#         )
-
-#         if category_id:
-#             item_count_subq = item_count_subq.where(Item.category_id == category_id)
-
-#         item_count_subq = item_count_subq.group_by(Item.user_id).subquery()
-
-#         # Main query
-#         stmt = (
-#             select(
-#                 User,
-#                 Profile,
-#                 ProfileImage,
-#                 func.coalesce(review_stats_subq.c.average_rating, 0).label("avg_rating"),
-#                 func.coalesce(review_stats_subq.c.review_count, 0).label("review_count"),
-#                 func.coalesce(item_count_subq.c.total_items, 0).label("total_items"),
-#             )
-#             .join(Profile, Profile.user_id == User.id)
-#             .outerjoin(ProfileImage, ProfileImage.profile_id == User.id)
-#             .outerjoin(review_stats_subq, review_stats_subq.c.vendor_id == User.id)
-#             .outerjoin(item_count_subq, item_count_subq.c.vendor_id == User.id)
-#             .where(User.user_type == UserType.RESTAURANT_VENDOR)
-#         )
-
-#         result = await db.execute(stmt)
-#         rows = result.all()
-
-#         response = []
-#         for user, profile, image, avg_rating, review_count, total_items in rows:
-#             if total_items == 0:
-#                 continue  # skip vendors with no items
-
-#             vendor_dict = {
-#                 "id": str(user.id),
-#                 "company_name": profile.business_name or "",
-#                 "email": user.email,
-#                 "phone_number": profile.phone_number,
-#                 "profile_image": image.profile_image_url if image else None,
-#                 "location": profile.business_address,
-#                 "backdrop_image_url": image.backdrop_image_url if image else None,
-#                 "opening_hour": (
-#                     profile.opening_hours.strftime("%H:%M:%S")
-#                     if profile.opening_hours
-#                     else None
-#                 ),
-#                 "closing_hour": (
-#                     profile.closing_hours.strftime("%H:%M:%S")
-#                     if profile.closing_hours
-#                     else None
-#                 ),
-#                 "rating": {
-#                     "average_rating": str(round(float(avg_rating or 0), 2)),
-#                     "number_of_reviews": review_count or 0,
-#                 },
-#                 "total_items": total_items,
-#             }
-
-#             response.append(vendor_dict)
-
-#         # Cache result (15 minutes or any expiry you want)
-#         redis_client.setex(
-#             cache_key,
-#             settings.REDIS_EX,
-#             json.dumps(response, default=str)
-#         )
-
-#         return response
-
-#     except Exception as e:
-#         logger.error(f"Error fetching vendors: {str(e)}")
-#         raise
 
 
 async def get_vendor_reviews(
