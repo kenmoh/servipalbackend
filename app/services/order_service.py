@@ -60,63 +60,11 @@ from app.utils.s3_service import add_image
 
 ALL_DELIVERY = "orders"
 
-
-async def filter_delivery_by_delivery_type(
-    delivery_type: DeliveryType, db: AsyncSession, skip: int = 0, limit: int = 20
-) -> list[DeliveryResponse]:
-    """
-    Get all deliveries by delivery type with pagination and caching
-    """
-    cache_key = f"all_delivery_by_type"
-
-    # Try cache first
-    cached_deliveries = redis_client.get(cache_key)
-    if cached_deliveries:
-        return [DeliveryResponse(**d) for d in json.loads(cached_deliveries)]
-
-    stmt = (
-        select(Delivery)
-        .where(Delivery.delivery_type == delivery_type)
-        .options(
-            joinedload(Delivery.order).options(
-                selectinload(Order.order_items).options(
-                    joinedload(OrderItem.item).options(selectinload(Item.images))
-                ),
-                joinedload(Order.delivery),
-            )
-        )
-        .offset(skip)
-        .limit(limit)
-        .order_by(Delivery.created_at.desc())
-    )
-
-    result = await db.execute(stmt)
-    deliveries = result.unique().scalars().all()
-
-    # Format responses
-    delivery_responses = [
-        format_delivery_response(delivery.order, delivery) for delivery in deliveries
-    ]
-
-    # Cache the formatted responses
-    redis_client.setex(
-        cache_key,
-        timedelta(seconds=CACHE_TTL),
-        json.dumps([d.model_dump() for d in delivery_responses], default=str),
-    )
-
-    return delivery_responses
-
-
 async def get_delivery_by_order_id(
     order_id: UUID,
     db: AsyncSession,
 ) -> DeliveryResponse:
     """Get delivery by order ID"""
-
-    # cached_order = redis_client.get(f"delivery:{order_id}")
-    # if cached_order:
-    #     return DeliveryResponse(**json.loads(cached_order))
 
     try:
         order_stmt = (
@@ -141,13 +89,6 @@ async def get_delivery_by_order_id(
 
         oder_response = format_delivery_response(order, order.delivery)
 
-        # Cache the formatted response
-        # redis_client.setex(
-        #     f"delivery:{order_id}",
-        #     timedelta(seconds=settings.REDIS_EX),
-        #     json.dumps(oder_response.model_dump(), default=str),
-        # )
-
         return oder_response
 
     except HTTPException:
@@ -159,6 +100,49 @@ async def get_delivery_by_order_id(
         )
 
 
+async def get_user_orders(db: AsyncSession,user_id: UUID) -> list[DeliveryResponse]:
+    """
+    Get all orders with their deliveries (if any) with caching
+    """
+    cache_key = f"user_orders:{user_id}"
+
+    # Try cache first with error handling
+
+    cached_deliveries = redis_client.get(cache_key)
+    if cached_deliveries:
+        return [DeliveryResponse(**d) for d in json.loads(cached_deliveries)]
+
+    stmt = (
+        select(Order)
+        .where(or_(Order.owner_id == user_id, Order.vendor_id == user_id))
+        .order_by(Order.updated_at.desc())
+        .options(
+            selectinload(Order.order_items).options(
+                joinedload(OrderItem.item).options(selectinload(Item.images))
+            ),
+            joinedload(Order.delivery),
+            joinedload(Order.vendor).joinedload(User.profile),
+        )
+        
+    )
+
+    result = await db.execute(stmt)
+    orders = result.unique().scalars().all()
+
+    # Format responses - delivery will be None for orders without delivery
+    delivery_responses = [
+        format_delivery_response(order, order.delivery) for order in orders
+    ]
+
+    # Cache the formatted responses with error handling
+
+    redis_client.setex(
+        cache_key,
+        timedelta(seconds=CACHE_TTL),
+        json.dumps([d.model_dump() for d in delivery_responses], default=str),
+    )
+
+    return delivery_responses
 async def get_all_orders(db: AsyncSession) -> list[DeliveryResponse]:
     """
     Get all orders with their deliveries (if any) with caching
@@ -335,6 +319,8 @@ async def create_package_order(
         invalidate_order_cache(delivery_data.order_id)
 
         redis_client.delete(f"user_orders:{current_user.id}")
+        redis_client.delete(f"user_orders:{order.owner_id}")
+        redis_client.delete(f"user_orders:{order.vendor_id}")
         redis_client.delete(f"{ALL_DELIVERY}")
         redis_client.delete("paid_pending_deliveries")
         redis_client.delete(f"user_related_orders:{current_user.id}")
@@ -538,7 +524,8 @@ async def order_food_or_request_laundy_service(
                 )
                 .returning(Delivery.id)
             )
-            delivery_id = delivery_insert_result.scalar_one()
+
+            # delivery_id = delivery_insert_result.scalar_one()
 
         # Generate payment link
         payment_link = await get_payment_link(order_id, final_amount, current_user)
@@ -557,6 +544,8 @@ async def order_food_or_request_laundy_service(
             f"user_orders:{current_user.id}",
             f"vendor_orders:{vendor_id}",
             f"order_details:{order_id}",
+            f"user_orders:{order.owner_id}",
+            f"user_orders:{order.vendor_id}"
         ]
         redis_client.delete(*cache_keys)
         redis_client.delete(ALL_DELIVERY)
@@ -604,6 +593,8 @@ async def order_food_or_request_laundy_service(
                 )
             redis_client.delete("paid_pending_deliveries")
             redis_client.delete(f"user_related_orders:{current_user.id}")
+            redis_client.delete(f"user_orders:{order.owner_id}")
+            redis_client.delete(f"user_orders:{order.vendor_id}")
             return format_delivery_response(order, delivery=None)
 
     except Exception as e:
