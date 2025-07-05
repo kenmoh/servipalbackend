@@ -50,11 +50,10 @@ async def withdraw_funds(
 @router.post("/webhook", include_in_schema=False, status_code=status.HTTP_200_OK)
 async def process_webhook(
     request: Request,
-    background_task: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, str]:
     return await transaction_service.handle_payment_webhook(
-        request=request, db=db, background_task=background_task
+        request=request, db=db,
     )
 
 

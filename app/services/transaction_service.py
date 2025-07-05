@@ -1,5 +1,6 @@
 import asyncio
 from datetime import datetime
+from decimal import Decimal
 from uuid import UUID
 import logging
 from fastapi import BackgroundTasks, HTTPException, Request, status
@@ -267,8 +268,7 @@ async def handle_charge_completed_callback(request: Request, db: AsyncSession, p
             if transaction.payment_status == PaymentStatus.PAID:
                 transaction.payment_method = payment_type
                 await db.commit()
-                return {"status": "ignored", "reason": "Transaction already paid"}
-
+                
             # Mark transaction as paid
             transaction.payment_status = PaymentStatus.PAID
             transaction.payment_method = payment_type
@@ -302,7 +302,7 @@ async def handle_charge_completed_callback(request: Request, db: AsyncSession, p
 
     return {"status": "ignored", "reason": "Not a successful charge.completed event"}
 
-async def handle_payment_webhook(request: Request, db: AsyncSession, background_task: BackgroundTasks = None):
+async def handle_payment_webhook(request: Request, db: AsyncSession):
     payload = await request.json()
     event = payload.get("event")
     data = payload.get("data", {})
@@ -403,7 +403,7 @@ async def fund_wallet_callback(request: Request, db: AsyncSession):
     tx_status = request.query_params["status"]
 
     # First get the transaction
-    stmt = select(Transaction).where(Transaction.id == tx_ref)
+    stmt = select(Transaction).where(Transaction.id == UUID(tx_ref))
     result = await db.execute(stmt)
     transaction = result.scalar_one_or_none()
 
@@ -413,7 +413,7 @@ async def fund_wallet_callback(request: Request, db: AsyncSession):
     # Verify payment status
     if tx_status == "successful":
         # Verify with payment gateway
-        verify_result = await verify_transaction_tx_ref(tx_ref)
+        verify_result = await verify_transaction_tx_ref(UUID(tx_ref))
         if verify_result.get("data", {}).get("status") == "successful":
             # Get charge configuration (using proper query)
             charge_stmt = select(ChargeAndCommission)
@@ -429,7 +429,8 @@ async def fund_wallet_callback(request: Request, db: AsyncSession):
             wallet = await get_wallet(transaction.wallet_id, db)
 
             # Calculate the amount to add
-            amount_to_add = calculate_net_amount(transaction.amount, charge)
+            # amount_to_add = calculate_net_amount(transaction.amount, charge)
+            amount_to_add = transaction.amount
 
             # Update wallet balance
             wallet.balance += amount_to_add
@@ -454,7 +455,7 @@ async def fund_wallet_callback(request: Request, db: AsyncSession):
             return {
                 "payment_status": transaction.status,
                 "wallet_balance": wallet.balance,
-                "amount_added": amount_to_add,
+                "amount_added": str(amount_to_add),
             }
 
     elif tx_status == "cancelled":
@@ -468,7 +469,7 @@ async def fund_wallet_callback(request: Request, db: AsyncSession):
 
 
 # Helper function to calculate the net amount after charges
-def calculate_net_amount(amount: float, charge: ChargeAndCommission) -> float:
+def calculate_net_amount(amount: Decimal, charge: ChargeAndCommission) -> Decimal:
     """Calculate the net amount after deducting transaction charges."""
     if amount <= 5000:
         charge_fee = charge.payout_charge_transaction_upto_5000_naira
