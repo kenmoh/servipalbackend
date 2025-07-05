@@ -92,12 +92,17 @@ async def create_review(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Review already exists for this order.",
         )
+    if order.vendor_id == current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You cannot review your own order.",
+        )
 
     # Order validation
     order = await db.get(Order, data.order_id)
     if not order or order.order_status != OrderStatus.RECEIVED:
         raise HTTPException(
-            status_code=400, detail="Order is not completed or doesn't exist."
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Order is not completed or doesn't exist."
         )
 
     try:

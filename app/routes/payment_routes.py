@@ -43,7 +43,7 @@ async def withdraw_funds(
     db: AsyncSession = Depends(get_db),
 ) -> WithdrawalShema:
     return await transaction_service.make_withdrawal(
-        request=request, db=db
+        current_user=current_user, db=db
     )
 
 

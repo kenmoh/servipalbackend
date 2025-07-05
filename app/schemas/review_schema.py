@@ -31,14 +31,6 @@ class ReviewCreate(BaseModel):
     comment: str
 
 
-# class ReviewResponse(BaseModel):
-#     id: UUID
-#     complainant_id: UUID
-#     complainant: UUID
-#     rating: int
-#     comment: str
-#     created_at: datetime
-
 
 class ReviewerProfile(BaseModel):
     id: UUID
