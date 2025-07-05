@@ -5,7 +5,12 @@ from decimal import Decimal
 from uuid import UUID
 from fastapi import Depends, Form
 from pydantic import EmailStr, BaseModel, Field, constr, ConfigDict
-from app.schemas.status_schema import AccountStatus, TransactionType, UserType, PaymentStatus
+from app.schemas.status_schema import (
+    AccountStatus,
+    TransactionType,
+    UserType,
+    PaymentStatus,
+)
 
 
 class AccountDetails(BaseModel):

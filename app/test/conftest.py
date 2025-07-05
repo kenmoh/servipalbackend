@@ -248,13 +248,17 @@ def unauthorized_sync_client(sync_test_client: TestClient) -> TestClient:
 TEST_DATABASE_URL = settings.TEST_DATABASE_URL
 
 engine_test = create_async_engine(TEST_DATABASE_URL, poolclass=NullPool, future=True)
-TestingSessionLocal = async_sessionmaker(engine_test, expire_on_commit=False, class_=AsyncSession)
+TestingSessionLocal = async_sessionmaker(
+    engine_test, expire_on_commit=False, class_=AsyncSession
+)
+
 
 @pytest.fixture(scope="session")
 def event_loop():
     loop = asyncio.get_event_loop()
     yield loop
     loop.close()
+
 
 @pytest.fixture(scope="session", autouse=True)
 async def setup_test_db():
@@ -265,20 +269,24 @@ async def setup_test_db():
     async with engine_test.begin() as conn:
         await conn.run_sync(Base.metadata.drop_all)
 
+
 @pytest.fixture(scope="function")
 async def db_session():
     async with TestingSessionLocal() as session:
         yield session
         await session.rollback()
 
+
 @pytest.fixture(scope="function")
 async def async_client(db_session):
     async def override_get_db():
         yield db_session
+
     app.dependency_overrides = {}
     app.dependency_overrides["get_db"] = override_get_db
     async with AsyncClient(app=app, base_url="http://test") as ac:
         yield ac
+
 
 @pytest.fixture
 def test_user():
@@ -288,6 +296,7 @@ def test_user():
         "user_type": UserType.CUSTOMER,
     }
 
+
 @pytest.fixture
 def test_vendor():
     return {
@@ -295,6 +304,7 @@ def test_vendor():
         "password": "testpassword",
         "user_type": UserType.RESTAURANT_VENDOR,
     }
+
 
 @pytest.fixture
 def test_wallet():

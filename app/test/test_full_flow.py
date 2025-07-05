@@ -236,7 +236,7 @@ async def test_vendor_registration_and_item_creation(async_client):
         "price": 1000,
         "item_type": "food",
         "category_id": None,
-        "food_group": "main_course"
+        "food_group": "main_course",
     }
     resp = await async_client.post("/api/items", json=item_data, headers=headers)
     assert resp.status_code in (200, 201)
@@ -281,7 +281,7 @@ async def test_order_creation_and_payment_flow(async_client):
         "price": 1000,
         "item_type": "food",
         "category_id": None,
-        "food_group": "main_course"
+        "food_group": "main_course",
     }
     resp = await async_client.post("/api/items", json=item_data, headers=vendor_headers)
     assert resp.status_code in (200, 201)
@@ -290,7 +290,9 @@ async def test_order_creation_and_payment_flow(async_client):
 
     # User creates order
     order_data = {
-        "order_items": [{"vendor_id": item["vendor_id"], "item_id": item_id, "quantity": 1}],
+        "order_items": [
+            {"vendor_id": item["vendor_id"], "item_id": item_id, "quantity": 1}
+        ],
         "pickup_coordinates": [6.45, 3.40],
         "dropoff_coordinates": [6.45, 3.41],
         "distance": 1.0,
@@ -298,17 +300,26 @@ async def test_order_creation_and_payment_flow(async_client):
         "duration": "30m",
         "origin": "A",
         "destination": "B",
-        "additional_info": "Test order"
+        "additional_info": "Test order",
     }
-    resp = await async_client.post(f"/api/orders/{item['vendor_id']}", json=order_data, headers=user_headers)
+    resp = await async_client.post(
+        f"/api/orders/{item['vendor_id']}", json=order_data, headers=user_headers
+    )
     assert resp.status_code in (200, 201)
     order = resp.json()
     assert order["order"]["order_status"] == "pending"
 
     # Simulate payment (wallet or bank transfer)
     # This part depends on your payment test setup; here we just check the endpoint exists
-    resp = await async_client.post(f"/api/payment/{order['order']['id']}/pay-with-wallet", headers=user_headers)
-    assert resp.status_code in (200, 201, 400, 422)  # Acceptable: insufficient funds, etc.
+    resp = await async_client.post(
+        f"/api/payment/{order['order']['id']}/pay-with-wallet", headers=user_headers
+    )
+    assert resp.status_code in (
+        200,
+        201,
+        400,
+        422,
+    )  # Acceptable: insufficient funds, etc.
 
 
 @pytest.mark.asyncio
@@ -334,7 +345,7 @@ async def test_error_handling(async_client):
         "price": 1000,
         "item_type": "food",
         "category_id": None,
-        "food_group": "main_course"
+        "food_group": "main_course",
     }
     resp = await async_client.post("/api/items", json=item_data, headers=vendor_headers)
     assert resp.status_code in (200, 201)

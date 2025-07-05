@@ -26,7 +26,6 @@ from app.schemas.review_schema import (
     ReportResponseSchema,
     ThreadMessage,
     SenderInfo,
-    
 )
 from app.models.models import (
     Message,
@@ -79,7 +78,6 @@ async def create_review(
     order_result = await db.execute(select(Order).where(Order.id == data.order_id))
     order = order_result.scalar_one_or_none()
 
-
     # Check if review already exists
     existing_review = await db.execute(
         select(Review).where(
@@ -102,11 +100,11 @@ async def create_review(
     order = await db.get(Order, data.order_id)
     if not order or order.order_status != OrderStatus.RECEIVED:
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail="Order is not completed or doesn't exist."
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Order is not completed or doesn't exist.",
         )
 
     try:
-
         review = Review(
             order_id=data.order_id,
             reviewer_id=order.vendor_id,
@@ -182,15 +180,13 @@ async def fetch_vendor_reviews(
     return response_list
 
 
-
-
 async def create_report(
     db: AsyncSession, order_id: UUID, current_user: User, report_data: ReportCreate
 ) -> ReportResponseSchema:
     """Create a new report with automatic admin acknowledgment message"""
     from sqlalchemy.exc import IntegrityError
     from fastapi import HTTPException
-    
+
     try:
         # Get the order with delivery information
         order_stmt = (
@@ -202,10 +198,10 @@ async def create_report(
         )
         order_result = await db.execute(order_stmt)
         order = order_result.scalar_one_or_none()
-        
+
         if not order:
             raise ValueError(f"Order with ID {order_id} not found")
-        
+
         # Determine defendant_id based on reported user type
         if report_data.reported_user_type == ReportedUserType.CUSTOMER:
             defendant_id = order.owner_id
@@ -213,35 +209,46 @@ async def create_report(
             defendant_id = order.vendor_id
         elif report_data.reported_user_type == ReportedUserType.DISPATCH:
             if not order.delivery:
-                raise ValueError("Order has no delivery information for dispatch report")
+                raise ValueError(
+                    "Order has no delivery information for dispatch report"
+                )
             defendant_id = order.delivery.dispatch_id
         else:
-            raise ValueError(f"Invalid reported user type: {report_data.reported_user_type}")
-        
+            raise ValueError(
+                f"Invalid reported user type: {report_data.reported_user_type}"
+            )
+
         # Proactive check for existing report
         existing_report_stmt = select(UserReport).where(
             UserReport.complainant_id == current_user.id,
             UserReport.defendant_id == defendant_id,
-            UserReport.order_id == order_id
+            UserReport.order_id == order_id,
         )
-        
+
         # Add delivery_id check if it's a dispatch report
-        if report_data.reported_user_type == ReportedUserType.DISPATCH and order.delivery:
+        if (
+            report_data.reported_user_type == ReportedUserType.DISPATCH
+            and order.delivery
+        ):
             existing_report_stmt = existing_report_stmt.where(
                 UserReport.delivery_id == order.delivery.id
             )
-        
+
         existing_report_result = await db.execute(existing_report_stmt)
         existing_report = existing_report_result.scalar_one_or_none()
-        
+
         if existing_report:
-            report_target = "order" if report_data.reported_user_type != ReportedUserType.DISPATCH else "delivery"
+            report_target = (
+                "order"
+                if report_data.reported_user_type != ReportedUserType.DISPATCH
+                else "delivery"
+            )
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail=f"You have already submitted a report for this {report_target} against this user. "
-                       f"Report ID: {existing_report.id}. Please check your existing reports or contact support."
+                f"Report ID: {existing_report.id}. Please check your existing reports or contact support.",
             )
-        
+
         # Create the report
         report = UserReport(
             reported_user_type=report_data.reported_user_type,
@@ -252,18 +259,24 @@ async def create_report(
             order_id=order_id,
             # delivery_id=order.delivery.id if report_data.reported_user_type == ReportedUserType.DISPATCH else None,
             report_tag=ReportTag.COMPLAINANT,
-            report_status=ReportStatus.PENDING
+            report_status=ReportStatus.PENDING,
         )
-        
+
         db.add(report)
         await db.flush()  # Flush to get the report ID
-        
+
         # Create UserReportReadStatus for both users
-        db.add_all([
-            UserReportReadStatus(report_id=report.id, user_id=current_user.id, is_read=True),
-            UserReportReadStatus(report_id=report.id, user_id=defendant_id, is_read=False),
-        ])
-        
+        db.add_all(
+            [
+                UserReportReadStatus(
+                    report_id=report.id, user_id=current_user.id, is_read=True
+                ),
+                UserReportReadStatus(
+                    report_id=report.id, user_id=defendant_id, is_read=False
+                ),
+            ]
+        )
+
         # Create admin acknowledgment message using insert
         admin_message_stmt = insert(Message).values(
             message_type=MessageType.REPORT,
@@ -272,15 +285,14 @@ async def create_report(
             role=UserType.ADMIN,
         )
         await db.execute(admin_message_stmt)
-        
+
         # Update report status to investigating
         report.report_status = ReportStatus.INVESTIGATING
-        
+
         # Commit all changes
         await db.commit()
 
         token = await get_user_notification_token(db=db, user_id=report.defendant_id)
-      
 
         if token:
             await send_push_notification(
@@ -290,55 +302,51 @@ async def create_report(
                 navigate_to="/(app)/delivery/orders",
             )
 
-        
         return report
-        
+
     except HTTPException:
         # Re-raise HTTP exceptions as-is
         await db.rollback()
         raise
-        
+
     except IntegrityError as e:
         # Rollback on constraint violation
         await db.rollback()
-        
+
         # Check which constraint was violated
         error_msg = str(e.orig).lower()
-        
+
         if "uq_reporter_order_report" in error_msg:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail=f"You have already submitted a report for this order against this user. "
-                       f"Please check your existing reports or contact support if you need to update your report."
+                f"Please check your existing reports or contact support if you need to update your report.",
             )
         elif "uq_reporter_delivery_report" in error_msg:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail=f"You have already submitted a report for this delivery against this user. "
-                       f"Please check your existing reports or contact support if you need to update your report."
+                f"Please check your existing reports or contact support if you need to update your report.",
             )
         else:
             # Generic constraint violation
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
-                detail="A report with these details already exists. Please check your existing reports."
+                detail="A report with these details already exists. Please check your existing reports.",
             )
-            
+
     except ValueError as e:
         # Handle validation errors (like missing order, invalid user type, etc.)
         await db.rollback()
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
-        
+
     except Exception as e:
         # Rollback on any other error
         await db.rollback()
         raise HTTPException(
             status_code=500,
-            detail="An error occurred while creating the report. Please try again."
+            detail="An error occurred while creating the report. Please try again.",
         )
-
-
-
 
 
 async def add_message_to_report(
@@ -358,10 +366,17 @@ async def add_message_to_report(
 
     # Set is_read=False for the recipient only
     report = await db.get(UserReport, report_id)
-    recipient_id = report.complainant_id if current_user.id != report.complainant_id else report.defendant_id
+    recipient_id = (
+        report.complainant_id
+        if current_user.id != report.complainant_id
+        else report.defendant_id
+    )
     await db.execute(
         update(UserReportReadStatus)
-        .where(UserReportReadStatus.report_id == report_id, UserReportReadStatus.user_id == recipient_id)
+        .where(
+            UserReportReadStatus.report_id == report_id,
+            UserReportReadStatus.user_id == recipient_id,
+        )
         .values(is_read=False)
     )
 
@@ -375,14 +390,15 @@ async def add_message_to_report(
     return message_obj
 
 
-
-
 async def mark_message_as_read(db: AsyncSession, report_id: UUID, current_user: User):
     """Mark a report and all its messages as read for a specific user"""
     # Mark the report as read for this user
     await db.execute(
         update(UserReportReadStatus)
-        .where(UserReportReadStatus.report_id == report_id, UserReportReadStatus.user_id == current_user.id)
+        .where(
+            UserReportReadStatus.report_id == report_id,
+            UserReportReadStatus.user_id == current_user.id,
+        )
         .values(is_read=True)
     )
     # Mark all messages in the thread as read for this user
@@ -408,7 +424,9 @@ async def get_user_messages(db: AsyncSession, user_id: UUID) -> list[ReportMessa
             selectinload(UserReport.defendant),
         )
         .where(
-            or_(UserReport.complainant_id == user_id, UserReport.defendant_id == user_id)
+            or_(
+                UserReport.complainant_id == user_id, UserReport.defendant_id == user_id
+            )
         )
         .order_by(UserReport.created_at.desc())
     )
@@ -422,7 +440,6 @@ async def get_user_messages(db: AsyncSession, user_id: UUID) -> list[ReportMessa
             sender_name = None
             sender_avatar = None
             if msg.sender and msg.sender.profile:
-
                 sender_name = (
                     msg.sender.profile.full_name
                     or msg.sender.profile.business_name
@@ -431,7 +448,9 @@ async def get_user_messages(db: AsyncSession, user_id: UUID) -> list[ReportMessa
                 if msg.sender.profile.profile_image:
                     sender_avatar = msg.sender.profile.profile_image.profile_image_url
             sender_info = SenderInfo(name=sender_name or "User", avatar=sender_avatar)
-            read_status = next((rs for rs in msg.read_status if rs.user_id == user_id), None)
+            read_status = next(
+                (rs for rs in msg.read_status if rs.user_id == user_id), None
+            )
             is_msg_read = read_status.read if read_status else False
             thread.append(
                 ThreadMessage(
@@ -457,7 +476,11 @@ async def get_user_messages(db: AsyncSession, user_id: UUID) -> list[ReportMessa
                 thread=thread,
             )
         )
-    redis_client.setex(cache_key, settings.REDIS_EX, json.dumps([msg.model_dump() for msg in report_messages], default=str))
+    redis_client.setex(
+        cache_key,
+        settings.REDIS_EX,
+        json.dumps([msg.model_dump() for msg in report_messages], default=str),
+    )
     return report_messages
 
 
@@ -479,15 +502,18 @@ async def mark_thread_as_read_for_user(db: AsyncSession, report_id: UUID, user: 
                 read_status.read = True
                 read_status.read_at = datetime.datetime.now()
         else:
-            db.add(MessageReadStatus(
-                message_id=msg.id, user_id=user.id, read=True, read_at=datetime.datetime.now()
-            ))
+            db.add(
+                MessageReadStatus(
+                    message_id=msg.id,
+                    user_id=user.id,
+                    read=True,
+                    read_at=datetime.datetime.now(),
+                )
+            )
 
     # Set report.is_read = True
     await db.execute(
-        update(UserReport)
-        .where(UserReport.id == report_id)
-        .values(is_read=True)
+        update(UserReport).where(UserReport.id == report_id).values(is_read=True)
     )
     await db.commit()
 
@@ -498,11 +524,15 @@ async def delete_report_if_allowed(db: AsyncSession, report_id: UUID) -> None:
     result = await db.execute(stmt)
     report = result.scalar_one_or_none()
     if not report:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Report not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Report not found"
+        )
 
     if report.report_status not in [ReportStatus.DISMISSED, ReportStatus.RESOLVED]:
-        raise HTTPException(status_code=400, detail="Can only delete reports that are dismissed or resolved.")
-
+        raise HTTPException(
+            status_code=400,
+            detail="Can only delete reports that are dismissed or resolved.",
+        )
 
     await db.delete(report)
     await db.commit()
@@ -514,18 +544,25 @@ async def delete_report_if_allowed(db: AsyncSession, report_id: UUID) -> None:
     return None
 
 
-async def update_report_status(db: AsyncSession, report_id: UUID, new_status: ReportStatus, current_user: User)->StatusUpdate:
+async def update_report_status(
+    db: AsyncSession, report_id: UUID, new_status: ReportStatus, current_user: User
+) -> StatusUpdate:
     """Update the status of a report. Only admin or the complainant can update."""
     stmt = select(UserReport).where(UserReport.id == report_id)
     result = await db.execute(stmt)
     report = result.scalar_one_or_none()
     if not report:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Report not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Report not found"
+        )
 
     # Allow only admin or the complainant to update
-    is_admin = getattr(current_user, 'user_type', None) == UserType.ADMIN
+    is_admin = getattr(current_user, "user_type", None) == UserType.ADMIN
     if current_user.id != report.complainant_id and not is_admin:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized to update this report.")
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Not authorized to update this report.",
+        )
 
     report.report_status = new_status
     await db.commit()
@@ -537,10 +574,10 @@ async def update_report_status(db: AsyncSession, report_id: UUID, new_status: Re
     redis_client.delete(f"report:{report_id}:thread:{report.defendant_id}")
     return StatusUpdate.model_validate(new_status)
 
-    
 
-
-async def get_report_by_id(db: AsyncSession, current_user: User, report_id: UUID) -> ReportMessage:
+async def get_report_by_id(
+    db: AsyncSession, current_user: User, report_id: UUID
+) -> ReportMessage:
     cache_key = f"report:{report_id}:thread:{current_user.id}"
     cached = redis_client.get(cache_key)
     if cached:
@@ -561,9 +598,17 @@ async def get_report_by_id(db: AsyncSession, current_user: User, report_id: UUID
     result = await db.execute(stmt)
     report = result.scalar_one_or_none()
     if not report:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Report not found")
-    if current_user.id not in [report.complainant_id, report.defendant_id, UserType.ADMIN]:
-        raise HTTPException(status_code=403, detail="Not authorized to view this report.")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Report not found"
+        )
+    if current_user.id not in [
+        report.complainant_id,
+        report.defendant_id,
+        UserType.ADMIN,
+    ]:
+        raise HTTPException(
+            status_code=403, detail="Not authorized to view this report."
+        )
     thread = []
     for msg in sorted(report.messages, key=lambda x: x.created_at):
         sender_name = None
@@ -577,11 +622,13 @@ async def get_report_by_id(db: AsyncSession, current_user: User, report_id: UUID
             if msg.sender.profile.profile_image:
                 sender_avatar = msg.sender.profile.profile_image.profile_image_url
         sender_info = SenderInfo(name=sender_name or "User", avatar=sender_avatar)
-        read_status = next((rs for rs in msg.read_status if rs.user_id == current_user.id), None)
+        read_status = next(
+            (rs for rs in msg.read_status if rs.user_id == current_user.id), None
+        )
         is_msg_read = read_status.read if read_status else False
         thread.append(
             ThreadMessage(
-                id= msg.id,
+                id=msg.id,
                 sender=sender_info,
                 message_type=msg.message_type,
                 role=msg.role.value if msg.role else None,
@@ -608,11 +655,8 @@ async def get_report_by_id(db: AsyncSession, current_user: User, report_id: UUID
 async def get_unread_badge_count(db: AsyncSession, user_id: UUID) -> BadgeCount:
     """Return the count of unread reports for the current user (report threads)."""
     unread_stmt = select(UserReportReadStatus).where(
-        UserReportReadStatus.user_id == user_id,
-        UserReportReadStatus.is_read == False
+        UserReportReadStatus.user_id == user_id, UserReportReadStatus.is_read == False
     )
     unread_result = await db.execute(unread_stmt)
     unread_count = len(unread_result.fetchall())
-    return {'unread_count': unread_count}
-
-
+    return {"unread_count": unread_count}

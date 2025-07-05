@@ -166,11 +166,10 @@ async def get_all_orders(db: AsyncSession) -> list[DeliveryResponse]:
     cache_key = ALL_DELIVERY
 
     # Try cache first with error handling
-  
+
     cached_deliveries = redis_client.get(cache_key)
     if cached_deliveries:
         return [DeliveryResponse(**d) for d in json.loads(cached_deliveries)]
-       
 
     stmt = (
         select(Order)
@@ -193,13 +192,12 @@ async def get_all_orders(db: AsyncSession) -> list[DeliveryResponse]:
     ]
 
     # Cache the formatted responses with error handling
-    
+
     redis_client.setex(
         cache_key,
         timedelta(seconds=CACHE_TTL),
         json.dumps([d.model_dump() for d in delivery_responses], default=str),
     )
-
 
     return delivery_responses
 
@@ -338,8 +336,8 @@ async def create_package_order(
 
         redis_client.delete(f"user_orders:{current_user.id}")
         redis_client.delete(f"{ALL_DELIVERY}")
-        redis_client.delete('paid_pending_deliveries')
-        redis_client.delete(f'user_related_orders:{current_user.id}')
+        redis_client.delete("paid_pending_deliveries")
+        redis_client.delete(f"user_related_orders:{current_user.id}")
         if hasattr(delivery_data, "vendor_id"):
             redis_client.delete(f"vendor_orders:{delivery_data.vendor_id}")
         else:
@@ -359,9 +357,8 @@ async def create_package_order(
         delivery_stmt = select(Delivery).where(Delivery.id == delivery_data.id)
         delivery = (await db.execute(delivery_stmt)).scalar_one()
 
-        redis_client.delete('paid_pending_deliveries')
-        redis_client.delete(f'user_related_orders:{current_user.id}')
-        
+        redis_client.delete("paid_pending_deliveries")
+        redis_client.delete(f"user_related_orders:{current_user.id}")
 
         # REUSE the formatting function
         return format_delivery_response(order, delivery)
@@ -563,8 +560,7 @@ async def order_food_or_request_laundy_service(
         ]
         redis_client.delete(*cache_keys)
         redis_client.delete(ALL_DELIVERY)
-        redis_client.delete('orders')
-
+        redis_client.delete("orders")
 
         # Single optimized query to fetch complete order and delivery data
         if requires_delivery:
@@ -606,8 +602,8 @@ async def order_food_or_request_laundy_service(
                     message=f"You have a new order from {current_user.profile.full_name if current_user.profile.full_name else current_user.profile.business_name}",
                     navigate_to="/delivery/orders",
                 )
-            redis_client.delete('paid_pending_deliveries')
-            redis_client.delete(f'user_related_orders:{current_user.id}')
+            redis_client.delete("paid_pending_deliveries")
+            redis_client.delete(f"user_related_orders:{current_user.id}")
             return format_delivery_response(order, delivery=None)
 
     except Exception as e:
@@ -675,8 +671,8 @@ async def cancel_delivery(
             await db.refresh(delivery)
 
             invalidate_delivery_cache(delivery.id)
-            redis_client.delete('paid_pending_deliveries')
-            redis_client.delete(f'user_related_orders:{current_user.id}')
+            redis_client.delete("paid_pending_deliveries")
+            redis_client.delete(f"user_related_orders:{current_user.id}")
             return DeliveryStatusUpdateSchema(delivery_status=delivery.delivery_status)
 
     if current_user.user_type == UserType.RIDER:
@@ -743,8 +739,8 @@ async def cancel_delivery(
                 )
 
             redis_client.delete(f"{ALL_DELIVERY}")
-            redis_client.delete('paid_pending_deliveries')
-            redis_client.delete(f'user_related_orders:{current_user.id}')
+            redis_client.delete("paid_pending_deliveries")
+            redis_client.delete(f"user_related_orders:{current_user.id}")
 
             return DeliveryStatusUpdateSchema(delivery_status=delivery.delivery_status)
 
@@ -799,8 +795,8 @@ async def re_list_item_for_delivery(
 
                 invalidate_delivery_cache(delivery.id)
                 redis_client.delete(ALL_DELIVERY)
-                redis_client.delete('paid_pending_deliveries')
-                redis_client.delete(f'user_related_orders:{current_user.id}')
+                redis_client.delete("paid_pending_deliveries")
+                redis_client.delete(f"user_related_orders:{current_user.id}")
                 return DeliveryStatusUpdateSchema(
                     delivery_status=delivery.delivery_status
                 )
@@ -870,8 +866,8 @@ async def vendor_or_owner_mark_order_delivered_or_received(
 
                 redis_client.delete(f"delivery:{order_id}")
                 redis_client.delete(f"{ALL_DELIVERY}")
-                redis_client.delete('paid_pending_deliveries')
-                redis_client.delete(f'user_related_orders:{current_user.id}')
+                redis_client.delete("paid_pending_deliveries")
+                redis_client.delete(f"user_related_orders:{current_user.id}")
 
                 return DeliveryStatusUpdateSchema(delivery_status=order.order_status)
 
@@ -928,8 +924,8 @@ async def vendor_or_owner_mark_order_delivered_or_received(
 
             redis_client.delete(f"delivery:{order_id}")
             redis_client.delete(f"{ALL_DELIVERY}")
-            redis_client.delete('paid_pending_deliveries')
-            redis_client.delete(f'user_related_orders:{current_user.id}')
+            redis_client.delete("paid_pending_deliveries")
+            redis_client.delete(f"user_related_orders:{current_user.id}")
 
             return DeliveryStatusUpdateSchema(delivery_status=order.order_status)
     except Exception as e:
@@ -1061,8 +1057,8 @@ async def rider_accept_delivery_order(
 
     # redis_client.delete(f"delivery:{delivery_id}")
     redis_client.delete(f"{ALL_DELIVERY}")
-    redis_client.delete('paid_pending_deliveries')
-    redis_client.delete(f'user_related_orders:{current_user.id}')
+    redis_client.delete("paid_pending_deliveries")
+    redis_client.delete(f"user_related_orders:{current_user.id}")
 
     return DeliveryStatusUpdateSchema(delivery_status=delivery.delivery_status)
 
@@ -1267,8 +1263,8 @@ async def sender_confirm_delivery_received(
 
         # redis_client.delete(f"delivery:{delivery_id}")
         redis_client.delete(f"{ALL_DELIVERY}")
-        redis_client.delete('paid_pending_deliveries')
-        redis_client.delete(f'user_related_orders:{current_user.id}')
+        redis_client.delete("paid_pending_deliveries")
+        redis_client.delete(f"user_related_orders:{current_user.id}")
 
         return DeliveryStatusUpdateSchema(delivery_status=delivery.delivery_status)
 
@@ -1366,8 +1362,8 @@ async def vendor_mark_laundry_item_received(
 
         # redis_client.delete(f"delivery:{delivery_id}")
         redis_client.delete(f"{ALL_DELIVERY}")
-        redis_client.delete('paid_pending_deliveries')
-        redis_client.delete(f'user_related_orders:{current_user.id}')
+        redis_client.delete("paid_pending_deliveries")
+        redis_client.delete(f"user_related_orders:{current_user.id}")
 
         return DeliveryStatusUpdateSchema(delivery_status=delivery.delivery_status)
 
@@ -1425,8 +1421,8 @@ async def rider_mark_delivered(
 
     redis_client.delete(f"delivery:{delivery_id}")
     redis_client.delete(ALL_DELIVERY)
-    redis_client.delete('paid_pending_deliveries')
-    redis_client.delete(f'user_related_orders:{current_user.id}')
+    redis_client.delete("paid_pending_deliveries")
+    redis_client.delete(f"user_related_orders:{current_user.id}")
     return DeliveryStatusUpdateSchema(delivery_status=delivery.delivery_status)
 
 
@@ -1480,8 +1476,8 @@ async def admin_modify_delivery_status(
 
         redis_client.delete(f"delivery:{delivery_id}")
         redis_client.delete(ALL_DELIVERY)
-        redis_client.delete('paid_pending_deliveries')
-        redis_client.delete(f'user_related_orders:{current_user.id}')
+        redis_client.delete("paid_pending_deliveries")
+        redis_client.delete(f"user_related_orders:{current_user.id}")
 
         return DeliveryStatusUpdateSchema(delivery_status=new_status)
 
@@ -1840,7 +1836,9 @@ def invalidate_order_cache(order_id: UUID) -> None:
     redis_client.delete("all_orders")
 
 
-def filter_paid_pending_deliveries(deliveries: list[DeliveryResponse]) -> list[DeliveryResponse]:
+def filter_paid_pending_deliveries(
+    deliveries: list[DeliveryResponse]
+) -> list[DeliveryResponse]:
     """
     Filters deliveries where:
       - order_payment_status == 'paid'
@@ -1849,20 +1847,22 @@ def filter_paid_pending_deliveries(deliveries: list[DeliveryResponse]) -> list[D
     """
     filtered = []
     for d in deliveries:
-        order = getattr(d, 'order', None)
-        delivery = getattr(d, 'delivery', None)
+        order = getattr(d, "order", None)
+        delivery = getattr(d, "delivery", None)
         if not order or not delivery:
             continue
         if (
-            order.get('order_payment_status') == 'paid'
-            and delivery.get('delivery_status') == 'pending'
-            and order.get('require_delivery') == 'delivery'
+            order.get("order_payment_status") == "paid"
+            and delivery.get("delivery_status") == "pending"
+            and order.get("require_delivery") == "delivery"
         ):
             filtered.append(d)
     return filtered
 
 
-def filter_user_related_deliveries(deliveries: list[DeliveryResponse], user_id: UUID) -> list[DeliveryResponse]:
+def filter_user_related_deliveries(
+    deliveries: list[DeliveryResponse], user_id: UUID
+) -> list[DeliveryResponse]:
     """
     Filters deliveries where the user is involved as:
       - order.user_id
@@ -1872,17 +1872,20 @@ def filter_user_related_deliveries(deliveries: list[DeliveryResponse], user_id: 
     """
     filtered = []
     for d in deliveries:
-        order = getattr(d, 'order', None)
-        delivery = getattr(d, 'delivery', None)
+        order = getattr(d, "order", None)
+        delivery = getattr(d, "delivery", None)
         if not order:
             continue
         if (
-            order.get('user_id') == user_id
-            or order.get('vendor_id') == user_id
-            or (delivery and (
-                delivery.get('dispatch_id') == user_id
-                or delivery.get('rider_id') == user_id
-            ))
+            order.get("user_id") == user_id
+            or order.get("vendor_id") == user_id
+            or (
+                delivery
+                and (
+                    delivery.get("dispatch_id") == user_id
+                    or delivery.get("rider_id") == user_id
+                )
+            )
         ):
             filtered.append(d)
     return filtered
@@ -1896,23 +1899,22 @@ async def get_paid_pending_deliveries(db: AsyncSession) -> list[DeliveryResponse
       - order.require_delivery == 'delivery'
     """
 
-    cache_key = 'paid_pending_deliveries'
-
+    cache_key = "paid_pending_deliveries"
 
     # Try cache first with error handling
     cached_deliveries = redis_client.get(cache_key)
     if cached_deliveries:
         return [DeliveryResponse(**d) for d in json.loads(cached_deliveries)]
-    
+
     stmt = (
         select(Order)
         .where(
-           and_(
-                Order.order_payment_status == 'paid',
-                Order.require_delivery == 'delivery',
-                Order.delivery.has(delivery_status='pending')
+            and_(
+                Order.order_payment_status == "paid",
+                Order.require_delivery == "delivery",
+                Order.delivery.has(delivery_status="pending"),
             )
-            )
+        )
         .options(
             selectinload(Order.order_items).options(
                 joinedload(OrderItem.item).options(selectinload(Item.images))
@@ -1936,7 +1938,9 @@ async def get_paid_pending_deliveries(db: AsyncSession) -> list[DeliveryResponse
     return delivery_responses
 
 
-async def get_user_related_orders(db: AsyncSession, user_id: UUID) -> list[DeliveryResponse]:
+async def get_user_related_orders(
+    db: AsyncSession, user_id: UUID
+) -> list[DeliveryResponse]:
     """
     Returns deliveries where the user is involved as:
       - order.owner_id
@@ -1944,7 +1948,7 @@ async def get_user_related_orders(db: AsyncSession, user_id: UUID) -> list[Deliv
       - delivery.dispatch_id
       - delivery.rider_id
     """
-    cache_key = f'user_related_orders:{user_id}'
+    cache_key = f"user_related_orders:{user_id}"
     cached_orders = redis_client.get(cache_key)
     if cached_orders:
         return [DeliveryResponse(**d) for d in json.loads(cached_orders)]
@@ -1983,8 +1987,6 @@ async def get_user_related_orders(db: AsyncSession, user_id: UUID) -> list[Deliv
     )
 
     return delivery_responses
-
-
 
     """
 

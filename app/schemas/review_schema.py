@@ -21,15 +21,16 @@ class MessageType(str, Enum):
     BROADCAST = "broadcast"
     REPORT = "report"
 
+
 class ReportTag(str, Enum):
-    COMPLAINANT = 'complainant'
-    DEFENDANT= 'defendanat'
+    COMPLAINANT = "complainant"
+    DEFENDANT = "defendanat"
+
 
 class ReviewCreate(BaseModel):
     order_id: UUID
     rating: int = Field(..., ge=1, le=5)
     comment: str
-
 
 
 class ReviewerProfile(BaseModel):
@@ -60,7 +61,6 @@ class ReportStatus(str, Enum):
     INVESTIGATING = "investigating"
     RESOLVED = "resolved"
     DISMISSED = "dismissed"
-
 
 
 class ReportCreate(BaseModel):
@@ -112,10 +112,9 @@ class MessageCreate(BaseModel):
     content: str
 
 
-
 class SenderInfo(BaseModel):
     name: str
-    avatar: str| None = None
+    avatar: str | None = None
 
 
 # Message in a thread (for report messages)
@@ -123,7 +122,7 @@ class ThreadMessage(BaseModel):
     id: UUID
     sender: SenderInfo
     message_type: MessageType
-    role: str 
+    role: str
     date: datetime
     content: str
     read: bool
@@ -132,10 +131,10 @@ class ThreadMessage(BaseModel):
 # Broadcast/individual notification message
 class BroadcastMessage(BaseModel):
     id: str
-    message_type:MessageType
+    message_type: MessageType
     read: bool
     sender: SenderInfo
-    date: str 
+    date: str
     title: str
     content: str
 
@@ -153,7 +152,6 @@ class ReportMessage(BaseModel):
     thread: list[ThreadMessage]
 
 
-
 # Union type for notification messages
 MessageResponse = Union[BroadcastMessage, ReportMessage]
 
@@ -162,10 +160,10 @@ MessageResponse = Union[BroadcastMessage, ReportMessage]
 class MessageListResponse(BaseModel):
     messages: list[MessageResponse]
 
+
 class StatusUpdate(BaseModel):
     report_status: ReportStatus
 
+
 class BadgeCount(BaseModel):
     unread_count: int
-
-

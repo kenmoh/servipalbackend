@@ -15,7 +15,7 @@ from app.schemas.review_schema import (
     ReportIssueUpdate,
     ReportCreate,
     ReportResponseSchema,
-    ReportMessage
+    ReportMessage,
 )
 from app.services import review_service
 
@@ -117,6 +117,3 @@ async def get_user_reviews(
 #     return await review_service.update_report_status(
 #         db=db, update_data=update_data, report_id=report_id, current_user=current_user
 #     )
-
-
-

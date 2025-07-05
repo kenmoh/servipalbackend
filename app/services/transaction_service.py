@@ -18,7 +18,6 @@ from app.models.models import (
     Wallet,
     Transaction,
     OrderItem,
-    
 )
 from app.schemas.marketplace_schemas import (
     TopUpRequestSchema,
@@ -93,8 +92,6 @@ async def top_up_wallet(
             )
             db.add(wallet)
 
-        
-
         if wallet.balance >= 100_000 or (topup_data.amount + wallet.balance) > 100_000:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -107,7 +104,8 @@ async def top_up_wallet(
             amount=topup_data.amount,
             transaction_type=TransactionType.CREDIT,
             payment_status=PaymentStatus.PENDING,
-            payment_by=current_user.profile.full_name or current_user.profile.business_name,
+            payment_by=current_user.profile.full_name
+            or current_user.profile.business_name,
             created_at=datetime.now(),
             updated_at=datetime.now(),
         )
@@ -177,9 +175,9 @@ async def top_up_wallet(
 #             # Bank transfer-specific logic
 #             await db.execute(update(Transaction).where(Transaction.id == UUID(tx_ref)).values(payment_method=PaymentMethod.BANK_TRANSFER))
 #             db.commit()
-       
+
 #         elif payment_type == "card":
-#             # Card payment-specific logic 
+#             # Card payment-specific logic
 #             await db.execute(update(Transaction).where(Transaction.id == UUID(tx_ref)).values(payment_method=PaymentMethod.CARD))
 #             db.commit()
 
@@ -209,7 +207,9 @@ async def top_up_wallet(
 #     return {"status": "ignored", "reason": "Not a successful charge.completed event"}
 
 
-async def handle_charge_completed_callback(request: Request, db: AsyncSession, payload=None):
+async def handle_charge_completed_callback(
+    request: Request, db: AsyncSession, payload=None
+):
     if payload is None:
         payload = await request.json()
     event = payload.get("event")
@@ -230,21 +230,33 @@ async def handle_charge_completed_callback(request: Request, db: AsyncSession, p
         if order:
             # --- Handle Order Payment ---
             if order.order_payment_status == PaymentStatus.PAID:
-                await db.execute(update(Transaction).where(Transaction.id == order.id).values(payment_method=payment_type))
+                await db.execute(
+                    update(Transaction)
+                    .where(Transaction.id == order.id)
+                    .values(payment_method=payment_type)
+                )
                 await db.commit()
                 return {"status": "ignored", "reason": "Order already paid"}
 
-          
-
             # Mark order as paid
             order.order_payment_status = PaymentStatus.PAID
-            await db.execute(update(Transaction).where(Transaction.id == order.id).values(payment_method=payment_type))
+            await db.execute(
+                update(Transaction)
+                .where(Transaction.id == order.id)
+                .values(payment_method=payment_type)
+            )
             await db.commit()
 
             # Send notifications
-            buyer_token = await get_user_notification_token(db=db, user_id=order.owner_id)
-            seller_token = await get_user_notification_token(db=db, user_id=order.vendor_id)
-            amount_str = f"₦{amount_paid}" if currency == "NGN" else f"{amount_paid} {currency}"
+            buyer_token = await get_user_notification_token(
+                db=db, user_id=order.owner_id
+            )
+            seller_token = await get_user_notification_token(
+                db=db, user_id=order.vendor_id
+            )
+            amount_str = (
+                f"₦{amount_paid}" if currency == "NGN" else f"{amount_paid} {currency}"
+            )
             if buyer_token:
                 await send_push_notification(
                     tokens=[buyer_token],
@@ -258,19 +270,25 @@ async def handle_charge_completed_callback(request: Request, db: AsyncSession, p
                     message=f"You have received a new order payment of {amount_str}.",
                 )
 
-            return {"status": "success", "order_id": str(order.id), "payment_type": payment_type}
+            return {
+                "status": "success",
+                "order_id": str(order.id),
+                "payment_type": payment_type,
+            }
 
         # --- If not an order, try as a wallet top-up transaction ---
         transaction = None
         if tx_ref:
-            result = await db.execute(select(Transaction).where(Transaction.id == UUID(tx_ref)))
+            result = await db.execute(
+                select(Transaction).where(Transaction.id == UUID(tx_ref))
+            )
             transaction = result.scalar_one_or_none()
 
         if transaction:
             if transaction.payment_status == PaymentStatus.PAID:
                 transaction.payment_method = payment_type
                 await db.commit()
-                
+
             # Mark transaction as paid
             transaction.payment_status = PaymentStatus.PAID
             transaction.payment_method = payment_type
@@ -286,7 +304,6 @@ async def handle_charge_completed_callback(request: Request, db: AsyncSession, p
                 wallet.balance += amount_to_add
 
             await db.commit()
-            
 
             # Notify user
             token = await get_user_notification_token(db=db, user_id=wallet.id)
@@ -297,12 +314,17 @@ async def handle_charge_completed_callback(request: Request, db: AsyncSession, p
                     message=f"Your wallet top-up of ₦{amount_paid} was successful.",
                 )
 
-            return {"status": "success", "transaction_id": str(transaction.id), "payment_type": payment_type}
+            return {
+                "status": "success",
+                "transaction_id": str(transaction.id),
+                "payment_type": payment_type,
+            }
 
         # If neither order nor transaction found
         return {"status": "ignored", "reason": "Order/Transaction not found"}
 
     return {"status": "ignored", "reason": "Not a successful charge.completed event"}
+
 
 async def handle_payment_webhook(request: Request, db: AsyncSession):
     payload = await request.json()
@@ -333,14 +355,11 @@ async def handle_payment_webhook_old(
     # Get payload
     payload = await request.json()
     tx_ref = payload.get("txRef")
-   
-
 
     # Validate webhook signature
     signature = request.headers.get("verif-hash")
     if signature is None or signature != settings.FLW_SECRET_HASH:
         raise HTTPException(status_code=401, detail="Unauthorized")
-
 
     # Validate required payload fields
     required_fields = ["status", "total_price", "amount", "currency", "txRef"]
@@ -414,7 +433,6 @@ async def fund_wallet_callback(request: Request, db: AsyncSession):
     if not transaction:
         raise HTTPException(status_code=404, detail="Transaction not found")
 
-
     verify_tranx = await verify_transaction_tx_ref(UUID(tx_ref))
     if (
         tx_status == "successful"
@@ -435,19 +453,22 @@ async def fund_wallet_callback(request: Request, db: AsyncSession):
             .values(payment_status=new_status)
         )
 
-        await db.execute(update(Wallet).where(Wallet.id == transaction.wallet_id).values(balance=Wallet.balance + transaction.amount))
+        await db.execute(
+            update(Wallet)
+            .where(Wallet.id == transaction.wallet_id)
+            .values(balance=Wallet.balance + transaction.amount)
+        )
         await db.commit()
         await db.refresh(transaction)
 
-        return {'payment_status': new_status}
-    
+        return {"payment_status": new_status}
+
     except Exception as e:
         logging.error(f"Error updating transaction status: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to update transaction status",
         )
-        
 
     # Get charge configuration (using proper query)
     # charge_stmt = select(ChargeAndCommission)
@@ -493,8 +514,6 @@ async def fund_wallet_callback(request: Request, db: AsyncSession):
     # }
 
 
-
-
 # Helper function to calculate the net amount after charges
 def calculate_net_amount(amount: Decimal, charge: ChargeAndCommission) -> Decimal:
     """Calculate the net amount after deducting transaction charges."""
@@ -525,14 +544,14 @@ async def order_payment_callback(request: Request, db: AsyncSession):
         and verify_tranx.get("data", {}).get("status") == "successful"
     ):
         new_status = PaymentStatus.PAID
-        redis_client.delete('paid_pending_deliveries')
+        redis_client.delete("paid_pending_deliveries")
 
     elif tx_status == "cancelled":
         new_status = PaymentStatus.CANCELLED
-        redis_client.delete('paid_pending_deliveries')
+        redis_client.delete("paid_pending_deliveries")
     else:
         new_status = PaymentStatus.FAILED
-        redis_client.delete('paid_pending_deliveries')
+        redis_client.delete("paid_pending_deliveries")
 
     # Update payment status
     order_update_result = await db.execute(
@@ -542,7 +561,7 @@ async def order_payment_callback(request: Request, db: AsyncSession):
         .returning(Order.order_payment_status, Order.owner_id, Order.total_price)
     )
 
-    redis_client.delete('paid_pending_deliveries')
+    redis_client.delete("paid_pending_deliveries")
     # Fetch the actual row data
     order_data = order_update_result.fetchone()
     if not order_data:
@@ -567,8 +586,8 @@ async def order_payment_callback(request: Request, db: AsyncSession):
         await db.commit()
 
         token = await get_user_notification_token(db=db, user_id=owner_id)
-        redis_client.delete(f'user_related_orders:{owner_id}')
-        redis_client.delete('paid_pending_deliveries')
+        redis_client.delete(f"user_related_orders:{owner_id}")
+        redis_client.delete("paid_pending_deliveries")
 
         if token:
             await send_push_notification(
@@ -584,7 +603,6 @@ async def order_payment_callback(request: Request, db: AsyncSession):
     # if delivery_id:
     #     redis_client.delete(f"delivery:{delivery_id}")
     # redis_client.delete("deliveries")
-    
 
     return {"order_payment_status": order_data.order_payment_status}
 
@@ -713,14 +731,13 @@ async def pay_with_wallet(
         )
 
     # Clear relevant caches
-    redis_client.delete(f'user_related_orders:{buyer.id}')
-    redis_client.delete(f'user_related_orders:{order.vendor_id}')
-    redis_client.delete('paid_pending_deliveries')
-    redis_client.delete('orders')
+    redis_client.delete(f"user_related_orders:{buyer.id}")
+    redis_client.delete(f"user_related_orders:{order.vendor_id}")
+    redis_client.delete("paid_pending_deliveries")
+    redis_client.delete("orders")
 
     return {
         "payment_status": order.order_payment_status,
-      
     }
 
 
@@ -798,9 +815,7 @@ async def initiate_bank_transfer(
             raise
 
 
-async def make_withdrawal(
-    db: AsyncSession, current_user: User
-) -> WithdrawalShema:
+async def make_withdrawal(db: AsyncSession, current_user: User) -> WithdrawalShema:
     """Process withdrawal of entire wallet balance"""
 
     # Load user with profile and wallet in a single query
@@ -869,7 +884,9 @@ async def make_withdrawal(
             bank_code=user.profile.bank_name,
             amount=str(withdrawal_amount),
             account_number=user.profile.bank_account_number,
-            beneficiary_name=user.profile.account_holder_namev or user.profile.business_name or user.profile.full_name,
+            beneficiary_name=user.profile.account_holder_namev
+            or user.profile.business_name
+            or user.profile.full_name,
             charge=charge,
         )
 
@@ -941,4 +958,3 @@ async def bank_payment_transfer_callback_old(request: Request, db: AsyncSession)
         return {"status": "success", "order_id": order.id}
 
     return {"status": "ignored", "reason": "Not a successful charge.completed event"}
-

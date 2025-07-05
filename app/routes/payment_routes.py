@@ -11,7 +11,7 @@ from app.schemas.marketplace_schemas import (
     TransferDetailResponseSchema,
     BankCode,
     WithdrawalShema,
-    TopUpResponseSchema
+    TopUpResponseSchema,
 )
 from app.services import transaction_service
 
@@ -42,9 +42,7 @@ async def withdraw_funds(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> WithdrawalShema:
-    return await transaction_service.make_withdrawal(
-        current_user=current_user, db=db
-    )
+    return await transaction_service.make_withdrawal(current_user=current_user, db=db)
 
 
 @router.post("/webhook", include_in_schema=False, status_code=status.HTTP_200_OK)
@@ -53,7 +51,8 @@ async def process_webhook(
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, str]:
     return await transaction_service.handle_payment_webhook(
-        request=request, db=db,
+        request=request,
+        db=db,
     )
 
 
@@ -88,12 +87,18 @@ async def pay_with_wallet(
     """
     Pay for an order using the user's wallet.
     """
-    return await transaction_service.pay_with_wallet(db=db, order_id=order_id, buyer=current_user)
+    return await transaction_service.pay_with_wallet(
+        db=db, order_id=order_id, buyer=current_user
+    )
 
 
-@router.post("/bank-transfer-callback", include_in_schema=False, status_code=status.HTTP_200_OK)
+@router.post(
+    "/bank-transfer-callback", include_in_schema=False, status_code=status.HTTP_200_OK
+)
 async def bank_transfer_callback(
     request: Request,
     db: AsyncSession = Depends(get_db),
 ):
-    return await transaction_service.bank_payment_transfer_callback(request=request, db=db)
+    return await transaction_service.bank_payment_transfer_callback(
+        request=request, db=db
+    )

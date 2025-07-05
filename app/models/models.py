@@ -51,7 +51,6 @@ from app.schemas.review_schema import (
     ReviewType,
     ReportStatus,
     ReportType,
-    
 )
 
 
@@ -202,7 +201,6 @@ class User(Base):
         cascade="all, delete-orphan",
         lazy="selectin",
     )
-
 
 
 class Profile(Base):
@@ -581,9 +579,7 @@ class Review(Base):
     )  # Who is being reviewed
 
     rating: Mapped[int] = mapped_column(Integer, nullable=False)
-    review_type: Mapped[ReviewType] = mapped_column(
-        nullable=False
-    ) 
+    review_type: Mapped[ReviewType] = mapped_column(nullable=False)
     comment: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(default=datetime.now)
@@ -608,7 +604,6 @@ class Review(Base):
         UniqueConstraint("reviewer_id", "order_id", name="uq_user_order_review"),
         UniqueConstraint("reviewer_id", "item_id", name="uq_user_item_review"),
     )
-
 
 
 # reportedusertype reporttag reportstatus messagetype reporttype
@@ -686,7 +681,7 @@ class UserReport(Base):
         # One report per reporter per delivery (if dispatch is involved)
         UniqueConstraint(
             "complainant_id",
-            "delivery_id", # REMOVE
+            "delivery_id",  # REMOVE
             "defendant_id",
             name="uq_reporter_delivery_report",
         ),
@@ -718,8 +713,7 @@ class Message(Base):
     sender: Mapped["User"] = relationship(
         "User", foreign_keys=[sender_id], back_populates="sent_messages"
     )
-   
-   
+
     report: Mapped[Optional["UserReport"]] = relationship(
         "UserReport", back_populates="messages"
     )
@@ -737,7 +731,9 @@ class MessageReadStatus(Base):
     message_id: Mapped[UUID] = mapped_column(ForeignKey("messages.id"), nullable=False)
     user_id: Mapped[UUID] = mapped_column(ForeignKey("users.id"), nullable=False)
     read: Mapped[bool] = mapped_column(default=False)
-    read_at: Mapped[Optional[datetime]] = mapped_column(default=datetime.now, onupdate=datetime.now)
+    read_at: Mapped[Optional[datetime]] = mapped_column(
+        default=datetime.now, onupdate=datetime.now
+    )
 
     # Relationships
     message: Mapped["Message"] = relationship("Message", back_populates="read_status")
@@ -746,14 +742,21 @@ class MessageReadStatus(Base):
 
 class UserReportReadStatus(Base):
     """Track read status of reports (threads) per user for badge and notification purposes."""
+
     __tablename__ = "user_report_read_status"
 
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
-    report_id: Mapped[UUID] = mapped_column(ForeignKey("user_reports.id"), nullable=False)
+    report_id: Mapped[UUID] = mapped_column(
+        ForeignKey("user_reports.id"), nullable=False
+    )
     user_id: Mapped[UUID] = mapped_column(ForeignKey("users.id"), nullable=False)
     is_read: Mapped[bool] = mapped_column(default=False)
-    read_at: Mapped[Optional[datetime]] = mapped_column(default=datetime.now, onupdate=datetime.now)
+    read_at: Mapped[Optional[datetime]] = mapped_column(
+        default=datetime.now, onupdate=datetime.now
+    )
 
     # Relationships
-    report: Mapped["UserReport"] = relationship("UserReport", back_populates="read_status")
+    report: Mapped["UserReport"] = relationship(
+        "UserReport", back_populates="read_status"
+    )
     user: Mapped["User"] = relationship("User")

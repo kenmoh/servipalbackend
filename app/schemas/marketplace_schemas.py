@@ -25,8 +25,10 @@ class ProductBuyRequest(BaseModel):
 
 class TopUpRequestSchema(BaseModel):
     amount: Decimal = Field(ge=1000, le=100000, description="Amount to top up")
+
+
 class TopUpResponseSchema(TopUpRequestSchema):
-    payment_link: str 
+    payment_link: str
 
 
 class TransactionResponse(BaseModel):

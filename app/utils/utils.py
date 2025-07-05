@@ -498,4 +498,3 @@ async def get_user_notification_token(db: AsyncSession, user_id):
             status_code=status.HTTP_404_NOT_FOUND, detail="Notification token missing"
         )
     return token
-
