@@ -104,6 +104,7 @@ async def top_up_wallet(
             amount=topup_data.amount,
             transaction_type=TransactionType.CREDIT,
             payment_status=PaymentStatus.PENDING,
+            payment_by=current_user.profile.full_name or current_user.profile.business_name,
             created_at=datetime.now(),
             updated_at=datetime.now(),
         )

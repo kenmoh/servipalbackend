@@ -5,7 +5,7 @@ from decimal import Decimal
 from uuid import UUID
 from fastapi import Depends, Form
 from pydantic import EmailStr, BaseModel, Field, constr, ConfigDict
-from app.schemas.status_schema import AccountStatus, TransactionType, UserType
+from app.schemas.status_schema import AccountStatus, TransactionType, UserType, PaymentStatus
 
 
 class AccountDetails(BaseModel):
@@ -65,6 +65,7 @@ class TransactionSchema(BaseModel):
     id: UUID
     wallet_id: UUID
     amount: Decimal
+    payment_status: PaymentStatus
     payment_by: str
     transaction_type: TransactionType
     created_at: datetime
