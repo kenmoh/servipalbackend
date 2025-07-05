@@ -26,7 +26,7 @@ class ReportTag(str, Enum):
     DEFENDANT= 'defendanat'
 
 class ReviewCreate(BaseModel):
-    order_id: UUID | None = None
+    order_id: UUID
     rating: int = Field(..., ge=1, le=5)
     comment: str
 

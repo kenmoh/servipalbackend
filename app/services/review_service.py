@@ -15,12 +15,11 @@ from app.schemas.review_schema import (
     ReportMessage,
     ReportTag,
     ReviewCreate,
-    ReviewResponse,
     ReviewerProfile,
     ReviewType,
     ReportedUserType,
     StatusUpdate,
-    VendorReviewResponse,
+    ReviewResponse,
     ReportType,
     ReportStatus,
     ReportIssueResponse,
@@ -72,7 +71,7 @@ def convert_report_to_response(report: ReportType) -> ReportIssueResponse:
 
 async def create_review(
     db: AsyncSession, current_user: User, data: ReviewCreate
-) -> ReviewResponse:
+) -> ReviewCreate:
     # Shared variables
     reviewer_id = current_user.id
     # reviewee_id = data.reviewee_id
@@ -123,13 +122,13 @@ async def create_review(
 
 
 async def fetch_vendor_reviews(
-    vendor_id: UUID, db: AsyncSession, current_user: User
-) -> list[VendorReviewResponse]:
+    vendor_id: UUID, db: AsyncSession
+) -> list[ReviewResponse]:
     cache_key = f"reviews:{vendor_id}"
     cached_reviews = redis_client.get(cache_key)
 
     if cached_reviews:
-        return [VendorReviewResponse(**r) for r in cached_reviews]
+        return [ReviewResponse(**r) for r in cached_reviews]
 
     # DB fallback
     stmt = (
@@ -147,7 +146,7 @@ async def fetch_vendor_reviews(
     reviews = result.scalars().all()
 
     response_list = [
-        VendorReviewResponse(
+        ReviewResponse(
             id=r.id,
             rating=r.rating,
             comment=r.comment,

@@ -9,7 +9,7 @@ from app.models.models import User
 from app.schemas.review_schema import (
     ReviewCreate,
     ReviewResponse,
-    VendorReviewResponse,
+    ReviewResponse,
     ReviewType,
     ReportIssueResponse,
     ReportIssueUpdate,
@@ -61,8 +61,7 @@ async def create_report(
 async def get_user_reviews(
     vendor_id: UUID,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-) -> list[VendorReviewResponse]:
+) -> list[ReviewResponse]:
     """
     Endpoint to get current user reviews
     """
