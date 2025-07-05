@@ -771,7 +771,7 @@ async def initiate_bank_transfer(
 
 
 async def make_withdrawal(
-    db: AsyncSession, current_user: User, bank_code: BankCode
+    db: AsyncSession, current_user: User
 ) -> WithdrawalShema:
     """Process withdrawal of entire wallet balance"""
 
@@ -838,7 +838,7 @@ async def make_withdrawal(
         await db.flush()
 
         transfer_response = await transfer_money_to_user_account(
-            bank_code=bank_code.bank_code,
+            bank_code=user.profile.bank_name,
             amount=str(withdrawal_amount),
             account_number=user.profile.bank_account_number,
             beneficiary_name=user.profile.account_holder_name,
