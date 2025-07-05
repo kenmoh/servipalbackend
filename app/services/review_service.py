@@ -75,92 +75,51 @@ async def create_review(
 ) -> ReviewResponse:
     # Shared variables
     reviewer_id = current_user.id
-    reviewee_id = data.reviewee_id
+    # reviewee_id = data.reviewee_id
 
     order_result = await db.execute(select(Order).where(Order.id == data.order_id))
     order = order_result.scalar_one_or_none()
 
-    # if data.review_type == ReviewType.ORDER:
-    if order.order_type == ReviewType.ORDER:
-        # Optional caching
-        # cache_key = f"review:order:{data.order_id}:user:{reviewer_id}"
-        # if redis_client.get(cache_key):
-        #     print('FROM CACHE')
-        #     raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Review already exists for this order.")
 
-        # Check if review already exists
-        existing_review = await db.execute(
-            select(Review).where(
-                Review.order_id == data.order_id, Review.reviewer_id == reviewer_id
-            )
+    # Check if review already exists
+    existing_review = await db.execute(
+        select(Review).where(
+            Review.order_id == data.order_id, Review.reviewer_id == reviewer_id
         )
-        if existing_review.scalar():
-            #     redis_client.setex(cache_key, True, settings.REDIS_EX)
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Review already exists for this order.",
-            )
+    )
+    if existing_review.scalar():
+        #     redis_client.setex(cache_key, True, settings.REDIS_EX)
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Review already exists for this order.",
+        )
 
-        # Order validation
-        order = await db.get(Order, data.order_id)
-        if not order or order.order_status != OrderStatus.RECEIVED:
-            raise HTTPException(
-                status_code=400, detail="Order is not completed or doesn't exist."
-            )
+    # Order validation
+    order = await db.get(Order, data.order_id)
+    if not order or order.order_status != OrderStatus.RECEIVED:
+        raise HTTPException(
+            status_code=400, detail="Order is not completed or doesn't exist."
+        )
+
+    try:
 
         review = Review(
             order_id=data.order_id,
-            reviewer_id=reviewer_id,
+            reviewer_id=order.vendor_id,
             reviewee_id=reviewee_id,
             rating=data.rating,
             comment=data.comment,
             review_type=ReviewType.ORDER,
         )
 
-    elif order.order_type == ReviewType.PRODUCT:
-        # cache_key = f"review:delivery:{data.item_id}:user:{reviewer_id}"
-        # if redis_client.get(cache_key):
-        #     raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Review already exists for this delivery.")
+        # Save review
+        db.add(review)
+        await db.commit()
+        await db.refresh(review)
 
-        existing_review = await db.execute(
-            select(Review).where(
-                Review.item_id == data.item_id, Review.reviewer_id == reviewer_id
-            )
-        )
-        if existing_review.scalar():
-            # redis_client.setex(cache_key, settings.REDIS_EX)
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Review already exists for this delivery.",
-            )
-
-        delivery = await db.get(Delivery, data.delivery_id)
-        if not delivery or delivery.delivery_status != DeliveryStatus.RECEIVED:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Delivery is not completed or doesn't exist.",
-            )
-
-        review = Review(
-            item_id=data.item_id,
-            reviewer_id=reviewer_id,
-            reviewee_id=reviewee_id,
-            rating=data.rating,
-            comment=data.comment,
-            review_type=ReviewType.PRODUCT,
-        )
-
-    else:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid review type."
-        )
-
-    # Save review
-    db.add(review)
-    await db.commit()
-    await db.refresh(review)
-
-    return review
+        return review
+    except Exception as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
 
 async def fetch_vendor_reviews(
@@ -212,7 +171,7 @@ async def fetch_vendor_reviews(
 
     # Only cache if we have a full page
     if response_list:
-        await redis_client.setex(
+        redis_client.setex(
             cache_key, [r.model_dump() for r in response_list], default=str
         )
 

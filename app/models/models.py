@@ -583,7 +583,7 @@ class Review(Base):
     rating: Mapped[int] = mapped_column(Integer, nullable=False)
     review_type: Mapped[ReviewType] = mapped_column(
         nullable=False
-    )  # Enum: ITEM, RIDER, VENDOR
+    ) 
     comment: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(default=datetime.now)

@@ -27,20 +27,17 @@ class ReportTag(str, Enum):
 
 class ReviewCreate(BaseModel):
     order_id: UUID | None = None
-    item_id: UUID | None = None
-    # delivery_id: UUID
     rating: int = Field(..., ge=1, le=5)
     comment: str
-    review_type: ReviewType
 
 
-class ReviewResponse(BaseModel):
-    id: UUID
-    complainant_id: UUID
-    complainant: UUID
-    rating: int
-    comment: str
-    created_at: datetime
+# class ReviewResponse(BaseModel):
+#     id: UUID
+#     complainant_id: UUID
+#     complainant: UUID
+#     rating: int
+#     comment: str
+#     created_at: datetime
 
 
 class ReviewerProfile(BaseModel):
@@ -49,7 +46,7 @@ class ReviewerProfile(BaseModel):
     profile_image_url: str
 
 
-class VendorReviewResponse(BaseModel):
+class ReviewResponse(BaseModel):
     id: UUID
     rating: int
     comment: str
