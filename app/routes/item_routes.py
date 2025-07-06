@@ -62,7 +62,7 @@ async def create_menu_item(
 
     item_data = MenuItemCreate(
         name=name,
-        description=description,
+        description=description or None,
         price=price,
         images=images,
         item_type=item_type,
