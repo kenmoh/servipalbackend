@@ -1065,7 +1065,7 @@ async def order_payment_callback(request: Request, db: AsyncSession):
             delivery_fee = 0
             if order.require_delivery == RequireDeliverySchema.DELIVERY:
                 # Try to get delivery fee
-                if order.delivery_id:
+                if order.delivery is not None:
                     delivery_result = await db.execute(
                         select(Order.delivery).where(Order.id == order.id)
                     )
