@@ -1,3 +1,48 @@
+import asyncio
+from datetime import datetime
+from decimal import Decimal
+from uuid import UUID
+import logging
+from fastapi import BackgroundTasks, HTTPException, Request, status
+import httpx
+from sqlalchemy import insert, select, update
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
+
+import hmac
+
+from app.models.models import (
+    ChargeAndCommission,
+    Order,
+    User,
+    Wallet,
+    Transaction,
+    OrderItem,
+)
+from app.schemas.marketplace_schemas import (
+    TopUpRequestSchema,
+    TopUpResponseSchema,
+    TransferDetailResponseSchema,
+    BankCode,
+    WithdrawalShema,
+)
+from app.schemas.order_schema import OrderResponseSchema, OrderType
+from app.schemas.status_schema import PaymentMethod, PaymentStatus, RequireDeliverySchema, TransactionType
+from app.utils.logger_config import setup_logger
+from app.utils.utils import (
+    get_bank_code,
+    get_fund_wallet_payment_link,
+    transfer_money_to_user_account,
+    verify_transaction_tx_ref,
+    flutterwave_base_url,
+    send_push_notification,
+    get_user_notification_token,
+)
+from app.config.config import settings, redis_client
+
+logger = setup_logger()
+
+
 async def handle_charge_completed_callback_fallback(
     request: Request, db: AsyncSession, payload=None
 ):
@@ -207,49 +252,6 @@ async def handle_charge_completed_callback_fallback(
         return {"status": "ignored", "reason": "Order/Transaction not found"}
 
     return {"status": "ignored", "reason": "Not a successful charge.completed event"}
-import asyncio
-from datetime import datetime
-from decimal import Decimal
-from uuid import UUID
-import logging
-from fastapi import BackgroundTasks, HTTPException, Request, status
-import httpx
-from sqlalchemy import insert, select, update
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
-
-import hmac
-
-from app.models.models import (
-    ChargeAndCommission,
-    Order,
-    User,
-    Wallet,
-    Transaction,
-    OrderItem,
-)
-from app.schemas.marketplace_schemas import (
-    TopUpRequestSchema,
-    TopUpResponseSchema,
-    TransferDetailResponseSchema,
-    BankCode,
-    WithdrawalShema,
-)
-from app.schemas.order_schema import OrderResponseSchema, OrderType
-from app.schemas.status_schema import PaymentMethod, PaymentStatus, RequireDeliverySchema, TransactionType
-from app.utils.logger_config import setup_logger
-from app.utils.utils import (
-    get_bank_code,
-    get_fund_wallet_payment_link,
-    transfer_money_to_user_account,
-    verify_transaction_tx_ref,
-    flutterwave_base_url,
-    send_push_notification,
-    get_user_notification_token,
-)
-from app.config.config import settings, redis_client
-
-logger = setup_logger()
 
 
 async def get_wallet(wallet_id, db: AsyncSession):
