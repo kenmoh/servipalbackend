@@ -544,8 +544,8 @@ async def order_food_or_request_laundy_service(
             f"user_orders:{current_user.id}",
             f"vendor_orders:{vendor_id}",
             f"order_details:{order_id}",
-            f"user_orders:{order.owner_id}",
-            f"user_orders:{order.vendor_id}"
+            f"user_orders:{current_user.id}",
+            f"user_orders:{vendor_id}"
         ]
         redis_client.delete(*cache_keys)
         redis_client.delete(ALL_DELIVERY)
