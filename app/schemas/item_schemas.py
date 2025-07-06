@@ -41,7 +41,7 @@ class ItemImageSchema(BaseModel):
 
 class MenuItemCreate(BaseModel):
     name: str
-    description: str
+    description: str | None = None
     price: Decimal
     item_type: ItemType
     category_id: UUID | None = None
