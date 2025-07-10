@@ -7,6 +7,7 @@ from fastapi import (
     HTTPException,
     Query,
     Request,
+    Response,
     status,
 )
 from fastapi.security import OAuth2PasswordRequestForm
@@ -41,6 +42,7 @@ router = APIRouter(prefix="/api/auth", tags=["Authentication"])
 @router.post("/login", status_code=status.HTTP_200_OK)
 async def login_user(
     request: Request,
+    response: Response,
     user_credentials: OAuth2PasswordRequestForm = Depends(),
     db: AsyncSession = Depends(get_db),
 ) -> TokenResponse:
@@ -54,6 +56,17 @@ async def login_user(
             user_type=user.user_type,
             db=db,
         )
+
+
+        response.set_cookie(
+            key="access_token",
+            value=token.access_token,
+            httponly=True,  # Makes cookie HTTP-only
+            secure=True,    # Only send over HTTPS
+            samesite="lax", # CSRF protection
+            max_age=3600    # Expires in 1 hour
+        )
+
         if user:
             await auth_service.create_session(db, user.id, request)
         return TokenResponse(
@@ -62,6 +75,7 @@ async def login_user(
             account_status=token.account_status,
             access_token=token.access_token,
         )
+
 
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))

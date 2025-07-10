@@ -214,7 +214,16 @@ logfire.debug("App Debug mode on")
 logfire.instrument_fastapi(app=app)
 logfire.instrument_sqlalchemy(engine=engine)
 
-origins = ["http://localhost:3000", "https://servipal-admin.vercel.app"]
+origins = ["http://localhost:3000", "https://servi-pal.com"]
+
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,
+    # allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 app.add_middleware(
     CORSMiddleware,

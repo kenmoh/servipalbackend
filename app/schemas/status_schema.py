@@ -90,11 +90,11 @@ class AccountStatus(str, Enum):
     CONFIRMED: str = "confirmed"
 
 
-# class TransactionType(str, Enum):
-#     CREDIT: str = "credit"
-#     DEBIT: str = "debit"
-#     FUND_WALLET: str = "fund wallet"
-#     PAY_WITH_WALLET: str = "paid with wallet"
+class TransactionType(str, Enum):
+    CREDIT: str = "credit"
+    DEBIT: str = "debit"
+    FUND_WALLET: str = "fund wallet"
+    PAY_WITH_WALLET: str = "paid with wallet"
 
 
 class PaymentMethod(str, Enum):
