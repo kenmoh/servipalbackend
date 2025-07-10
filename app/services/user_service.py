@@ -507,8 +507,8 @@ async def get_user_with_profile(db: AsyncSession, user_id: UUID) -> ProfileSchem
             or None,
             "closing_hours": profile.closing_hours or None,
             "opening_hours": profile.opening_hours or None,
-            "profile_image_url": profile.profile_image.profile_image_url,
-            "backdrop_image_url": profile.backdrop_image_url or None,
+            "profile_image_url": profile.profile_image.profile_image_url or None,
+            "backdrop_image_url": profile.profile_image.backdrop_image_url or None,
         }
 
         # Cache the user data using your existing function
