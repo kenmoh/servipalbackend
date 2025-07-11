@@ -46,11 +46,13 @@ async def toggle_user_block_status(
     """
     Toggle user block status - block if unblocked, unblock if blocked.
     Only accessible to admin, staff, or moderator users.
-    
+
     Returns:
         Boolean indicating the new block status (True if blocked, False if unblocked)
     """
-    return await user_service.toggle_user_block_status(db=db, user_id=user_id, current_user=current_user)
+    return await user_service.toggle_user_block_status(
+        db=db, user_id=user_id, current_user=current_user
+    )
 
 
 @router.get("", status_code=status.HTTP_200_OK)
@@ -228,6 +230,19 @@ async def get_laundry_menu(
     Used when customer visits a specific restaurant.
     """
     return await user_service.get_laundry_menu(db=db, laundry_id=laundry_id)
+
+
+@router.get("/staff-list", status_code=status.HTTP_200_OK)
+async def staff_list(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    # Only admin/superadmin should be able to access this
+    if current_user.user_type not in [UserType.ADMIN, UserType.SUPER_ADMIN]:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized"
+        )
+    return await user_service.list_all_staff(db=db)
 
 
 @router.delete("/{rider_id}/delete", status_code=status.HTTP_204_NO_CONTENT)

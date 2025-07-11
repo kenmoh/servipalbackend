@@ -2,7 +2,7 @@ from datetime import datetime, timedelta
 import secrets
 from uuid import UUID
 from datetime import datetime
-from fastapi import BackgroundTasks, HTTPException, Request, status
+from fastapi import HTTPException, Request, status
 
 # from psycopg2 import IntegrityError
 from fastapi_mail import FastMail, MessageSchema
@@ -17,12 +17,14 @@ from app.schemas.user_schemas import (
     PasswordChange,
     PasswordResetConfirm,
     RiderCreate,
+    StaffCreate,
     UserBase,
-    UserCreate,
     UserLogin,
     CreateUserSchema,
+    UpdateStaffSchema,
 )
 from app.models.models import Profile, Session, User, RefreshToken, Wallet
+from app.schemas.user_schemas import UpdateStaffSchema
 from app.config.config import settings, email_conf
 from app.utils.utils import (
     check_login_attempts,
@@ -73,6 +75,7 @@ async def login_user(db: AsyncSession, login_data: UserLogin) -> User:
 
     return user
 
+
 async def login_admin_user(db: AsyncSession, login_data: UserLogin) -> User:
     """
     Args:
@@ -97,8 +100,8 @@ async def login_admin_user(db: AsyncSession, login_data: UserLogin) -> User:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials"
         )
-    
-    if user.user_type not in [ UserType.ADMIN, UserType.MODERATOR, UserType.SUPER_ADMIN]:
+
+    if user.user_type not in [UserType.ADMIN, UserType.MODERATOR, UserType.SUPER_ADMIN]:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized"
         )
@@ -637,145 +640,178 @@ async def create_new_rider(
             )
 
 
-# async def create_new_rider(
-#     data: RiderCreate,
-#     db: AsyncSession,
-#     current_user: User,
-#     background_tasks: BackgroundTasks,
-# ) -> UserBase:
-#     """
-#     Creates a new rider user and assigns them to the current dispatch user.
-#     Optimized version with reduced database queries.
-#     """
+async def create_new_staff(
+    data: StaffCreate,
+    db: AsyncSession,
+    current_user: User,
+) -> UserBase:
+    """
+    Creates a new rider user and assigns them to the current dispatch user.
+    Ultra-optimized version using database constraints for validation.
+    """
 
-#     # Single query to check all existing data at once
-#     existing_data_query = select(
-#         func.count(User.id).filter(User.dispatcher_id == current_user.id).label('riders_count'),
-#         func.count(User.id).filter(User.email == data.email.lower()).label('email_exists'),
-#         func.count(Profile.id).filter(Profile.phone_number == f"234{data.phone_number[1:] if data.phone_number.startswith('0') else data.phone_number}").label('phone_exists'),
-#         func.count(Profile.id).filter(Profile.bike_number == data.bike_number).label('bike_exists')
-#     ).select_from(
-#         User.__table__.outerjoin(Profile.__table__, User.id == Profile.user_id)
-#     )
+    if current_user.user_type not in [UserType.ADMIN, UserType.SUPER_ADMIN]:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only a Admin user can create staff.",
+        )
 
-#     result = await db.execute(existing_data_query)
-#     counts = result.fetchone()
+    # Validate password
+    validate_password(data.password)
 
-#     riders_count = counts.riders_count
-#     email_exists = counts.email_exists > 0
-#     phone_exists = counts.phone_exists > 0
-#     bike_exists = counts.bike_exists > 0
+    # Format phone number
+    formatted_phone = f"234{data.phone_number[1:] if data.phone_number.startswith('0') else data.phone_number}"
 
-#     # Check user permissions and restrictions
-#     if current_user.is_blocked:
-#         raise HTTPException(
-#             status_code=status.HTTP_403_FORBIDDEN,
-#             detail="You cannot create rider due to suspension!",
-#         )
+    # Create new rider and let database constraints handle uniqueness validation
+    try:
+        new_staff = User(
+            email=data.email.lower(),
+            password=hash_password(data.password),
+            user_type=UserType.MODERATOR,
+            dispatcher_id=current_user.id,
+            created_at=datetime.today(),
+            updated_at=datetime.today(),
+        )
 
-#     if not current_user.is_verified and riders_count > 2:
-#         raise HTTPException(
-#             status_code=status.HTTP_403_FORBIDDEN,
-#             detail="Please verify your business to add more riders",
-#         )
+        db.add(new_staff)
+        await db.flush()
 
-#     if current_user.account_status == AccountStatus.PENDING:
-#         raise HTTPException(
-#             status_code=status.HTTP_403_FORBIDDEN,
-#             detail="Please verify your account!"
-#         )
+        staff_profile = Profile(
+            user_id=new_staff.id,
+            full_name=data.full_name,
+            phone_number=formatted_phone,
+            created_at=datetime.today(),
+            updated_at=datetime.today(),
+            business_address=current_user.profile.business_address,
+            business_name=current_user.profile.business_name,
+        )
+        db.add(staff_profile)
 
-#     if current_user.user_type != UserType.DISPATCH:
-#         raise HTTPException(
-#             status_code=status.HTTP_403_FORBIDDEN,
-#             detail="Only a dispatch user can create rider.",
-#         )
+        await db.commit()
+        await db.refresh(new_staff)
 
-#     if not current_user.profile.business_registration_number and riders_count > 2:
-#         raise HTTPException(
-#             status_code=status.HTTP_403_FORBIDDEN,
-#             detail="Please update your company registration number to add more riders.",
-#         )
+        staff_dict = {
+            "user_type": new_staff.user_type,
+            "email": new_staff.email,
+        }
 
-#     if (
-#         not current_user.profile.business_name
-#         or not current_user.profile.business_address
-#     ):
-#         raise HTTPException(
-#             status_code=status.HTTP_403_FORBIDDEN,
-#             detail="Please update your profile with your company name and phone number.",
-#         )
+        redis_client.delete("all_users")
 
-#     # Validate password
-#     validate_password(data.password)
+        # Generate and send verification codes
+        email_code, phone_code = await generate_verification_codes(new_staff, db)
 
-#     # Check for existing email, phone, or bike number
-#     if email_exists or phone_exists or bike_exists:
-#         conflicts = []
-#         if email_exists:
-#             conflicts.append("email")
-#         if phone_exists:
-#             conflicts.append("phone number")
-#         if bike_exists:
-#             conflicts.append("bike number")
+        await send_verification_codes(
+            user=new_staff, email_code=email_code, phone_code=phone_code, db=db
+        )
 
-#         raise HTTPException(
-#             status_code=status.HTTP_409_CONFLICT,
-#             detail=f"{' and '.join(conflicts)} already registered"
-#         )
+        invalidate_rider_cache(current_user.id)
+        return UserBase(**staff_dict)
 
-#     # Create new rider and assign to current dispatch
-#     try:
-#         new_rider = User(
-#             email=data.email.lower(),
-#             password=hash_password(data.password),
-#             user_type=UserType.RIDER,
-#             dispatcher_id=current_user.id,
-#             created_at=datetime.today(),
-#             updated_at=datetime.today(),
-#         )
+    except IntegrityError as e:
+        await db.rollback()
 
-#         db.add(new_rider)
-#         await db.flush()
+        error_msg = str(e).lower()
 
-#         formatted_phone = f"234{data.phone_number[1:] if data.phone_number.startswith('0') else data.phone_number}"
+        if "email" in error_msg and "unique" in error_msg:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT, detail="Email already registered"
+            )
+        elif "phone_number" in error_msg and "unique" in error_msg:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Phone number already registered",
+            )
+        else:
+            # Generic fallback for other integrity errors
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Staff with this data already exists!",
+            )
 
-#         rider_profile = Profile(
-#             user_id=new_rider.id,
-#             full_name=data.full_name,
-#             phone_number=formatted_phone,
-#             bike_number=data.bike_number,
-#             created_at=datetime.today(),
-#             updated_at=datetime.today(),
-#             business_address=current_user.profile.business_address,
-#             business_name=current_user.profile.business_name,
-#         )
-#         db.add(rider_profile)
 
-#         await db.commit()
-#         await db.refresh(new_rider)
+async def update_staff(
+    staff_id: UUID,
+    data: UpdateStaffSchema,
+    db: AsyncSession,
+    current_user: User,
+) -> UserBase:
+    """
+    Update a staff (moderator) user's profile. Only admins/super admins can update staff.
+    Only checks for uniqueness conflicts if the new value is different from the current value.
+    """
 
-#         rider_dict = {
-#             "user_type": new_rider.user_type,
-#             "email": new_rider.email,
-#         }
+    # Check permissions
+    if current_user.user_type not in [UserType.ADMIN, UserType.SUPER_ADMIN]:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only an Admin user can update staff.",
+        )
 
-#         redis_client.delete("all_users")
+    # Fetch the staff user and profile
+    stmt = select(User).where(User.id == staff_id, User.user_type == UserType.MODERATOR)
+    result = await db.execute(stmt)
+    staff = result.scalar_one_or_none()
+    if not staff:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Staff not found"
+        )
 
-#         # Generate and send verification codes
-#         email_code, phone_code = await generate_verification_codes(new_rider, db)
+    # Fetch profile
+    await db.refresh(staff, ["profile"])
+    profile = staff.profile
+    if not profile:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Staff profile not found"
+        )
 
-#         await send_verification_codes(email_code=email_code, phone_code=phone_code, db=db)
+    # Only check for conflicts if the new value is different from the current value
+    conflict_filters = []
+    if data.phone_number and data.phone_number != profile.phone_number:
+        conflict_filters.append(Profile.phone_number == data.phone_number)
+    if data.business_name and data.business_name != profile.business_name:
+        conflict_filters.append(Profile.business_name == data.business_name)
+    if data.business_address and data.business_address != profile.business_address:
+        conflict_filters.append(Profile.business_address == data.business_address)
+    if (
+        data.bank_account_number
+        and data.bank_account_number != profile.bank_account_number
+    ):
+        conflict_filters.append(Profile.bank_account_number == data.bank_account_number)
+    if data.bank_name and data.bank_name != profile.bank_name:
+        conflict_filters.append(Profile.bank_name == data.bank_name)
+    if (
+        data.account_holder_name
+        and data.account_holder_name != profile.account_holder_name
+    ):
+        conflict_filters.append(Profile.account_holder_name == data.account_holder_name)
+    if data.full_name and data.full_name != profile.full_name:
+        conflict_filters.append(Profile.full_name == data.full_name)
 
-#         invalidate_rider_cache(current_user.id)
-#         return UserBase(**rider_dict)
+    if conflict_filters:
+        stmt = select(Profile).where(
+            or_(*conflict_filters), Profile.user_id != staff_id
+        )
+        result = await db.execute(stmt)
+        if result.scalar_one_or_none():
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="One or more fields already registered to another user.",
+            )
 
-#     except IntegrityError as e:
-#         await db.rollback()
-#         raise HTTPException(
-#             status_code=status.HTTP_409_CONFLICT,
-#             detail="Rider with this data exists!"
-#         )
+    # Update profile fields
+    for field, value in data.model_dump(exclude_unset=True).items():
+        if hasattr(profile, field):
+            setattr(profile, field, value)
+
+    await db.commit()
+    await db.refresh(profile)
+
+    # Invalidate cached data
+    invalidate_rider_cache(current_user.id)
+    redis_client.delete(f"current_useer_profile:{staff_id}")
+    redis_client.delete("all_users")
+
+    return staff
 
 
 async def create_session(db: AsyncSession, user_id: UUID, request: Request) -> Session:
@@ -1467,3 +1503,30 @@ async def send_welcome_email(user):
     )
     fm = FastMail(email_conf)
     await fm.send_message(message, template_name="welcome_email.html")
+
+
+async def update_staff_password(
+    staff_id: UUID,
+    new_password: str,
+    db: AsyncSession,
+    current_user: User,
+) -> dict:
+    """
+    Update a staff's password. Only admin/superadmin can do this.
+    """
+    if current_user.user_type not in [UserType.ADMIN, UserType.SUPER_ADMIN]:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only admin or superadmin can update staff password.",
+        )
+    stmt = select(User).where(User.id == staff_id)
+    result = await db.execute(stmt)
+    staff = result.scalar_one_or_none()
+    if not staff:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Staff not found"
+        )
+    staff.password = hash_password(new_password)
+    staff.updated_at = datetime.now()
+    await db.commit()
+    return {"message": "Staff password updated successfully."}

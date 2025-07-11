@@ -9,13 +9,13 @@ from app.schemas.settings_schema import (
     ChargeAndCommissionSchema,
     ChargeAndCommissionUpdateSchema,
     ChargeAndCommissionCreateSchema,
-    SettingsResponseSchema
+    SettingsResponseSchema,
 )
 from app.services.settings_service import (
     get_charge_and_commission_settings,
     update_charge_and_commission_settings,
     create_initial_charge_and_commission_settings,
-    delete_charge_and_commission_settings
+    delete_charge_and_commission_settings,
 )
 
 router = APIRouter(prefix="/api/settings", tags=["Settings"])
@@ -26,15 +26,14 @@ router = APIRouter(prefix="/api/settings", tags=["Settings"])
     response_model=Optional[ChargeAndCommissionSchema],
     status_code=status.HTTP_200_OK,
     summary="Get charge and commission settings",
-    description="Retrieve the current charge and commission settings for transactions."
+    description="Retrieve the current charge and commission settings for transactions.",
 )
 async def get_charge_commission_settings(
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)
 ):
     """
     Get the current charge and commission settings.
-    
+
     - **Requires**: Any authenticated user
     - **Returns**: Current charge and commission settings or None if not configured
     """
@@ -46,24 +45,26 @@ async def get_charge_commission_settings(
     response_model=SettingsResponseSchema,
     status_code=status.HTTP_201_CREATED,
     summary="Create initial charge and commission settings",
-    description="Create the initial charge and commission settings. Can only be done once."
+    description="Create the initial charge and commission settings. Can only be done once.",
 )
 async def create_charge_commission_settings(
     create_data: ChargeAndCommissionCreateSchema,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
 ):
     """
     Create initial charge and commission settings.
-    
+
     - **Requires**: Admin or Staff user
     - **Body**: All charge and commission fields are required
     - **Returns**: Created settings with success message
-    
+
     **Note**: This endpoint can only be used once to create initial settings.
     Use the PUT endpoint to update existing settings.
     """
-    return await create_initial_charge_and_commission_settings(db, create_data, current_user)
+    return await create_initial_charge_and_commission_settings(
+        db, create_data, current_user
+    )
 
 
 @router.put(
@@ -71,29 +72,29 @@ async def create_charge_commission_settings(
     response_model=SettingsResponseSchema,
     status_code=status.HTTP_200_OK,
     summary="Update charge and commission settings",
-    description="Update existing charge and commission settings. Only provided fields will be updated."
+    description="Update existing charge and commission settings. Only provided fields will be updated.",
 )
 async def update_charge_commission_settings(
     update_data: ChargeAndCommissionUpdateSchema,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
 ):
     """
     Update existing charge and commission settings.
-    
+
     - **Requires**: Admin or Staff user
     - **Body**: Only include fields you want to update (all fields are optional)
     - **Returns**: Updated settings with success message
-    
+
     **Example requests:**
-    
+
     Update only VAT:
     ```json
     {
         "value_added_tax": 0.075
     }
     ```
-    
+
     Update all charges:
     ```json
     {
@@ -112,18 +113,17 @@ async def update_charge_commission_settings(
     response_model=SettingsResponseSchema,
     status_code=status.HTTP_200_OK,
     summary="Delete charge and commission settings",
-    description="Delete all charge and commission settings. Admin only operation."
+    description="Delete all charge and commission settings. Admin only operation.",
 )
 async def delete_charge_commission_settings(
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)
 ):
     """
     Delete charge and commission settings.
-    
+
     - **Requires**: Admin user only
     - **Returns**: Success message confirming deletion
-    
+
     **Warning**: This operation cannot be undone. Use with caution.
     """
     return await delete_charge_and_commission_settings(db, current_user)
@@ -131,11 +131,12 @@ async def delete_charge_commission_settings(
 
 # Additional utility endpoints
 
+
 @router.get(
     "/health",
     status_code=status.HTTP_200_OK,
     summary="Settings service health check",
-    description="Check if the settings service is working properly."
+    description="Check if the settings service is working properly.",
 )
 async def settings_health_check():
     """
@@ -144,7 +145,7 @@ async def settings_health_check():
     return {
         "status": "healthy",
         "service": "settings",
-        "message": "Settings service is operational"
+        "message": "Settings service is operational",
     }
 
 
@@ -152,33 +153,33 @@ async def settings_health_check():
     "/charge-commission/calculate-fee",
     status_code=status.HTTP_200_OK,
     summary="Calculate transaction fee",
-    description="Calculate the transaction fee for a given amount based on current settings."
+    description="Calculate the transaction fee for a given amount based on current settings.",
 )
 async def calculate_transaction_fee(
     amount: float,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
 ):
     """
     Calculate transaction fee for a given amount.
-    
+
     - **Requires**: Any authenticated user
-    - **Parameters**: 
+    - **Parameters**:
         - amount: The transaction amount to calculate fee for
     - **Returns**: Breakdown of fees including base charge, VAT, and total
     """
     from decimal import Decimal
-    
+
     settings = await get_charge_and_commission_settings(db)
     if not settings:
         return {
             "error": "No charge and commission settings configured",
             "amount": amount,
-            "fees": None
+            "fees": None,
         }
-    
+
     amount_decimal = Decimal(str(amount))
-    
+
     # Determine which charge tier applies
     if amount_decimal <= 5000:
         base_charge = settings.payout_charge_transaction_upto_5000_naira
@@ -189,12 +190,12 @@ async def calculate_transaction_fee(
     else:
         base_charge = settings.payout_charge_transaction_above_50_000_naira
         tier = "above_50000"
-    
+
     # Calculate VAT
     vat_amount = base_charge * settings.value_added_tax
     total_fee = base_charge + vat_amount
     net_amount = amount_decimal - total_fee
-    
+
     return {
         "amount": float(amount_decimal),
         "tier": tier,
@@ -203,10 +204,7 @@ async def calculate_transaction_fee(
             "vat_rate": float(settings.value_added_tax),
             "vat_amount": float(vat_amount),
             "total_fee": float(total_fee),
-            "net_amount": float(net_amount)
+            "net_amount": float(net_amount),
         },
-        "settings_used": {
-            "id": settings.id,
-            "updated_at": settings.updated_at
-        }
+        "settings_used": {"id": settings.id, "updated_at": settings.updated_at},
     }

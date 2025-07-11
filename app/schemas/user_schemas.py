@@ -297,6 +297,16 @@ class UpdateUserSchema(BaseModel):
         from_attributes = True
 
 
+class UpdateStaffSchema(BaseModel):
+    full_name: str | None = None
+    phone_number: str | None = None
+    bank_name: str | None = None
+    bank_account_number: str | None = None
+
+    class Config:
+        from_attributes = True
+
+
 class RiderBase(BaseModel):
     password: str
     email: EmailStr
@@ -423,6 +433,11 @@ class PasswordResetForm(BaseModel):
 class RiderCreate(RiderBase):
     phone_number: str
     bike_number: str
+    full_name: str
+
+
+class StaffCreate(RiderBase):
+    phone_number: str
     full_name: str
 
 

@@ -17,6 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.interval import IntervalTrigger
 from app.database.database import async_session, get_db
+
 # from app.routes import (
 #     auth_routes,
 #     user_routes,
@@ -30,16 +31,16 @@ from app.database.database import async_session, get_db
 #     settings_routes,
 #     stats_routes,
 # )
-from app.routes import  auth_routes
-   
-from app.routes import  user_routes
-from app.routes import  payment_routes
-from app.routes import  item_routes
-from app.routes import  order_routes
-from app.routes import  product_routes
-from app.routes import  marketplace_routes
-from app.routes import  review_routes
-from app.routes import  report_routes
+from app.routes import auth_routes
+
+from app.routes import user_routes
+from app.routes import payment_routes
+from app.routes import item_routes
+from app.routes import order_routes
+from app.routes import product_routes
+from app.routes import marketplace_routes
+from app.routes import review_routes
+from app.routes import report_routes
 from app.routes import settings_routes
 from app.routes import stats_routes
 

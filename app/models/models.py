@@ -285,8 +285,9 @@ class Wallet(Base):
 
     user: Mapped["User"] = relationship(back_populates="wallet")
     transactions: Mapped[list["Transaction"]] = relationship(
-        back_populates="wallet", lazy="selectin",
-        order_by="Transaction.created_at.desc()"
+        back_populates="wallet",
+        lazy="selectin",
+        order_by="Transaction.created_at.desc()",
     )
 
 

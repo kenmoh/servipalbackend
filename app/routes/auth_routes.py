@@ -3,7 +3,6 @@ from uuid import UUID
 from fastapi import (
     APIRouter,
     Depends,
-    BackgroundTasks,
     HTTPException,
     Query,
     Request,
@@ -11,7 +10,7 @@ from fastapi import (
     status,
 )
 from fastapi.security import OAuth2PasswordRequestForm
-from fastapi_mail import FastMail, MessageSchema
+
 
 from pydantic import EmailStr
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -31,12 +30,18 @@ from app.schemas.user_schemas import (
     UserCreate,
     VerificationSchema,
     CreateUserSchema,
+    UpdateStaffSchema,
 )
 from app.services import auth_service
 from app.config.config import email_conf
+from pydantic import BaseModel
 
 
 router = APIRouter(prefix="/api/auth", tags=["Authentication"])
+
+
+class StaffPasswordUpdateRequest(BaseModel):
+    new_password: str
 
 
 @router.post("/login", status_code=status.HTTP_200_OK)
@@ -66,10 +71,10 @@ async def login_user(
             access_token=token.access_token,
         )
 
-
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
-    
+
+
 @router.post("/admin-login", status_code=status.HTTP_200_OK, include_in_schema=False)
 async def login_admin_user(
     request: Request,
@@ -88,14 +93,13 @@ async def login_admin_user(
             db=db,
         )
 
-
         response.set_cookie(
             key="access_token",
             value=token.access_token,
             httponly=True,  # Makes cookie HTTP-only
-            secure=True,    # Only send over HTTPS
-            samesite="lax", # CSRF protection
-            max_age=3600    # Expires in 1 hour
+            secure=True,  # Only send over HTTPS
+            samesite="lax",  # CSRF protection
+            max_age=3600,  # Expires in 1 hour
         )
 
         if user:
@@ -106,7 +110,6 @@ async def login_admin_user(
             account_status=token.account_status,
             access_token=token.access_token,
         )
-
 
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
@@ -329,3 +332,44 @@ async def logout_all(
 #     fm = FastMail(email_conf)
 #     await fm.send_message(message, template_name="welcome_email.html")
 #     return {"message": "Dummy welcome email sent to Hope Aremoh"}
+
+
+@router.post("/create-staff", status_code=status.HTTP_201_CREATED)
+async def create_staff(
+    data: RiderCreate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> UserBase:
+    """Create a new staff (moderator) user. Admins only."""
+    return await auth_service.create_new_staff(
+        data=data, db=db, current_user=current_user
+    )
+
+
+@router.put("/{staff_id}/update-staff", status_code=status.HTTP_200_OK)
+async def update_staff_route(
+    staff_id: UUID,
+    data: UpdateStaffSchema,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> UserBase:
+    """Update a staff (moderator) user's profile. Admins only."""
+    return await auth_service.update_staff(
+        staff_id=staff_id, data=data, db=db, current_user=current_user
+    )
+
+
+@router.put("/update-staff-password/{staff_id}", status_code=status.HTTP_200_OK)
+async def update_staff_password_route(
+    staff_id: UUID,
+    data: StaffPasswordUpdateRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    # Only admin/superadmin should be able to access this
+    return await auth_service.update_staff_password(
+        staff_id=staff_id,
+        new_password=data.new_password,
+        db=db,
+        current_user=current_user,
+    )

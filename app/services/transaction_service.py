@@ -29,7 +29,12 @@ from app.schemas.marketplace_schemas import (
 )
 from app.services.settings_service import get_charge_and_commission_settings
 from app.schemas.order_schema import OrderResponseSchema, OrderType
-from app.schemas.status_schema import PaymentMethod, PaymentStatus, RequireDeliverySchema, TransactionType
+from app.schemas.status_schema import (
+    PaymentMethod,
+    PaymentStatus,
+    RequireDeliverySchema,
+    TransactionType,
+)
 from app.utils.logger_config import setup_logger
 from app.utils.utils import (
     get_bank_code,
@@ -48,10 +53,10 @@ logger = setup_logger()
 async def get_all_transactions(db: AsyncSession) -> list[TransactionSchema]:
     """
     Retrieve all transactions from the database.
-    
+
     Args:
         db: The database session.
-        
+
     Returns:
         List of all transactions as Pydantic schemas.
     """
@@ -59,26 +64,29 @@ async def get_all_transactions(db: AsyncSession) -> list[TransactionSchema]:
         stmt = select(Transaction).order_by(Transaction.created_at.desc())
         result = await db.execute(stmt)
         transactions = result.scalars().all()
-        return [TransactionSchema.model_validate(transaction) for transaction in transactions]
+        return [
+            TransactionSchema.model_validate(transaction)
+            for transaction in transactions
+        ]
     except Exception as e:
         logger.error(f"Error retrieving all transactions: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to retrieve transactions"
+            detail="Failed to retrieve transactions",
         )
 
 
 async def get_transaction(db: AsyncSession, transaction_id: UUID) -> TransactionSchema:
     """
     Retrieve a specific transaction by ID.
-    
+
     Args:
         db: The database session.
         transaction_id: The ID of the transaction to retrieve.
-        
+
     Returns:
         The transaction as a Pydantic schema.
-        
+
     Raises:
         HTTPException: If transaction is not found.
     """
@@ -86,13 +94,12 @@ async def get_transaction(db: AsyncSession, transaction_id: UUID) -> Transaction
         stmt = select(Transaction).where(Transaction.id == transaction_id)
         result = await db.execute(stmt)
         transaction = result.scalar_one_or_none()
-        
+
         if not transaction:
             raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Transaction not found"
+                status_code=status.HTTP_404_NOT_FOUND, detail="Transaction not found"
             )
-            
+
         return TransactionSchema.model_validate(transaction)
     except HTTPException:
         raise
@@ -100,10 +107,8 @@ async def get_transaction(db: AsyncSession, transaction_id: UUID) -> Transaction
         logger.error(f"Error retrieving transaction {transaction_id}: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to retrieve transaction"
+            detail="Failed to retrieve transaction",
         )
-
-
 
 
 async def handle_charge_completed_callback_fallback(
@@ -173,16 +178,18 @@ async def handle_charge_completed_callback_fallback(
                     delivery_fee = order.total_price
                 if buyer_wallet:
                     buyer_wallet.escrow_balance += delivery_fee
-                    transaction_values.append({
-                        "wallet_id": buyer_wallet.id,
-                        "amount": delivery_fee,
-                        "transaction_type": TransactionType.DEBIT,
-                        "payment_status": PaymentStatus.PAID,
-                        "created_at": current_time,
-                        "payment_method": payment_type,
-                        "payment_by": None,
-                        "updated_at": current_time,
-                    })
+                    transaction_values.append(
+                        {
+                            "wallet_id": buyer_wallet.id,
+                            "amount": delivery_fee,
+                            "transaction_type": TransactionType.DEBIT,
+                            "payment_status": PaymentStatus.PAID,
+                            "created_at": current_time,
+                            "payment_method": payment_type,
+                            "payment_by": None,
+                            "updated_at": current_time,
+                        }
+                    )
             elif order.order_type in [OrderType.FOOD, OrderType.LAUNDRY]:
                 total_paid = order.total_price
                 delivery_fee = 0
@@ -205,43 +212,67 @@ async def handle_charge_completed_callback_fallback(
                 )
                 seller_wallet = seller_wallet_result.scalar_one_or_none()
                 buyer_name = None
-                if order.owner and hasattr(order.owner, "profile") and order.owner.profile:
-                    buyer_name = order.owner.profile.full_name or order.owner.profile.business_name
+                if (
+                    order.owner
+                    and hasattr(order.owner, "profile")
+                    and order.owner.profile
+                ):
+                    buyer_name = (
+                        order.owner.profile.full_name
+                        or order.owner.profile.business_name
+                    )
                 seller_name = None
-                if order.vendor and hasattr(order.vendor, "profile") and order.vendor.profile:
-                    seller_name = order.vendor.profile.business_name or order.vendor.profile.full_name
+                if (
+                    order.vendor
+                    and hasattr(order.vendor, "profile")
+                    and order.vendor.profile
+                ):
+                    seller_name = (
+                        order.vendor.profile.business_name
+                        or order.vendor.profile.full_name
+                    )
                 if seller_wallet:
                     seller_wallet.escrow_balance += order.total_price
                 if buyer_wallet:
-                    transaction_values.append({
-                        "wallet_id": buyer_wallet.id,
-                        "amount": total_paid,
-                        "transaction_type": TransactionType.DEBIT,
-                        "payment_status": PaymentStatus.PAID,
-                        "created_at": current_time,
-                        "payment_method": payment_type,
-                        "payment_by": seller_name,
-                        "updated_at": current_time,
-                    })
+                    transaction_values.append(
+                        {
+                            "wallet_id": buyer_wallet.id,
+                            "amount": total_paid,
+                            "transaction_type": TransactionType.DEBIT,
+                            "payment_status": PaymentStatus.PAID,
+                            "created_at": current_time,
+                            "payment_method": payment_type,
+                            "payment_by": seller_name,
+                            "updated_at": current_time,
+                        }
+                    )
                 if seller_wallet:
-                    transaction_values.append({
-                        "wallet_id": seller_wallet.id,
-                        "amount": order.total_price,
-                        "transaction_type": TransactionType.CREDIT,
-                        "payment_status": PaymentStatus.PAID,
-                        "created_at": current_time,
-                        "payment_method": payment_type,
-                        "payment_by": buyer_name,
-                        "updated_at": current_time,
-                    })
+                    transaction_values.append(
+                        {
+                            "wallet_id": seller_wallet.id,
+                            "amount": order.total_price,
+                            "transaction_type": TransactionType.CREDIT,
+                            "payment_status": PaymentStatus.PAID,
+                            "created_at": current_time,
+                            "payment_method": payment_type,
+                            "payment_by": buyer_name,
+                            "updated_at": current_time,
+                        }
+                    )
             if transaction_values:
                 await db.execute(insert(Transaction), transaction_values)
                 await db.commit()
 
             # Send notifications
-            buyer_token = await get_user_notification_token(db=db, user_id=order.owner_id)
-            seller_token = await get_user_notification_token(db=db, user_id=order.vendor_id)
-            amount_str = f"₦{amount_paid}" if currency == "NGN" else f"{amount_paid} {currency}"
+            buyer_token = await get_user_notification_token(
+                db=db, user_id=order.owner_id
+            )
+            seller_token = await get_user_notification_token(
+                db=db, user_id=order.vendor_id
+            )
+            amount_str = (
+                f"₦{amount_paid}" if currency == "NGN" else f"{amount_paid} {currency}"
+            )
             if buyer_token:
                 await send_push_notification(
                     tokens=[buyer_token],
@@ -670,18 +701,27 @@ async def handle_charge_completed_callback(
                     buyer_wallet.escrow_balance += delivery_fee
                 # Create buyer transaction (DEBIT)
                 buyer_name = None
-                if order.owner and hasattr(order.owner, "profile") and order.owner.profile:
-                    buyer_name = order.owner.profile.full_name or order.owner.profile.business_name
-                transaction_values.append({
-                    "wallet_id": order.owner_id,
-                    "amount": delivery_fee,
-                    "transaction_type": TransactionType.DEBIT,
-                    "payment_status": PaymentStatus.PAID,
-                    "created_at": current_time,
-                    "payment_method": payment_type,
-                    "payment_by": buyer_name,
-                    "updated_at": current_time,
-                })
+                if (
+                    order.owner
+                    and hasattr(order.owner, "profile")
+                    and order.owner.profile
+                ):
+                    buyer_name = (
+                        order.owner.profile.full_name
+                        or order.owner.profile.business_name
+                    )
+                transaction_values.append(
+                    {
+                        "wallet_id": order.owner_id,
+                        "amount": delivery_fee,
+                        "transaction_type": TransactionType.DEBIT,
+                        "payment_status": PaymentStatus.PAID,
+                        "created_at": current_time,
+                        "payment_method": payment_type,
+                        "payment_by": buyer_name,
+                        "updated_at": current_time,
+                    }
+                )
                 await db.execute(insert(Transaction), transaction_values)
                 await db.commit()
 
@@ -716,41 +756,65 @@ async def handle_charge_completed_callback(
                     seller_wallet.escrow_balance += order.total_price
                 # Get buyer and seller names
                 buyer_name = None
-                if order.owner and hasattr(order.owner, "profile") and order.owner.profile:
-                    buyer_name = order.owner.profile.full_name or order.owner.profile.business_name
+                if (
+                    order.owner
+                    and hasattr(order.owner, "profile")
+                    and order.owner.profile
+                ):
+                    buyer_name = (
+                        order.owner.profile.full_name
+                        or order.owner.profile.business_name
+                    )
                 seller_name = None
-                if order.vendor and hasattr(order.vendor, "profile") and order.vendor.profile:
-                    seller_name = order.vendor.profile.business_name or order.vendor.profile.full_name
+                if (
+                    order.vendor
+                    and hasattr(order.vendor, "profile")
+                    and order.vendor.profile
+                ):
+                    seller_name = (
+                        order.vendor.profile.business_name
+                        or order.vendor.profile.full_name
+                    )
                 # Create buyer transaction (DEBIT)
-                transaction_values.append({
-                    "wallet_id": order.owner_id,
-                    "amount": total_paid,
-                    "transaction_type": TransactionType.DEBIT,
-                    "payment_status": PaymentStatus.PAID,
-                    "created_at": current_time,
-                    "payment_method": payment_type,
-                    "payment_by": seller_name,
-                    "updated_at": current_time,
-                })
-                # Create seller transaction (CREDIT)
-                if seller_wallet:
-                    transaction_values.append({
-                        "wallet_id": order.vendor_id,
-                        "amount": order.total_price,
-                        "transaction_type": TransactionType.CREDIT,
+                transaction_values.append(
+                    {
+                        "wallet_id": order.owner_id,
+                        "amount": total_paid,
+                        "transaction_type": TransactionType.DEBIT,
                         "payment_status": PaymentStatus.PAID,
                         "created_at": current_time,
                         "payment_method": payment_type,
-                        "payment_by": buyer_name,
+                        "payment_by": seller_name,
                         "updated_at": current_time,
-                    })
+                    }
+                )
+                # Create seller transaction (CREDIT)
+                if seller_wallet:
+                    transaction_values.append(
+                        {
+                            "wallet_id": order.vendor_id,
+                            "amount": order.total_price,
+                            "transaction_type": TransactionType.CREDIT,
+                            "payment_status": PaymentStatus.PAID,
+                            "created_at": current_time,
+                            "payment_method": payment_type,
+                            "payment_by": buyer_name,
+                            "updated_at": current_time,
+                        }
+                    )
                 await db.execute(insert(Transaction), transaction_values)
                 await db.commit()
 
             # Send notifications
-            buyer_token = await get_user_notification_token(db=db, user_id=order.owner_id)
-            seller_token = await get_user_notification_token(db=db, user_id=order.vendor_id)
-            amount_str = f"₦{amount_paid}" if currency == "NGN" else f"{amount_paid} {currency}"
+            buyer_token = await get_user_notification_token(
+                db=db, user_id=order.owner_id
+            )
+            seller_token = await get_user_notification_token(
+                db=db, user_id=order.vendor_id
+            )
+            amount_str = (
+                f"₦{amount_paid}" if currency == "NGN" else f"{amount_paid} {currency}"
+            )
             if buyer_token:
                 await send_push_notification(
                     tokens=[buyer_token],
@@ -931,11 +995,12 @@ async def fund_wallet_callback(request: Request, db: AsyncSession):
     if not transaction:
         raise HTTPException(status_code=404, detail="Transaction not found")
 
-
     verify_tranx = await verify_transaction_tx_ref(tx_ref)
     if verify_tranx is None:
         logging.error(f"verify_transaction_tx_ref returned None for tx_ref: {tx_ref}")
-        raise HTTPException(status_code=502, detail="Failed to verify transaction status")
+        raise HTTPException(
+            status_code=502, detail="Failed to verify transaction status"
+        )
 
     # Defensive: ensure verify_tranx is a dict and has 'data'
     verify_data = verify_tranx.get("data") if isinstance(verify_tranx, dict) else None
@@ -1037,13 +1102,13 @@ def calculate_net_amount(amount: Decimal, charge: ChargeAndCommission) -> Decima
 async def get_current_charge_settings(db: AsyncSession) -> ChargeAndCommission:
     """
     Get current charge settings from database using the settings service.
-    
+
     Args:
         db: Database session
-        
+
     Returns:
         ChargeAndCommission object with current settings
-        
+
     Raises:
         HTTPException: If no settings are configured
     """
@@ -1053,20 +1118,20 @@ async def get_current_charge_settings(db: AsyncSession) -> ChargeAndCommission:
         logger.warning("No charge settings found in database, using default values")
         default_settings = ChargeAndCommission(
             id=0,
-            payout_charge_transaction_upto_5000_naira=Decimal('25.00'),
-            payout_charge_transaction_from_5001_to_50_000_naira=Decimal('50.00'),
-            payout_charge_transaction_above_50_000_naira=Decimal('100.00'),
-            value_added_tax=Decimal('0.075')
+            payout_charge_transaction_upto_5000_naira=Decimal("25.00"),
+            payout_charge_transaction_from_5001_to_50_000_naira=Decimal("50.00"),
+            payout_charge_transaction_above_50_000_naira=Decimal("100.00"),
+            value_added_tax=Decimal("0.075"),
         )
         return default_settings
-    
+
     # Convert schema back to model for compatibility
     charge_model = ChargeAndCommission(
         id=settings_schema.id,
         payout_charge_transaction_upto_5000_naira=settings_schema.payout_charge_transaction_upto_5000_naira,
         payout_charge_transaction_from_5001_to_50_000_naira=settings_schema.payout_charge_transaction_from_5001_to_50_000_naira,
         payout_charge_transaction_above_50_000_naira=settings_schema.payout_charge_transaction_above_50_000_naira,
-        value_added_tax=settings_schema.value_added_tax
+        value_added_tax=settings_schema.value_added_tax,
     )
     return charge_model
 
@@ -1097,13 +1162,13 @@ async def order_payment_callback(request: Request, db: AsyncSession):
 
     # Fetch the order
     order_result = await db.execute(
-    select(Order)
-    .where(Order.id == UUID(tx_ref))
-    .options(
-        selectinload(Order.owner).selectinload(User.profile),
-        selectinload(Order.vendor).selectinload(User.profile),
+        select(Order)
+        .where(Order.id == UUID(tx_ref))
+        .options(
+            selectinload(Order.owner).selectinload(User.profile),
+            selectinload(Order.vendor).selectinload(User.profile),
+        )
     )
-)
     order = order_result.scalar_one_or_none()
     if not order:
         raise HTTPException(status_code=404, detail="Order not found")
@@ -1141,16 +1206,18 @@ async def order_payment_callback(request: Request, db: AsyncSession):
                 delivery_fee = order.total_price
             buyer_wallet.escrow_balance += delivery_fee
             # Create buyer transaction (DEBIT)
-            transaction_values.append({
-                "wallet_id": buyer_wallet.id,
-                "amount": delivery_fee,
-                "transaction_type": TransactionType.DEBIT,
-                "payment_status": PaymentStatus.PAID,
-                "created_at": current_time,
-                "payment_method": PaymentMethod.CARD,
-                "payment_by": None,  # Optionally set buyer name
-                "updated_at": current_time,
-            })
+            transaction_values.append(
+                {
+                    "wallet_id": buyer_wallet.id,
+                    "amount": delivery_fee,
+                    "transaction_type": TransactionType.DEBIT,
+                    "payment_status": PaymentStatus.PAID,
+                    "created_at": current_time,
+                    "payment_method": PaymentMethod.CARD,
+                    "payment_by": None,  # Optionally set buyer name
+                    "updated_at": current_time,
+                }
+            )
             await db.execute(insert(Transaction), transaction_values)
             await db.commit()
 
@@ -1181,37 +1248,49 @@ async def order_payment_callback(request: Request, db: AsyncSession):
             # --- Get buyer and seller names for transaction ---
             buyer_name = None
             if order.owner and hasattr(order.owner, "profile") and order.owner.profile:
-                buyer_name = order.owner.profile.full_name or order.owner.profile.business_name
+                buyer_name = (
+                    order.owner.profile.full_name or order.owner.profile.business_name
+                )
             seller_name = None
-            if order.vendor and hasattr(order.vendor, "profile") and order.vendor.profile:
-                seller_name = order.vendor.profile.business_name or order.vendor.profile.full_name
+            if (
+                order.vendor
+                and hasattr(order.vendor, "profile")
+                and order.vendor.profile
+            ):
+                seller_name = (
+                    order.vendor.profile.business_name or order.vendor.profile.full_name
+                )
 
             if seller_wallet:
                 seller_wallet.escrow_balance += order.total_price
 
             # Create buyer transaction (DEBIT)
-            transaction_values.append({
-                "wallet_id": buyer_wallet.id,
-                "amount": total_paid,
-                "transaction_type": TransactionType.DEBIT,
-                "payment_status": PaymentStatus.PAID,
-                "created_at": current_time,
-                "payment_method": PaymentMethod.CARD,  # or PaymentMethod.TRANSFER
-                "payment_by": seller_name,
-                "updated_at": current_time,
-            })
-            # Create seller transaction (CREDIT)
-            if seller_wallet:
-                transaction_values.append({
-                    "wallet_id": seller_wallet.id,
-                    "amount": order.total_price,
-                    "transaction_type": TransactionType.CREDIT,
+            transaction_values.append(
+                {
+                    "wallet_id": buyer_wallet.id,
+                    "amount": total_paid,
+                    "transaction_type": TransactionType.DEBIT,
                     "payment_status": PaymentStatus.PAID,
                     "created_at": current_time,
                     "payment_method": PaymentMethod.CARD,  # or PaymentMethod.TRANSFER
-                    "payment_by": buyer_name,
+                    "payment_by": seller_name,
                     "updated_at": current_time,
-                })
+                }
+            )
+            # Create seller transaction (CREDIT)
+            if seller_wallet:
+                transaction_values.append(
+                    {
+                        "wallet_id": seller_wallet.id,
+                        "amount": order.total_price,
+                        "transaction_type": TransactionType.CREDIT,
+                        "payment_status": PaymentStatus.PAID,
+                        "created_at": current_time,
+                        "payment_method": PaymentMethod.CARD,  # or PaymentMethod.TRANSFER
+                        "payment_by": buyer_name,
+                        "updated_at": current_time,
+                    }
+                )
             await db.execute(insert(Transaction), transaction_values)
             await db.commit()
 
@@ -1227,7 +1306,9 @@ async def order_payment_callback(request: Request, db: AsyncSession):
             )
         # Send notification to seller if not package
         if order.order_type in [OrderType.FOOD, OrderType.LAUNDRY]:
-            seller_token = await get_user_notification_token(db=db, user_id=order.vendor_id)
+            seller_token = await get_user_notification_token(
+                db=db, user_id=order.vendor_id
+            )
             if seller_token:
                 await send_push_notification(
                     tokens=[seller_token],
@@ -1266,7 +1347,6 @@ async def order_payment_callback_old(request: Request, db: AsyncSession):
     else:
         new_status = PaymentStatus.FAILED
         redis_client.delete("paid_pending_deliveries")
-      
 
     # Update payment status
     order_update_result = await db.execute(
@@ -1387,7 +1467,7 @@ async def pay_with_wallet(
         if not order.delivery or not order.delivery.delivery_fee:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Delivery fee required for package order."
+                detail="Delivery fee required for package order.",
             )
         delivery_fee = order.delivery.delivery_fee
         charged_amount = delivery_fee
@@ -1400,16 +1480,18 @@ async def pay_with_wallet(
         buyer_wallet.balance -= delivery_fee
         buyer_wallet.escrow_balance += delivery_fee
         # Only buyer transaction
-        transaction_values.append({
-            "wallet_id": buyer_wallet.id,
-            "amount": delivery_fee,
-            "transaction_type": TransactionType.DEBIT,
-            "payment_status": PaymentStatus.PAID,
-            "created_at": current_time,
-            "payment_method": PaymentMethod.WALLET,
-            "payment_by": buyer.profile.full_name or buyer.profile.business_name,
-            "updated_at": current_time,
-        })
+        transaction_values.append(
+            {
+                "wallet_id": buyer_wallet.id,
+                "amount": delivery_fee,
+                "transaction_type": TransactionType.DEBIT,
+                "payment_status": PaymentStatus.PAID,
+                "created_at": current_time,
+                "payment_method": PaymentMethod.WALLET,
+                "payment_by": buyer.profile.full_name or buyer.profile.business_name,
+                "updated_at": current_time,
+            }
+        )
         # Update order status
         order.order_payment_status = PaymentStatus.PAID
         await db.execute(insert(Transaction), transaction_values)
@@ -1435,7 +1517,9 @@ async def pay_with_wallet(
 
     # --- FOOD/LAUNDRY LOGIC ---
     # Fetch seller wallet
-    seller_wallet_stmt = select(Wallet).where(Wallet.id == order.vendor_id).with_for_update()
+    seller_wallet_stmt = (
+        select(Wallet).where(Wallet.id == order.vendor_id).with_for_update()
+    )
     result = await db.execute(seller_wallet_stmt)
     seller_wallet = result.scalar_one_or_none()
     if not seller_wallet:
@@ -1451,7 +1535,7 @@ async def pay_with_wallet(
         else:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Delivery fee required but not found."
+                detail="Delivery fee required but not found.",
             )
     if order.require_delivery == RequireDeliverySchema.DELIVERY:
         charged_amount = total_price + delivery_fee
@@ -1470,27 +1554,31 @@ async def pay_with_wallet(
     seller_wallet.escrow_balance += total_price
 
     # Buyer transaction (DEBIT)
-    transaction_values.append({
-        "wallet_id": buyer_wallet.id,
-        "amount": charged_amount,
-        "transaction_type": TransactionType.DEBIT,
-        "payment_status": PaymentStatus.PAID,
-        "created_at": current_time,
-        "payment_method": PaymentMethod.WALLET,
-        "payment_by": buyer.profile.full_name or buyer.profile.business_name,
-        "updated_at": current_time,
-    })
+    transaction_values.append(
+        {
+            "wallet_id": buyer_wallet.id,
+            "amount": charged_amount,
+            "transaction_type": TransactionType.DEBIT,
+            "payment_status": PaymentStatus.PAID,
+            "created_at": current_time,
+            "payment_method": PaymentMethod.WALLET,
+            "payment_by": buyer.profile.full_name or buyer.profile.business_name,
+            "updated_at": current_time,
+        }
+    )
     # Seller transaction (CREDIT)
-    transaction_values.append({
-        "wallet_id": seller_wallet.id,
-        "amount": total_price,
-        "transaction_type": TransactionType.CREDIT,
-        "payment_status": PaymentStatus.PAID,
-        "created_at": current_time,
-        "payment_method": PaymentMethod.WALLET,
-        "payment_by": buyer.profile.full_name or buyer.profile.business_name,
-        "updated_at": current_time,
-    })
+    transaction_values.append(
+        {
+            "wallet_id": seller_wallet.id,
+            "amount": total_price,
+            "transaction_type": TransactionType.CREDIT,
+            "payment_status": PaymentStatus.PAID,
+            "created_at": current_time,
+            "payment_method": PaymentMethod.WALLET,
+            "payment_by": buyer.profile.full_name or buyer.profile.business_name,
+            "updated_at": current_time,
+        }
+    )
 
     await db.execute(insert(Transaction), transaction_values)
     order.order_payment_status = PaymentStatus.PAID

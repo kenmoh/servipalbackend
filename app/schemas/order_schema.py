@@ -12,10 +12,6 @@ from app.schemas.status_schema import OrderStatus
 from app.schemas.status_schema import RequireDeliverySchema, PaymentStatus
 
 
-
- 
-
-
 class PaymentStatus(str, Enum):
     PAID = "paid"
     PENDING = "pending"

@@ -20,21 +20,30 @@ from app.schemas.transaction_schema import TransactionSchema
 router = APIRouter(prefix="/api/payment", tags=["Payments/Transations"])
 
 
-@router.get("/transactions", response_model=list[TransactionSchema], status_code=status.HTTP_200_OK)
+@router.get(
+    "/transactions",
+    response_model=list[TransactionSchema],
+    status_code=status.HTTP_200_OK,
+)
 async def get_all_transactions(
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)
 ):
     return await transaction_service.get_all_transactions(db=db)
 
 
-@router.get("/{transaction_id}/transactions", response_model=TransactionSchema, status_code=status.HTTP_200_OK)
+@router.get(
+    "/{transaction_id}/transactions",
+    response_model=TransactionSchema,
+    status_code=status.HTTP_200_OK,
+)
 async def get_transaction(
     transaction_id: UUID,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
 ):
-    return await transaction_service.get_transaction(db=db, transaction_id=transaction_id)
+    return await transaction_service.get_transaction(
+        db=db, transaction_id=transaction_id
+    )
 
 
 @router.get(

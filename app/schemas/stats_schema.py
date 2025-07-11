@@ -7,6 +7,7 @@ from enum import Enum
 
 class StatsPeriod(str, Enum):
     """Time period options for statistics"""
+
     LAST_7_DAYS = "last_7_days"
     LAST_30_DAYS = "last_30_days"
     LAST_3_MONTHS = "last_3_months"
@@ -15,6 +16,7 @@ class StatsPeriod(str, Enum):
 
 class OrderStatsDaily(BaseModel):
     """Daily order statistics by type"""
+
     date: _date = Field(..., description="Date for the statistics")
     package: int = Field(default=0, description="Number of package orders")
     food: int = Field(default=0, description="Number of food orders")
@@ -28,6 +30,7 @@ class OrderStatsDaily(BaseModel):
 
 class OrderStatsResponse(BaseModel):
     """Response schema for order statistics"""
+
     period: StatsPeriod = Field(..., description="Time period for the statistics")
     start_date: _date = Field(..., description="Start date of the period")
     end_date: _date = Field(..., description="End date of the period")
@@ -41,10 +44,17 @@ class OrderStatsResponse(BaseModel):
 
 class RevenueStatsDaily(BaseModel):
     """Daily revenue statistics"""
+
     date: _date = Field(..., description="Date for the statistics")
-    total_revenue: Decimal = Field(default=Decimal('0'), description="Total revenue for the day")
-    order_revenue: Decimal = Field(default=Decimal('0'), description="Revenue from orders")
-    delivery_revenue: Decimal = Field(default=Decimal('0'), description="Revenue from delivery fees")
+    total_revenue: Decimal = Field(
+        default=Decimal("0"), description="Total revenue for the day"
+    )
+    order_revenue: Decimal = Field(
+        default=Decimal("0"), description="Revenue from orders"
+    )
+    delivery_revenue: Decimal = Field(
+        default=Decimal("0"), description="Revenue from delivery fees"
+    )
     transaction_count: int = Field(default=0, description="Number of transactions")
 
     class Config:
@@ -54,11 +64,14 @@ class RevenueStatsDaily(BaseModel):
 
 class RevenueStatsResponse(BaseModel):
     """Response schema for revenue statistics"""
+
     period: StatsPeriod = Field(..., description="Time period for the statistics")
     start_date: _date = Field(..., description="Start date of the period")
     end_date: _date = Field(..., description="End date of the period")
     data: List[RevenueStatsDaily] = Field(..., description="Daily revenue statistics")
-    summary: Dict[str, Decimal] = Field(..., description="Summary totals for the period")
+    summary: Dict[str, Decimal] = Field(
+        ..., description="Summary totals for the period"
+    )
 
     class Config:
         orm_mode = True
@@ -67,6 +80,7 @@ class RevenueStatsResponse(BaseModel):
 
 class UserStatsDaily(BaseModel):
     """Daily user statistics"""
+
     date: _date = Field(..., description="Date for the statistics")
     new_users: int = Field(default=0, description="New user registrations")
     active_users: int = Field(default=0, description="Active users (placed orders)")
@@ -79,6 +93,7 @@ class UserStatsDaily(BaseModel):
 
 class UserStatsResponse(BaseModel):
     """Response schema for user statistics"""
+
     period: StatsPeriod = Field(..., description="Time period for the statistics")
     start_date: _date = Field(..., description="Start date of the period")
     end_date: _date = Field(..., description="End date of the period")
@@ -92,6 +107,7 @@ class UserStatsResponse(BaseModel):
 
 class TopVendorStat(BaseModel):
     """Top vendor statistics"""
+
     vendor_id: str = Field(..., description="Vendor user ID")
     vendor_name: str = Field(..., description="Vendor business name")
     vendor_email: str = Field(..., description="Vendor email")
@@ -107,12 +123,15 @@ class TopVendorStat(BaseModel):
 
 class TopCustomerStat(BaseModel):
     """Top customer statistics"""
+
     customer_id: str = Field(..., description="Customer user ID")
     customer_name: str = Field(..., description="Customer name")
     customer_email: str = Field(..., description="Customer email")
     total_orders: int = Field(..., description="Total orders placed")
     total_spent: Decimal = Field(..., description="Total amount spent")
-    favorite_order_type: Optional[str] = Field(None, description="Most frequent order type")
+    favorite_order_type: Optional[str] = Field(
+        None, description="Most frequent order type"
+    )
 
     class Config:
         orm_mode = True
@@ -121,6 +140,7 @@ class TopCustomerStat(BaseModel):
 
 class PlatformOverview(BaseModel):
     """Overall platform statistics"""
+
     total_users: int = Field(..., description="Total registered users")
     total_vendors: int = Field(..., description="Total vendors")
     total_customers: int = Field(..., description="Total customers")
@@ -139,6 +159,7 @@ class PlatformOverview(BaseModel):
 
 class OrderStatusStats(BaseModel):
     """Order status distribution statistics"""
+
     pending: int = Field(default=0, description="Pending orders")
     confirmed: int = Field(default=0, description="Confirmed orders")
     preparing: int = Field(default=0, description="Orders being prepared")
@@ -155,6 +176,7 @@ class OrderStatusStats(BaseModel):
 
 class PaymentMethodStats(BaseModel):
     """Payment method distribution statistics"""
+
     wallet: int = Field(default=0, description="Wallet payments")
     card: int = Field(default=0, description="Card payments")
     bank_transfer: int = Field(default=0, description="Bank transfer payments")
@@ -167,11 +189,16 @@ class PaymentMethodStats(BaseModel):
 
 class DeliveryStats(BaseModel):
     """Delivery statistics"""
+
     total_deliveries: int = Field(..., description="Total deliveries")
     pending_deliveries: int = Field(..., description="Pending deliveries")
     completed_deliveries: int = Field(..., description="Completed deliveries")
-    average_delivery_time: Optional[float] = Field(None, description="Average delivery time in minutes")
-    total_delivery_revenue: Decimal = Field(..., description="Total delivery fee revenue")
+    average_delivery_time: Optional[float] = Field(
+        None, description="Average delivery time in minutes"
+    )
+    total_delivery_revenue: Decimal = Field(
+        ..., description="Total delivery fee revenue"
+    )
 
     class Config:
         orm_mode = True
@@ -180,6 +207,7 @@ class DeliveryStats(BaseModel):
 
 class WalletStats(BaseModel):
     """Wallet and transaction statistics"""
+
     total_wallets: int = Field(..., description="Total user wallets")
     total_wallet_balance: Decimal = Field(..., description="Sum of all wallet balances")
     total_escrow_balance: Decimal = Field(..., description="Sum of all escrow balances")
@@ -196,14 +224,25 @@ class WalletStats(BaseModel):
 
 class ComprehensiveStatsResponse(BaseModel):
     """Comprehensive platform statistics response"""
-    platform_overview: PlatformOverview = Field(..., description="Overall platform metrics")
-    order_status_distribution: OrderStatusStats = Field(..., description="Order status breakdown")
-    payment_method_distribution: PaymentMethodStats = Field(..., description="Payment method breakdown")
+
+    platform_overview: PlatformOverview = Field(
+        ..., description="Overall platform metrics"
+    )
+    order_status_distribution: OrderStatusStats = Field(
+        ..., description="Order status breakdown"
+    )
+    payment_method_distribution: PaymentMethodStats = Field(
+        ..., description="Payment method breakdown"
+    )
     delivery_stats: DeliveryStats = Field(..., description="Delivery metrics")
     wallet_stats: WalletStats = Field(..., description="Wallet and transaction metrics")
     top_vendors: List[TopVendorStat] = Field(..., description="Top performing vendors")
-    top_customers: List[TopCustomerStat] = Field(..., description="Top customers by spending")
-    generated_at: datetime = Field(default_factory=datetime.now, description="When stats were generated")
+    top_customers: List[TopCustomerStat] = Field(
+        ..., description="Top customers by spending"
+    )
+    generated_at: datetime = Field(
+        default_factory=datetime.now, description="When stats were generated"
+    )
 
     class Config:
         orm_mode = True
@@ -212,10 +251,17 @@ class ComprehensiveStatsResponse(BaseModel):
 
 class StatsResponseWrapper(BaseModel):
     """Generic wrapper for stats responses"""
-    success: bool = Field(default=True, description="Whether the request was successful")
-    message: str = Field(default="Statistics retrieved successfully", description="Response message")
+
+    success: bool = Field(
+        default=True, description="Whether the request was successful"
+    )
+    message: str = Field(
+        default="Statistics retrieved successfully", description="Response message"
+    )
     data: Optional[Dict[str, Any]] = Field(None, description="Statistics data")
-    generated_at: datetime = Field(default_factory=datetime.now, description="When stats were generated")
+    generated_at: datetime = Field(
+        default_factory=datetime.now, description="When stats were generated"
+    )
 
     class Config:
         orm_mode = True

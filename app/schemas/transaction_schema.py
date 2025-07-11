@@ -25,6 +25,7 @@ class TransactionSchema(BaseModel):
 
 class TransactionCreateSchema(BaseModel):
     """Schema for creating a new transaction"""
+
     wallet_id: UUID
     amount: Decimal
     payment_by: Optional[str] = None
@@ -40,6 +41,7 @@ class TransactionCreateSchema(BaseModel):
 
 class TransactionUpdateSchema(BaseModel):
     """Schema for updating an existing transaction"""
+
     payment_status: Optional[PaymentStatus] = None
     payment_method: Optional[PaymentMethod] = None
     payment_link: Optional[str] = None

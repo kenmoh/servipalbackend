@@ -60,6 +60,7 @@ from app.utils.s3_service import add_image
 
 ALL_DELIVERY = "orders"
 
+
 async def get_delivery_by_order_id(
     order_id: UUID,
     db: AsyncSession,
@@ -100,7 +101,7 @@ async def get_delivery_by_order_id(
         )
 
 
-async def get_user_orders(db: AsyncSession,user_id: UUID) -> list[DeliveryResponse]:
+async def get_user_orders(db: AsyncSession, user_id: UUID) -> list[DeliveryResponse]:
     """
     Get all orders with their deliveries (if any) with caching
     """
@@ -123,7 +124,6 @@ async def get_user_orders(db: AsyncSession,user_id: UUID) -> list[DeliveryRespon
             joinedload(Order.delivery),
             joinedload(Order.vendor).joinedload(User.profile),
         )
-        
     )
 
     result = await db.execute(stmt)
@@ -143,6 +143,8 @@ async def get_user_orders(db: AsyncSession,user_id: UUID) -> list[DeliveryRespon
     )
 
     return delivery_responses
+
+
 async def get_all_orders(db: AsyncSession) -> list[DeliveryResponse]:
     """
     Get all orders with their deliveries (if any) with caching
@@ -545,7 +547,7 @@ async def order_food_or_request_laundy_service(
             f"vendor_orders:{vendor_id}",
             f"order_details:{order_id}",
             f"user_orders:{current_user.id}",
-            f"user_orders:{vendor_id}"
+            f"user_orders:{vendor_id}",
         ]
         redis_client.delete(*cache_keys)
         redis_client.delete(ALL_DELIVERY)
@@ -643,7 +645,9 @@ async def cancel_delivery(
 
             # UPDATE USER WALLET
             new_escrow = max(wallet.escrow_balance - delivery.delivery_fee, 0)
-            new_balance = wallet.balance + max(wallet.escrow_balance - delivery.delivery_fee, 0)
+            new_balance = wallet.balance + max(
+                wallet.escrow_balance - delivery.delivery_fee, 0
+            )
             await db.execute(
                 update(Wallet)
                 .where(Wallet.id == current_user.sender_id)
@@ -765,7 +769,10 @@ async def re_list_item_for_delivery(
                 new_escrow = wallet.escrow_balance + delivery.delivery_fee
                 new_balance = wallet.balance - delivery.delivery_fee
                 if new_balance < 0:
-                    raise HTTPException(status_code=400, detail="Insufficient balance to re-list delivery.")
+                    raise HTTPException(
+                        status_code=400,
+                        detail="Insufficient balance to re-list delivery.",
+                    )
                 await db.execute(
                     update(Wallet)
                     .where(Wallet.id == current_user.sender_id)
@@ -893,9 +900,7 @@ async def vendor_or_owner_mark_order_delivered_or_received(
             await db.execute(
                 update(Wallet)
                 .where(Wallet.id == order.owner_id)
-                .values(
-                    {"escrow_balance": new_owner_escrow}
-                )
+                .values({"escrow_balance": new_owner_escrow})
             )
             await db.commit()
             await db.refresh(order)
@@ -1110,7 +1115,9 @@ async def sender_confirm_delivery_received(
 
         if delivery.delivery_type == DeliveryType.PACKAGE:
             # update wallet
-            new_dispatch_escrow = max(dispatch_wallet.escrow_balance - dispatch_amount, 0)
+            new_dispatch_escrow = max(
+                dispatch_wallet.escrow_balance - dispatch_amount, 0
+            )
             await db.execute(
                 update(Wallet)
                 .where(Wallet.id == delivery.dispatch_id)
@@ -1124,7 +1131,9 @@ async def sender_confirm_delivery_received(
             await db.commit()
             await db.refresh(delivery)
 
-            new_sender_escrow = max(sender_wallet.escrow_balance - delivery.delivery_fee, 0)
+            new_sender_escrow = max(
+                sender_wallet.escrow_balance - delivery.delivery_fee, 0
+            )
             await db.execute(
                 update(Wallet)
                 .where(Wallet.id == delivery.sender_id)
@@ -1159,7 +1168,9 @@ async def sender_confirm_delivery_received(
 
         if delivery.delivery_type in [DeliveryType.FOOD, DeliveryType.LAUNDRY]:
             # update wallet
-            new_dispatch_escrow = max(dispatch_wallet.escrow_balance - dispatch_amount, 0)
+            new_dispatch_escrow = max(
+                dispatch_wallet.escrow_balance - dispatch_amount, 0
+            )
             await db.execute(
                 update(Wallet)
                 .where(Wallet.id == delivery.dispatch_id)
@@ -1188,7 +1199,9 @@ async def sender_confirm_delivery_received(
             await db.commit()
             await db.refresh(delivery)
 
-            new_sender_escrow = max(sender_wallet.escrow_balance - delivery.order.total_price, 0)
+            new_sender_escrow = max(
+                sender_wallet.escrow_balance - delivery.order.total_price, 0
+            )
             await db.execute(
                 update(Wallet)
                 .where(Wallet.id == delivery.sender_id)
@@ -1661,9 +1674,7 @@ async def update_wallet_balance(
     """Updates a wallet's balance."""
     # Only update balance; do not touch escrow_balance here unless explicitly intended
     await db.execute(
-        update(Wallet)
-        .where(Wallet.id == wallet_id)
-        .values(balance=new_balance)
+        update(Wallet).where(Wallet.id == wallet_id).values(balance=new_balance)
     )
 
 
