@@ -37,6 +37,22 @@ from app.schemas.item_schemas import MenuResponseSchema, FoodGroup
 router = APIRouter(prefix="/api/users", tags=["Users"])
 
 
+@router.put("/{user_id}/toggle-block", status_code=status.HTTP_200_OK)
+async def toggle_user_block_status(
+    user_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> bool:
+    """
+    Toggle user block status - block if unblocked, unblock if blocked.
+    Only accessible to admin, staff, or moderator users.
+    
+    Returns:
+        Boolean indicating the new block status (True if blocked, False if unblocked)
+    """
+    return await user_service.toggle_user_block_status(db=db, user_id=user_id, current_user=current_user)
+
+
 @router.get("", status_code=status.HTTP_200_OK)
 async def get_users(
     db: AsyncSession = Depends(get_db),

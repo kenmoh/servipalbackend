@@ -279,6 +279,60 @@ async def get_users(db: AsyncSession) -> list[UserProfileResponse]:
         )
 
 
+async def toggle_user_block_status(db: AsyncSession, user_id: UUID, current_user: User) -> bool:
+    """
+    Toggle user block status - block if unblocked, unblock if blocked.
+    
+    Args:
+        db: Database session
+        user_id: ID of the user to toggle block status
+        current_user: Current authenticated user
+        
+    Returns:
+        Boolean indicating the new block status
+    """
+    # Check if current user has permission to block/unblock users
+    allowed_user_types = [UserType.ADMIN, UserType.STAFF, UserType.MODERATOR]
+    if current_user.user_type not in allowed_user_types:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only admin, staff, or moderator users can block/unblock users"
+        )
+    
+    result = await db.execute(select(User).where(User.id == user_id))
+    user = result.scalar_one_or_none()
+    
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, 
+            detail="User not found"
+        )
+    
+    # Toggle the block status
+    user.is_blocked = not user.is_blocked
+    
+    try:
+        await db.commit()
+        await db.refresh(user)
+        
+        # Invalidate user cache
+        invalidate_user_cache(user_id)
+        redis_client.delete("all_users")
+        
+        action = "blocked" if user.is_blocked else "unblocked"
+        logger.info(f"User {user_id} ({user.email}) has been {action} by {current_user.email}")
+        
+        return user.is_blocked
+        
+    except Exception as e:
+        await db.rollback()
+        logger.error(f"Error toggling block status for user {user_id}: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to update user block status"
+        )
+
+
 async def get_user_wallets(db: AsyncSession) -> list[WalletSchema]:
     stmt = select(Wallet).options(selectinload(Wallet.transactions))
     result = await db.execute(stmt)

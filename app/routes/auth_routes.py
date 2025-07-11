@@ -57,6 +57,37 @@ async def login_user(
             db=db,
         )
 
+        if user:
+            await auth_service.create_session(db, user.id, request)
+        return TokenResponse(
+            refresh_token=token.refresh_token,
+            user_type=token.user_type,
+            account_status=token.account_status,
+            access_token=token.access_token,
+        )
+
+
+    except Exception as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    
+@router.post("/admin-login", status_code=status.HTTP_200_OK, include_in_schema=False)
+async def login_admin_user(
+    request: Request,
+    response: Response,
+    user_credentials: OAuth2PasswordRequestForm = Depends(),
+    db: AsyncSession = Depends(get_db),
+) -> TokenResponse:
+    try:
+        user = await auth_service.login_admin_user(login_data=user_credentials, db=db)
+
+        token = await create_tokens(
+            user_id=user.id,
+            email=user.email,
+            account_status=user.account_status,
+            user_type=user.user_type,
+            db=db,
+        )
+
 
         response.set_cookie(
             key="access_token",

@@ -73,6 +73,41 @@ async def login_user(db: AsyncSession, login_data: UserLogin) -> User:
 
     return user
 
+async def login_admin_user(db: AsyncSession, login_data: UserLogin) -> User:
+    """
+    Args:
+            db: Database session
+            login_data: Login credentials
+
+    Returns:
+            Authenticated user or None if authentication fails
+    """
+
+    # Check for account lockout
+    check_login_attempts(login_data.username, redis_client)
+
+    # Find user by username
+    stmt = select(User).where(User.email == login_data.username)
+    result = await db.execute(stmt)
+    user = result.scalar_one_or_none()
+
+    if not user or not verify_password(login_data.password, user.password):
+        # Record failed attempt
+        record_failed_attempt(login_data.username, redis_client)
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials"
+        )
+    
+    if user.user_type not in [ UserType.ADMIN, UserType.MODERATOR, UserType.SUPER_ADMIN]:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized"
+        )
+
+    # Reset failed attempts on successful login
+    redis_client.delete(f"login_attempts:{login_data.username}")
+
+    return user
+
 
 # async def create_user(
 #     db: AsyncSession, user_data: CreateUserSchema

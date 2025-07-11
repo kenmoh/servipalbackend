@@ -12,6 +12,10 @@ from app.schemas.status_schema import OrderStatus
 from app.schemas.status_schema import RequireDeliverySchema, PaymentStatus
 
 
+
+ 
+
+
 class PaymentStatus(str, Enum):
     PAID = "paid"
     PENDING = "pending"
@@ -22,7 +26,7 @@ class OrderType(str, Enum):
     FOOD = "food"
     PACKAGE = "package"
     LAUNDRY = "laundry"
-    PRODUCT = "product"
+    # PRODUCT = "product"
 
 
 class OrderIssueCreate(BaseModel):

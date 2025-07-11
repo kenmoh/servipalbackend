@@ -30,6 +30,8 @@ class UserType(str, Enum):
     LAUNDRY_VENDOR: str = os.getenv("LAUNDRY_VENDOR")
     RIDER: str = os.getenv("RIDER")
     ADMIN: str = os.getenv("ADMIN")
+    SUPER_ADMIN=os.getenv("SUPER_ADMIN")
+    MODERATOR=os.getenv("MODERATOR")
 
 
 class DeliveryStatus(str, Enum):

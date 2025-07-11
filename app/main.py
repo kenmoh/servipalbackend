@@ -8,7 +8,7 @@ import logfire
 
 from fastapi import Depends, FastAPI
 from fastapi.openapi.docs import get_swagger_ui_html, get_redoc_html
-from fastapi.responses import FileResponse, RedirectResponse
+from fastapi.responses import RedirectResponse
 from fastapi_mcp import FastApiMCP
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.templating import Jinja2Templates
@@ -17,17 +17,32 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.interval import IntervalTrigger
 from app.database.database import async_session, get_db
-from app.routes import (
-    auth_routes,
-    user_routes,
-    payment_routes,
-    item_routes,
-    order_routes,
-    product_routes,
-    marketplace_routes,
-    review_routes,
-    report_routes,
-)
+# from app.routes import (
+#     auth_routes,
+#     user_routes,
+#     payment_routes,
+#     item_routes,
+#     order_routes,
+#     product_routes,
+#     marketplace_routes,
+#     review_routes,
+#     report_routes,
+#     settings_routes,
+#     stats_routes,
+# )
+from app.routes import  auth_routes
+   
+from app.routes import  user_routes
+from app.routes import  payment_routes
+from app.routes import  item_routes
+from app.routes import  order_routes
+from app.routes import  product_routes
+from app.routes import  marketplace_routes
+from app.routes import  review_routes
+from app.routes import  report_routes
+from app.routes import settings_routes
+from app.routes import stats_routes
+
 
 from app.utils.cron_job import (
     reset_user_suspension,
@@ -274,7 +289,6 @@ async def resolve_account_name(data: AccountDetails) -> AccountDetailResponse:
 
 
 app.include_router(auth_routes.router)
-app.include_router(auth_routes.router)
 app.include_router(user_routes.router)
 app.include_router(review_routes.router)
 app.include_router(report_routes.router)
@@ -283,6 +297,8 @@ app.include_router(order_routes.router)
 app.include_router(payment_routes.router)
 app.include_router(product_routes.router)
 app.include_router(marketplace_routes.router)
+app.include_router(settings_routes.router)
+app.include_router(stats_routes.router)
 # app.include_router(notification_routes.router)
 
 

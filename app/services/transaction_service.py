@@ -19,6 +19,7 @@ from app.models.models import (
     Transaction,
     OrderItem,
 )
+from app.schemas.transaction_schema import TransactionSchema
 from app.schemas.marketplace_schemas import (
     TopUpRequestSchema,
     TopUpResponseSchema,
@@ -26,6 +27,7 @@ from app.schemas.marketplace_schemas import (
     BankCode,
     WithdrawalShema,
 )
+from app.services.settings_service import get_charge_and_commission_settings
 from app.schemas.order_schema import OrderResponseSchema, OrderType
 from app.schemas.status_schema import PaymentMethod, PaymentStatus, RequireDeliverySchema, TransactionType
 from app.utils.logger_config import setup_logger
@@ -41,6 +43,67 @@ from app.utils.utils import (
 from app.config.config import settings, redis_client
 
 logger = setup_logger()
+
+
+async def get_all_transactions(db: AsyncSession) -> list[TransactionSchema]:
+    """
+    Retrieve all transactions from the database.
+    
+    Args:
+        db: The database session.
+        
+    Returns:
+        List of all transactions as Pydantic schemas.
+    """
+    try:
+        stmt = select(Transaction).order_by(Transaction.created_at.desc())
+        result = await db.execute(stmt)
+        transactions = result.scalars().all()
+        return [TransactionSchema.model_validate(transaction) for transaction in transactions]
+    except Exception as e:
+        logger.error(f"Error retrieving all transactions: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to retrieve transactions"
+        )
+
+
+async def get_transaction(db: AsyncSession, transaction_id: UUID) -> TransactionSchema:
+    """
+    Retrieve a specific transaction by ID.
+    
+    Args:
+        db: The database session.
+        transaction_id: The ID of the transaction to retrieve.
+        
+    Returns:
+        The transaction as a Pydantic schema.
+        
+    Raises:
+        HTTPException: If transaction is not found.
+    """
+    try:
+        stmt = select(Transaction).where(Transaction.id == transaction_id)
+        result = await db.execute(stmt)
+        transaction = result.scalar_one_or_none()
+        
+        if not transaction:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Transaction not found"
+            )
+            
+        return TransactionSchema.model_validate(transaction)
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error retrieving transaction {transaction_id}: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to retrieve transaction"
+        )
+
+
 
 
 async def handle_charge_completed_callback_fallback(
@@ -225,9 +288,7 @@ async def handle_charge_completed_callback_fallback(
             # Update wallet balance
             wallet = await db.get(Wallet, transaction.wallet_id)
             if wallet:
-                charge_stmt = select(ChargeAndCommission)
-                charge_result = await db.execute(charge_stmt)
-                charge = charge_result.scalar_one_or_none()
+                charge = await get_current_charge_settings(db)
                 amount_to_add = calculate_net_amount(transaction.amount, charge)
                 wallet.balance += amount_to_add
 
@@ -736,9 +797,7 @@ async def handle_charge_completed_callback(
             # Update wallet balance
             wallet = await db.get(Wallet, transaction.wallet_id)
             if wallet:
-                charge_stmt = select(ChargeAndCommission)
-                charge_result = await db.execute(charge_stmt)
-                charge = charge_result.scalar_one_or_none()
+                charge = await get_current_charge_settings(db)
                 amount_to_add = calculate_net_amount(transaction.amount, charge)
                 wallet.balance += amount_to_add
 
@@ -973,6 +1032,43 @@ def calculate_net_amount(amount: Decimal, charge: ChargeAndCommission) -> Decima
 
     # Return amount after deducting charges
     return amount - total_charge
+
+
+async def get_current_charge_settings(db: AsyncSession) -> ChargeAndCommission:
+    """
+    Get current charge settings from database using the settings service.
+    
+    Args:
+        db: Database session
+        
+    Returns:
+        ChargeAndCommission object with current settings
+        
+    Raises:
+        HTTPException: If no settings are configured
+    """
+    settings_schema = await get_charge_and_commission_settings(db)
+    if not settings_schema:
+        # Return default settings if none configured
+        logger.warning("No charge settings found in database, using default values")
+        default_settings = ChargeAndCommission(
+            id=0,
+            payout_charge_transaction_upto_5000_naira=Decimal('25.00'),
+            payout_charge_transaction_from_5001_to_50_000_naira=Decimal('50.00'),
+            payout_charge_transaction_above_50_000_naira=Decimal('100.00'),
+            value_added_tax=Decimal('0.075')
+        )
+        return default_settings
+    
+    # Convert schema back to model for compatibility
+    charge_model = ChargeAndCommission(
+        id=settings_schema.id,
+        payout_charge_transaction_upto_5000_naira=settings_schema.payout_charge_transaction_upto_5000_naira,
+        payout_charge_transaction_from_5001_to_50_000_naira=settings_schema.payout_charge_transaction_from_5001_to_50_000_naira,
+        payout_charge_transaction_above_50_000_naira=settings_schema.payout_charge_transaction_above_50_000_naira,
+        value_added_tax=settings_schema.value_added_tax
+    )
+    return charge_model
 
 
 # --- New version: order_payment_callback ---
@@ -1518,8 +1614,7 @@ async def make_withdrawal(db: AsyncSession, current_user: User) -> WithdrawalShe
     result = await db.execute(stmt)
     user = result.unique().scalar_one_or_none()
 
-    result = await db.execute(select(ChargeAndCommission))
-    charge = result.scalars().first()
+    charge = await get_current_charge_settings(db)
 
     if not user:
         raise HTTPException(
