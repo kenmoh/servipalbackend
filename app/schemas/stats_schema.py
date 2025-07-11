@@ -161,11 +161,9 @@ class OrderStatusStats(BaseModel):
     """Order status distribution statistics"""
 
     pending: int = Field(default=0, description="Pending orders")
-    confirmed: int = Field(default=0, description="Confirmed orders")
-    preparing: int = Field(default=0, description="Orders being prepared")
-    ready: int = Field(default=0, description="Ready orders")
-    picked_up: int = Field(default=0, description="Picked up orders")
     delivered: int = Field(default=0, description="Delivered orders")
+    received: int = Field(default=0, description="Received orders")
+    rejected: int = Field(default=0, description="Rejected orders")
     cancelled: int = Field(default=0, description="Cancelled orders")
     total: int = Field(default=0, description="Total orders")
 

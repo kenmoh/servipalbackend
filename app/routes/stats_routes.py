@@ -32,12 +32,12 @@ def check_admin_or_staff_access(current_user: User):
     """Check if user has admin or staff access for statistics"""
     if current_user.user_type not in [
         UserType.ADMIN,
-        UserType.STAFF,
+        UserType.SUPER_ADMIN,
         UserType.MODERATOR,
     ]:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only admin, staff, and moderator users can access statistics",
+            detail="Only admin, superadmin, and moderator users can access statistics",
         )
 
 

@@ -451,11 +451,11 @@ async def get_platform_overview(db: AsyncSession) -> PlatformOverview:
         total_orders_stmt = select(func.count(Order.id))
         pending_orders_stmt = select(func.count(Order.id)).where(
             Order.order_status.in_(
-                [OrderStatus.PENDING, OrderStatus.CONFIRMED, OrderStatus.PREPARING]
+                [OrderStatus.PENDING, OrderStatus.DELIVERED]
             )
         )
         completed_orders_stmt = select(func.count(Order.id)).where(
-            Order.order_status == OrderStatus.DELIVERED
+            Order.order_status == OrderStatus.RECEIVED
         )
         orders_today_stmt = select(func.count(Order.id)).where(
             cast(Order.created_at, Date) == today
@@ -635,20 +635,24 @@ async def get_comprehensive_stats(db: AsyncSession) -> ComprehensiveStatsRespons
 
         order_status_stats = OrderStatusStats(
             pending=order_status_data.get(OrderStatus.PENDING, 0),
-            confirmed=order_status_data.get(OrderStatus.CONFIRMED, 0),
-            preparing=order_status_data.get(OrderStatus.PREPARING, 0),
-            ready=order_status_data.get(OrderStatus.READY, 0),
-            picked_up=order_status_data.get(OrderStatus.PICKED_UP, 0),
             delivered=order_status_data.get(OrderStatus.DELIVERED, 0),
+            received=order_status_data.get(OrderStatus.RECEIVED, 0),
+            rejected=order_status_data.get(OrderStatus.REJECTED, 0),
             cancelled=order_status_data.get(OrderStatus.CANCELLED, 0),
             total=sum(order_status_data.values()),
         )
 
         # Payment method distribution
+        # Get payment method stats from paid transactions
         payment_method_stmt = (
-            select(Order.payment_method, func.count(Order.id).label("count"))
-            .where(Order.order_payment_status == PaymentStatus.PAID)
-            .group_by(Order.payment_method)
+            select(Transaction.payment_method, func.count(Transaction.id).label("count"))
+            .where(
+                and_(
+                    Transaction.payment_method.isnot(None),
+                    Transaction.payment_status == PaymentStatus.PAID
+                )
+            )
+            .group_by(Transaction.payment_method)
         )
         payment_result = await db.execute(payment_method_stmt)
         payment_data = {row.payment_method: row.count for row in payment_result.all()}
