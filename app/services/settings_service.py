@@ -53,6 +53,8 @@ async def get_charge_and_commission_settings(
         if settings:
             settings_dict = {
                 "id": settings.id,
+                "payment_gate_way_fee": str(settings.payment_gate_way_fee),
+                "value_added_tax": str(settings.value_added_tax),
                 "payout_charge_transaction_upto_5000_naira": str(
                     settings.payout_charge_transaction_upto_5000_naira
                 ),
@@ -62,7 +64,12 @@ async def get_charge_and_commission_settings(
                 "payout_charge_transaction_above_50_000_naira": str(
                     settings.payout_charge_transaction_above_50_000_naira
                 ),
-                "value_added_tax": str(settings.value_added_tax),
+                "stamp_duty": str(settings.stamp_duty),
+                "base_delivery_fee": str(settings.base_delivery_fee),
+                "delivery_fee_per_km": str(settings.delivery_fee_per_km),
+                "delivery_commission_percentage": str(settings.delivery_commission_percentage),
+                "food_laundry_commission_percentage": str(settings.food_laundry_commission_percentage),
+                "product_commission_percentage": str(settings.product_commission_percentage),
                 "created_at": settings.created_at.isoformat(),
                 "updated_at": settings.updated_at.isoformat(),
             }
@@ -117,6 +124,12 @@ async def update_charge_and_commission_settings(
         update_dict = {}
         update_dict["updated_at"] = datetime.now()
 
+        if update_data.payment_gate_way_fee is not None:
+            update_dict["payment_gate_way_fee"] = update_data.payment_gate_way_fee
+
+        if update_data.value_added_tax is not None:
+            update_dict["value_added_tax"] = update_data.value_added_tax
+
         if update_data.payout_charge_transaction_upto_5000_naira is not None:
             update_dict[
                 "payout_charge_transaction_upto_5000_naira"
@@ -132,8 +145,23 @@ async def update_charge_and_commission_settings(
                 "payout_charge_transaction_above_50_000_naira"
             ] = update_data.payout_charge_transaction_above_50_000_naira
 
-        if update_data.value_added_tax is not None:
-            update_dict["value_added_tax"] = update_data.value_added_tax
+        if update_data.stamp_duty is not None:
+            update_dict["stamp_duty"] = update_data.stamp_duty
+
+        if update_data.base_delivery_fee is not None:
+            update_dict["base_delivery_fee"] = update_data.base_delivery_fee
+
+        if update_data.delivery_fee_per_km is not None:
+            update_dict["delivery_fee_per_km"] = update_data.delivery_fee_per_km
+
+        if update_data.delivery_commission_percentage is not None:
+            update_dict["delivery_commission_percentage"] = update_data.delivery_commission_percentage
+
+        if update_data.food_laundry_commission_percentage is not None:
+            update_dict["food_laundry_commission_percentage"] = update_data.food_laundry_commission_percentage
+
+        if update_data.product_commission_percentage is not None:
+            update_dict["product_commission_percentage"] = update_data.product_commission_percentage
 
         # Update the settings
         stmt = (
@@ -202,10 +230,17 @@ async def create_initial_charge_and_commission_settings(
 
         # Create new settings
         new_settings = ChargeAndCommission(
+            payment_gate_way_fee=create_data.payment_gate_way_fee,
+            value_added_tax=create_data.value_added_tax,
             payout_charge_transaction_upto_5000_naira=create_data.payout_charge_transaction_upto_5000_naira,
             payout_charge_transaction_from_5001_to_50_000_naira=create_data.payout_charge_transaction_from_5001_to_50_000_naira,
             payout_charge_transaction_above_50_000_naira=create_data.payout_charge_transaction_above_50_000_naira,
-            value_added_tax=create_data.value_added_tax,
+            stamp_duty=create_data.stamp_duty,
+            base_delivery_fee=create_data.base_delivery_fee,
+            delivery_fee_per_km=create_data.delivery_fee_per_km,
+            delivery_commission_percentage=create_data.delivery_commission_percentage,
+            food_laundry_commission_percentage=create_data.food_laundry_commission_percentage,
+            product_commission_percentage=create_data.product_commission_percentage,
             created_at=datetime.now(),
             updated_at=datetime.now(),
         )
