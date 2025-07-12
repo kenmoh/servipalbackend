@@ -5,11 +5,12 @@ from uuid import UUID
 import logging
 from fastapi import BackgroundTasks, HTTPException, Request, status
 import httpx
-from sqlalchemy import insert, select, update
+from sqlalchemy import insert, select, update, and_, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 import hmac
+from typing import Optional
 
 from app.models.models import (
     ChargeAndCommission,
@@ -19,7 +20,11 @@ from app.models.models import (
     Transaction,
     OrderItem,
 )
-from app.schemas.transaction_schema import TransactionSchema
+from app.schemas.transaction_schema import (
+    TransactionSchema,
+    TransactionFilterSchema,
+    TransactionResponseSchema,
+)
 from app.schemas.marketplace_schemas import (
     TopUpRequestSchema,
     TopUpResponseSchema,
@@ -48,6 +53,115 @@ from app.utils.utils import (
 from app.config.config import settings, redis_client
 
 logger = setup_logger()
+
+
+async def get_transactions(
+    db: AsyncSession,
+    page: int = 1,
+    page_size: int = 20,
+    filters: Optional[TransactionFilterSchema] = None,
+) -> TransactionResponseSchema:
+    """
+    Retrieve all transactions with filtering and pagination.
+
+    Args:
+        db: The database session.
+        page: Page number (1-based).
+        page_size: Number of items per page.
+        filters: Optional filters to apply.
+
+    Returns:
+        TransactionResponseSchema with paginated transactions.
+
+    Raises:
+        HTTPException: If there's an error retrieving transactions.
+    """
+    try:
+        # Build base query for all transactions
+        stmt = select(Transaction)
+        
+        # Apply filters if provided
+        if filters:
+            conditions = []
+            
+            if filters.transaction_type:
+                conditions.append(Transaction.transaction_type == filters.transaction_type)
+            
+            if filters.payment_status:
+                conditions.append(Transaction.payment_status == filters.payment_status)
+            
+            if filters.payment_method:
+                conditions.append(Transaction.payment_method == filters.payment_method)
+            
+            if filters.start_date:
+                conditions.append(Transaction.created_at >= filters.start_date)
+            
+            if filters.end_date:
+                conditions.append(Transaction.created_at <= filters.end_date)
+            
+            if filters.min_amount:
+                conditions.append(Transaction.amount >= filters.min_amount)
+            
+            if filters.max_amount:
+                conditions.append(Transaction.amount <= filters.max_amount)
+            
+            if conditions:
+                stmt = stmt.where(and_(*conditions))
+        
+        # Get total count for pagination
+        count_stmt = select(func.count(Transaction.id))
+        if filters:
+            count_conditions = []
+            if filters.transaction_type:
+                count_conditions.append(Transaction.transaction_type == filters.transaction_type)
+            if filters.payment_status:
+                count_conditions.append(Transaction.payment_status == filters.payment_status)
+            if filters.payment_method:
+                count_conditions.append(Transaction.payment_method == filters.payment_method)
+            if filters.start_date:
+                count_conditions.append(Transaction.created_at >= filters.start_date)
+            if filters.end_date:
+                count_conditions.append(Transaction.created_at <= filters.end_date)
+            if filters.min_amount:
+                count_conditions.append(Transaction.amount >= filters.min_amount)
+            if filters.max_amount:
+                count_conditions.append(Transaction.amount <= filters.max_amount)
+            if count_conditions:
+                count_stmt = count_stmt.where(and_(*count_conditions))
+        
+        count_result = await db.execute(count_stmt)
+        total_count = count_result.scalar()
+        
+        # Apply pagination
+        offset = (page - 1) * page_size
+        stmt = stmt.order_by(Transaction.created_at.desc()).offset(offset).limit(page_size)
+        
+        # Execute query
+        result = await db.execute(stmt)
+        transactions = result.scalars().all()
+        
+        # Convert to schemas
+        transaction_schemas = [
+            TransactionSchema.model_validate(transaction) for transaction in transactions
+        ]
+        
+        # Calculate pagination info
+        total_pages = (total_count + page_size - 1) // page_size
+        
+        return TransactionResponseSchema(
+            transactions=transaction_schemas,
+            total_count=total_count,
+            page=page,
+            page_size=page_size,
+            total_pages=total_pages,
+        )
+        
+    except Exception as e:
+        logger.error(f"Error retrieving transactions: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to retrieve transactions",
+        )
 
 
 async def get_all_transactions(db: AsyncSession) -> list[TransactionSchema]:

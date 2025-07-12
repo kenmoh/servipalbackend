@@ -1,6 +1,6 @@
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Request, status
+from fastapi import APIRouter, Depends, Request, status, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.auth import get_current_user
@@ -14,10 +14,74 @@ from app.schemas.marketplace_schemas import (
     TopUpResponseSchema,
 )
 from app.services import transaction_service
-from app.schemas.transaction_schema import TransactionSchema
+from app.schemas.transaction_schema import (
+    TransactionSchema,
+    TransactionFilterSchema,
+    TransactionResponseSchema,
+)
+from app.schemas.status_schema import TransactionType, PaymentStatus, PaymentMethod
 
 
 router = APIRouter(prefix="/api/payment", tags=["Payments/Transations"])
+
+
+@router.get(
+    "/all-transactions",
+    response_model=TransactionResponseSchema,
+    status_code=status.HTTP_200_OK,
+)
+async def get_transactions(
+    page: int = Query(1, ge=1, description="Page number"),
+    page_size: int = Query(20, ge=1, le=100, description="Number of items per page"),
+    transaction_type: TransactionType = Query(None, description="Filter by transaction type"),
+    payment_status: PaymentStatus = Query(None, description="Filter by payment status"),
+    payment_method: PaymentMethod = Query(None, description="Filter by payment method"),
+    start_date: str = Query(None, description="Filter by start date (ISO format)"),
+    end_date: str = Query(None, description="Filter by end date (ISO format)"),
+    min_amount: float = Query(None, ge=0, description="Filter by minimum amount"),
+    max_amount: float = Query(None, ge=0, description="Filter by maximum amount"),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Get all transactions with filtering and pagination.
+    
+    Args:
+        page: Page number (1-based)
+        page_size: Number of items per page (1-100)
+        transaction_type: Filter by transaction type
+        payment_status: Filter by payment status
+        payment_method: Filter by payment method
+        start_date: Filter by start date (ISO format: YYYY-MM-DDTHH:MM:SS)
+        end_date: Filter by end date (ISO format: YYYY-MM-DDTHH:MM:SS)
+        min_amount: Filter by minimum amount
+        max_amount: Filter by maximum amount
+        db: Database session
+    
+    Returns:
+        Paginated list of all transactions with metadata
+    """
+    # Build filters
+    filters = None
+    if any([transaction_type, payment_status, payment_method, start_date, end_date, min_amount, max_amount]):
+        from datetime import datetime
+        from decimal import Decimal
+        
+        filters = TransactionFilterSchema(
+            transaction_type=transaction_type,
+            payment_status=payment_status,
+            payment_method=payment_method,
+            start_date=datetime.fromisoformat(start_date) if start_date else None,
+            end_date=datetime.fromisoformat(end_date) if end_date else None,
+            min_amount=Decimal(str(min_amount)) if min_amount else None,
+            max_amount=Decimal(str(max_amount)) if max_amount else None,
+        )
+    
+    return await transaction_service.get_transactions(
+        db=db,
+        page=page,
+        page_size=page_size,
+        filters=filters,
+    )
 
 
 @router.get(
