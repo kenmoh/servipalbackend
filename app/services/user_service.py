@@ -38,9 +38,10 @@ from app.schemas.item_schemas import MenuResponseSchema
 from app.schemas.user_schemas import (
     Notification,
     ProfileSchema,
+    TransactionSchema,
     UserProfileResponse,
     RiderProfileSchema,
-    UserResponse,
+    
     WalletSchema,
     VendorUserResponse,
     ProfileImageResponseSchema,
@@ -48,6 +49,7 @@ from app.schemas.user_schemas import (
     CreateReviewSchema,
     ProfileSchema,
     UpdateRider,
+    WalletUserData,
 )
 
 logger = setup_logger()
@@ -336,16 +338,52 @@ async def toggle_user_block_status(
         )
 
 
+# async def get_user_wallets(db: AsyncSession) -> list[WalletSchema]:
+#     stmt = select(Wallet).options(selectinload(Wallet.transactions))
+#     result = await db.execute(stmt)
+#     wallets = result.scalars().all()
+#     for wallet in wallets:
+#         if hasattr(wallet, "transactions") and wallet.transactions:
+#             wallet.transactions.sort(
+#                 key=lambda t: getattr(t, "created_at", None), reverse=True
+#             )
+#     return wallets
+
+
 async def get_user_wallets(db: AsyncSession) -> list[WalletSchema]:
-    stmt = select(Wallet).options(selectinload(Wallet.transactions))
+    stmt = select(Wallet).options(
+        selectinload(Wallet.transactions),
+        selectinload(Wallet.user).selectinload(User.profile)
+    )
     result = await db.execute(stmt)
     wallets = result.scalars().all()
+    wallet_schemas = []
     for wallet in wallets:
+        # Sort transactions by created_at descending
         if hasattr(wallet, "transactions") and wallet.transactions:
             wallet.transactions.sort(
                 key=lambda t: getattr(t, "created_at", None), reverse=True
             )
-    return wallets
+        # Get user profile data
+        profile = None
+        if wallet.user and wallet.user.profile:
+            profile = WalletUserData(
+                full_name=wallet.user.profile.full_name,
+                business_name=wallet.user.profile.business_name,
+                phone_number=wallet.user.profile.phone_number,
+            )
+        wallet_schema = WalletSchema(
+            id=wallet.id,
+            balance=wallet.balance,
+            escrow_balance=wallet.escrow_balance,
+            profile=profile,
+            transactions=[
+                TransactionSchema.model_validate(tran)
+                for tran in wallet.transactions
+            ] if wallet.transactions else [],
+        )
+        wallet_schemas.append(wallet_schema)
+    return wallet_schemas
 
 
 async def get_user_wallet(db: AsyncSession, current_user: User) -> WalletSchema:
@@ -1422,3 +1460,45 @@ async def get_laundry_menu(
     except Exception as e:
         logger.error(f"Error fetching laundry menu: {e}")
         raise
+
+
+async def get_teams(db: AsyncSession) -> list[UserProfileResponse]:
+    """
+    Returns all users with user_type ADMIN, SUPER_ADMIN, or MODERATOR.
+    """
+    stmt = (
+        select(User)
+        .options(selectinload(User.profile).selectinload(Profile.profile_image))
+        .where(User.user_type.in_([UserType.ADMIN, UserType.SUPER_ADMIN, UserType.MODERATOR]))
+        .order_by(User.created_at.desc())
+    )
+    result = await db.execute(stmt)
+    users = result.scalars().all()
+    users_data = []
+    for user in users:
+        user_data = {
+            "email": user.email,
+            "user_type": getattr(user, "user_type", "customer"),
+            "id": str(user.id),
+        }
+        if user.profile:
+            user_data["profile"] = {
+                "user_id": user.id,
+                "phone_number": user.profile.phone_number,
+                "bike_number": getattr(user.profile, "bike_number", None),
+                "bank_account_number": getattr(user.profile, "bank_account_number", None),
+                "bank_name": getattr(user.profile, "bank_name", None),
+                "full_name": user.profile.full_name,
+                "store_name": user.profile.store_name,
+                "business_name": getattr(user.profile, "business_name", None),
+                "business_address": getattr(user.profile, "business_address", None),
+                "backdrop_image_url": getattr(user.profile.profile_image, "backdrop_image_url", None),
+                "profile_image_url": getattr(user.profile.profile_image, "profile_image_url", None),
+                "business_registration_number": getattr(user.profile, "business_registration_number", None),
+                "closing_hours": user.profile.closing_hours.isoformat() if getattr(user.profile, "closing_hours", None) else None,
+                "opening_hours": user.profile.opening_hours.isoformat() if getattr(user.profile, "opening_hours", None) else None,
+            }
+        else:
+            user_data["profile"] = None
+        users_data.append(user_data)
+    return [UserProfileResponse(**user_data) for user_data in users_data]

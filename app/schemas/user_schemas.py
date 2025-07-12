@@ -75,14 +75,20 @@ class TransactionSchema(BaseModel):
     payment_link: str | None = None
     transaction_type: TransactionType
     created_at: datetime
-
     model_config = ConfigDict(from_attributes=True)
+
+
+class WalletUserData(BaseModel):
+    full_name: str | None = None
+    business_name: str | None = None
+    phone_number: str
 
 
 class WalletSchema(BaseModel):
     id: UUID
     balance: Decimal
     escrow_balance: Decimal
+    profile: WalletUserData | None = None
     transactions: list[TransactionSchema] = []
 
     model_config = ConfigDict(from_attributes=True)

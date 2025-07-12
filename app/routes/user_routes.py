@@ -232,6 +232,14 @@ async def get_laundry_menu(
     return await user_service.get_laundry_menu(db=db, laundry_id=laundry_id)
 
 
+@router.get("/teams", response_model=list[UserProfileResponse], status_code=status.HTTP_200_OK)
+async def get_teams_route(
+    db: AsyncSession = Depends(get_db),
+) -> list[UserProfileResponse]:
+    
+    return await user_service.get_teams(db=db)
+
+
 @router.get("/staff-list", status_code=status.HTTP_200_OK)
 async def staff_list(
     db: AsyncSession = Depends(get_db),
