@@ -1494,7 +1494,7 @@ async def get_teams(db: AsyncSession) -> list[UserProfileResponse]:
         if not users:
             # Cache empty result to avoid repeated DB queries
             redis_client.set(
-                "all_users", json.dumps([], default=str), ex=settings.REDIS_EX
+                "teams", json.dumps([], default=str), ex=settings.REDIS_EX
             )
             return []
 
@@ -1544,7 +1544,7 @@ async def get_teams(db: AsyncSession) -> list[UserProfileResponse]:
 
         # Cache the users data
         redis_client.set(
-            "all_users", json.dumps(users_data, default=str), ex=settings.REDIS_EX
+            "teams", json.dumps(users_data, default=str), ex=settings.REDIS_EX
         )
 
         # Convert to response objects
