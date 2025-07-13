@@ -1466,55 +1466,93 @@ async def get_teams(db: AsyncSession) -> list[UserProfileResponse]:
     """
     Returns all users with user_type ADMIN, SUPER_ADMIN, or MODERATOR.
     """
-    stmt = (
+   
+
+    # Try to get from cache first
+    cached_users = redis_client.get("teams")
+    if cached_users:
+        users_data = json.loads(cached_users)
+        return [UserProfileResponse(**user_data) for user_data in users_data]
+
+    try:
+        # Build optimized query to get users with profiles
+        stmt = (
         select(User)
-        .options(selectinload(User.profile).selectinload(Profile.profile_image))
-        .where(
-            User.user_type.in_(
-                [UserType.ADMIN, UserType.SUPER_ADMIN, UserType.MODERATOR]
-            )
+            .options(selectinload(User.profile).selectinload(Profile.profile_image))
+            .where(
+                User.user_type.in_(
+                    [UserType.ADMIN, UserType.SUPER_ADMIN, UserType.MODERATOR]
+                    )
+                )
+                .order_by(User.created_at.desc())
         )
-        .order_by(User.created_at.desc())
-    )
-    result = await db.execute(stmt)
-    users = result.scalars().all()
-    users_data = []
-    for user in users:
-        user_data = {
-            "email": user.email,
-            "user_type": getattr(user, "user_type", "customer"),
-            "id": str(user.id),
-        }
-        if user.profile:
-            user_data["profile"] = {
-                "user_id": user.id,
-                "phone_number": user.profile.phone_number,
-                "bike_number": getattr(user.profile, "bike_number", None),
-                "bank_account_number": getattr(
-                    user.profile, "bank_account_number", None
-                ),
-                "bank_name": getattr(user.profile, "bank_name", None),
-                "full_name": user.profile.full_name,
-                "store_name": user.profile.store_name,
-                "business_name": getattr(user.profile, "business_name", None),
-                "business_address": getattr(user.profile, "business_address", None),
-                "backdrop_image_url": getattr(
-                    user.profile.profile_image, "backdrop_image_url", None
-                ),
-                "profile_image_url": getattr(
-                    user.profile.profile_image, "profile_image_url", None
-                ),
-                "business_registration_number": getattr(
-                    user.profile, "business_registration_number", None
-                ),
-                "closing_hours": user.profile.closing_hours.isoformat()
-                if getattr(user.profile, "closing_hours", None)
-                else None,
-                "opening_hours": user.profile.opening_hours.isoformat()
-                if getattr(user.profile, "opening_hours", None)
-                else None,
+        
+
+        result = await db.execute(stmt)
+        users = result.scalars().all()
+
+        if not users:
+            # Cache empty result to avoid repeated DB queries
+            redis_client.set(
+                "all_users", json.dumps([], default=str), ex=settings.REDIS_EX
+            )
+            return []
+
+        # Convert to  response format
+        users_data = []
+        for user in users:
+            user_data = {
+                "email": user.email,
+                "user_type": user.user_type,
+                "id": str(user.id),
             }
-        else:
-            user_data["profile"] = None
-        users_data.append(user_data)
-    return [UserProfileResponse(**user_data) for user_data in users_data]
+
+            # Add profile if exists
+            if user.profile:
+                user_data["profile"] = {
+                    "user_id": user.id,
+                    "phone_number": user.profile.phone_number,
+                    "bike_number": getattr(user.profile, "bike_number", None),
+                    "bank_account_number": getattr(
+                        user.profile, "bank_account_number", None
+                    ),
+                    "bank_name": getattr(user.profile, "bank_name", None),
+                    "full_name": user.profile.full_name,
+                    "store_name": user.profile.store_name,
+                    "business_name": getattr(user.profile, "business_name", None),
+                    "business_address": getattr(user.profile, "business_address", None),
+                    "backdrop_image_url": getattr(
+                        user.profile.profile_image, "backdrop_image_url", None
+                    ),
+                    "profile_image_url": getattr(
+                        user.profile.profile_image, "profile_image_url", None
+                    ),
+                    "business_registration_number": getattr(
+                        user.profile, "business_registration_number", None
+                    ),
+                    "closing_hours": user.profile.closing_hours.isoformat()
+                    if getattr(user.profile, "closing_hours", None)
+                    else None,
+                    "opening_hours": user.profile.opening_hours.isoformat()
+                    if getattr(user.profile, "opening_hours", None)
+                    else None,
+                }
+            else:
+                user_data["profile"] = None
+
+            users_data.append(user_data)
+
+        # Cache the users data
+        redis_client.set(
+            "all_users", json.dumps(users_data, default=str), ex=settings.REDIS_EX
+        )
+
+        # Convert to response objects
+        return [UserProfileResponse(**user_data) for user_data in users_data]
+
+    except Exception as e:
+        logger.error(f"Failed to retrieve users: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to retrieve users: {str(e)}",
+        )
