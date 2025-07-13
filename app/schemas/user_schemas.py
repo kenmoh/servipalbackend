@@ -446,7 +446,7 @@ class StaffCreate(BaseModel):
     email: EmailStr
     phone_number: str
     full_name: str
-    password
+    password: str
 
 
 class SessionResponse(BaseModel):
