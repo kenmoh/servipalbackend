@@ -1,6 +1,6 @@
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Depends
 from fastapi.security import HTTPBearer
-from websocket_manager import manager
+from app.ws_manager.ws_manager import manager
 import json
 from datetime import datetime
 
