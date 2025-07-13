@@ -245,7 +245,7 @@ async def create_user(db: AsyncSession, user_data: CreateUserSchema) -> UserBase
         await db.refresh(profile)
         await db.refresh(user)
 
-        await ws_service.broadcast_new_user(email=user.email, user_type=user.user_type)
+        await ws_service.broadcast_new_user({'email':user.email, 'user_type':user.user_type})
 
         redis_client.delete("all_users")
 
@@ -599,7 +599,7 @@ async def create_new_rider(
         await db.commit()
         await db.refresh(new_rider)
 
-        await ws_service.broadcast_new_user(email=new_rider.email, user_type=new_rider.user_type)
+        await ws_service.broadcast_new_user({'email':new_rider.email, 'user_type':new_rider.user_type})
 
         rider_dict = {
             "user_type": new_rider.user_type,
@@ -695,7 +695,7 @@ async def create_new_staff(
         await db.commit()
         await db.refresh(new_staff)
 
-        await ws_service.broadcast_new_user(email=new_staff.email, user_type=new_staff.user_type)
+        await ws_service.broadcast_new_team({'email':new_staff.email, 'full_name': staff_profile.full_name, 'user_type':new_staff.user_type})
 
         staff_dict = {
             "user_type": new_staff.user_type,
