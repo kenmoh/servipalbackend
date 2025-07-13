@@ -295,7 +295,7 @@ async def toggle_user_block_status(
         Boolean indicating the new block status
     """
     # Check if current user has permission to block/unblock users
-    allowed_user_types = [UserType.ADMIN, UserType.STAFF, UserType.MODERATOR]
+    allowed_user_types = [UserType.ADMIN, UserType.SUPER_ADMIN, UserType.MODERATOR]
     if current_user.user_type not in allowed_user_types:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,

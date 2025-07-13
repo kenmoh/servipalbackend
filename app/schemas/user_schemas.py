@@ -442,9 +442,11 @@ class RiderCreate(RiderBase):
     full_name: str
 
 
-class StaffCreate(RiderBase):
+class StaffCreate(BaseModel):
+    email: EmailStr
     phone_number: str
     full_name: str
+    password
 
 
 class SessionResponse(BaseModel):

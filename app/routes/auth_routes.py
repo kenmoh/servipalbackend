@@ -28,6 +28,7 @@ from app.schemas.user_schemas import (
     TokenResponse,
     UserBase,
     UserCreate,
+    StaffCreate,
     VerificationSchema,
     CreateUserSchema,
     UpdateStaffSchema,
@@ -336,7 +337,7 @@ async def logout_all(
 
 @router.post("/create-staff", status_code=status.HTTP_201_CREATED)
 async def create_staff(
-    data: RiderCreate,
+    data: StaffCreate,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> UserBase:
