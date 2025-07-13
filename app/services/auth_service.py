@@ -696,6 +696,7 @@ async def create_new_staff(
         }
 
         redis_client.delete("all_users")
+        redis_client.delete("teams")
 
         # Generate and send verification codes
         email_code, phone_code = await generate_verification_codes(new_staff, db)
