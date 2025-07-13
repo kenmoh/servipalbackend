@@ -24,6 +24,7 @@ from app.schemas.user_schemas import (
     UpdateStaffSchema,
 )
 from app.models.models import Profile, Session, User, RefreshToken, Wallet
+from app.services import ws_service
 from app.schemas.user_schemas import UpdateStaffSchema
 from app.config.config import settings, email_conf
 from app.utils.utils import (
@@ -243,6 +244,8 @@ async def create_user(db: AsyncSession, user_data: CreateUserSchema) -> UserBase
         await db.commit()
         await db.refresh(profile)
         await db.refresh(user)
+
+        await ws_service.broadcast_new_user(email=user.email, user_type=user.user_type)
 
         redis_client.delete("all_users")
 
@@ -596,6 +599,8 @@ async def create_new_rider(
         await db.commit()
         await db.refresh(new_rider)
 
+        await ws_service.broadcast_new_user(email=new_rider.email, user_type=new_rider.user_type)
+
         rider_dict = {
             "user_type": new_rider.user_type,
             "email": new_rider.email,
@@ -689,6 +694,8 @@ async def create_new_staff(
 
         await db.commit()
         await db.refresh(new_staff)
+
+        await ws_service.broadcast_new_user(email=new_staff.email, user_type=new_staff.user_type)
 
         staff_dict = {
             "user_type": new_staff.user_type,

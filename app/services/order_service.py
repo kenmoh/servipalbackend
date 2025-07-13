@@ -20,6 +20,7 @@ from app.models.models import (
     ItemImage,
     Profile,
 )
+from app.services import ws_service
 
 import json
 from decimal import Decimal
@@ -345,6 +346,8 @@ async def create_package_order(
         delivery_stmt = select(Delivery).where(Delivery.id == delivery_data.id)
         delivery = (await db.execute(delivery_stmt)).scalar_one()
 
+        await ws_service.broadcast_new_order({"order_id": order.id})
+
         redis_client.delete("paid_pending_deliveries")
         redis_client.delete(f"user_related_orders:{current_user.id}")
 
@@ -582,6 +585,8 @@ async def order_food_or_request_laundy_service(
             )
             order = (await db.execute(stmt)).scalar_one()
 
+            await ws_service.broadcast_new_order({'order_id': order.id})
+
             redis_client.delete(f"{ALL_DELIVERY}")
 
             token = await get_user_notification_token(db=db, user_id=vendor_id)
@@ -701,6 +706,10 @@ async def cancel_delivery(
 
             await db.commit()
             await db.refresh()
+
+
+            # update this
+            # await ws_service.broadcast_order_status_update(order_id=delivery.id, )
 
             invalidate_delivery_cache(delivery.id)
             redis_client.delete(f"{ALL_DELIVERY}")
@@ -905,6 +914,8 @@ async def vendor_or_owner_mark_order_delivered_or_received(
             await db.commit()
             await db.refresh(order)
 
+            await ws_service.broadcast_order_status_update(order_id=order.id, order_status=order.order_status)
+
             token = await get_user_notification_token(db=db, user_id=order.vendor_id)
 
             if token:
@@ -1029,6 +1040,8 @@ async def rider_accept_delivery_order(
 
         await db.commit()
         await db.refresh(delivery)
+
+        await ws_service.broadcast_delivery_status_update(delivery_id=delivery.id, delivery_status=delivery.delivery_status)
 
     token = await get_user_notification_token(db=db, user_id=delivery.rider_id)
     sender_token = await get_user_notification_token(db=db, user_id=delivery.sender_id)
@@ -1242,6 +1255,7 @@ async def sender_confirm_delivery_received(
             )
 
         token = await get_user_notification_token(db=db, user_id=delivery.rider_id)
+        await ws_service.broadcast_delivery_status_update(delivery_id=delivery.id, delivery_status=delivery.delivery_status)
         sender_token = await get_user_notification_token(
             db=db, user_id=delivery.sender_id
         )
@@ -1327,6 +1341,8 @@ async def vendor_mark_laundry_item_received(
         await db.commit()
         await db.refresh(delivery)
 
+        await ws_service.broadcast_delivery_status_update(delivery_id=delivery.id, delivery_status=delivery.delivery_status)
+
         # create transactions
         await create_wallet_transaction(
             db,
@@ -1410,6 +1426,8 @@ async def rider_mark_delivered(
         await db.commit()
         await db.refresh(delivery)
 
+        await ws_service.broadcast_delivery_status_update(delivery_id=delivery.id, delivery_status=delivery.delivery_status)
+
     token = await get_user_notification_token(db=db, user_id=delivery.sender_id)
 
     if token:
@@ -1471,6 +1489,7 @@ async def admin_modify_delivery_status(
 
         await db.commit()
         await db.refresh(delivery)
+        await ws_service.broadcast_delivery_status_update(delivery_id=delivery.id, delivery_status=delivery.delivery_status)
 
         invalidate_delivery_cache(delivery_id)
         redis_client.delete("all_deliveries")

@@ -26,4 +26,5 @@ dependencies = [
     "redis",
     "slowapi>=0.1.9",
     "sqlalchemy[asyncio]>=2.0.40",
+    "websockets>=15.0.1",
 ]

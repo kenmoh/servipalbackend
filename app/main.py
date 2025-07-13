@@ -18,31 +18,32 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.interval import IntervalTrigger
 from app.database.database import async_session, get_db
 
-# from app.routes import (
-#     auth_routes,
-#     user_routes,
-#     payment_routes,
-#     item_routes,
-#     order_routes,
-#     product_routes,
-#     marketplace_routes,
-#     review_routes,
-#     report_routes,
-#     settings_routes,
-#     stats_routes,
-# )
-from app.routes import auth_routes
+from app.routes import (
+    auth_routes,
+    user_routes,
+    payment_routes,
+    item_routes,
+    order_routes,
+    product_routes,
+    marketplace_routes,
+    review_routes,
+    report_routes,
+    settings_routes,
+    stats_routes,
+    ws_routes
+)
+# from app.routes import auth_routes
 
-from app.routes import user_routes
-from app.routes import payment_routes
-from app.routes import item_routes
-from app.routes import order_routes
-from app.routes import product_routes
-from app.routes import marketplace_routes
-from app.routes import review_routes
-from app.routes import report_routes
-from app.routes import settings_routes
-from app.routes import stats_routes
+# from app.routes import user_routes
+# from app.routes import payment_routes
+# from app.routes import item_routes
+# from app.routes import order_routes
+# from app.routes import product_routes
+# from app.routes import marketplace_routes
+# from app.routes import review_routes
+# from app.routes import report_routes
+# from app.routes import settings_routes
+# from app.routes import stats_routes
 
 
 from app.utils.cron_job import (
@@ -300,6 +301,7 @@ app.include_router(product_routes.router)
 app.include_router(marketplace_routes.router)
 app.include_router(settings_routes.router)
 app.include_router(stats_routes.router)
+app.include_router(ws_routes.router)
 # app.include_router(notification_routes.router)
 
 
