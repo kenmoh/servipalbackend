@@ -33,7 +33,9 @@ router = APIRouter(prefix="/api/payment", tags=["Payments/Transations"])
 async def get_transactions(
     page: int = Query(1, ge=1, description="Page number"),
     page_size: int = Query(20, ge=1, le=100, description="Number of items per page"),
-    transaction_type: TransactionType = Query(None, description="Filter by transaction type"),
+    transaction_type: TransactionType = Query(
+        None, description="Filter by transaction type"
+    ),
     payment_status: PaymentStatus = Query(None, description="Filter by payment status"),
     payment_method: PaymentMethod = Query(None, description="Filter by payment method"),
     start_date: str = Query(None, description="Filter by start date (ISO format)"),
@@ -44,7 +46,7 @@ async def get_transactions(
 ):
     """
     Get all transactions with filtering and pagination.
-    
+
     Args:
         page: Page number (1-based)
         page_size: Number of items per page (1-100)
@@ -56,16 +58,26 @@ async def get_transactions(
         min_amount: Filter by minimum amount
         max_amount: Filter by maximum amount
         db: Database session
-    
+
     Returns:
         Paginated list of all transactions with metadata
     """
     # Build filters
     filters = None
-    if any([transaction_type, payment_status, payment_method, start_date, end_date, min_amount, max_amount]):
+    if any(
+        [
+            transaction_type,
+            payment_status,
+            payment_method,
+            start_date,
+            end_date,
+            min_amount,
+            max_amount,
+        ]
+    ):
         from datetime import datetime
         from decimal import Decimal
-        
+
         filters = TransactionFilterSchema(
             transaction_type=transaction_type,
             payment_status=payment_status,
@@ -75,7 +87,7 @@ async def get_transactions(
             min_amount=Decimal(str(min_amount)) if min_amount else None,
             max_amount=Decimal(str(max_amount)) if max_amount else None,
         )
-    
+
     return await transaction_service.get_transactions(
         db=db,
         page=page,

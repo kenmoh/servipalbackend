@@ -41,7 +41,6 @@ from app.schemas.user_schemas import (
     TransactionSchema,
     UserProfileResponse,
     RiderProfileSchema,
-    
     WalletSchema,
     VendorUserResponse,
     ProfileImageResponseSchema,
@@ -353,7 +352,7 @@ async def toggle_user_block_status(
 async def get_user_wallets(db: AsyncSession) -> list[WalletSchema]:
     stmt = select(Wallet).options(
         selectinload(Wallet.transactions),
-        selectinload(Wallet.user).selectinload(User.profile)
+        selectinload(Wallet.user).selectinload(User.profile),
     )
     result = await db.execute(stmt)
     wallets = result.scalars().all()
@@ -378,9 +377,10 @@ async def get_user_wallets(db: AsyncSession) -> list[WalletSchema]:
             escrow_balance=wallet.escrow_balance,
             profile=profile,
             transactions=[
-                TransactionSchema.model_validate(tran)
-                for tran in wallet.transactions
-            ] if wallet.transactions else [],
+                TransactionSchema.model_validate(tran) for tran in wallet.transactions
+            ]
+            if wallet.transactions
+            else [],
         )
         wallet_schemas.append(wallet_schema)
     return wallet_schemas
@@ -1469,7 +1469,11 @@ async def get_teams(db: AsyncSession) -> list[UserProfileResponse]:
     stmt = (
         select(User)
         .options(selectinload(User.profile).selectinload(Profile.profile_image))
-        .where(User.user_type.in_([UserType.ADMIN, UserType.SUPER_ADMIN, UserType.MODERATOR]))
+        .where(
+            User.user_type.in_(
+                [UserType.ADMIN, UserType.SUPER_ADMIN, UserType.MODERATOR]
+            )
+        )
         .order_by(User.created_at.desc())
     )
     result = await db.execute(stmt)
@@ -1486,17 +1490,29 @@ async def get_teams(db: AsyncSession) -> list[UserProfileResponse]:
                 "user_id": user.id,
                 "phone_number": user.profile.phone_number,
                 "bike_number": getattr(user.profile, "bike_number", None),
-                "bank_account_number": getattr(user.profile, "bank_account_number", None),
+                "bank_account_number": getattr(
+                    user.profile, "bank_account_number", None
+                ),
                 "bank_name": getattr(user.profile, "bank_name", None),
                 "full_name": user.profile.full_name,
                 "store_name": user.profile.store_name,
                 "business_name": getattr(user.profile, "business_name", None),
                 "business_address": getattr(user.profile, "business_address", None),
-                "backdrop_image_url": getattr(user.profile.profile_image, "backdrop_image_url", None),
-                "profile_image_url": getattr(user.profile.profile_image, "profile_image_url", None),
-                "business_registration_number": getattr(user.profile, "business_registration_number", None),
-                "closing_hours": user.profile.closing_hours.isoformat() if getattr(user.profile, "closing_hours", None) else None,
-                "opening_hours": user.profile.opening_hours.isoformat() if getattr(user.profile, "opening_hours", None) else None,
+                "backdrop_image_url": getattr(
+                    user.profile.profile_image, "backdrop_image_url", None
+                ),
+                "profile_image_url": getattr(
+                    user.profile.profile_image, "profile_image_url", None
+                ),
+                "business_registration_number": getattr(
+                    user.profile, "business_registration_number", None
+                ),
+                "closing_hours": user.profile.closing_hours.isoformat()
+                if getattr(user.profile, "closing_hours", None)
+                else None,
+                "opening_hours": user.profile.opening_hours.isoformat()
+                if getattr(user.profile, "opening_hours", None)
+                else None,
             }
         else:
             user_data["profile"] = None

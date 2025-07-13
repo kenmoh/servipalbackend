@@ -45,9 +45,7 @@ class ChargeAndCommissionUpdateSchema(BaseModel):
     payout_charge_transaction_above_50_000_naira: Optional[Decimal] = Field(
         None, ge=0, description="Charge for transactions above ₦50,000"
     )
-    stamp_duty: Optional[Decimal] = Field(
-        None, ge=0, description="Stamp duty charge"
-    )
+    stamp_duty: Optional[Decimal] = Field(None, ge=0, description="Stamp duty charge")
     base_delivery_fee: Optional[Decimal] = Field(
         None, ge=0, description="Base delivery fee"
     )
@@ -55,13 +53,22 @@ class ChargeAndCommissionUpdateSchema(BaseModel):
         None, ge=0, description="Delivery fee per kilometer"
     )
     delivery_commission_percentage: Optional[Decimal] = Field(
-        None, ge=0, le=1, description="Delivery commission percentage (e.g., 0.15 for 15%)"
+        None,
+        ge=0,
+        le=1,
+        description="Delivery commission percentage (e.g., 0.15 for 15%)",
     )
     food_laundry_commission_percentage: Optional[Decimal] = Field(
-        None, ge=0, le=1, description="Food/laundry commission percentage (e.g., 0.10 for 10%)"
+        None,
+        ge=0,
+        le=1,
+        description="Food/laundry commission percentage (e.g., 0.10 for 10%)",
     )
     product_commission_percentage: Optional[Decimal] = Field(
-        None, ge=0, le=1, description="Product commission percentage (e.g., 0.10 for 10%)"
+        None,
+        ge=0,
+        le=1,
+        description="Product commission percentage (e.g., 0.10 for 10%)",
     )
 
     class Config:
@@ -87,23 +94,28 @@ class ChargeAndCommissionCreateSchema(BaseModel):
     payout_charge_transaction_above_50_000_naira: Decimal = Field(
         ..., ge=0, description="Charge for transactions above ₦50,000"
     )
-    stamp_duty: Decimal = Field(
-        ..., ge=0, description="Stamp duty charge"
-    )
-    base_delivery_fee: Decimal = Field(
-        ..., ge=0, description="Base delivery fee"
-    )
+    stamp_duty: Decimal = Field(..., ge=0, description="Stamp duty charge")
+    base_delivery_fee: Decimal = Field(..., ge=0, description="Base delivery fee")
     delivery_fee_per_km: Decimal = Field(
         ..., ge=0, description="Delivery fee per kilometer"
     )
     delivery_commission_percentage: Decimal = Field(
-        ..., ge=0, le=1, description="Delivery commission percentage (e.g., 0.15 for 15%)"
+        ...,
+        ge=0,
+        le=1,
+        description="Delivery commission percentage (e.g., 0.15 for 15%)",
     )
     food_laundry_commission_percentage: Decimal = Field(
-        ..., ge=0, le=1, description="Food/laundry commission percentage (e.g., 0.10 for 10%)"
+        ...,
+        ge=0,
+        le=1,
+        description="Food/laundry commission percentage (e.g., 0.10 for 10%)",
     )
     product_commission_percentage: Decimal = Field(
-        ..., ge=0, le=1, description="Product commission percentage (e.g., 0.10 for 10%)"
+        ...,
+        ge=0,
+        le=1,
+        description="Product commission percentage (e.g., 0.10 for 10%)",
     )
 
     class Config:

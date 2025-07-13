@@ -53,7 +53,7 @@ class TransactionUpdateSchema(BaseModel):
 
 class TransactionFilterSchema(BaseModel):
     """Schema for filtering transactions"""
-    
+
     transaction_type: Optional[TransactionType] = None
     payment_status: Optional[PaymentStatus] = None
     payment_method: Optional[PaymentMethod] = None
@@ -65,7 +65,7 @@ class TransactionFilterSchema(BaseModel):
 
 class TransactionResponseSchema(BaseModel):
     """Schema for transaction response with pagination"""
-    
+
     transactions: List[TransactionSchema]
     total_count: int
     page: int

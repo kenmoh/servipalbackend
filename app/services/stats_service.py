@@ -450,9 +450,7 @@ async def get_platform_overview(db: AsyncSession) -> PlatformOverview:
         # Order statistics
         total_orders_stmt = select(func.count(Order.id))
         pending_orders_stmt = select(func.count(Order.id)).where(
-            Order.order_status.in_(
-                [OrderStatus.PENDING, OrderStatus.DELIVERED]
-            )
+            Order.order_status.in_([OrderStatus.PENDING, OrderStatus.DELIVERED])
         )
         completed_orders_stmt = select(func.count(Order.id)).where(
             Order.order_status == OrderStatus.RECEIVED
@@ -645,11 +643,13 @@ async def get_comprehensive_stats(db: AsyncSession) -> ComprehensiveStatsRespons
         # Payment method distribution
         # Get payment method stats from paid transactions
         payment_method_stmt = (
-            select(Transaction.payment_method, func.count(Transaction.id).label("count"))
+            select(
+                Transaction.payment_method, func.count(Transaction.id).label("count")
+            )
             .where(
                 and_(
                     Transaction.payment_method.isnot(None),
-                    Transaction.payment_status == PaymentStatus.PAID
+                    Transaction.payment_status == PaymentStatus.PAID,
                 )
             )
             .group_by(Transaction.payment_method)

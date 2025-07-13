@@ -67,9 +67,15 @@ async def get_charge_and_commission_settings(
                 "stamp_duty": str(settings.stamp_duty),
                 "base_delivery_fee": str(settings.base_delivery_fee),
                 "delivery_fee_per_km": str(settings.delivery_fee_per_km),
-                "delivery_commission_percentage": str(settings.delivery_commission_percentage),
-                "food_laundry_commission_percentage": str(settings.food_laundry_commission_percentage),
-                "product_commission_percentage": str(settings.product_commission_percentage),
+                "delivery_commission_percentage": str(
+                    settings.delivery_commission_percentage
+                ),
+                "food_laundry_commission_percentage": str(
+                    settings.food_laundry_commission_percentage
+                ),
+                "product_commission_percentage": str(
+                    settings.product_commission_percentage
+                ),
                 "created_at": settings.created_at.isoformat(),
                 "updated_at": settings.updated_at.isoformat(),
             }
@@ -155,13 +161,19 @@ async def update_charge_and_commission_settings(
             update_dict["delivery_fee_per_km"] = update_data.delivery_fee_per_km
 
         if update_data.delivery_commission_percentage is not None:
-            update_dict["delivery_commission_percentage"] = update_data.delivery_commission_percentage
+            update_dict[
+                "delivery_commission_percentage"
+            ] = update_data.delivery_commission_percentage
 
         if update_data.food_laundry_commission_percentage is not None:
-            update_dict["food_laundry_commission_percentage"] = update_data.food_laundry_commission_percentage
+            update_dict[
+                "food_laundry_commission_percentage"
+            ] = update_data.food_laundry_commission_percentage
 
         if update_data.product_commission_percentage is not None:
-            update_dict["product_commission_percentage"] = update_data.product_commission_percentage
+            update_dict[
+                "product_commission_percentage"
+            ] = update_data.product_commission_percentage
 
         # Update the settings
         stmt = (
