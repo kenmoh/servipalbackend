@@ -1,0 +1,22 @@
+{
+    "projectId": "6874f7f090f71072dad4",
+    "endpoint": "https://fra.cloud.appwrite.io/v1",
+    "databases": [
+        {
+            "$id": "6874f849003dd1447637",
+            "name": "taste_explora",
+            "enabled": true
+        }
+    ],
+    "collections": [
+        {
+            "$id": "6874f849003e221a7324",
+            "databaseId": "6874f849003dd1447637",
+            "name": "users",
+            "documentSecurity": false,
+            "attributes": [],
+            "indexes": [],
+            "enabled": true
+        }
+    ]
+}

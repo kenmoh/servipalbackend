@@ -695,7 +695,6 @@ async def create_new_staff(
         await db.commit()
         await db.refresh(new_staff)
 
-        await ws_service.broadcast_new_team({'email':new_staff.email, 'full_name': staff_profile.full_name, 'user_type':new_staff.user_type})
 
         staff_dict = {
             "user_type": new_staff.user_type,
@@ -713,6 +712,8 @@ async def create_new_staff(
         )
 
         invalidate_rider_cache(current_user.id)
+        await ws_service.broadcast_new_team({ 'team_id': staff_profile.user_id, 'email':new_staff.email, 'full_name': staff_profile.full_name, 'user_type':new_staff.user_type})
+        
         return UserBase(**staff_dict)
 
     except IntegrityError as e:
