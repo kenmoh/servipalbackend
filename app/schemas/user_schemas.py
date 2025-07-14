@@ -414,6 +414,8 @@ class UserResponse(UserBase):
 
 class UserProfileResponse(UserBase):
     id: UUID
+    account_status: AccountStatus
+    is_blocked: bool
     profile: ProfileSchema | None
 
 

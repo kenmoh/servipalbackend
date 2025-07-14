@@ -223,10 +223,13 @@ async def get_users(db: AsyncSession) -> list[UserProfileResponse]:
         # Convert to  response format
         users_data = []
         for user in users:
+            print(user.is_blocked, user.account_status)
             user_data = {
                 "email": user.email,
                 "user_type": getattr(user, "user_type", "customer"),
                 "id": str(user.id),
+                "is_blocked": user.is_blocked,
+                "account_status": user.account_status
             }
 
             # Add profile if exists
@@ -1505,6 +1508,8 @@ async def get_teams(db: AsyncSession) -> list[UserProfileResponse]:
                 "email": user.email,
                 "user_type": user.user_type,
                 "id": str(user.id),
+                "is_blocked": user.is_blocked,
+                "account_status": user.account_status
             }
 
             # Add profile if exists

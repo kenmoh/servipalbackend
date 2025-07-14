@@ -1,3 +1,4 @@
+import asyncio
 from datetime import datetime, timedelta
 import secrets
 from uuid import UUID
@@ -113,91 +114,6 @@ async def login_admin_user(db: AsyncSession, login_data: UserLogin) -> User:
     return user
 
 
-# async def create_user(
-#     db: AsyncSession, user_data: CreateUserSchema
-# ) -> UserBase:
-#     """
-#     Create a new user in the database.
-#     Args:
-#         db: Database session
-#         user_data: User data from request
-#     Returns:
-#         The newly created user
-#     """
-#     # validate password
-#     validate_password(user_data.password)
-
-#     # Check if email already exists
-#     email_exists_result = await db.execute(
-#         select(User).where(User.email == user_data.email)
-#     )
-#     email_exists = email_exists_result.scalar_one_or_none()
-
-#     if email_exists:
-#         raise HTTPException(
-#             status_code=status.HTTP_409_CONFLICT,
-#             detail="Email or Phone number already registered"
-#         )
-
-#     # Check if phone number already exists
-#     # Format the phone number first
-#     formatted_phone = f"234{user_data.phone_number[1:] if user_data.phone_number.startswith('0') else user_data.phone_number}"
-
-#     phone_exists_result = await db.execute(
-#         select(Profile).where(Profile.phone_number == formatted_phone)
-#     )
-#     phone_exists = phone_exists_result.scalar_one_or_none()
-
-#     if phone_exists:
-#         raise HTTPException(
-#             status_code=status.HTTP_409_CONFLICT,
-#             detail="Email or Phone number already registered"
-#         )
-
-#     try:
-#         # Create the user
-#         user = User(
-#             email=user_data.email.lower(),
-#             password=hash_password(user_data.password),
-#             user_type=user_data.user_type,
-#             updated_at=datetime.now(),
-#         )
-#         # Add user to database
-#         db.add(user)
-#         await db.flush()
-
-#         profile = Profile(
-#             user_id=user.id,
-#             phone_number=formatted_phone,
-#         )
-#         db.add(profile)
-
-#         if user.user_type != UserType.RIDER:
-#             # Create user wallet
-#             wallet = Wallet(id=user.id, balance=0, escrow_balance=0)
-#             db.add(wallet)
-
-#         await db.commit()
-#         await db.refresh(profile)
-#         await db.refresh(user)
-
-#         redis_client.delete("all_users")
-
-#         # Generate and send verification codes
-#         email_code, phone_code = await generate_verification_codes(user, db)
-
-#         # Send verification code to phone and email
-#         await send_verification_codes(user=user, email_code=email_code, phone_code=phone_code, db=db)
-
-#         return user
-
-#     except IntegrityError as e:
-#         await db.rollback()
-#         raise HTTPException(
-#             status_code=status.HTTP_409_CONFLICT,
-#             detail="Email or phone number already registered",
-#         )
-
 
 async def create_user(db: AsyncSession, user_data: CreateUserSchema) -> UserBase:
     """
@@ -245,10 +161,6 @@ async def create_user(db: AsyncSession, user_data: CreateUserSchema) -> UserBase
         await db.refresh(profile)
         await db.refresh(user)
 
-        await ws_service.broadcast_new_user({'email':user.email, 'user_type':user.user_type})
-
-        redis_client.delete("all_users")
-
         # Generate and send verification codes
         email_code, phone_code = await generate_verification_codes(user, db)
 
@@ -256,7 +168,10 @@ async def create_user(db: AsyncSession, user_data: CreateUserSchema) -> UserBase
         await send_verification_codes(
             user=user, email_code=email_code, phone_code=phone_code, db=db
         )
-
+        redis_client.delete("all_users")
+        await asyncio.sleep(0.1)
+        await ws_service.broadcast_new_user({'email':user.email, 'user_type':user.user_type})
+        
         return user
 
     except IntegrityError as e:
@@ -281,231 +196,6 @@ async def create_user(db: AsyncSession, user_data: CreateUserSchema) -> UserBase
                 detail="Email or phone number already registered",
             )
 
-
-# async def create_user(
-#     db: AsyncSession, user_data: CreateUserSchema, background_tasks: BackgroundTasks
-# ) -> UserBase:
-#     """
-#     Create a new user in the database.
-#     Args:
-#         db: Database session
-#         user_data: User data from request
-#     Returns:
-#         The newly created user
-#     """
-#     # validate password
-#     validate_password(user_data.password)
-
-#     # Check if email already exists
-#     # user_exists_result = await db.execute(
-#     #     select(User)
-#     #     .options(joinedload(User.profile))
-#     #     .where(User.email == user_data.email)
-#     # )
-#     # user_exists = user_exists_result.scalar_one_or_none()
-
-#     user_exists_result = await db.execute(
-#     select(User)
-#     .options(joinedload(User.profile))
-#     .where(
-#         or_(
-#             User.email == user_data.email,
-#             User.profile.has(Profile.phone_number == user_data.phone_number))))
-#     user_exists = user_exists_result.scalar_one_or_none()
-
-
-#     # If user exists, check if email or phone number is already registered
-#     if user_exists:
-#         raise HTTPException(
-#             status_code=status.HTTP_409_CONFLICT, detail="Email or phone number already registered"
-#         )
-
-#     try:
-#         # Create the user
-#         user = User(
-#             email=user_data.email.lower(),
-#             password=hash_password(user_data.password),
-#             user_type=user_data.user_type,
-#             updated_at=datetime.now(),
-#         )
-
-#         # Add user to database
-#         db.add(user)
-#         await db.flush()
-
-#         profile = Profile(
-#             user_id=user.id,
-#             phone_number=f"234{user_data.phone_number[1:] if user_data.phone_number.startswith(str(0)) else user_data.phone_number}",
-#         )
-#         db.add(profile)
-
-#         if user.user_type != UserType.RIDER:
-#             # Create user wallet
-#             wallet = Wallet(id=user.id, balance=0, escrow_balance=0)
-#             db.add(wallet)
-
-#         await db.commit()
-#         await db.refresh(profile)
-#         await db.refresh(user)
-
-#         redis_client.delete("all_users")
-
-#         # Generate and send verification codes
-#         email_code, phone_code = await generate_verification_codes(user, db)
-
-#         # Send verification code to phone and email
-#         # background_tasks.add_task(
-#         #     send_verification_codes, user, email_code, phone_code, db
-#         # )
-#         await send_verification_codes(email_code=email_code, phone_code=phone_code, db=db)
-#         # await send_sms(phone_number=profile.phone_number, phone_code=profile.ph)
-#         return user
-#     except IntegrityError as e:
-#         await db.rollback()
-#         raise HTTPException(
-#             status_code=status.HTTP_409_CONFLICT,
-#             detail="Email or phone number already registered",
-#         )
-
-
-# CREATE RIDER
-
-
-# async def create_new_rider(
-#     data: RiderCreate,
-#     db: AsyncSession,
-#     current_user: User,
-#     background_tasks: BackgroundTasks,
-# ) -> UserBase:
-#     """
-#     Creates a new rider user and assigns them to the current dispatch user.
-
-#     Args:
-#         data (RiderCreate): The rider details.
-#         db: The database session.
-#         current_user: The current user.
-#         background_tasks: Background tasks runner.
-
-#     Returns:
-#         UserBase: The newly created rider user details.
-#     """
-
-#     stmt = (
-#         select(func.count())
-#         .select_from(User)
-#         .where(User.dispatcher_id == current_user.id)
-#     )
-#     riders_result = await db.execute(stmt)
-#     riders_count = riders_result.scalar()
-
-#     # Check user permissions and restrictions
-#     if current_user.is_blocked:
-#         raise HTTPException(
-#             status_code=status.HTTP_403_FORBIDDEN,
-#             detail="You cannot create rider due to suspension!",
-#         )
-#     if not current_user.is_verified and riders_count > 1:
-#         raise HTTPException(
-#             status_code=status.HTTP_403_FORBIDDEN,
-#             detail="Please verify your business to add more riders",
-#         )
-
-#     if current_user.account_status == AccountStatus.PENDING:
-#         raise HTTPException(
-#             status_code=status.HTTP_403_FORBIDDEN, detail="Please verify your account!"
-#         )
-
-#     if current_user.user_type != UserType.DISPATCH:
-#         raise HTTPException(
-#             status_code=status.HTTP_403_FORBIDDEN,
-#             detail="Only a dispatch user can create rider.",
-#         )
-
-#     if not current_user.profile.business_registration_number and riders_count > 2:
-#         raise HTTPException(
-#             status_code=status.HTTP_403_FORBIDDEN,
-#             detail="Please update your company registration number to add more riders.",
-#         )
-
-#     if (
-#         not current_user.profile.business_name
-#         or not current_user.profile.business_address
-#     ):
-#         raise HTTPException(
-#             status_code=status.HTTP_403_FORBIDDEN,
-#             detail="Please update your profile with your company name and phone number.",
-#         )
-
-#     # validate password
-#     validate_password(data.password)
-
-#     email = await db.scalar(
-#     select(User.email).where(User.email_verification_code == email_verification_code)
-#     )
-
-#     phone_number, bike_number = await db.execute(
-#     select(Profile.phone_number, Profile.bike_number).where(Profile.phone_verification_code == phone_code)
-# ).fetchone() or (None, None)
-
-#     if email or phone_number or bike_number:
-#         raise HTTPException(
-#             status_code=status.HTTP_409_CONFLICT, detail="Email already or phone number or bike number already registered"
-#         )
-
-#     # Create new rider and assign to current dispatch
-#     try:
-#         new_rider = User(
-#             email=data.email.lower(),
-#             password=hash_password(data.password),
-#             user_type=UserType.RIDER,
-#             dispatcher_id=current_user.id,
-#             created_at=datetime.today(),
-#             updated_at=datetime.today(),
-#         )
-
-#         db.add(new_rider)
-#         await db.flush()
-
-#         rider_profile = Profile(
-#             user_id=new_rider.id,
-#             full_name=data.full_name,
-#             phone_number=f"234{data.phone_number[1:] if data.phone_number.startswith(str(0)) else data.phone_number}",
-#             bike_number=data.bike_number,
-#             created_at=datetime.today(),
-#             updated_at=datetime.today(),
-#             business_address=current_user.profile.business_address,
-#             business_name=current_user.profile.business_name,
-#             # add company email
-#             # add company phone
-#         )
-#         db.add(rider_profile)
-
-#         await db.commit()
-#         await db.refresh(new_rider)
-
-#         rider_dict = {
-#             "user_type": new_rider.user_type,
-#             "email": new_rider.email,
-#         }
-
-#         redis_client.delete("all_users")
-
-#         # Generate and send verification codes
-#         email_code, phone_code = await generate_verification_codes(new_rider, db)
-
-#         # Send verification code to phone and email
-#         # background_tasks.add_task(
-#         #     send_verification_codes, new_rider, email_code, phone_code, db
-#         # )
-#         await send_verification_codes(email_code=email_code, phone_code=phone_code, db=db)
-
-#         invalidate_rider_cache(current_user.id)
-#         return UserBase(**rider_dict)
-#     except IntegrityError as e:
-#         await db.rollback()
-#         raise HTTPException(
-#             status_code=status.HTTP_409_CONFLICT, detail="Rider with this data exists!"
-#         )
 
 
 async def create_new_rider(
@@ -599,14 +289,13 @@ async def create_new_rider(
         await db.commit()
         await db.refresh(new_rider)
 
-        await ws_service.broadcast_new_user({'email':new_rider.email, 'user_type':new_rider.user_type})
 
         rider_dict = {
             "user_type": new_rider.user_type,
             "email": new_rider.email,
         }
 
-        redis_client.delete("all_users")
+       
 
         # Generate and send verification codes
         email_code, phone_code = await generate_verification_codes(new_rider, db)
@@ -616,6 +305,10 @@ async def create_new_rider(
         )
 
         invalidate_rider_cache(current_user.id)
+        redis_client.delete("all_users")
+        await asyncio.sleep(0.1)
+        await ws_service.broadcast_new_user({'email':new_rider.email, 'user_type':new_rider.user_type})
+
         return UserBase(**rider_dict)
 
     except IntegrityError as e:
@@ -712,6 +405,8 @@ async def create_new_staff(
         )
 
         invalidate_rider_cache(current_user.id)
+
+        await asyncio.sleep(0.1)
         await ws_service.broadcast_new_team({ 'team_id': staff_profile.user_id, 'email':new_staff.email, 'full_name': staff_profile.full_name, 'user_type':new_staff.user_type})
         
         return UserBase(**staff_dict)
