@@ -20,27 +20,96 @@ from app.config.config import redis_client
 logger = setup_logger()
 
 
+# async def get_charge_and_commission_settings(
+#     db: AsyncSession
+# ) -> ChargeAndCommissionSchema:
+#     """
+#     Retrieve the current charge and commission settings.
+
+#     Args:
+#         db: Database session
+
+#     Returns:
+#         ChargeAndCommissionSchema or None if no settings exist
+#     """
+#     try:
+#         # Check cache first
+#         cache_key = "charge_commission_settings"
+#         cached_settings = redis_client.get(cache_key)
+
+#         if cached_settings:
+#             settings_data = json.loads(cached_settings)
+#             return ChargeAndCommissionSchema(**settings_data)
+
+#         # Query database
+#         stmt = (
+#             select(ChargeAndCommission)
+#             .order_by(ChargeAndCommission.created_at.desc())
+#             .limit(1)
+#         )
+#         result = await db.execute(stmt)
+#         settings = result.scalar_one_or_none()
+
+#         if settings:
+#             settings_dict = {
+#                 "id": settings.id,
+#                 "payment_gate_way_fee": settings.payment_gate_way_fee,
+#                 "value_added_tax": settings.value_added_tax,
+#                 "payout_charge_transaction_upto_5000_naira": 
+#                     settings.payout_charge_transaction_upto_5000_naira,
+#                 "payout_charge_transaction_from_5001_to_50_000_naira": 
+#                     settings.payout_charge_transaction_from_5001_to_50_000_naira,
+#                 "payout_charge_transaction_above_50_000_naira": 
+#                     settings.payout_charge_transaction_above_50_000_naira,
+#                 "stamp_duty": settings.stamp_duty,
+#                 "base_delivery_fee": settings.base_delivery_fee,
+#                 "delivery_fee_per_km": settings.delivery_fee_per_km,
+#                 "delivery_commission_percentage": 
+#                     settings.delivery_commission_percentage,
+#                 "food_laundry_commission_percentage": 
+#                     settings.food_laundry_commission_percentage,
+#                 "product_commission_percentage": 
+#                     settings.product_commission_percentage,
+#                 "created_at": settings.created_at.isoformat(),
+#                 "updated_at": settings.updated_at.isoformat(),
+#             }
+
+#             # Cache for 1 hour
+#             redis_client.setex(cache_key, 3600, json.dumps(settings_dict, default=str))
+
+#             return ChargeAndCommissionSchema(**settings_dict)
+
+#         return None
+
+#     except Exception as e:
+#         logger.error(f"Error retrieving charge and commission settings: {str(e)}")
+#         raise HTTPException(
+#             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+#             detail="Failed to retrieve settings",
+#         )
+
 async def get_charge_and_commission_settings(
     db: AsyncSession
 ) -> ChargeAndCommissionSchema:
     """
     Retrieve the current charge and commission settings.
-
     Args:
         db: Database session
-
     Returns:
         ChargeAndCommissionSchema or None if no settings exist
     """
     try:
         # Check cache first
         cache_key = "charge_commission_settings"
-        cached_settings = redis_client.get(cache_key)
-
-        if cached_settings:
-            settings_data = json.loads(cached_settings)
-            return ChargeAndCommissionSchema(**settings_data)
-
+        try:
+            cached_settings = redis_client.get(cache_key)
+            if cached_settings:
+                settings_data = json.loads(cached_settings)
+                return ChargeAndCommissionSchema(**settings_data)
+        except (RedisError, json.JSONDecodeError) as cache_error:
+            logger.warning(f"Cache retrieval failed: {cache_error}")
+            # Continue to database query
+        
         # Query database
         stmt = (
             select(ChargeAndCommission)
@@ -49,7 +118,7 @@ async def get_charge_and_commission_settings(
         )
         result = await db.execute(stmt)
         settings = result.scalar_one_or_none()
-
+        
         if settings:
             settings_dict = {
                 "id": settings.id,
@@ -70,24 +139,31 @@ async def get_charge_and_commission_settings(
                     settings.food_laundry_commission_percentage,
                 "product_commission_percentage": 
                     settings.product_commission_percentage,
-                "created_at": settings.created_at.isoformat(),
-                "updated_at": settings.updated_at.isoformat(),
+                "created_at": settings.created_at.isoformat() if settings.created_at else None,
+                "updated_at": settings.updated_at.isoformat() if settings.updated_at else None,
             }
-
-            # Cache for 1 hour
-            redis_client.setex(cache_key, 3600, json.dumps(settings_dict, default=str))
-
+            
+            # Cache for 1 hour with better error handling
+            try:
+                redis_client.setex(
+                    cache_key, 
+                    3600, 
+                    json.dumps(settings_dict, default=str)
+                )
+            except RedisError as cache_error:
+                logger.warning(f"Cache storage failed: {cache_error}")
+                # Continue without caching
+            
             return ChargeAndCommissionSchema(**settings_dict)
-
+        
         return None
-
+        
     except Exception as e:
         logger.error(f"Error retrieving charge and commission settings: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to retrieve settings",
         )
-
 
 async def update_charge_and_commission_settings(
     db: AsyncSession, update_data: ChargeAndCommissionUpdateSchema, current_user: User
