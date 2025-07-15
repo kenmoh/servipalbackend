@@ -186,7 +186,7 @@ async def get_current_user_details(
         )
 
 
-async def get_users(db: AsyncSession) -> list[UserProfileResponse]:
+async def get_users(db: AsyncSession, skip: int = 0, limit: int = 20) -> list[UserProfileResponse]:
     """
     Retrieves all users with their profiles.
 
@@ -197,7 +197,7 @@ async def get_users(db: AsyncSession) -> list[UserProfileResponse]:
         List of UserProfileResponse objects with user and profile data.
     """
     # Try to get from cache first
-    cached_users = redis_client.get("all_users")
+    cached_users = redis_client.get(f"all_users:{skip}:{limit}")
     if cached_users:
         users_data = json.loads(cached_users)
         return [UserProfileResponse(**user_data) for user_data in users_data]
@@ -208,6 +208,8 @@ async def get_users(db: AsyncSession) -> list[UserProfileResponse]:
             select(User)
             .options(selectinload(User.profile).selectinload(Profile.profile_image))
             .order_by(User.created_at.desc())
+            .offset(skip)
+            .limit(limit)
         )
 
         result = await db.execute(stmt)
@@ -216,14 +218,14 @@ async def get_users(db: AsyncSession) -> list[UserProfileResponse]:
         if not users:
             # Cache empty result to avoid repeated DB queries
             redis_client.set(
-                "all_users", json.dumps([], default=str), ex=settings.REDIS_EX
+                f"all_users:{skip}:{limit}", json.dumps([], default=str), ex=settings.REDIS_EX
             )
             return []
 
         # Convert to  response format
         users_data = []
         for user in users:
-            print(user.is_blocked, user.account_status)
+         
             user_data = {
                 "email": user.email,
                 "user_type": getattr(user, "user_type", "customer"),
@@ -269,7 +271,7 @@ async def get_users(db: AsyncSession) -> list[UserProfileResponse]:
 
         # Cache the users data
         redis_client.set(
-            "all_users", json.dumps(users_data, default=str), ex=settings.REDIS_EX
+            f"all_users:{skip}:{limit}", json.dumps(users_data, default=str), ex=settings.REDIS_EX
         )
 
         # Convert to response objects
@@ -352,11 +354,16 @@ async def toggle_user_block_status(
 #     return wallets
 
 
-async def get_user_wallets(db: AsyncSession) -> list[WalletSchema]:
+async def get_user_wallets(db: AsyncSession, skip: int = 0, limit: int = 20) -> list[WalletSchema]:
+    cache_key = f"all_wallets:{skip}:{limit}"
+    cached_wallets = redis_client.get(cache_key)
+    if cached_wallets:
+        return [WalletSchema(**w) for w in json.loads(cached_wallets)]
+
     stmt = select(Wallet).options(
         selectinload(Wallet.transactions),
         selectinload(Wallet.user).selectinload(User.profile),
-    )
+    ).offset(skip).limit(limit)
     result = await db.execute(stmt)
     wallets = result.scalars().all()
     wallet_schemas = []
@@ -386,6 +393,11 @@ async def get_user_wallets(db: AsyncSession) -> list[WalletSchema]:
             else [],
         )
         wallet_schemas.append(wallet_schema)
+    redis_client.setex(
+        cache_key,
+        settings.REDIS_EX,
+        json.dumps([w.model_dump() for w in wallet_schemas], default=str),
+    )
     return wallet_schemas
 
 
@@ -1549,7 +1561,7 @@ async def get_teams(db: AsyncSession) -> list[UserProfileResponse]:
 
         # Cache the users data
         redis_client.set(
-            "teams", json.dumps(users_data, default=str), ex=settings.REDIS_EX
+            f"teams:{skip}:{limit}", json.dumps(users_data, default=str), ex=settings.REDIS_EX
         )
 
         # Convert to response objects

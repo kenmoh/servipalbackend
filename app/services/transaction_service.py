@@ -51,6 +51,7 @@ from app.utils.utils import (
     get_user_notification_token,
 )
 from app.config.config import settings, redis_client
+from app.services import ws_service
 
 logger = setup_logger()
 
@@ -186,7 +187,7 @@ async def get_all_transactions(db: AsyncSession) -> list[TransactionSchema]:
         List of all transactions as Pydantic schemas.
     """
     try:
-        stmt = select(Transaction).order_by(Transaction.created_at.desc())
+        stmt = select(Transaction).order_by(Transaction.created_at.desc()).offset(skip).limit(limit)
         result = await db.execute(stmt)
         transactions = result.scalars().all()
         return [

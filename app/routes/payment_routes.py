@@ -102,9 +102,12 @@ async def get_transactions(
     status_code=status.HTTP_200_OK,
 )
 async def get_all_transactions(
-    db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)
+    skip: int = Query(0, ge=0),
+    limit: int = Query(20, ge=1, le=100),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
-    return await transaction_service.get_all_transactions(db=db)
+    return await transaction_service.get_all_transactions(db=db, skip=skip, limit=limit)
 
 
 @router.get(

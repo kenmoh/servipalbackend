@@ -57,16 +57,21 @@ async def toggle_user_block_status(
 
 @router.get("", status_code=status.HTTP_200_OK)
 async def get_users(
+    skip: int = Query(0, ge=0),
+    limit: int = Query(20, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
 ) -> list[UserProfileResponse]:
-    return await user_service.get_users(db=db)
+    return await user_service.get_users(db=db, skip=skip, limit=limit)
 
 
 @router.get("/wallets", include_in_schema=False, status_code=status.HTTP_200_OK)
 async def get_user_wallets(
-    db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)
+    skip: int = Query(0, ge=0),
+    limit: int = Query(20, ge=1, le=100),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ) -> list[WalletSchema]:
-    return await user_service.get_user_wallets(db=db)
+    return await user_service.get_user_wallets(db=db, skip=skip, limit=limit)
 
 
 @router.get("/user-wallet", include_in_schema=False, status_code=status.HTTP_200_OK)
@@ -236,9 +241,11 @@ async def get_laundry_menu(
     "/teams", response_model=list[UserProfileResponse], status_code=status.HTTP_200_OK
 )
 async def get_teams_route(
+    skip: int = Query(0, ge=0),
+    limit: int = Query(20, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
 ) -> list[UserProfileResponse]:
-    return await user_service.get_teams(db=db)
+    return await user_service.get_teams(db=db, skip=skip, limit=limit)
 
 
 @router.get("/staff-list", status_code=status.HTTP_200_OK)

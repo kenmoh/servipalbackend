@@ -26,8 +26,20 @@ router = APIRouter(prefix="/api/orders", tags=["Orders"])
 @router.get("", status_code=status.HTTP_200_OK)
 async def get_all_orders(
     db: AsyncSession = Depends(get_db),
+    skip: int = 0,
+    limit: int = 20,
 ) -> list[DeliveryResponse]:
-    return await order_service.get_all_orders(db=db)
+    return await order_service.get_all_orders(db=db, skip=skip, limit=limit)
+    
+
+
+@router.get("/delivery-orders", status_code=status.HTTP_200_OK)
+async def get_all_require_delivery_orders(
+    db: AsyncSession = Depends(get_db),
+    skip: int = 0,
+    limit: int = 20,
+) -> list[DeliveryResponse]:
+    return await order_service.get_all_require_delivery_orders(db=db, skip=skip, limit=limit)
 
 
 @router.get("/paid-pending-deliveries", status_code=status.HTTP_200_OK)
@@ -40,9 +52,11 @@ async def get_paid_pending_deliveries(
 @router.get("/{user_id}/user-related-orders", status_code=status.HTTP_200_OK)
 async def get_user_related_deliveries(
     user_id: UUID,
+    skip: int = 0,
+    limit: int = 20,
     db: AsyncSession = Depends(get_db),
 ) -> list[DeliveryResponse]:
-    return await order_service.get_user_related_orders(db=db, user_id=user_id)
+    return await order_service.get_user_related_orders(db=db, user_id=user_id, skip=skip, limit=limit)
 
 
 @router.post(
