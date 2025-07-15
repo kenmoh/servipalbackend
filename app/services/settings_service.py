@@ -37,9 +37,9 @@ async def get_charge_and_commission_settings(
         cache_key = "charge_commission_settings"
         cached_settings = redis_client.get(cache_key)
 
-        # if cached_settings:
-        #     settings_data = json.loads(cached_settings)
-        #     return ChargeAndCommissionSchema(**settings_data)
+        if cached_settings:
+            settings_data = json.loads(cached_settings)
+            return ChargeAndCommissionSchema(**settings_data)
 
         # Query database
         stmt = (
