@@ -65,6 +65,11 @@ async def login_user(db: AsyncSession, login_data: UserLogin) -> User:
     result = await db.execute(stmt)
     user = result.scalar_one_or_none()
 
+    if user.is_blocked:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail="You account has been blocked. Contact support"
+        )
+
     if not user or not verify_password(login_data.password, user.password):
         # Record failed attempt
         record_failed_attempt(login_data.username, redis_client)
@@ -95,6 +100,13 @@ async def login_admin_user(db: AsyncSession, login_data: UserLogin) -> User:
     stmt = select(User).where(User.email == login_data.username)
     result = await db.execute(stmt)
     user = result.scalar_one_or_none()
+
+    if user.is_blocked:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail="You account has been blocked. Contact support"
+        )
+
+
 
     if not user or not verify_password(login_data.password, user.password):
         # Record failed attempt

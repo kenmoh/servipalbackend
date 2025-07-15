@@ -22,7 +22,7 @@ logger = setup_logger()
 
 async def get_charge_and_commission_settings(
     db: AsyncSession
-) -> Optional[ChargeAndCommissionSchema]:
+) -> ChargeAndCommissionSchema:
     """
     Retrieve the current charge and commission settings.
 
@@ -53,35 +53,29 @@ async def get_charge_and_commission_settings(
         if settings:
             settings_dict = {
                 "id": settings.id,
-                "payment_gate_way_fee": str(settings.payment_gate_way_fee),
-                "value_added_tax": str(settings.value_added_tax),
-                "payout_charge_transaction_upto_5000_naira": str(
-                    settings.payout_charge_transaction_upto_5000_naira
-                ),
-                "payout_charge_transaction_from_5001_to_50_000_naira": str(
-                    settings.payout_charge_transaction_from_5001_to_50_000_naira
-                ),
-                "payout_charge_transaction_above_50_000_naira": str(
-                    settings.payout_charge_transaction_above_50_000_naira
-                ),
-                "stamp_duty": str(settings.stamp_duty),
-                "base_delivery_fee": str(settings.base_delivery_fee),
-                "delivery_fee_per_km": str(settings.delivery_fee_per_km),
-                "delivery_commission_percentage": str(
-                    settings.delivery_commission_percentage
-                ),
-                "food_laundry_commission_percentage": str(
-                    settings.food_laundry_commission_percentage
-                ),
-                "product_commission_percentage": str(
-                    settings.product_commission_percentage
-                ),
+                "payment_gate_way_fee": settings.payment_gate_way_fee,
+                "value_added_tax": settings.value_added_tax,
+                "payout_charge_transaction_upto_5000_naira": 
+                    settings.payout_charge_transaction_upto_5000_naira,
+                "payout_charge_transaction_from_5001_to_50_000_naira": 
+                    settings.payout_charge_transaction_from_5001_to_50_000_naira,
+                "payout_charge_transaction_above_50_000_naira": 
+                    settings.payout_charge_transaction_above_50_000_naira,
+                "stamp_duty": settings.stamp_duty,
+                "base_delivery_fee": settings.base_delivery_fee,
+                "delivery_fee_per_km": settings.delivery_fee_per_km,
+                "delivery_commission_percentage": 
+                    settings.delivery_commission_percentage,
+                "food_laundry_commission_percentage": 
+                    settings.food_laundry_commission_percentage,
+                "product_commission_percentage": 
+                    settings.product_commission_percentage,
                 "created_at": settings.created_at.isoformat(),
                 "updated_at": settings.updated_at.isoformat(),
             }
 
             # Cache for 1 hour
-            redis_client.setex(cache_key, 3600, json.dumps(settings_dict))
+            redis_client.setex(cache_key, 3600, json.dumps(settings_dict, default=str))
 
             return ChargeAndCommissionSchema(**settings_dict)
 
