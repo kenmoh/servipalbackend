@@ -42,6 +42,17 @@ async def get_all_require_delivery_orders(
     return await order_service.get_all_require_delivery_orders(db=db, skip=skip, limit=limit)
 
 
+@router.get("/pickup-orders", status_code=status.HTTP_200_OK)
+async def get_all_pickup_delivery_orders(
+    db: AsyncSession = Depends(get_db),
+    skip: int = 0,
+    limit: int = 20,
+) -> PaginatedDeliveryResponse:
+    return await order_service.get_all_pickup_delivery_orders(db=db, skip=skip, limit=limit)
+
+
+
+
 @router.get("/paid-pending-deliveries", status_code=status.HTTP_200_OK)
 async def get_paid_pending_deliveries(
     db: AsyncSession = Depends(get_db),
