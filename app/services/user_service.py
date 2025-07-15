@@ -119,9 +119,9 @@ async def get_current_user_details(
     """
     # Try to get from cache first
     cached_user = redis_client.get(f"current_useer_profile:{user_id}")
-    if cached_user:
-        user_data = json.loads(cached_user)
-        return UserProfileResponse(**user_data)
+    # if cached_user:
+    #     user_data = json.loads(cached_user)
+    #     return UserProfileResponse(**user_data)
 
     try:
         # Build optimized query to get users with profiles
@@ -138,6 +138,8 @@ async def get_current_user_details(
         user_profile_dict = {
             "email": user.email,
             "user_type": user.user_type,
+            "account_status": user.account_status,
+            "is_blocked": user.is_blocked,
             "id": user.id,
             "profile": {
                 "phone_number": user.profile.phone_number,
@@ -1485,9 +1487,9 @@ async def get_teams(db: AsyncSession) -> list[UserProfileResponse]:
 
     # Try to get from cache first
     cached_users = redis_client.get("teams")
-    if cached_users:
-        users_data = json.loads(cached_users)
-        return [UserProfileResponse(**user_data) for user_data in users_data]
+    # if cached_users:
+    #     users_data = json.loads(cached_users)
+    #     return [UserProfileResponse(**user_data) for user_data in users_data]
 
     try:
         # Build optimized query to get users with profiles
