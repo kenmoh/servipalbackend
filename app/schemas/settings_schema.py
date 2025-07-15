@@ -7,7 +7,7 @@ from datetime import datetime
 class ChargeAndCommissionSchema(BaseModel):
     """Schema for viewing charge and commission settings"""
 
-    id: int
+    id: UUID
     payment_gate_way_fee: Decimal
     value_added_tax: Decimal
     payout_charge_transaction_upto_5000_naira: Decimal

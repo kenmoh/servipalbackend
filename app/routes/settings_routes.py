@@ -40,31 +40,31 @@ async def get_charge_commission_settings(
     return await get_charge_and_commission_settings(db)
 
 
-@router.post(
-    "/charge-commission",
-    response_model=SettingsResponseSchema,
-    status_code=status.HTTP_201_CREATED,
-    summary="Create initial charge and commission settings",
-    description="Create the initial charge and commission settings. Can only be done once.",
-)
-async def create_charge_commission_settings(
-    create_data: ChargeAndCommissionCreateSchema,
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    """
-    Create initial charge and commission settings.
+# @router.post(
+#     "/charge-commission",
+#     response_model=SettingsResponseSchema,
+#     status_code=status.HTTP_201_CREATED,
+#     summary="Create initial charge and commission settings",
+#     description="Create the initial charge and commission settings. Can only be done once.",
+# )
+# async def create_charge_commission_settings(
+#     create_data: ChargeAndCommissionCreateSchema,
+#     db: AsyncSession = Depends(get_db),
+#     current_user: User = Depends(get_current_user),
+# ):
+#     """
+#     Create initial charge and commission settings.
 
-    - **Requires**: Admin or Staff user
-    - **Body**: All charge and commission fields are required
-    - **Returns**: Created settings with success message
+#     - **Requires**: Admin or Staff user
+#     - **Body**: All charge and commission fields are required
+#     - **Returns**: Created settings with success message
 
-    **Note**: This endpoint can only be used once to create initial settings.
-    Use the PUT endpoint to update existing settings.
-    """
-    return await create_initial_charge_and_commission_settings(
-        db, create_data, current_user
-    )
+#     **Note**: This endpoint can only be used once to create initial settings.
+#     Use the PUT endpoint to update existing settings.
+#     """
+#     return await create_initial_charge_and_commission_settings(
+#         db, create_data, current_user
+#     )
 
 
 @router.put(
@@ -108,25 +108,25 @@ async def update_charge_commission_settings(
     return await update_charge_and_commission_settings(db, update_data, current_user)
 
 
-@router.delete(
-    "/charge-commission",
-    response_model=SettingsResponseSchema,
-    status_code=status.HTTP_200_OK,
-    summary="Delete charge and commission settings",
-    description="Delete all charge and commission settings. Admin only operation.",
-)
-async def delete_charge_commission_settings(
-    db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)
-):
-    """
-    Delete charge and commission settings.
+# @router.delete(
+#     "/charge-commission",
+#     response_model=SettingsResponseSchema,
+#     status_code=status.HTTP_200_OK,
+#     summary="Delete charge and commission settings",
+#     description="Delete all charge and commission settings. Admin only operation.",
+# )
+# async def delete_charge_commission_settings(
+#     db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)
+# ):
+#     """
+#     Delete charge and commission settings.
 
-    - **Requires**: Admin user only
-    - **Returns**: Success message confirming deletion
+#     - **Requires**: Admin user only
+#     - **Returns**: Success message confirming deletion
 
-    **Warning**: This operation cannot be undone. Use with caution.
-    """
-    return await delete_charge_and_commission_settings(db, current_user)
+#     **Warning**: This operation cannot be undone. Use with caution.
+#     """
+#     return await delete_charge_and_commission_settings(db, current_user)
 
 
 # Additional utility endpoints

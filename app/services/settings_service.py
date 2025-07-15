@@ -280,145 +280,81 @@ async def update_charge_and_commission_settings(
         )
 
 
-async def create_initial_charge_and_commission_settings(
-    db: AsyncSession, create_data: ChargeAndCommissionCreateSchema, current_user: User
-) -> SettingsResponseSchema:
-    """
-    Create initial charge and commission settings.
+# async def create_initial_charge_and_commission_settings(
+#     db: AsyncSession, create_data: ChargeAndCommissionCreateSchema, current_user: User
+# ) -> SettingsResponseSchema:
+#     """
+#     Create initial charge and commission settings.
 
-    Args:
-        db: Database session
-        create_data: Initial settings data
-        current_user: Current authenticated user
+#     Args:
+#         db: Database session
+#         create_data: Initial settings data
+#         current_user: Current authenticated user
 
-    Returns:
-        SettingsResponseSchema with created settings
-    """
-    # Check if user has permission to create settings
-    if current_user.user_type not in [UserType.ADMIN, UserType.SUPER_ADMIN]:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only admin and staff users can create charge and commission settings",
-        )
+#     Returns:
+#         SettingsResponseSchema with created settings
+#     """
+#     # Check if user has permission to create settings
+#     if current_user.user_type not in [UserType.ADMIN, UserType.SUPER_ADMIN]:
+#         raise HTTPException(
+#             status_code=status.HTTP_403_FORBIDDEN,
+#             detail="Only admin and staff users can create charge and commission settings",
+#         )
 
-    try:
-        # Check if settings already exist
-        existing_settings = await get_charge_and_commission_settings(db)
-        if existing_settings:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Charge and commission settings already exist. Use update endpoint instead.",
-            )
+#     try:
+#         # Check if settings already exist
+#         existing_settings = await get_charge_and_commission_settings(db)
+#         if existing_settings:
+#             raise HTTPException(
+#                 status_code=status.HTTP_400_BAD_REQUEST,
+#                 detail="Charge and commission settings already exist. Use update endpoint instead.",
+#             )
 
-        # Create new settings
-        new_settings = ChargeAndCommission(
-            payment_gate_way_fee=create_data.payment_gate_way_fee,
-            value_added_tax=create_data.value_added_tax,
-            payout_charge_transaction_upto_5000_naira=create_data.payout_charge_transaction_upto_5000_naira,
-            payout_charge_transaction_from_5001_to_50_000_naira=create_data.payout_charge_transaction_from_5001_to_50_000_naira,
-            payout_charge_transaction_above_50_000_naira=create_data.payout_charge_transaction_above_50_000_naira,
-            stamp_duty=create_data.stamp_duty,
-            base_delivery_fee=create_data.base_delivery_fee,
-            delivery_fee_per_km=create_data.delivery_fee_per_km,
-            delivery_commission_percentage=create_data.delivery_commission_percentage,
-            food_laundry_commission_percentage=create_data.food_laundry_commission_percentage,
-            product_commission_percentage=create_data.product_commission_percentage,
-            created_at=datetime.now(),
-            updated_at=datetime.now(),
-        )
+#         # Create new settings
+#         new_settings = ChargeAndCommission(
+#             payment_gate_way_fee=create_data.payment_gate_way_fee,
+#             value_added_tax=create_data.value_added_tax,
+#             payout_charge_transaction_upto_5000_naira=create_data.payout_charge_transaction_upto_5000_naira,
+#             payout_charge_transaction_from_5001_to_50_000_naira=create_data.payout_charge_transaction_from_5001_to_50_000_naira,
+#             payout_charge_transaction_above_50_000_naira=create_data.payout_charge_transaction_above_50_000_naira,
+#             stamp_duty=create_data.stamp_duty,
+#             base_delivery_fee=create_data.base_delivery_fee,
+#             delivery_fee_per_km=create_data.delivery_fee_per_km,
+#             delivery_commission_percentage=create_data.delivery_commission_percentage,
+#             food_laundry_commission_percentage=create_data.food_laundry_commission_percentage,
+#             product_commission_percentage=create_data.product_commission_percentage,
+#             created_at=datetime.now(),
+#             updated_at=datetime.now(),
+#         )
 
-        db.add(new_settings)
-        await db.commit()
-        await db.refresh(new_settings)
+#         db.add(new_settings)
+#         await db.commit()
+#         await db.refresh(new_settings)
 
-        # Clear cache
-        redis_client.delete("charge_commission_settings")
+#         # Clear cache
+#         redis_client.delete("charge_commission_settings")
 
-        # Get created settings
-        created_settings = await get_charge_and_commission_settings(db)
+#         # Get created settings
+#         created_settings = await get_charge_and_commission_settings(db)
 
-        logger.info(
-            f"Initial charge and commission settings created by user {current_user.id}"
-        )
+#         logger.info(
+#             f"Initial charge and commission settings created by user {current_user.id}"
+#         )
 
-        return SettingsResponseSchema(
-            success=True,
-            message="Initial charge and commission settings created successfully",
-            data=created_settings,
-        )
+#         return SettingsResponseSchema(
+#             success=True,
+#             message="Initial charge and commission settings created successfully",
+#             data=created_settings,
+#         )
 
-    except HTTPException:
-        await db.rollback()
-        raise
-    except Exception as e:
-        await db.rollback()
-        logger.error(f"Error creating initial charge and commission settings: {str(e)}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to create initial settings",
-        )
+#     except HTTPException:
+#         await db.rollback()
+#         raise
+#     except Exception as e:
+#         await db.rollback()
+#         logger.error(f"Error creating initial charge and commission settings: {str(e)}")
+#         raise HTTPException(
+#             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+#             detail="Failed to create initial settings",
+#         )
 
-
-async def delete_charge_and_commission_settings(
-    db: AsyncSession, current_user: User
-) -> SettingsResponseSchema:
-    """
-    Delete all charge and commission settings (admin only).
-
-    Args:
-        db: Database session
-        current_user: Current authenticated user
-
-    Returns:
-        SettingsResponseSchema with deletion status
-    """
-    # Only admin can delete settings
-    if current_user.user_type not in [UserType.ADMIN, UserType.SUPER_ADMIN]:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only admin users can delete charge and commission settings",
-        )
-
-    try:
-        # Check if settings exist
-        current_settings = await get_charge_and_commission_settings(db)
-        if not current_settings:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="No charge and commission settings found",
-            )
-
-        # Delete settings
-        stmt = select(ChargeAndCommission).where(
-            ChargeAndCommission.id == current_settings.id
-        )
-        result = await db.execute(stmt)
-        settings = result.scalar_one_or_none()
-
-        if settings:
-            await db.delete(settings)
-            await db.commit()
-
-        # Clear cache
-        redis_client.delete("charge_commission_settings")
-
-        logger.info(
-            f"Charge and commission settings deleted by admin user {current_user.id}"
-        )
-
-        return SettingsResponseSchema(
-            success=True,
-            message="Charge and commission settings deleted successfully",
-            data=None,
-        )
-
-    except HTTPException:
-        await db.rollback()
-        raise
-    except Exception as e:
-        await db.rollback()
-        logger.error(f"Error deleting charge and commission settings: {str(e)}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to delete settings",
-        )
