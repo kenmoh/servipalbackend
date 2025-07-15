@@ -59,3 +59,9 @@ class DeliverySchema(BaseModel):
 class DeliveryResponse(BaseModel):
     delivery: DeliverySchema | None = None
     order: OrderResponseSchema
+
+
+class PaginatedDeliveryResponse(BaseModel):
+    total: int
+    data: list[DeliveryResponse]
+    

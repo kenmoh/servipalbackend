@@ -43,6 +43,7 @@ from app.schemas.order_schema import (
 from app.schemas.delivery_schemas import (
     DeliveryResponse,
     DeliveryType,
+    PaginatedDeliveryResponse
 )
 from app.schemas.item_schemas import ItemType
 
@@ -192,18 +193,26 @@ async def get_all_orders(db: AsyncSession, skip: int = 0, limit: int = 20) -> li
     return delivery_responses
 
 
-async def get_all_require_delivery_orders(db: AsyncSession, skip: int = 0, limit: int = 20) -> list[DeliveryResponse]:
+
+
+async def get_all_require_delivery_orders(db: AsyncSession, skip: int = 0, limit: int = 20) -> PaginatedDeliveryResponse:
     """
-    Get all orders with their deliveries (if any) with caching
+    Get all orders with their deliveries (if any) with caching and total count
     """
     cache_key = f'require_delivery_orders-{skip}-{limit}'
 
     # Try cache first with error handling
-
     cached_deliveries = redis_client.get(cache_key)
     if cached_deliveries:
-        return [DeliveryResponse(**d) for d in json.loads(cached_deliveries)]
+        cached = json.loads(cached_deliveries)
+        return cached
 
+    # 1. Get total count (without skip/limit)
+    total_stmt = select(func.count()).select_from(Order).where(Order.require_delivery == RequireDeliverySchema.DELIVERY)
+    total_result = await db.execute(total_stmt)
+    total = total_result.scalar_one()
+
+    # 2. Get paginated data
     stmt = (
         select(Order)
         .offset(skip)
@@ -215,27 +224,76 @@ async def get_all_require_delivery_orders(db: AsyncSession, skip: int = 0, limit
             joinedload(Order.delivery),
             joinedload(Order.vendor).joinedload(User.profile),
         )
-        .where(Order.require_delivery==RequireDeliverySchema.DELIVERY)
+        .where(Order.require_delivery == RequireDeliverySchema.DELIVERY)
         .order_by(Order.created_at.desc())
     )
 
     result = await db.execute(stmt)
     orders = result.unique().scalars().all()
 
-    # Format responses - delivery will be None for orders without delivery
     delivery_responses = [
         format_delivery_response(order, order.delivery) for order in orders
     ]
 
-    # Cache the formatted responses with error handling
+    response = {
+        "data": [d.model_dump() for d in delivery_responses],
+        "total": total
+    }
 
+    # Cache the formatted responses with error handling
     redis_client.setex(
         cache_key,
         timedelta(seconds=CACHE_TTL),
-        json.dumps([d.model_dump() for d in delivery_responses], default=str),
+        json.dumps(response, default=str),
     )
 
-    return delivery_responses
+    return response
+
+
+# async def get_all_require_delivery_orders(db: AsyncSession, skip: int = 0, limit: int = 20) -> list[DeliveryResponse]:
+#     """
+#     Get all orders with their deliveries (if any) with caching
+#     """
+#     cache_key = f'require_delivery_orders-{skip}-{limit}'
+
+#     # Try cache first with error handling
+
+#     cached_deliveries = redis_client.get(cache_key)
+#     if cached_deliveries:
+#         return [DeliveryResponse(**d) for d in json.loads(cached_deliveries)]
+
+#     stmt = (
+#         select(Order)
+#         .offset(skip)
+#         .limit(limit)
+#         .options(
+#             selectinload(Order.order_items).options(
+#                 joinedload(OrderItem.item).options(selectinload(Item.images))
+#             ),
+#             joinedload(Order.delivery),
+#             joinedload(Order.vendor).joinedload(User.profile),
+#         )
+#         .where(Order.require_delivery==RequireDeliverySchema.DELIVERY)
+#         .order_by(Order.created_at.desc())
+#     )
+
+#     result = await db.execute(stmt)
+#     orders = result.unique().scalars().all()
+
+#     # Format responses - delivery will be None for orders without delivery
+#     delivery_responses = [
+#         format_delivery_response(order, order.delivery) for order in orders
+#     ]
+
+#     # Cache the formatted responses with error handling
+
+#     redis_client.setex(
+#         cache_key,
+#         timedelta(seconds=CACHE_TTL),
+#         json.dumps([d.model_dump() for d in delivery_responses], default=str),
+#     )
+
+#     return delivery_responses
 
 async def create_package_order(
     db: AsyncSession, data: PackageCreate, image: UploadFile, current_user: User
