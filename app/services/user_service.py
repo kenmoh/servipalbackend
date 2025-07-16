@@ -210,6 +210,7 @@ async def get_users(db: AsyncSession, skip: int = 0, limit: int = 20) -> list[Us
             select(User)
             .options(selectinload(User.profile).selectinload(Profile.profile_image))
             .order_by(User.created_at.desc())
+            .where(User.user_type.notin_([UserType.ADMIN, UserType.SUPER_ADMIN, UserType.MODERATOR]))
             .offset(skip)
             .limit(limit)
         )
