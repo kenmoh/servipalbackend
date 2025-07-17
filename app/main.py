@@ -30,7 +30,8 @@ from app.routes import (
     report_routes,
     settings_routes,
     stats_routes,
-    ws_routes
+    ws_routes,
+    audit_log_routes
 )
 # from app.routes import auth_routes
 
@@ -302,7 +303,7 @@ app.include_router(marketplace_routes.router)
 app.include_router(settings_routes.router)
 app.include_router(stats_routes.router)
 app.include_router(ws_routes.router)
-# app.include_router(notification_routes.router)
+app.include_router(audit_log_routes.router)
 
 
 mcp = FastApiMCP(app, include_tags=["Notifications", "Reports"])
