@@ -24,7 +24,7 @@ class ChargeAndCommissionSchema(BaseModel):
     updated_at: datetime
 
     class Config:
-        orm_mode = True
+    
         from_attributes = True
 
 
@@ -73,7 +73,7 @@ class ChargeAndCommissionUpdateSchema(BaseModel):
     )
 
     class Config:
-        orm_mode = True
+      
         from_attributes = True
 
 
@@ -120,7 +120,7 @@ class ChargeAndCommissionCreateSchema(BaseModel):
     )
 
     class Config:
-        orm_mode = True
+   
         from_attributes = True
 
 
@@ -132,5 +132,5 @@ class SettingsResponseSchema(BaseModel):
     data: Optional[ChargeAndCommissionSchema] = None
 
     class Config:
-        orm_mode = True
+      
         from_attributes = True

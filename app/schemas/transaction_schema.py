@@ -16,11 +16,12 @@ class TransactionSchema(BaseModel):
     payment_method: Optional[PaymentMethod] = None
     payment_link: Optional[str] = None
     from_user: str | None = None
+    to_user: str | None = None
     created_at: datetime
     updated_at: datetime
 
     class Config:
-        orm_mode = True
+        
         from_attributes = True
 
 
@@ -36,7 +37,7 @@ class TransactionCreateSchema(BaseModel):
     payment_link: Optional[str] = None
 
     class Config:
-        orm_mode = True
+        
         from_attributes = True
 
 
@@ -48,7 +49,7 @@ class TransactionUpdateSchema(BaseModel):
     payment_link: Optional[str] = None
 
     class Config:
-        orm_mode = True
+        
         from_attributes = True
 
 
@@ -74,5 +75,5 @@ class TransactionResponseSchema(BaseModel):
     total_pages: int
 
     class Config:
-        orm_mode = True
+        
         from_attributes = True

@@ -2,10 +2,8 @@ import pytest
 import asyncio
 from httpx import AsyncClient
 from uuid import uuid4
-from app.main import app
-from app.config.config import settings
-from app.schemas.user_schemas import CreateUserSchema, UserType
-from app.schemas.notification_schemas import NotificationType
+from app.schemas.user_schemas import  UserType
+
 
 pytestmark = pytest.mark.anyio
 
