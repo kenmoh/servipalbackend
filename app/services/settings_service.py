@@ -16,6 +16,7 @@ from app.schemas.settings_schema import (
 from app.schemas.status_schema import UserType
 from app.utils.logger_config import setup_logger
 from app.config.config import redis_client
+from app.services.audit_log_service import AuditLogService
 
 logger = setup_logger()
 
@@ -177,6 +178,20 @@ async def update_charge_and_commission_settings(
         )
         await db.execute(stmt)
         await db.commit()
+
+        # --- AUDIT LOG ---
+        await AuditLogService.log_action(
+            db=db,
+            actor_id=current_user.id,
+            actor_name=getattr(current_user, "email", "unknown"),
+            actor_role=str(current_user.user_type),
+            action="update_charge_and_commission_settings",
+            resource_type="ChargeAndCommission",
+            resource_id=current_settings.id,
+            resource_summary="Charge and Commission Settings",
+            changes=update_dict,
+            extra_metadata=None,
+        )
 
         # Clear cache
         redis_client.delete("charge_commission_settings")

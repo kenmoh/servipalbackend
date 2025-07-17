@@ -11,6 +11,7 @@ import logging
 from typing import Optional, Tuple
 
 from sqlalchemy import (
+    JSON,
     DateTime,
     ForeignKey,
     ARRAY,
@@ -40,6 +41,7 @@ from app.schemas.status_schema import (
     PaymentMethod,
     PaymentStatus,
     RequireDeliverySchema,
+    TransactionDirection,
     TransactionType,
     UserType,
 )
@@ -297,8 +299,11 @@ class Transaction(Base):
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
     wallet_id: Mapped[UUID] = mapped_column(ForeignKey("wallets.id"))
     amount: Mapped[Decimal] = mapped_column(default=0.00)
-    payment_by: Mapped[str] = mapped_column(nullable=True)
+    payment_by: Mapped[str] = mapped_column(nullable=True) # Remove beore Production
+    from_user: Mapped[str] = mapped_column(nullable=True)
+    to_user: Mapped[str] = mapped_column(nullable=True)
     transaction_type: Mapped[TransactionType]
+    transaction_direction: Mapped[TransactionDirection] = mapped_column(nullable=True)
     payment_status: Mapped[PaymentStatus] = mapped_column(default=PaymentStatus.PENDING)
     payment_method: Mapped[PaymentMethod] = mapped_column(nullable=True)
     payment_link: Mapped[str] = mapped_column(nullable=True)
@@ -445,6 +450,7 @@ class Order(Base):
     require_delivery: Mapped[RequireDeliverySchema] = mapped_column(
         default=RequireDeliverySchema.PICKUP
     )
+    cancel_reason: Mapped[str] = mapped_column(nullable=True)
     created_at: Mapped[datetime] = mapped_column(default=datetime.now)
     updated_at: Mapped[datetime] = mapped_column(
         default=datetime.now, onupdate=datetime.now
@@ -762,3 +768,52 @@ class UserReportReadStatus(Base):
         "UserReport", back_populates="read_status"
     )
     user: Mapped["User"] = relationship("User")
+
+
+
+class AuditLog(Base):
+    __tablename__ = "audit_logs"
+
+    """
+    AuditLog records all significant actions performed in the system for traceability and compliance.
+
+    Fields:
+        - id: Unique identifier for the audit log entry.
+        - timestamp: When the action occurred.
+        - actor_id: UUID of the user who performed the action.
+        - actor_name: Name of the actor.
+        - actor_role: Role of the actor (e.g., admin, user).
+        - action: The action performed (e.g., 'update', 'delete', 'create').
+        - resource_type: The type of resource affected (e.g., 'User', 'Order').
+        - resource_id: The unique identifier of the resource affected.
+        - resource_summary: Short summary or description of the resource.
+        - changes: Dictionary describing what fields were changed and their old/new values.
+            Example:
+                {
+                    "status": ["pending", "approved"],
+                    "email": ["old@example.com", "new@example.com"]
+                }
+            This means 'status' changed from 'pending' to 'approved', and 'email' was updated.
+        - ip_address: IP address from which the action was performed.
+        - extra_metadata: Dictionary with extra context about the action.
+            Example:
+                {
+                    "user_agent": "Mozilla/5.0 ...",
+                    "request_id": "abc-123",
+                    "location": "Lagos, Nigeria"
+                }
+            This can include any additional context useful for auditing, such as request headers, geo-location, etc.
+    """
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    timestamp: Mapped[datetime] = mapped_column(default=datetime.now, nullable=False)
+    actor_id: Mapped[UUID]
+    actor_name: Mapped[str]
+    actor_role: Mapped[str]
+    action: Mapped[str]
+    resource_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    resource_id: Mapped[UUID] = mapped_column(String(64), nullable=True)
+    resource_summary: Mapped[str] = mapped_column(nullable=True)
+    changes: Mapped[dict] = mapped_column(JSON, nullable=True)
+    ip_address: Mapped[str] = mapped_column(String(64), nullable=True)
+    extra_metadata: Mapped[dict] = mapped_column(JSON, nullable=True)
+

@@ -47,6 +47,7 @@ from sqlalchemy.exc import NoResultFound
 from uuid import UUID
 
 from app.utils.utils import get_user_notification_token, send_push_notification
+from app.services.audit_log_service import AuditLogService
 
 
 def convert_report_to_response(report: ReportType) -> ReportIssueResponse:
@@ -484,6 +485,67 @@ async def get_user_messages(db: AsyncSession, user_id: UUID) -> list[ReportMessa
     return report_messages
 
 
+async def get_all_report_messages_for_admin(db: AsyncSession) -> list[ReportMessage]:
+    """
+    Fetch all report threads/messages for admin use (not filtered by user).
+    Returns a list of ReportMessage objects for all reports in the system.
+    """
+    reports_stmt = (
+        select(UserReport)
+        .options(
+            selectinload(UserReport.messages).selectinload(Message.sender),
+            selectinload(UserReport.messages).selectinload(Message.read_status),
+            selectinload(UserReport.complainant),
+            selectinload(UserReport.defendant),
+        )
+        .order_by(UserReport.created_at.desc())
+    )
+    reports_result = await db.execute(reports_stmt)
+    reports = reports_result.scalars().all()
+
+    report_messages = []
+    for report in reports:
+        thread = []
+        for msg in sorted(report.messages, key=lambda x: x.created_at):
+            sender_name = None
+            sender_avatar = None
+            if msg.sender and msg.sender.profile:
+                sender_name = (
+                    msg.sender.profile.full_name
+                    or msg.sender.profile.business_name
+                    or "Admin"
+                )
+                if msg.sender.profile.profile_image:
+                    sender_avatar = msg.sender.profile.profile_image.profile_image_url
+            sender_info = SenderInfo(name=sender_name or "User", avatar=sender_avatar)
+            # For admin, mark all as read=False (or you can add logic if needed)
+            thread.append(
+                ThreadMessage(
+                    id=msg.id,
+                    sender=sender_info,
+                    message_type=msg.message_type,
+                    role=msg.role.value if msg.role else None,
+                    date=msg.created_at,
+                    content=msg.content,
+                    read=False,
+                )
+            )
+        report_messages.append(
+            ReportMessage(
+                id=report.id,
+                complainant_id=report.complainant_id,
+                report_type=report.reported_user_type,
+                report_tag=report.report_tag,
+                report_status=report.report_status,
+                description=report.description,
+                is_read=report.is_read,
+                created_at=report.created_at,
+                thread=thread,
+            )
+        )
+    return report_messages
+
+
 async def mark_thread_as_read_for_user(db: AsyncSession, report_id: UUID, user: User):
     # Get all messages in the report thread
     stmt = select(Message).where(Message.report_id == report_id)
@@ -518,7 +580,7 @@ async def mark_thread_as_read_for_user(db: AsyncSession, report_id: UUID, user: 
     await db.commit()
 
 
-async def delete_report_if_allowed(db: AsyncSession, report_id: UUID) -> None:
+async def delete_report_if_allowed(db: AsyncSession, report_id: UUID, current_user: User) -> None:
     """Delete a report and its thread if status is dismissed or resolved."""
     stmt = select(UserReport).where(UserReport.id == report_id)
     result = await db.execute(stmt)
@@ -541,6 +603,19 @@ async def delete_report_if_allowed(db: AsyncSession, report_id: UUID) -> None:
     redis_client.delete(f"user:{report.defendant_id}:report_threads")
     redis_client.delete(f"report:{report_id}:thread:{report.complainant_id}")
     redis_client.delete(f"report:{report_id}:thread:{report.defendant_id}")
+    # --- AUDIT LOG ---
+    await AuditLogService.log_action(
+        db=db,
+        actor_id=current_user.id,
+        actor_name=getattr(current_user, "email", "unknown"),
+        actor_role=str(getattr(current_user, "user_type", "unknown")),
+        action="delete_report",
+        resource_type="UserReport",
+        resource_id=report_id,
+        resource_summary=f'Updated report with ID {report_id}',
+        changes=None,
+        metadata=None,
+    )
     return None
 
 
@@ -564,6 +639,7 @@ async def update_report_status(
             detail="Not authorized to update this report.",
         )
 
+    old_status = report.report_status
     report.report_status = new_status
     await db.commit()
     await db.refresh(report)
@@ -572,6 +648,19 @@ async def update_report_status(
     redis_client.delete(f"user:{report.defendant_id}:report_threads")
     redis_client.delete(f"report:{report_id}:thread:{report.complainant_id}")
     redis_client.delete(f"report:{report_id}:thread:{report.defendant_id}")
+    # --- AUDIT LOG ---
+    await AuditLogService.log_action(
+        db=db,
+        actor_id=current_user.id,
+        actor_name=getattr(current_user, "email", "unknown"),
+        actor_role=str(getattr(current_user, "user_type", "unknown")),
+        action="update_report_status",
+        resource_type="UserReport",
+        resource_id=report_id,
+        resource_summary=str(report_id),
+        changes={"report_status": [old_status, new_status]},
+        metadata=None,
+    )
     return StatusUpdate.model_validate(new_status)
 
 

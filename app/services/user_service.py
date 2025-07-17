@@ -50,6 +50,7 @@ from app.schemas.user_schemas import (
     UpdateRider,
     WalletUserData,
 )
+from app.services.audit_log_service import AuditLogService
 
 logger = setup_logger()
 
@@ -334,6 +335,20 @@ async def toggle_user_block_status(
             f"User {user_id} ({user.email}) has been {action} by {current_user.email}"
         )
 
+        # --- AUDIT LOG ---
+        await AuditLogService.log_action(
+            db=db,
+            actor_id=current_user.id,
+            actor_name=getattr(current_user, "email", "unknown"),
+            actor_role=str(current_user.user_type),
+            action=f"user_{action}",
+            resource_type="User",
+            resource_id=user.id,
+            resource_summary=user.email,
+            changes={"is_blocked": [not user.is_blocked, user.is_blocked]},
+            extra_metadata=None,
+        )
+
         return user.is_blocked
 
     except Exception as e:
@@ -441,6 +456,8 @@ async def update_profile(
             status_code=status.HTTP_404_NOT_FOUND, detail="User not found"
         )
 
+    old_profile = profile.__dict__.copy()
+
     # Only check for conflicts if the new value is different from the current value
     conflict_filters = []
     if profile_data.phone_number and profile_data.phone_number != profile.phone_number:
@@ -483,6 +500,21 @@ async def update_profile(
     redis_client.get(f"user:{current_user.id}")
     redis_client.delete("all_users")
 
+    # --- AUDIT LOG ---
+    changed_fields = {k: [old_profile.get(k), getattr(profile, k)] for k in profile_data.model_dump(exclude_unset=True).keys() if old_profile.get(k) != getattr(profile, k)}
+    if changed_fields:
+        await AuditLogService.log_action(
+            db=db,
+            actor_id=current_user.id,
+            actor_name=getattr(current_user, "email", "unknown"),
+            actor_role=str(current_user.user_type),
+            action="update_profile",
+            resource_type="Profile",
+            resource_id=profile.user_id,
+            resource_summary=current_user.email,
+            changes=changed_fields,
+            extra_metadata=None,
+        )
     return profile
 
 
@@ -550,6 +582,8 @@ async def update_rider_profile(
             status_code=status.HTTP_404_NOT_FOUND, detail="Rider profile not found"
         )
 
+    old_profile = profile.__dict__.copy()
+
     # Only check for conflicts if the new value is different from the current value
     conflict_filters = []
     if profile_data.phone_number and profile_data.phone_number != profile.phone_number:
@@ -582,6 +616,21 @@ async def update_rider_profile(
         invalidate_user_cache(current_user.id)  # Cache for the dispatch user
         redis_client.delete("all_users")
 
+        # --- AUDIT LOG ---
+        changed_fields = {k: [old_profile.get(k), getattr(profile, k)] for k in ["full_name", "phone_number", "bike_number"] if old_profile.get(k) != getattr(profile, k)}
+        if changed_fields:
+            await AuditLogService.log_action(
+                db=db,
+                actor_id=current_user.id,
+                actor_name=getattr(current_user, "email", "unknown"),
+                actor_role=str(current_user.user_type),
+                action="update_rider_profile",
+                resource_type="Profile",
+                resource_id=profile.user_id,
+                resource_summary=profile.full_name,
+                changes=changed_fields,
+                extra_metadata=None,
+            )
         return profile
 
     except Exception as e:
@@ -1161,59 +1210,6 @@ async def get_dispatcher_riders(
         )
 
 
-# async def delete_rider(rider_id: UUID, db: AsyncSession, current_user: User) -> None:
-#     """
-#     Delete rider using CASCADE DELETE (requires proper cascade setup in models).
-#     This is more efficient as it relies on database cascading.
-#     """
-
-#     if current_user.user_type != UserType.DISPATCH:
-#         raise HTTPException(
-#             status_code=status.HTTP_403_FORBIDDEN,
-#             detail="Only dispatch users can delete riders",
-#         )
-
-#     try:
-#         stmt = select(User).where(
-#             User.id == rider_id, User.dispatcher_id == current_user.id
-#         )
-#         result = await db.execute(stmt)
-#         rider = result.scalar_one_or_none()
-
-#         if not rider:
-#             raise HTTPException(
-#                 status_code=status.HTTP_404_NOT_FOUND, detail="Rider not found"
-#             )
-
-#         if rider.user_type != UserType.RIDER:
-#             raise HTTPException(
-#                 status_code=status.HTTP_400_BAD_REQUEST, detail="User is not a rider"
-#             )
-
-#         await db.delete(rider)
-#         await db.commit()
-
-#         # Clear caches
-#         invalidate_user_cache(rider_id)
-#         invalidate_user_cache(current_user.id)
-#         redis_client.delete("all_users")
-
-#         logger.info(
-#             f"Rider {rider_id} deleted with cascade by dispatch user {current_user.id}"
-#         )
-
-#         return None
-
-#     except HTTPException:
-#         raise
-#     except Exception as e:
-#         await db.rollback()
-#         logger.error(f"Error deleting rider {rider_id}: {str(e)}")
-#         raise HTTPException(
-#             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-#             detail="Failed to delete rider",
-#         )
-
 
 async def delete_rider(rider_id: UUID, db: AsyncSession, current_user: User) -> None:
     """
@@ -1243,6 +1239,8 @@ async def delete_rider(rider_id: UUID, db: AsyncSession, current_user: User) -> 
             )
 
         rider_email = rider.email
+        rider_id_val = rider.id
+        rider_name = getattr(rider.profile, "full_name", None) if hasattr(rider, "profile") else None
 
         # Manually delete related records
 
@@ -1271,6 +1269,20 @@ async def delete_rider(rider_id: UUID, db: AsyncSession, current_user: User) -> 
 
         logger.info(
             f"Rider {rider_id} ({rider_email}) deleted by dispatcher {current_user.id}"
+        )
+
+        # --- AUDIT LOG ---
+        await AuditLogService.log_action(
+            db=db,
+            actor_id=current_user.id,
+            actor_name=getattr(current_user, "email", "unknown"),
+            actor_role=str(current_user.user_type),
+            action="delete_rider",
+            resource_type="User",
+            resource_id=rider_id_val,
+            resource_summary=rider_email or rider_name,
+            changes=None,
+            extra_metadata=None,
         )
 
         return None

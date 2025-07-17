@@ -15,6 +15,7 @@ class TransactionSchema(BaseModel):
     payment_status: PaymentStatus
     payment_method: Optional[PaymentMethod] = None
     payment_link: Optional[str] = None
+    from_user: str | None = None
     created_at: datetime
     updated_at: datetime
 

@@ -277,3 +277,38 @@ async def add_review(
 
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+
+
+@router.post("/{order_id}/cancel", status_code=status.HTTP_202_ACCEPTED)
+async def cancel_order(
+    order_id: UUID,
+    reason: str = None,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> DeliveryStatusUpdateSchema:
+    """
+    Cancel an order (with or without delivery). Optionally provide a reason.
+    """
+    try:
+        return await order_service.cancel_order(
+            db=db, order_id=order_id, current_user=current_user, reason=reason
+        )
+    except Exception as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+
+
+@router.post("/{order_id}/reaccept", status_code=status.HTTP_202_ACCEPTED)
+async def reaccept_order(
+    order_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> DeliveryStatusUpdateSchema:
+    """
+    Re-accept (re-list) a previously cancelled order.
+    """
+    try:
+        return await order_service.reaccept_order(
+            db=db, order_id=order_id, current_user=current_user
+        )
+    except Exception as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))

@@ -42,7 +42,7 @@ async def get_charge_commission_settings(
 @router.put(
     "/charge-commission",
     response_model=SettingsResponseSchema,
-    status_code=status.HTTP_200_OK,
+    status_code=status.HTTP_202_ACCEPTED,
     summary="Update charge and commission settings",
     description="Update existing charge and commission settings. Only provided fields will be updated.",
 )

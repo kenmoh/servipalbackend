@@ -3,6 +3,7 @@ from sqlalchemy import select, update
 from app.models.models import User
 from app.database.database import async_session
 from app.utils.logger_config import setup_logger
+from app.services.audit_log_service import AuditLogService
 # import logging
 
 # logger = logging.getLogger(__name__)
@@ -42,6 +43,24 @@ async def suspend_user_with_order_cancel_count_equal_3():
 
             await session.commit()
             logger.info(f"Suspended {len(users)} users until {suspension_until}")
+
+            # --- AUDIT LOG ---
+            for user in users:
+                await AuditLogService.log_action(
+                    db=session,
+                    actor_id=user.id,
+                    actor_name=getattr(user, "email", "unknown"),
+                    actor_role=str(getattr(user, "user_type", "unknown")),
+                    action="auto_suspend_user",
+                    resource_type="User",
+                    resource_id=user.id,
+                    resource_summary=user.email,
+                    changes={
+                        "rider_is_suspended_for_order_cancel": [False, True],
+                        "rider_is_suspension_until": [None, suspension_until],
+                    },
+                    extra_metadata={"reason": "3 order cancellations (auto)"},
+                )
 
         except Exception as e:
             await session.rollback()

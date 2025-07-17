@@ -1,15 +1,12 @@
 from datetime import datetime
 from enum import Enum
-from typing import Tuple
 from decimal import Decimal
 from uuid import UUID
 from decimal import Decimal
 from pydantic import BaseModel, Field
-from fastapi import Form, UploadFile, File
 
-from app.schemas.item_schemas import ItemResponse
 from app.schemas.status_schema import OrderStatus
-from app.schemas.status_schema import RequireDeliverySchema, PaymentStatus
+from app.schemas.status_schema import RequireDeliverySchema
 
 
 class PaymentStatus(str, Enum):
@@ -128,12 +125,7 @@ class OrderResponseSchema(BaseModel):
     payment_link: str
     created_at: datetime
     order_items: list[OrderItemResponseSchema]
-
-
-class WalletTransactionType(str, Enum):
-    DEPOSIT = "deposit"
-    WITHDRAWAL = "withdrawal"
-    REFUND = "refund"
+    cancel_reason: str | None = None
 
 
 class DeliveryStatusUpdateSchema(BaseModel):

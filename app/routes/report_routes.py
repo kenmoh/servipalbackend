@@ -31,6 +31,16 @@ async def get_reports_by_user(
     return await review_service.get_user_messages(db=db, user_id=user_id)
 
 
+@router.get("", status_code=status.HTTP_200_OK)
+async def get_all_reports_for_admin(
+    db: AsyncSession = Depends(get_db),
+) -> list[ReportMessage]:
+    """
+    Get all reports for the current user (as complainant or defendant)
+    """
+    return await review_service.get_all_report_messages_for_admin(db=db)
+
+
 @router.get("/{report_id}/report", status_code=status.HTTP_200_OK)
 async def get_report_by_id(
     report_id: UUID,

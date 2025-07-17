@@ -35,6 +35,7 @@ from app.utils.utils import (
     validate_password,
 )
 from app.config.config import redis_client
+from app.services.audit_log_service import AuditLogService
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
@@ -515,6 +516,7 @@ async def update_staff(
             )
 
     # Update profile fields
+    old_profile = profile.__dict__.copy()
     for field, value in data.model_dump(exclude_unset=True).items():
         if hasattr(profile, field):
             setattr(profile, field, value)
@@ -527,6 +529,21 @@ async def update_staff(
     redis_client.delete(f"current_useer_profile:{staff_id}")
     redis_client.delete("all_users")
 
+    # --- AUDIT LOG ---
+    changed_fields = {k: [old_profile.get(k), getattr(profile, k)] for k in data.model_dump(exclude_unset=True).keys() if old_profile.get(k) != getattr(profile, k)}
+    if changed_fields:
+        await AuditLogService.log_action(
+            db=db,
+            actor_id=current_user.id,
+            actor_name=getattr(current_user, "email", "unknown"),
+            actor_role=str(current_user.user_type),
+            action="update_staff_profile",
+            resource_type="Profile",
+            resource_id=profile.user_id,
+            resource_summary=staff.email,
+            changes=changed_fields,
+            metadata=None,
+        )
     return staff
 
 
@@ -662,6 +679,7 @@ async def change_password(
         )
 
     # Update password
+    old_password_hash = current_user.password
     current_user.password = hash_password(password_data.new_password)
     current_user.updated_at = datetime.now()
 
@@ -669,6 +687,19 @@ async def change_password(
         await db.commit()
         # Logout from all devices
         await logout_user(db, current_user.id)
+        # --- AUDIT LOG ---
+        await AuditLogService.log_action(
+            db=db,
+            actor_id=current_user.id,
+            actor_name=getattr(current_user, "email", "unknown"),
+            actor_role=str(current_user.user_type),
+            action="change_password",
+            resource_type="User",
+            resource_id=current_user.id,
+            resource_summary=current_user.email,
+            changes={"password": [old_password_hash, "***"]},
+            metadata=None,
+        )
         return {"message": "Password changed successfully"}
     except Exception as e:
         await db.rollback()
@@ -727,6 +758,7 @@ async def reset_password(reset_data: PasswordResetConfirm, db: AsyncSession) -> 
 
     try:
         # Update password
+        old_password_hash = user.password
         user.password = hash_password(reset_data.new_password)
         # Clear reset token
         user.reset_token = None
@@ -738,6 +770,19 @@ async def reset_password(reset_data: PasswordResetConfirm, db: AsyncSession) -> 
         # Log out from all devices for security
         await logout_user(db, user)
 
+        # --- AUDIT LOG ---
+        await AuditLogService.log_action(
+            db=db,
+            actor_id=user.id,
+            actor_name=getattr(user, "email", "unknown"),
+            actor_role=str(user.user_type),
+            action="reset_password",
+            resource_type="User",
+            resource_id=user.id,
+            resource_summary=user.email,
+            changes={"password": [old_password_hash, "***"]},
+            metadata=None,
+        )
         return {"message": "Password reset successful"}
 
     except Exception as e:
@@ -917,33 +962,6 @@ async def generate_2fa_code(user: User, db: AsyncSession) -> str:
     return formatted_code
 
 
-# async def generate_resend_verification_code(email: str, db: AsyncSession):
-#     user_result = await db.execute(select(User).where(User.email == email))
-#     user = user_result.scalar_one_or_none()
-
-#     if not user:
-#         raise HTTPException(
-#             status_code=status.HTTP_404_NOT_FOUND,
-#             detail="User not found",
-#         )
-#         # Generate codes
-#     email_code = f"{secrets.randbelow(1000000):06d}"
-#     phone_code = f"{secrets.randbelow(1000000):06d}"
-
-#     # Set expiration time (10 minutes from now)
-#     expires = datetime.now() + timedelta(minutes=25)
-
-#     # Update user record with codes and expiration
-#     user.email_verification_code = email_code
-#     user.profile.phone_verification_code = phone_code
-
-#     user.email_verification_expires = expires
-#     user.profile.phone_verification_expires = expires
-
-#     await db.commit()
-
-#     return email_code, phone_code
-
 
 async def generate_resend_verification_code(email: str, db: AsyncSession):
     # Load user with profile relationship
@@ -1004,40 +1022,6 @@ async def generate_verification_codes(user: User, db: AsyncSession) -> tuple[str
     return email_code, phone_code
 
 
-# async def send_verification_codes(
-#     email_code: str, phone_code: str, db: AsyncSession
-# ) -> dict:
-#     """Send verification codes via email and SMS"""
-
-#     stmt = select(User).options(joinedload(User.profile))
-#     result = await db.execute(stmt)
-#     user = result.scalar_one_or_none()
-
-#     if not user.profile.phone_number and not user.email:
-#         raise HTTPException(
-#             status_code=status.HTTP_400_BAD_REQUEST,
-#             detail="User phone number or email not found",
-#         )
-
-#     # Send email code
-#     message = MessageSchema(
-#         subject="Verify Your Email",
-#         recipients=[user.email],
-#         template_body={"code": email_code, "expires_in": "10 minutes"},
-#         subtype="html",
-#     )
-
-#     fm = FastMail(email_conf)
-#     await fm.send_message(message, template_name="email.html")
-
-#     # Send SMS code (using Termii)
-#     await send_sms(
-#         phone_number=user.profile.phone_number,
-#         phone_code=f"Your verification code is: {phone_code}. This code will expire in 10 minutes.",
-#     )
-
-#     return {"message": "Verification codes sent to your email and phone"}
-
 
 async def send_verification_codes(
     user: User, email_code: str, phone_code: str, db: AsyncSession
@@ -1071,70 +1055,6 @@ async def send_verification_codes(
     )
     return {"message": "Verification codes sent to your email and phone"}
 
-
-# async def verify_user_contact(
-#     email_code: str, phone_code: str, db: AsyncSession
-# ) -> dict:
-#     """Verify both email and phone codes"""
-#     now = datetime.now()
-
-#     # Load specific user with profile
-#     email = await db.scalar(
-#     select(User.email).where(User.email_verification_code == email_code)
-#     )
-
-#     phone_number = await db.scalar(
-#     select(Profile.phone_number).where(Profile.phone_verification_code == phone_code)
-#     )
-
-#     if not email:
-#         raise HTTPException(
-#             status_code=status.HTTP_404_NOT_FOUND,
-#             detail="User email or phone number not found"
-#         )
-
-#     if not phone_number:
-#         raise HTTPException(
-#             status_code=status.HTTP_400_BAD_REQUEST,
-#             detail="User Email or Phone number not found"
-#         )
-#     # Check if codes are expired
-#     email_expired = (
-#         user.email_verification_expires is not None
-#         and user.email_verification_expires < now
-#     )
-#     phone_expired = (
-#         user.profile.phone_verification_expires is not None
-#         and user.profile.phone_verification_expires < now
-#     )
-#     if email_expired or phone_expired:
-#         raise HTTPException(
-#             status_code=status.HTTP_400_BAD_REQUEST,
-#             detail="Verification codes have expired",
-#         )
-#     # Verify email code
-#     if email_code != user.email_verification_code:
-#         raise HTTPException(
-#             status_code=status.HTTP_400_BAD_REQUEST,
-#             detail="Invalid email verification code",
-#         )
-#     # Verify phone code
-#     if phone_code != user.profile.phone_verification_code:
-#         raise HTTPException(
-#             status_code=status.HTTP_400_BAD_REQUEST,
-#             detail="Invalid phone verification code",
-#         )
-#     # Update verification status
-#     user.is_email_verified = True
-#     user.profile.is_phone_verified = True
-#     user.account_status = AccountStatus.CONFIRMED
-#     user.email_verification_code = None
-#     user.profile.phone_verification_code = None
-#     user.email_verification_expires = None
-#     user.profile.phone_verification_expires = None
-#     await db.commit()
-#     await send_welcome_email(user)
-#     return {"message": "Email and phone verified successfully"}
 
 
 async def verify_user_contact(
@@ -1242,7 +1162,21 @@ async def update_staff_password(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Staff not found"
         )
+    old_password_hash = staff.password
     staff.password = hash_password(new_password)
     staff.updated_at = datetime.now()
     await db.commit()
+    # --- AUDIT LOG ---
+    await AuditLogService.log_action(
+        db=db,
+        actor_id=current_user.id,
+        actor_name=getattr(current_user, "email", "unknown"),
+        actor_role=str(current_user.user_type),
+        action="update_staff_password",
+        resource_type="User",
+        resource_id=staff.id,
+        resource_summary=staff.email,
+        changes={"password": [old_password_hash, "***"]},
+        metadata=None,
+    )
     return {"message": "Staff password updated successfully."}
