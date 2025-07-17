@@ -17,7 +17,7 @@ class TransactionSchema(BaseModel):
     payment_link: Optional[str] = None
     from_user: str | None = None
     to_user: str | None = None
-    direction: str | None = None
+    transaction_direction: str | None = None
     created_at: datetime
     updated_at: datetime
 
