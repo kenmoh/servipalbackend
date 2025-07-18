@@ -432,7 +432,7 @@ async def create_new_staff(
             )
 
 
-        db.add(add)
+        db.add(audit)
 
         await db.commit()
         await db.refresh(new_staff)
