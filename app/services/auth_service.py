@@ -413,7 +413,7 @@ async def create_new_staff(
                 action="create_staff",
                 resource_type="User",
                 resource_id=new_staff.id,
-                resource_summary=f"create_staff: {new_staff.email}, {new_staff.full_name}",
+                resource_summary=f"create_staff: {new_staff.email}, {staff_profile.full_name}",
                 changes=None,
                 extra_metadata=None,
             )
