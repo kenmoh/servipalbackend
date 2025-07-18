@@ -405,8 +405,21 @@ async def create_new_staff(
         db.flush()
 
         # --- AUDIT LOG ---
-        await db.execute(
-            insert(AuditLog).values(
+        # await db.execute(
+        #     insert(AuditLog).values(
+        #         actor_id=current_user.id,
+        #         actor_name=current_user.profile.full_name or current_user.email,
+        #         actor_role=current_user.user_type,
+        #         action="create_staff",
+        #         resource_type="User",
+        #         resource_id=new_staff.id,
+        #         resource_summary=f"create_staff: {new_staff.email}, {staff_profile.full_name}",
+        #         changes=None,
+        #         extra_metadata=None,
+        #     )
+        # )
+
+        audit = AuditLog(
                 actor_id=current_user.id,
                 actor_name=current_user.profile.full_name or current_user.email,
                 actor_role=current_user.user_type,
@@ -417,7 +430,9 @@ async def create_new_staff(
                 changes=None,
                 extra_metadata=None,
             )
-        )
+
+
+        db.add(add)
 
         await db.commit()
         await db.refresh(new_staff)

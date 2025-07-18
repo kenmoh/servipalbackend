@@ -810,7 +810,7 @@ class AuditLog(Base):
     actor_role: Mapped[str]
     action: Mapped[str]
     resource_type: Mapped[str] = mapped_column(String(64), nullable=False)
-    resource_id: Mapped[UUID] = mapped_column(String(64), nullable=True)
+    resource_id: Mapped[UUID] = mapped_column(nullable=True)
     resource_summary: Mapped[str] = mapped_column(nullable=True)
     changes: Mapped[dict] = mapped_column(JSON, nullable=True)
     ip_address: Mapped[str] = mapped_column(String(64), nullable=True)
