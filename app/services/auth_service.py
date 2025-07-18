@@ -351,6 +351,113 @@ async def create_new_rider(
             )
 
 
+# async def create_new_staff(
+#     data: StaffCreate,
+#     db: AsyncSession,
+#     current_user: User,
+# ) -> UserBase:
+#     """
+#     Creates a new rider user and assigns them to the current dispatch user.
+#     Ultra-optimized version using database constraints for validation.
+#     """
+
+#     if current_user.user_type not in [UserType.ADMIN, UserType.SUPER_ADMIN]:
+#         raise HTTPException(
+#             status_code=status.HTTP_403_FORBIDDEN,
+#             detail="Only a Admin user can create staff.",
+#         )
+
+#     # Validate password
+#     validate_password(data.password)
+
+#     # Format phone number
+#     formatted_phone = f"234{data.phone_number[1:] if data.phone_number.startswith('0') else data.phone_number}"
+
+#     # Create new rider and let database constraints handle uniqueness validation
+#     try:
+#         new_staff = User(
+#             email=data.email.lower(),
+#             password=hash_password(data.password),
+#             user_type=UserType.MODERATOR,
+#             dispatcher_id=current_user.id,
+#             created_at=datetime.today(),
+#             updated_at=datetime.today(),
+#         )
+
+#         db.add(new_staff)
+#         await db.flush()
+
+#         staff_profile = Profile(
+#             user_id=new_staff.id,
+#             full_name=data.full_name,
+#             phone_number=formatted_phone,
+#             created_at=datetime.today(),
+#             updated_at=datetime.today(),
+#             business_address=current_user.profile.business_address,
+#             business_name=current_user.profile.business_name,
+#         )
+#         db.add(staff_profile)
+
+#         await db.commit()
+#         await db.refresh(new_staff)
+
+
+#         staff_dict = {
+#             "user_type": new_staff.user_type,
+#             "email": new_staff.email,
+#         }
+
+#         redis_client.delete("all_users")
+#         redis_client.delete("teams")
+
+#         # Generate and send verification codes
+#         email_code, phone_code = await generate_verification_codes(new_staff, db)
+
+#         await send_verification_codes(
+#             user=new_staff, email_code=email_code, phone_code=phone_code, db=db
+#         )
+
+#         invalidate_rider_cache(current_user.id)
+
+#         await asyncio.sleep(0.1)
+#         await ws_service.broadcast_new_team({ 'team_id': staff_profile.user_id, 'email':new_staff.email, 'full_name': staff_profile.full_name, 'user_type':new_staff.user_type})
+        
+#         # --- AUDIT LOG ---
+#         await AuditLogService.log_action(
+#             db=db,
+#             actor_id=current_user.id,
+#             actor_name=getattr(current_user, "email", "unknown"),
+#             actor_role=str(current_user.user_type),
+#             action="create_staff",
+#             resource_type="User",
+#             resource_id=new_staff.id,
+#             resource_summary=new_staff.email,
+#             changes=None,
+#             extra_metadata=None,
+#         )
+#         return UserBase(**staff_dict)
+
+#     except IntegrityError as e:
+#         await db.rollback()
+
+#         error_msg = str(e).lower()
+
+#         if "email" in error_msg and "unique" in error_msg:
+#             raise HTTPException(
+#                 status_code=status.HTTP_409_CONFLICT, detail="Email already registered"
+#             )
+#         elif "phone_number" in error_msg and "unique" in error_msg:
+#             raise HTTPException(
+#                 status_code=status.HTTP_409_CONFLICT,
+#                 detail="Phone number already registered",
+#             )
+#         else:
+#             # Generic fallback for other integrity errors
+#             raise HTTPException(
+#                 status_code=status.HTTP_409_CONFLICT,
+#                 detail="Staff with this data already exists!",
+#             )
+
 async def create_new_staff(
     data: StaffCreate,
     db: AsyncSession,
@@ -360,19 +467,18 @@ async def create_new_staff(
     Creates a new rider user and assigns them to the current dispatch user.
     Ultra-optimized version using database constraints for validation.
     """
-
     if current_user.user_type not in [UserType.ADMIN, UserType.SUPER_ADMIN]:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only a Admin user can create staff.",
         )
-
+    
     # Validate password
     validate_password(data.password)
-
+    
     # Format phone number
     formatted_phone = f"234{data.phone_number[1:] if data.phone_number.startswith('0') else data.phone_number}"
-
+    
     # Create new rider and let database constraints handle uniqueness validation
     try:
         new_staff = User(
@@ -383,10 +489,9 @@ async def create_new_staff(
             created_at=datetime.today(),
             updated_at=datetime.today(),
         )
-
         db.add(new_staff)
         await db.flush()
-
+        
         staff_profile = Profile(
             user_id=new_staff.id,
             full_name=data.full_name,
@@ -397,54 +502,71 @@ async def create_new_staff(
             business_name=current_user.profile.business_name,
         )
         db.add(staff_profile)
-
         await db.commit()
         await db.refresh(new_staff)
-
-
+        
         staff_dict = {
             "user_type": new_staff.user_type,
             "email": new_staff.email,
         }
-
+        
+        # Cache invalidation
         redis_client.delete("all_users")
         redis_client.delete("teams")
-
+        
         # Generate and send verification codes
-        email_code, phone_code = await generate_verification_codes(new_staff, db)
-
-        await send_verification_codes(
-            user=new_staff, email_code=email_code, phone_code=phone_code, db=db
-        )
-
+        try:
+            email_code, phone_code = await generate_verification_codes(new_staff, db)
+            await send_verification_codes(
+                user=new_staff, email_code=email_code, phone_code=phone_code, db=db
+            )
+        except Exception as e:
+            # Log the error but don't fail the entire operation
+            print(f"Warning: Failed to send verification codes: {e}")
+        
         invalidate_rider_cache(current_user.id)
-
+        
+        # Add a small delay to prevent race conditions
         await asyncio.sleep(0.1)
-        await ws_service.broadcast_new_team({ 'team_id': staff_profile.user_id, 'email':new_staff.email, 'full_name': staff_profile.full_name, 'user_type':new_staff.user_type})
+        
+        # WebSocket broadcast - wrap in try-except to prevent failures
+        try:
+            await ws_service.broadcast_new_team({
+                'team_id': staff_profile.user_id,
+                'email': new_staff.email,
+                'full_name': staff_profile.full_name,
+                'user_type': new_staff.user_type
+            })
+        except Exception as e:
+            print(f"Warning: WebSocket broadcast failed: {e}")
         
         # --- AUDIT LOG ---
-        await AuditLogService.log_action(
-            db=db,
-            actor_id=current_user.id,
-            actor_name=getattr(current_user, "email", "unknown"),
-            actor_role=str(current_user.user_type),
-            action="create_staff",
-            resource_type="User",
-            resource_id=new_staff.id,
-            resource_summary=new_staff.email,
-            changes=None,
-            extra_metadata=None,
-        )
+        try:
+            await AuditLogService.log_action(
+                db=db,
+                actor_id=current_user.id,
+                actor_name=getattr(current_user, "email", "unknown"),
+                actor_role=str(current_user.user_type),
+                action="create_staff",
+                resource_type="User",
+                resource_id=new_staff.id,
+                resource_summary=new_staff.email,
+                changes=None,
+                extra_metadata=None,
+            )
+        except Exception as e:
+            # Log audit failure but don't fail the entire operation
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+        
         return UserBase(**staff_dict)
-
+        
     except IntegrityError as e:
         await db.rollback()
-
         error_msg = str(e).lower()
-
         if "email" in error_msg and "unique" in error_msg:
             raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT, detail="Email already registered"
+                status_code=status.HTTP_409_CONFLICT, 
+                detail="Email already registered"
             )
         elif "phone_number" in error_msg and "unique" in error_msg:
             raise HTTPException(
@@ -457,6 +579,11 @@ async def create_new_staff(
                 status_code=status.HTTP_409_CONFLICT,
                 detail="Staff with this data already exists!",
             )
+    except Exception as e:
+        # Ensure rollback on any other error
+        await db.rollback()
+        raise
+
 
 
 async def update_staff(
