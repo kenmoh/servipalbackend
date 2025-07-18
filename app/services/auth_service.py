@@ -422,6 +422,19 @@ async def create_new_staff(
         await asyncio.sleep(0.1)
         await ws_service.broadcast_new_team({ 'team_id': staff_profile.user_id, 'email':new_staff.email, 'full_name': staff_profile.full_name, 'user_type':new_staff.user_type})
         
+        # --- AUDIT LOG ---
+        await AuditLogService.log_action(
+            db=db,
+            actor_id=current_user.id,
+            actor_name=getattr(current_user, "email", "unknown"),
+            actor_role=str(current_user.user_type),
+            action="create_staff",
+            resource_type="User",
+            resource_id=new_staff.id,
+            resource_summary=new_staff.email,
+            changes=None,
+            metadata=None,
+        )
         return UserBase(**staff_dict)
 
     except IntegrityError as e:
