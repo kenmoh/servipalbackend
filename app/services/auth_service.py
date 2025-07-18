@@ -433,7 +433,7 @@ async def create_new_staff(
             resource_id=new_staff.id,
             resource_summary=new_staff.email,
             changes=None,
-            metadata=None,
+            extra_metadata=None,
         )
         return UserBase(**staff_dict)
 
