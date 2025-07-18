@@ -1,71 +1,60 @@
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Query
+from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Query, Cookie, Depends
 from fastapi.security import HTTPBearer
+from uuid import UUID
 from http.cookies import SimpleCookie
 from jose import jwt, JWTError
 from app.ws_manager.ws_manager import manager
 import json
 from datetime import datetime
 from app.config.config import settings
+from app.database.database import async_session
+from app.auth.auth import get_db, get_current_user
+from app.utils.logger_config import setup_logger
+from app.models.models import User
+
+logger = setup_logger()
 
 router = APIRouter(prefix="/ws", tags=["websocket"])
 security = HTTPBearer()
 
-# async def get_token_from_cookie(websocket: WebSocket):
-#     # Access the 'access_token' cookie from the WebSocket headers
-#     cookies = websocket.cookies
-#     token = cookies.get("access_token")
-#     if not token:
-#         await websocket.close(code=1008, reason="Policy violation: No token provided")
-#         return None
-#     # Optionally: validate the token here
-#     return token
 
-async def get_token_from_cookie(websocket: WebSocket):
-    """Extract HttpOnly cookie from WebSocket headers"""
-    try:
-        # Get cookie header from WebSocket headers
-        cookie_header = websocket.headers.get("cookie")
+
+# async def get_token_from_cookie(websocket: WebSocket):
+#     """Extract HttpOnly cookie from WebSocket headers"""
+#     try:
+#         # Get cookie header from WebSocket headers
+#         cookie_header = websocket.headers.get("cookie")
         
-        if not cookie_header:
-            await websocket.close(code=1008, reason="No cookies provided")
-            return None
+#         if not cookie_header:
+#             logger.error(f"No cookies provided")
+#             await websocket.close(code=1008, reason="No cookies provided")
+#             return None
         
-        # Parse cookies manually
-        cookies = SimpleCookie()
-        cookies.load(cookie_header)
+#         # Parse cookies manually
+#         cookies = SimpleCookie()
+#         cookies.load(cookie_header)
         
-        # Extract the access_token
-        if 'access_token' in cookies:
-            token = cookies['access_token'].value
-            return token
+#         # Extract the access_token
+#         if 'access_token' in cookies:
+#             token = cookies['access_token'].value
+#             return token
+#         logger.error(f"Access token not found in cookies")
+#         await websocket.close(code=1008, reason="Access token not found in cookies")
+#         return None
         
-        await websocket.close(code=1008, reason="Access token not found in cookies")
-        return None
-        
-    except Exception as e:
-        await websocket.close(code=1011, reason=f"Cookie parsing error: {str(e)}")
-        return None
+#     except Exception as e:
+#         logger.error(f"Cookie parsing error: {str(e)}")
+#         await websocket.close(code=1011, reason=f"Cookie parsing error: {str(e)}")
+#         return None
 
 
 @router.websocket("")
 async def websocket_endpoint(
-    websocket: WebSocket, client_type: str = Query("admin")
+    websocket: WebSocket, client_type: str = Query("admin"),
 ):
-    try:
-        token = await get_token_from_cookie(websocket)
-        payload = jwt.decode(
-            token, settings.JWT_SECRET_KEY, algorithms=[settings.JWT_ALGORITHM]
-        )
-        user_id = payload.get("sub")
-        if not user_id:
-            await websocket.close(code=1008, reason="Invalid token: no user ID")
-            return
-    except JWTError:
-        await websocket.close(code=1008, reason=reason=f"Invalid token: {str(e)}")
-        return
 
     """Main WebSocket endpoint for real-time communication"""
-    await manager.connect(websocket, client_type, user_id)
+    await manager.connect(websocket, client_type)
 
     try:
         while True:
@@ -124,7 +113,9 @@ async def websocket_endpoint(
                 )
 
     except WebSocketDisconnect:
-        manager.disconnect(websocket, client_type, user_id)
+        manager.disconnect(websocket, client_type)
     except Exception as e:
         print(f"WebSocket error: {e}")
-        manager.disconnect(websocket, client_type, user_id)
+        manager.disconnect(websocket, client_type)
+
+
