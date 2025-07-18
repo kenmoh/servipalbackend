@@ -383,6 +383,8 @@ async def create_new_staff(
             dispatcher_id=current_user.id,
             created_at=datetime.today(),
             updated_at=datetime.today(),
+            is_email_verified=True,
+            account_status=AccountStatus.CONFIRMED
         )
 
         db.add(new_staff)
@@ -395,6 +397,7 @@ async def create_new_staff(
             phone_number=formatted_phone,
             created_at=datetime.today(),
             updated_at=datetime.today(),
+            is_phone_verified=True,
             business_address=current_user.profile.business_address,
             business_name=current_user.profile.business_name,
         )
@@ -428,16 +431,9 @@ async def create_new_staff(
         redis_client.delete("all_users")
         redis_client.delete("teams")
 
-        # Generate and send verification codes
-        email_code, phone_code = await generate_verification_codes(new_staff, db)
-
-        await send_verification_codes(
-            user=new_staff, email_code=email_code, phone_code=phone_code, db=db
-        )
-
         invalidate_rider_cache(current_user.id)
 
-        await asyncio.sleep(0.1)
+        # await asyncio.sleep(0.1)
         await ws_service.broadcast_new_team({ 'team_id': staff_profile.user_id, 'email':new_staff.email, 'full_name': staff_profile.full_name, 'user_type':new_staff.user_type})
        
         return UserBase(**staff_dict)
