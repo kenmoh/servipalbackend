@@ -16,7 +16,7 @@ from sqlalchemy.orm import selectinload
 from app.schemas.delivery_schemas import DeliveryStatus
 
 from app.schemas.schemas import DispatchRiderSchema
-from app.schemas.status_schema import  UserType
+from app.schemas.status_schema import UserType
 from app.utils.logger_config import setup_logger
 from app.utils.s3_service import add_image, delete_s3_object
 from app.config.config import redis_client, settings
@@ -42,7 +42,6 @@ from app.schemas.user_schemas import (
     WalletSchema,
     VendorUserResponse,
     ProfileImageResponseSchema,
-
     CreateReviewSchema,
     ProfileSchema,
     UpdateRider,
@@ -187,7 +186,9 @@ async def get_current_user_details(
         )
 
 
-async def get_users(db: AsyncSession, skip: int = 0, limit: int = 20) -> list[UserProfileResponse]:
+async def get_users(
+    db: AsyncSession, skip: int = 0, limit: int = 20
+) -> list[UserProfileResponse]:
     """
     Retrieves all users with their profiles.
 
@@ -209,7 +210,11 @@ async def get_users(db: AsyncSession, skip: int = 0, limit: int = 20) -> list[Us
             select(User)
             .options(selectinload(User.profile).selectinload(Profile.profile_image))
             .order_by(User.created_at.desc())
-            .where(User.user_type.notin_([UserType.ADMIN, UserType.SUPER_ADMIN, UserType.MODERATOR]))
+            .where(
+                User.user_type.notin_(
+                    [UserType.ADMIN, UserType.SUPER_ADMIN, UserType.MODERATOR]
+                )
+            )
             .offset(skip)
             .limit(limit)
         )
@@ -220,20 +225,21 @@ async def get_users(db: AsyncSession, skip: int = 0, limit: int = 20) -> list[Us
         if not users:
             # Cache empty result to avoid repeated DB queries
             redis_client.set(
-                f"all_users:{skip}:{limit}", json.dumps([], default=str), ex=settings.REDIS_EX
+                f"all_users:{skip}:{limit}",
+                json.dumps([], default=str),
+                ex=settings.REDIS_EX,
             )
             return []
 
         # Convert to  response format
         users_data = []
         for user in users:
-         
             user_data = {
                 "email": user.email,
                 "user_type": getattr(user, "user_type", "customer"),
                 "id": str(user.id),
                 "is_blocked": user.is_blocked,
-                "account_status": user.account_status
+                "account_status": user.account_status,
             }
 
             # Add profile if exists
@@ -273,7 +279,9 @@ async def get_users(db: AsyncSession, skip: int = 0, limit: int = 20) -> list[Us
 
         # Cache the users data
         redis_client.set(
-            f"all_users:{skip}:{limit}", json.dumps(users_data, default=str), ex=settings.REDIS_EX
+            f"all_users:{skip}:{limit}",
+            json.dumps(users_data, default=str),
+            ex=settings.REDIS_EX,
         )
 
         # Convert to response objects
@@ -302,7 +310,7 @@ async def toggle_user_block_status(
         Boolean indicating the new block status
     """
     # Check if current user has permission to block/unblock users
-    allowed_user_types = [UserType.ADMIN, UserType.SUPER_ADMIN,UserType.MODERATOR]
+    allowed_user_types = [UserType.ADMIN, UserType.SUPER_ADMIN, UserType.MODERATOR]
     if current_user.user_type not in allowed_user_types:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -334,20 +342,21 @@ async def toggle_user_block_status(
         )
 
         # --- AUDIT LOG ---
-        await db.execute(insert(AuditLog).values(
-            actor_id=current_user.id,
-            actor_name=getattr(current_user, "email", "unknown"),
-            actor_role=str(current_user.user_type),
-            action=f"user_{action}",
-            resource_type="User",
-            resource_id=user.id,
-            resource_summary=user.email,
-            changes={"is_blocked": [not user.is_blocked, user.is_blocked]},
-            extra_metadata=None,
-            ))
-        
-        await db.commit()
+        await db.execute(
+            insert(AuditLog).values(
+                actor_id=current_user.id,
+                actor_name=getattr(current_user, "email", "unknown"),
+                actor_role=str(current_user.user_type),
+                action=f"user_{action}",
+                resource_type="User",
+                resource_id=user.id,
+                resource_summary=user.email,
+                changes={"is_blocked": [not user.is_blocked, user.is_blocked]},
+                extra_metadata=None,
+            )
+        )
 
+        await db.commit()
 
         return user.is_blocked
 
@@ -372,16 +381,23 @@ async def toggle_user_block_status(
 #     return wallets
 
 
-async def get_user_wallets(db: AsyncSession, skip: int = 0, limit: int = 20) -> list[WalletSchema]:
+async def get_user_wallets(
+    db: AsyncSession, skip: int = 0, limit: int = 20
+) -> list[WalletSchema]:
     cache_key = f"all_wallets:{skip}:{limit}"
     cached_wallets = redis_client.get(cache_key)
     if cached_wallets:
         return [WalletSchema(**w) for w in json.loads(cached_wallets)]
 
-    stmt = select(Wallet).options(
-        selectinload(Wallet.transactions),
-        selectinload(Wallet.user).selectinload(User.profile),
-    ).offset(skip).limit(limit)
+    stmt = (
+        select(Wallet)
+        .options(
+            selectinload(Wallet.transactions),
+            selectinload(Wallet.user).selectinload(User.profile),
+        )
+        .offset(skip)
+        .limit(limit)
+    )
     result = await db.execute(stmt)
     wallets = result.scalars().all()
     wallet_schemas = []
@@ -501,19 +517,25 @@ async def update_profile(
     redis_client.delete("all_users")
 
     # --- AUDIT LOG ---
-    changed_fields = {k: [old_profile.get(k), getattr(profile, k)] for k in profile_data.model_dump(exclude_unset=True).keys() if old_profile.get(k) != getattr(profile, k)}
+    changed_fields = {
+        k: [old_profile.get(k), getattr(profile, k)]
+        for k in profile_data.model_dump(exclude_unset=True).keys()
+        if old_profile.get(k) != getattr(profile, k)
+    }
     if changed_fields:
-        await db.execute(insert(AuditLog).values(
-             actor_id=current_user.id,
-            actor_name=getattr(current_user, "email", "unknown"),
-            actor_role=str(current_user.user_type),
-            action="update_profile",
-            resource_type="Profile",
-            resource_id=profile.user_id,
-            resource_summary=current_user.email,
-            changes=changed_fields,
-            extra_metadata=None,
-            ))
+        await db.execute(
+            insert(AuditLog).values(
+                actor_id=current_user.id,
+                actor_name=getattr(current_user, "email", "unknown"),
+                actor_role=str(current_user.user_type),
+                action="update_profile",
+                resource_type="Profile",
+                resource_id=profile.user_id,
+                resource_summary=current_user.email,
+                changes=changed_fields,
+                extra_metadata=None,
+            )
+        )
         await db.commit()
 
     return profile
@@ -618,19 +640,25 @@ async def update_rider_profile(
         redis_client.delete("all_users")
 
         # --- AUDIT LOG ---
-        changed_fields = {k: [old_profile.get(k), getattr(profile, k)] for k in ["full_name", "phone_number", "bike_number"] if old_profile.get(k) != getattr(profile, k)}
+        changed_fields = {
+            k: [old_profile.get(k), getattr(profile, k)]
+            for k in ["full_name", "phone_number", "bike_number"]
+            if old_profile.get(k) != getattr(profile, k)
+        }
         if changed_fields:
-            await db.execute(insert(AuditLog).values(
-                actor_id=current_user.id,
-                actor_name=getattr(current_user, "email", "unknown"),
-                actor_role=str(current_user.user_type),
-                action="update_rider_profile",
-                resource_type="Profile",
-                resource_id=profile.user_id,
-                resource_summary=profile.full_name,
-                changes=changed_fields,
-                extra_metadata=None,
-            ))
+            await db.execute(
+                insert(AuditLog).values(
+                    actor_id=current_user.id,
+                    actor_name=getattr(current_user, "email", "unknown"),
+                    actor_role=str(current_user.user_type),
+                    action="update_rider_profile",
+                    resource_type="Profile",
+                    resource_id=profile.user_id,
+                    resource_summary=profile.full_name,
+                    changes=changed_fields,
+                    extra_metadata=None,
+                )
+            )
 
             await db.commit()
 
@@ -1213,7 +1241,6 @@ async def get_dispatcher_riders(
         )
 
 
-
 async def delete_rider(rider_id: UUID, db: AsyncSession, current_user: User) -> None:
     """
     Delete method that explicitly handles related records.
@@ -1243,7 +1270,11 @@ async def delete_rider(rider_id: UUID, db: AsyncSession, current_user: User) -> 
 
         rider_email = rider.email
         rider_id_val = rider.id
-        rider_name = getattr(rider.profile, "full_name", None) if hasattr(rider, "profile") else None
+        rider_name = (
+            getattr(rider.profile, "full_name", None)
+            if hasattr(rider, "profile")
+            else None
+        )
 
         # Manually delete related records
 
@@ -1275,17 +1306,19 @@ async def delete_rider(rider_id: UUID, db: AsyncSession, current_user: User) -> 
         )
 
         # --- AUDIT LOG ---
-        await db.execute(insert(AuditLog).valuses(
-            actor_id=current_user.id,
-            actor_name=getattr(current_user, "email", "unknown"),
-            actor_role=str(current_user.user_type),
-            action="delete_rider",
-            resource_type="User",
-            resource_id=rider_id_val,
-            resource_summary=rider_email or rider_name,
-            changes=None,
-            extra_metadata=None,
-        ))
+        await db.execute(
+            insert(AuditLog).valuses(
+                actor_id=current_user.id,
+                actor_name=getattr(current_user, "email", "unknown"),
+                actor_role=str(current_user.user_type),
+                action="delete_rider",
+                resource_type="User",
+                resource_id=rider_id_val,
+                resource_summary=rider_email or rider_name,
+                changes=None,
+                extra_metadata=None,
+            )
+        )
         await db.commit()
 
         return None
@@ -1499,7 +1532,6 @@ async def get_teams(db: AsyncSession) -> list[UserProfileResponse]:
     """
     Returns all users with user_type ADMIN, SUPER_ADMIN, or MODERATOR.
     """
-   
 
     # Try to get from cache first
     cached_users = redis_client.get("teams")
@@ -1510,25 +1542,22 @@ async def get_teams(db: AsyncSession) -> list[UserProfileResponse]:
     try:
         # Build optimized query to get users with profiles
         stmt = (
-        select(User)
+            select(User)
             .options(selectinload(User.profile).selectinload(Profile.profile_image))
             .where(
                 User.user_type.in_(
                     [UserType.ADMIN, UserType.SUPER_ADMIN, UserType.MODERATOR]
-                    )
                 )
-                .order_by(User.created_at.desc())
+            )
+            .order_by(User.created_at.desc())
         )
-        
 
         result = await db.execute(stmt)
         users = result.scalars().all()
 
         if not users:
             # Cache empty result to avoid repeated DB queries
-            redis_client.set(
-                "teams", json.dumps([], default=str), ex=settings.REDIS_EX
-            )
+            redis_client.set("teams", json.dumps([], default=str), ex=settings.REDIS_EX)
             return []
 
         # Convert to  response format
@@ -1539,7 +1568,7 @@ async def get_teams(db: AsyncSession) -> list[UserProfileResponse]:
                 "user_type": user.user_type,
                 "id": str(user.id),
                 "is_blocked": user.is_blocked,
-                "account_status": user.account_status
+                "account_status": user.account_status,
             }
 
             # Add profile if exists

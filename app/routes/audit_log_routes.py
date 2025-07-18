@@ -10,6 +10,7 @@ from app.models.models import AuditLog
 
 router = APIRouter(prefix="/api/audit-logs", tags=["Audit Logs"])
 
+
 @router.get("", response_model=list[AuditLogResponse])
 async def get_logs(
     db: AsyncSession = Depends(get_db),
@@ -37,6 +38,7 @@ async def get_logs(
     )
     return logs
 
+
 @router.get("/{log_id}", response_model=AuditLogResponse)
 async def get_log_by_id(log_id: UUID, db: AsyncSession = Depends(get_db)):
-    return await AuditLogService.get_log_by_id(db, log_id) 
+    return await AuditLogService.get_log_by_id(db, log_id)

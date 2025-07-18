@@ -68,7 +68,8 @@ async def login_user(db: AsyncSession, login_data: UserLogin) -> User:
 
     if user.is_blocked:
         raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN, detail="You account has been blocked. Contact support"
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You account has been blocked. Contact support",
         )
 
     if not user or not verify_password(login_data.password, user.password):
@@ -104,10 +105,9 @@ async def login_admin_user(db: AsyncSession, login_data: UserLogin) -> User:
 
     if user.is_blocked:
         raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN, detail="You account has been blocked. Contact support"
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You account has been blocked. Contact support",
         )
-
-
 
     if not user or not verify_password(login_data.password, user.password):
         # Record failed attempt
@@ -125,7 +125,6 @@ async def login_admin_user(db: AsyncSession, login_data: UserLogin) -> User:
     redis_client.delete(f"login_attempts:{login_data.username}")
 
     return user
-
 
 
 async def create_user(db: AsyncSession, user_data: CreateUserSchema) -> UserBase:
@@ -183,8 +182,10 @@ async def create_user(db: AsyncSession, user_data: CreateUserSchema) -> UserBase
         )
         redis_client.delete("all_users")
         await asyncio.sleep(0.1)
-        await ws_service.broadcast_new_user({'email':user.email, 'user_type':user.user_type})
-        
+        await ws_service.broadcast_new_user(
+            {"email": user.email, "user_type": user.user_type}
+        )
+
         return user
 
     except IntegrityError as e:
@@ -208,7 +209,6 @@ async def create_user(db: AsyncSession, user_data: CreateUserSchema) -> UserBase
                 status_code=status.HTTP_409_CONFLICT,
                 detail="Email or phone number already registered",
             )
-
 
 
 async def create_new_rider(
@@ -302,13 +302,10 @@ async def create_new_rider(
         await db.commit()
         await db.refresh(new_rider)
 
-
         rider_dict = {
             "user_type": new_rider.user_type,
             "email": new_rider.email,
         }
-
-       
 
         # Generate and send verification codes
         email_code, phone_code = await generate_verification_codes(new_rider, db)
@@ -320,7 +317,9 @@ async def create_new_rider(
         invalidate_rider_cache(current_user.id)
         redis_client.delete("all_users")
         await asyncio.sleep(0.1)
-        await ws_service.broadcast_new_user({'email':new_rider.email, 'user_type':new_rider.user_type})
+        await ws_service.broadcast_new_user(
+            {"email": new_rider.email, "user_type": new_rider.user_type}
+        )
 
         return UserBase(**rider_dict)
 
@@ -364,7 +363,7 @@ async def create_new_staff(
     if current_user.user_type not in [UserType.ADMIN, UserType.SUPER_ADMIN]:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only a Admin user can create staff.",
+            detail="Only Admin user can create staff.",
         )
 
     # Validate password
@@ -375,7 +374,7 @@ async def create_new_staff(
 
     # Create new rider and let database constraints handle uniqueness validation
     try:
-         # --- STAFF USER ---
+        # --- STAFF USER ---
         new_staff = User(
             email=data.email.lower(),
             password=hash_password(data.password),
@@ -384,13 +383,13 @@ async def create_new_staff(
             created_at=datetime.today(),
             updated_at=datetime.today(),
             is_email_verified=True,
-            account_status=AccountStatus.CONFIRMED
+            account_status=AccountStatus.CONFIRMED,
         )
 
         db.add(new_staff)
         await db.flush()
 
-         # --- STAFF PROFILE ---
+        # --- STAFF PROFILE ---
         staff_profile = Profile(
             user_id=new_staff.id,
             full_name=data.full_name,
@@ -405,20 +404,20 @@ async def create_new_staff(
         db.add(staff_profile)
         db.flush()
 
-         
         # --- AUDIT LOG ---
-        await db.execute(insert(AuditLog).values(
-            actor_id=current_user.id,
-            actor_name=current_user.profile.full_name or current_user.email,
-            actor_role=current_user.user_type,
-            action="create_staff",
-            resource_type="User",
-            resource_id=new_staff.id,
-            resource_summary=f'create_staff: {new_staff.email}, {new_staff.full_name}',
-            changes=None,
-            extra_metadata=None,
-        ))
-      
+        await db.execute(
+            insert(AuditLog).values(
+                actor_id=current_user.id,
+                actor_name=current_user.profile.full_name or current_user.email,
+                actor_role=current_user.user_type,
+                action="create_staff",
+                resource_type="User",
+                resource_id=new_staff.id,
+                resource_summary=f"create_staff: {new_staff.email}, {new_staff.full_name}",
+                changes=None,
+                extra_metadata=None,
+            )
+        )
 
         await db.commit()
         await db.refresh(new_staff)
@@ -434,8 +433,15 @@ async def create_new_staff(
         invalidate_rider_cache(current_user.id)
 
         # await asyncio.sleep(0.1)
-        await ws_service.broadcast_new_team({ 'team_id': staff_profile.user_id, 'email':new_staff.email, 'full_name': staff_profile.full_name, 'user_type':new_staff.user_type})
-       
+        await ws_service.broadcast_new_team(
+            {
+                "team_id": staff_profile.user_id,
+                "email": new_staff.email,
+                "full_name": staff_profile.full_name,
+                "user_type": new_staff.user_type,
+            }
+        )
+
         return UserBase(**staff_dict)
 
     except IntegrityError as e:
@@ -459,6 +465,7 @@ async def create_new_staff(
                 detail="Staff with this data already exists!",
             )
 
+
 # async def create_new_staff(
 #     data: StaffCreate,
 #     db: AsyncSession,
@@ -473,13 +480,13 @@ async def create_new_staff(
 #             status_code=status.HTTP_403_FORBIDDEN,
 #             detail="Only a Admin user can create staff.",
 #         )
-    
+
 #     # Validate password
 #     validate_password(data.password)
-    
+
 #     # Format phone number
 #     formatted_phone = f"234{data.phone_number[1:] if data.phone_number.startswith('0') else data.phone_number}"
-    
+
 #     # Create new rider and let database constraints handle uniqueness validation
 #     try:
 #         new_staff = User(
@@ -492,7 +499,7 @@ async def create_new_staff(
 #         )
 #         db.add(new_staff)
 #         await db.flush()
-        
+
 #         staff_profile = Profile(
 #             user_id=new_staff.id,
 #             full_name=data.full_name,
@@ -505,16 +512,16 @@ async def create_new_staff(
 #         db.add(staff_profile)
 #         await db.commit()
 #         await db.refresh(new_staff)
-        
+
 #         staff_dict = {
 #             "user_type": new_staff.user_type,
 #             "email": new_staff.email,
 #         }
-        
+
 #         # Cache invalidation
 #         redis_client.delete("all_users")
 #         redis_client.delete("teams")
-        
+
 #         # Generate and send verification codes
 #         try:
 #             email_code, phone_code = await generate_verification_codes(new_staff, db)
@@ -524,12 +531,12 @@ async def create_new_staff(
 #         except Exception as e:
 #             # Log the error but don't fail the entire operation
 #             print(f"Warning: Failed to send verification codes: {e}")
-        
+
 #         invalidate_rider_cache(current_user.id)
-        
+
 #         # Add a small delay to prevent race conditions
 #         await asyncio.sleep(0.1)
-        
+
 #         # WebSocket broadcast - wrap in try-except to prevent failures
 #         try:
 #             await ws_service.broadcast_new_team({
@@ -540,7 +547,7 @@ async def create_new_staff(
 #             })
 #         except Exception as e:
 #             print(f"Warning: WebSocket broadcast failed: {e}")
-        
+
 #         # --- AUDIT LOG ---
 #         try:
 #             await AuditLogService.log_action(
@@ -558,15 +565,15 @@ async def create_new_staff(
 #         except Exception as e:
 #             # Log audit failure but don't fail the entire operation
 #             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
-        
+
 #         return UserBase(**staff_dict)
-        
+
 #     except IntegrityError as e:
 #         await db.rollback()
 #         error_msg = str(e).lower()
 #         if "email" in error_msg and "unique" in error_msg:
 #             raise HTTPException(
-#                 status_code=status.HTTP_409_CONFLICT, 
+#                 status_code=status.HTTP_409_CONFLICT,
 #                 detail="Email already registered"
 #             )
 #         elif "phone_number" in error_msg and "unique" in error_msg:
@@ -584,7 +591,6 @@ async def create_new_staff(
 #         # Ensure rollback on any other error
 #         await db.rollback()
 #         raise
-
 
 
 async def update_staff(
@@ -671,19 +677,25 @@ async def update_staff(
     redis_client.delete("all_users")
 
     # --- AUDIT LOG ---
-    changed_fields = {k: [old_profile.get(k), getattr(profile, k)] for k in data.model_dump(exclude_unset=True).keys() if old_profile.get(k) != getattr(profile, k)}
+    changed_fields = {
+        k: [old_profile.get(k), getattr(profile, k)]
+        for k in data.model_dump(exclude_unset=True).keys()
+        if old_profile.get(k) != getattr(profile, k)
+    }
     if changed_fields:
-        await db.execute(insert(AuditLog).values(
-            actor_id=current_user.id,
-            actor_name=current_user.profile.full_name or current_user.email,
-            actor_role=current_user.user_type,
-            action="update_staff_profile",
-            resource_type="Profile",
-            resource_id=profile.user_id,
-            resource_summary=f'updated user with email: {staff.email}',
-            changes=changed_fields,
-            metadata=None,
-        ))
+        await db.execute(
+            insert(AuditLog).values(
+                actor_id=current_user.id,
+                actor_name=current_user.profile.full_name or current_user.email,
+                actor_role=current_user.user_type,
+                action="update_staff_profile",
+                resource_type="Profile",
+                resource_id=profile.user_id,
+                resource_summary=f"updated user with email: {staff.email}",
+                changes=changed_fields,
+                metadata=None,
+            )
+        )
         db.commit()
     return staff
 
@@ -829,19 +841,20 @@ async def change_password(
         # Logout from all devices
         await logout_user(db, current_user.id)
         # --- AUDIT LOG ---
-       
-        await db.execute(insert(AuditLog).valuses(
-            
-            actor_id=current_user.id,
-            actor_name=current_user.profile.full_name or current_user.email ,
-            actor_role=current_user.user_type,
-            action="change_password",
-            resource_type="User",
-            resource_id=current_user.id,
-            resource_summary=current_user.email,
-            changes={"password": [old_password_hash, "***"]},
-            metadata=None,
-        ))
+
+        await db.execute(
+            insert(AuditLog).valuses(
+                actor_id=current_user.id,
+                actor_name=current_user.profile.full_name or current_user.email,
+                actor_role=current_user.user_type,
+                action="change_password",
+                resource_type="User",
+                resource_id=current_user.id,
+                resource_summary=current_user.email,
+                changes={"password": [old_password_hash, "***"]},
+                metadata=None,
+            )
+        )
 
         await db.commit()
         return {"message": "Password changed successfully"}
@@ -1092,7 +1105,6 @@ async def generate_2fa_code(user: User, db: AsyncSession) -> str:
     return formatted_code
 
 
-
 async def generate_resend_verification_code(email: str, db: AsyncSession):
     # Load user with profile relationship
     user_result = await db.execute(
@@ -1152,7 +1164,6 @@ async def generate_verification_codes(user: User, db: AsyncSession) -> tuple[str
     return email_code, phone_code
 
 
-
 async def send_verification_codes(
     user: User, email_code: str, phone_code: str, db: AsyncSession
 ) -> dict:
@@ -1184,7 +1195,6 @@ async def send_verification_codes(
         phone_code=f"Your verification code is: {phone_code}. This code will expire in 10 minutes.",
     )
     return {"message": "Verification codes sent to your email and phone"}
-
 
 
 async def verify_user_contact(
@@ -1297,10 +1307,10 @@ async def update_staff_password(
     staff.updated_at = datetime.now()
     await db.commit()
     # --- AUDIT LOG ---
-    await db.execute(insert(AuditLog).valuses(
-            
+    await db.execute(
+        insert(AuditLog).valuses(
             actor_id=current_user.id,
-            actor_name=current_user.profile.full_name or current_user.email ,
+            actor_name=current_user.profile.full_name or current_user.email,
             actor_role=current_user.user_type,
             action="change_password",
             resource_type="User",
@@ -1308,7 +1318,8 @@ async def update_staff_password(
             resource_summary=current_user.email,
             changes={"password": [old_password_hash, "***"]},
             metadata=None,
-        ))
-    
+        )
+    )
+
     await db.commit()
     return {"message": "Staff password updated successfully."}

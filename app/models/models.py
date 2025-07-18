@@ -299,7 +299,7 @@ class Transaction(Base):
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
     wallet_id: Mapped[UUID] = mapped_column(ForeignKey("wallets.id"))
     amount: Mapped[Decimal] = mapped_column(default=0.00)
-    payment_by: Mapped[str] = mapped_column(nullable=True) # Remove beore Production
+    payment_by: Mapped[str] = mapped_column(nullable=True)  # Remove beore Production
     from_user: Mapped[str] = mapped_column(nullable=True)
     to_user: Mapped[str] = mapped_column(nullable=True)
     transaction_type: Mapped[TransactionType]
@@ -770,7 +770,6 @@ class UserReportReadStatus(Base):
     user: Mapped["User"] = relationship("User")
 
 
-
 class AuditLog(Base):
     __tablename__ = "audit_logs"
 
@@ -816,4 +815,3 @@ class AuditLog(Base):
     changes: Mapped[dict] = mapped_column(JSON, nullable=True)
     ip_address: Mapped[str] = mapped_column(String(64), nullable=True)
     extra_metadata: Mapped[dict] = mapped_column(JSON, nullable=True)
-

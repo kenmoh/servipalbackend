@@ -33,7 +33,7 @@ from app.schemas.marketplace_schemas import (
 )
 from app.services.order_service import get_user_profile
 from app.services.settings_service import get_charge_and_commission_settings
-from app.schemas.order_schema import  OrderType
+from app.schemas.order_schema import OrderType
 from app.schemas.status_schema import (
     PaymentMethod,
     PaymentStatus,
@@ -176,7 +176,9 @@ async def get_transactions(
         )
 
 
-async def get_all_transactions(db: AsyncSession, skip: int = 0, limit: int = 20) -> list[TransactionSchema]:
+async def get_all_transactions(
+    db: AsyncSession, skip: int = 0, limit: int = 20
+) -> list[TransactionSchema]:
     """
     Retrieve all transactions from the database.
 
@@ -187,7 +189,12 @@ async def get_all_transactions(db: AsyncSession, skip: int = 0, limit: int = 20)
         List of all transactions as Pydantic schemas.
     """
     try:
-        stmt = select(Transaction).order_by(Transaction.created_at.desc()).offset(skip).limit(limit)
+        stmt = (
+            select(Transaction)
+            .order_by(Transaction.created_at.desc())
+            .offset(skip)
+            .limit(limit)
+        )
         result = await db.execute(stmt)
         transactions = result.scalars().all()
         return [
@@ -275,7 +282,10 @@ async def handle_charge_completed_callback_fallback(
                     # Only update payment method if needed (find the correct transaction by order id if exists)
                     await db.execute(
                         update(Transaction)
-                        .where(Transaction.wallet_id == order.owner_id, Transaction.amount == order.total_price)
+                        .where(
+                            Transaction.wallet_id == order.owner_id,
+                            Transaction.amount == order.total_price,
+                        )
                         .values(payment_method=payment_type)
                     )
                     await db.commit()
@@ -285,7 +295,10 @@ async def handle_charge_completed_callback_fallback(
                 order.order_payment_status = PaymentStatus.PAID
                 await db.execute(
                     update(Transaction)
-                    .where(Transaction.wallet_id == order.owner_id, Transaction.amount == order.total_price)
+                    .where(
+                        Transaction.wallet_id == order.owner_id,
+                        Transaction.amount == order.total_price,
+                    )
                     .values(payment_method=payment_type)
                 )
                 await db.commit()
@@ -405,7 +418,9 @@ async def handle_charge_completed_callback_fallback(
                     db=db, user_id=order.vendor_id
                 )
                 amount_str = (
-                    f"₦{amount_paid}" if currency == "NGN" else f"{amount_paid} {currency}"
+                    f"₦{amount_paid}"
+                    if currency == "NGN"
+                    else f"{amount_paid} {currency}"
                 )
                 if buyer_token:
                     await send_push_notification(
@@ -413,7 +428,10 @@ async def handle_charge_completed_callback_fallback(
                         title="Payment Successful",
                         message=f"Your payment of {amount_str} was successful.",
                     )
-                if seller_token and order.order_type in [OrderType.FOOD, OrderType.LAUNDRY]:
+                if seller_token and order.order_type in [
+                    OrderType.FOOD,
+                    OrderType.LAUNDRY,
+                ]:
                     await send_push_notification(
                         tokens=[seller_token],
                         title="Order Paid",
@@ -483,11 +501,16 @@ async def handle_charge_completed_callback_fallback(
             # If neither order nor transaction found
             return {"status": "ignored", "reason": "Order/Transaction not found"}
 
-        return {"status": "ignored", "reason": "Not a successful charge.completed event"}
+        return {
+            "status": "ignored",
+            "reason": "Not a successful charge.completed event",
+        }
     except Exception as e:
         await db.rollback()
         # Optionally log the error here
-        raise HTTPException(status_code=500, detail=f"Payment callback failed: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Payment callback failed: {str(e)}"
+        )
 
 
 async def get_wallet(wallet_id, db: AsyncSession):
@@ -570,7 +593,6 @@ async def top_up_wallet(
         transaction.payment_link = payment_link
         await db.commit()
         await db.refresh(transaction)
-      
 
     except Exception as e:
         # Log error for debugging
@@ -1171,7 +1193,6 @@ async def fund_wallet_callback(request: Request, db: AsyncSession):
         )
         await db.commit()
         await db.refresh(transaction)
-     
 
     except Exception as e:
         logging.error(f"Error updating transaction status: {e}")
@@ -1322,7 +1343,6 @@ async def order_payment_callback(request: Request, db: AsyncSession):
 
     buyer = await get_user_profile(order.owner_id, db)
 
-
     # Only move funds and create transactions if payment is successful
     if new_status == PaymentStatus.PAID:
         # Fetch buyer wallet
@@ -1363,7 +1383,7 @@ async def order_payment_callback(request: Request, db: AsyncSession):
                     "payment_status": PaymentStatus.PAID,
                     "created_at": current_time,
                     "payment_method": PaymentMethod.CARD,
-                    "from_user": None, 
+                    "from_user": None,
                     "updated_at": current_time,
                 }
             )
@@ -1385,7 +1405,7 @@ async def order_payment_callback(request: Request, db: AsyncSession):
             redis_client.delete(f"user_orders:{order.owner_id}")
             redis_client.delete("paid_pending_deliveries")
             redis_client.delete("orders")
-          
+
             return {
                 "payment_status": order.order_payment_status,
                 "charged_amount": delivery_fee,
@@ -1403,7 +1423,7 @@ async def order_payment_callback(request: Request, db: AsyncSession):
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND, detail="Seller wallet not found"
             )
-        
+
         seller = await get_user_profile(order.vendor_id, db)
 
         total_price = order.total_price
@@ -1487,7 +1507,6 @@ async def order_payment_callback(request: Request, db: AsyncSession):
         redis_client.delete(f"user_orders:{order.vendor_id}")
         redis_client.delete("paid_pending_deliveries")
         redis_client.delete("orders")
-       
 
         return {
             "payment_status": order.order_payment_status,
@@ -1688,7 +1707,7 @@ async def pay_with_wallet(
         redis_client.delete(f"user_orders:{order.owner_id}")
         redis_client.delete("paid_pending_deliveries")
         redis_client.delete("orders")
-      
+
         return {
             "payment_status": order.order_payment_status,
             "charged_amount": delivery_fee,
@@ -1788,7 +1807,6 @@ async def pay_with_wallet(
     redis_client.delete(f"user_orders:{order.vendor_id}")
     redis_client.delete("paid_pending_deliveries")
     redis_client.delete("orders")
- 
 
     return {
         "payment_status": order.order_payment_status,
@@ -1849,7 +1867,6 @@ async def initiate_bank_transfer(
                     status_code=status.HTTP_400_BAD_REQUEST, detail=f"{message}"
                 )
             auth_data = result["meta"]["authorization"]
-
 
             return {
                 "status": result["status"],
@@ -1963,7 +1980,7 @@ async def make_withdrawal(db: AsyncSession, current_user: User) -> WithdrawalShe
             user.wallet.balance += withdrawal_amount
             withdrawal.payment_status = PaymentStatus.FAILED
             await db.commit()
-         
+
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail=f"Bank transfer failed: {transfer_response.get('message', 'Unknown error occurred')}",

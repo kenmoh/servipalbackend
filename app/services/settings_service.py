@@ -55,21 +55,15 @@ async def get_charge_and_commission_settings(
                 "id": settings.id,
                 "payment_gate_way_fee": settings.payment_gate_way_fee,
                 "value_added_tax": settings.value_added_tax,
-                "payout_charge_transaction_upto_5000_naira": 
-                    settings.payout_charge_transaction_upto_5000_naira,
-                "payout_charge_transaction_from_5001_to_50_000_naira": 
-                    settings.payout_charge_transaction_from_5001_to_50_000_naira,
-                "payout_charge_transaction_above_50_000_naira": 
-                    settings.payout_charge_transaction_above_50_000_naira,
+                "payout_charge_transaction_upto_5000_naira": settings.payout_charge_transaction_upto_5000_naira,
+                "payout_charge_transaction_from_5001_to_50_000_naira": settings.payout_charge_transaction_from_5001_to_50_000_naira,
+                "payout_charge_transaction_above_50_000_naira": settings.payout_charge_transaction_above_50_000_naira,
                 "stamp_duty": settings.stamp_duty,
                 "base_delivery_fee": settings.base_delivery_fee,
                 "delivery_fee_per_km": settings.delivery_fee_per_km,
-                "delivery_commission_percentage": 
-                    settings.delivery_commission_percentage,
-                "food_laundry_commission_percentage": 
-                    settings.food_laundry_commission_percentage,
-                "product_commission_percentage": 
-                    settings.product_commission_percentage,
+                "delivery_commission_percentage": settings.delivery_commission_percentage,
+                "food_laundry_commission_percentage": settings.food_laundry_commission_percentage,
+                "product_commission_percentage": settings.product_commission_percentage,
                 "created_at": settings.created_at.isoformat(),
                 "updated_at": settings.updated_at.isoformat(),
             }
@@ -176,17 +170,19 @@ async def update_charge_and_commission_settings(
             .values(**update_dict)
         )
         # --- AUDIT LOG ---
-        await  db.execute(insert(AuditLog).values(
-             actor_id=current_user.id,
-            actor_name=getattr(current_user, "email", "unknown"),
-            actor_role=str(current_user.user_type),
-            action="update_charge_and_commission_settings",
-            resource_type="ChargeAndCommission",
-            resource_id=current_settings.id,
-            resource_summary="Charge and Commission Settings",
-            changes=update_dict,
-            extra_metadata=None,
-        ))
+        await db.execute(
+            insert(AuditLog).values(
+                actor_id=current_user.id,
+                actor_name=getattr(current_user, "email", "unknown"),
+                actor_role=str(current_user.user_type),
+                action="update_charge_and_commission_settings",
+                resource_type="ChargeAndCommission",
+                resource_id=current_settings.id,
+                resource_summary="Charge and Commission Settings",
+                changes=update_dict,
+                extra_metadata=None,
+            )
+        )
         await db.execute(stmt)
         await db.commit()
 
@@ -293,4 +289,3 @@ async def update_charge_and_commission_settings(
 #             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
 #             detail="Failed to create initial settings",
 #         )
-

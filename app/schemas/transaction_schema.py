@@ -22,7 +22,6 @@ class TransactionSchema(BaseModel):
     updated_at: datetime
 
     class Config:
-        
         from_attributes = True
 
 
@@ -38,7 +37,6 @@ class TransactionCreateSchema(BaseModel):
     payment_link: Optional[str] = None
 
     class Config:
-        
         from_attributes = True
 
 
@@ -50,7 +48,6 @@ class TransactionUpdateSchema(BaseModel):
     payment_link: Optional[str] = None
 
     class Config:
-        
         from_attributes = True
 
 
@@ -76,5 +73,4 @@ class TransactionResponseSchema(BaseModel):
     total_pages: int
 
     class Config:
-        
         from_attributes = True

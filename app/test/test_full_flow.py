@@ -2,7 +2,7 @@ import pytest
 import asyncio
 from httpx import AsyncClient
 from uuid import uuid4
-from app.schemas.user_schemas import  UserType
+from app.schemas.user_schemas import UserType
 
 
 pytestmark = pytest.mark.anyio

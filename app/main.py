@@ -31,7 +31,7 @@ from app.routes import (
     settings_routes,
     stats_routes,
     ws_routes,
-    audit_log_routes
+    audit_log_routes,
 )
 # from app.routes import auth_routes
 

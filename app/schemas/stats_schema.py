@@ -37,7 +37,6 @@ class OrderStatsResponse(BaseModel):
     summary: Dict[str, int] = Field(..., description="Summary totals for the period")
 
     class Config:
-       
         from_attributes = True
 
 
@@ -57,7 +56,6 @@ class RevenueStatsDaily(BaseModel):
     transaction_count: int = Field(default=0, description="Number of transactions")
 
     class Config:
-       
         from_attributes = True
 
 
@@ -73,7 +71,6 @@ class RevenueStatsResponse(BaseModel):
     )
 
     class Config:
-       
         from_attributes = True
 
 
@@ -86,7 +83,6 @@ class UserStatsDaily(BaseModel):
     total_users: int = Field(default=0, description="Cumulative total users")
 
     class Config:
-       
         from_attributes = True
 
 
@@ -100,7 +96,6 @@ class UserStatsResponse(BaseModel):
     summary: Dict[str, int] = Field(..., description="Summary totals for the period")
 
     class Config:
-        
         from_attributes = True
 
 
@@ -116,7 +111,6 @@ class TopVendorStat(BaseModel):
     review_count: int = Field(default=0, description="Number of reviews")
 
     class Config:
-        
         from_attributes = True
 
 
@@ -133,7 +127,6 @@ class TopCustomerStat(BaseModel):
     )
 
     class Config:
-        
         from_attributes = True
 
 
@@ -152,7 +145,6 @@ class PlatformOverview(BaseModel):
     orders_today: int = Field(..., description="Orders placed today")
 
     class Config:
-        
         from_attributes = True
 
 
@@ -167,7 +159,6 @@ class OrderStatusStats(BaseModel):
     total: int = Field(default=0, description="Total orders")
 
     class Config:
-        
         from_attributes = True
 
 
@@ -180,7 +171,6 @@ class PaymentMethodStats(BaseModel):
     total: int = Field(default=0, description="Total payments")
 
     class Config:
-        
         from_attributes = True
 
 
@@ -198,7 +188,6 @@ class DeliveryStats(BaseModel):
     )
 
     class Config:
-        
         from_attributes = True
 
 
@@ -215,7 +204,6 @@ class WalletStats(BaseModel):
     withdrawal_volume: Decimal = Field(..., description="Total withdrawal volume")
 
     class Config:
-        
         from_attributes = True
 
 
@@ -242,7 +230,6 @@ class ComprehensiveStatsResponse(BaseModel):
     )
 
     class Config:
-       
         from_attributes = True
 
 
@@ -261,5 +248,4 @@ class StatsResponseWrapper(BaseModel):
     )
 
     class Config:
-       
         from_attributes = True

@@ -1,7 +1,7 @@
-
 from pydantic import BaseModel, Field
 from typing import Optional, Dict, Any, List
 from datetime import datetime
+
 
 class AuditLogBase(BaseModel):
     timestamp: datetime = Field(default_factory=datetime.utcnow)

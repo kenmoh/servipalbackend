@@ -6,20 +6,25 @@ from app.schemas.status_schema import UserType, OrderStatus
 
 pytestmark = pytest.mark.anyio
 
+
 # --- Fixtures ---
 @pytest.fixture
 def event_loop():
     import asyncio
+
     loop = asyncio.get_event_loop()
     yield loop
 
+
 @pytest.fixture
 def anyio_backend():
-    return 'asyncio'
+    return "asyncio"
+
 
 @pytest.fixture
 def test_client():
     return AsyncClient(app=app, base_url="http://test")
+
 
 @pytest.fixture
 def user_data():
@@ -29,6 +34,7 @@ def user_data():
         "user_type": "CUSTOMER",
     }
 
+
 @pytest.fixture
 def vendor_data():
     return {
@@ -37,15 +43,21 @@ def vendor_data():
         "user_type": "RESTAURANT_VENDOR",
     }
 
+
 @pytest.fixture
 def register_and_login(async_client):
     async def _register_and_login(user_data):
         await async_client.post("/api/auth/register", json=user_data)
-        login_resp = await async_client.post("/api/auth/login", data={"email": user_data["email"], "password": user_data["password"]})
+        login_resp = await async_client.post(
+            "/api/auth/login",
+            data={"email": user_data["email"], "password": user_data["password"]},
+        )
         assert login_resp.status_code == 200
         token = login_resp.json()["access_token"]
         return token
+
     return _register_and_login
+
 
 @pytest.fixture
 def create_vendor_item(async_client, register_and_login, vendor_data):
@@ -60,14 +72,20 @@ def create_vendor_item(async_client, register_and_login, vendor_data):
             "category_id": None,
             "food_group": "main_course",
         }
-        item_resp = await async_client.post("/api/items", json=item_data, headers=headers)
+        item_resp = await async_client.post(
+            "/api/items", json=item_data, headers=headers
+        )
         assert item_resp.status_code in (200, 201)
         return item_resp.json(), vendor_token
+
     return _create_vendor_item
+
 
 # --- Tests ---
 @pytest.mark.asyncio
-async def test_order_creation_and_cancel(async_client, register_and_login, create_vendor_item, user_data):
+async def test_order_creation_and_cancel(
+    async_client, register_and_login, create_vendor_item, user_data
+):
     # Register and login customer
     customer_token = await register_and_login(user_data)
     customer_headers = {"Authorization": f"Bearer {customer_token}"}
@@ -75,7 +93,9 @@ async def test_order_creation_and_cancel(async_client, register_and_login, creat
     item, vendor_token = await create_vendor_item()
     # Create order
     order_payload = {
-        "order_items": [{"item_id": item["id"], "quantity": 1, "vendor_id": item["user_id"]}],
+        "order_items": [
+            {"item_id": item["id"], "quantity": 1, "vendor_id": item["user_id"]}
+        ],
         "require_delivery": "delivery",
         "distance": 5.0,
         "origin": "Origin Address",
@@ -85,20 +105,31 @@ async def test_order_creation_and_cancel(async_client, register_and_login, creat
         "dropoff_coordinates": [6.50, 3.45],
         "additional_info": "No onions",
     }
-    order_resp = await async_client.post(f"/api/orders/{item['user_id']}", json=order_payload, headers=customer_headers)
+    order_resp = await async_client.post(
+        f"/api/orders/{item['user_id']}", json=order_payload, headers=customer_headers
+    )
     assert order_resp.status_code == 201
     order_id = order_resp.json()["order"]["id"]
     # Cancel order with reason
     cancel_reason = "Changed my mind"
-    cancel_resp = await async_client.post(f"/api/orders/{order_id}/cancel", params={"reason": cancel_reason}, headers=customer_headers)
+    cancel_resp = await async_client.post(
+        f"/api/orders/{order_id}/cancel",
+        params={"reason": cancel_reason},
+        headers=customer_headers,
+    )
     assert cancel_resp.status_code == 202
     # Fetch order and check cancel_reason
-    get_order_resp = await async_client.get(f"/api/orders/{order_id}", headers=customer_headers)
+    get_order_resp = await async_client.get(
+        f"/api/orders/{order_id}", headers=customer_headers
+    )
     assert get_order_resp.status_code == 200
     assert get_order_resp.json()["order"]["cancel_reason"] == cancel_reason
 
+
 @pytest.mark.asyncio
-async def test_order_reaccept_flow(async_client, register_and_login, create_vendor_item, user_data):
+async def test_order_reaccept_flow(
+    async_client, register_and_login, create_vendor_item, user_data
+):
     # Register and login customer
     customer_token = await register_and_login(user_data)
     customer_headers = {"Authorization": f"Bearer {customer_token}"}
@@ -106,7 +137,9 @@ async def test_order_reaccept_flow(async_client, register_and_login, create_vend
     item, vendor_token = await create_vendor_item()
     # Create order
     order_payload = {
-        "order_items": [{"item_id": item["id"], "quantity": 1, "vendor_id": item["user_id"]}],
+        "order_items": [
+            {"item_id": item["id"], "quantity": 1, "vendor_id": item["user_id"]}
+        ],
         "require_delivery": "delivery",
         "distance": 5.0,
         "origin": "Origin Address",
@@ -116,21 +149,34 @@ async def test_order_reaccept_flow(async_client, register_and_login, create_vend
         "dropoff_coordinates": [6.50, 3.45],
         "additional_info": "No onions",
     }
-    order_resp = await async_client.post(f"/api/orders/{item['user_id']}", json=order_payload, headers=customer_headers)
+    order_resp = await async_client.post(
+        f"/api/orders/{item['user_id']}", json=order_payload, headers=customer_headers
+    )
     assert order_resp.status_code == 201
     order_id = order_resp.json()["order"]["id"]
     # Cancel order
-    await async_client.post(f"/api/orders/{order_id}/cancel", params={"reason": "test"}, headers=customer_headers)
+    await async_client.post(
+        f"/api/orders/{order_id}/cancel",
+        params={"reason": "test"},
+        headers=customer_headers,
+    )
     # Reaccept order
-    reaccept_resp = await async_client.post(f"/api/orders/{order_id}/reaccept", headers=customer_headers)
+    reaccept_resp = await async_client.post(
+        f"/api/orders/{order_id}/reaccept", headers=customer_headers
+    )
     assert reaccept_resp.status_code == 202
     # Fetch order and check status
-    get_order_resp = await async_client.get(f"/api/orders/{order_id}", headers=customer_headers)
+    get_order_resp = await async_client.get(
+        f"/api/orders/{order_id}", headers=customer_headers
+    )
     assert get_order_resp.status_code == 200
     assert get_order_resp.json()["order"]["order_status"] == "pending"
 
+
 @pytest.mark.asyncio
-async def test_cancel_permission(async_client, register_and_login, create_vendor_item, user_data):
+async def test_cancel_permission(
+    async_client, register_and_login, create_vendor_item, user_data
+):
     # Register and login customer
     customer_token = await register_and_login(user_data)
     customer_headers = {"Authorization": f"Bearer {customer_token}"}
@@ -138,7 +184,9 @@ async def test_cancel_permission(async_client, register_and_login, create_vendor
     item, vendor_token = await create_vendor_item()
     # Create order
     order_payload = {
-        "order_items": [{"item_id": item["id"], "quantity": 1, "vendor_id": item["user_id"]}],
+        "order_items": [
+            {"item_id": item["id"], "quantity": 1, "vendor_id": item["user_id"]}
+        ],
         "require_delivery": "delivery",
         "distance": 5.0,
         "origin": "Origin Address",
@@ -148,7 +196,9 @@ async def test_cancel_permission(async_client, register_and_login, create_vendor
         "dropoff_coordinates": [6.50, 3.45],
         "additional_info": "No onions",
     }
-    order_resp = await async_client.post(f"/api/orders/{item['user_id']}", json=order_payload, headers=customer_headers)
+    order_resp = await async_client.post(
+        f"/api/orders/{item['user_id']}", json=order_payload, headers=customer_headers
+    )
     assert order_resp.status_code == 201
     order_id = order_resp.json()["order"]["id"]
     # Register and login another user
@@ -158,9 +208,17 @@ async def test_cancel_permission(async_client, register_and_login, create_vendor
         "user_type": "CUSTOMER",
     }
     await async_client.post("/api/auth/register", json=other_user_data)
-    other_login = await async_client.post("/api/auth/login", data={"email": other_user_data["email"], "password": other_user_data["password"]})
+    other_login = await async_client.post(
+        "/api/auth/login",
+        data={
+            "email": other_user_data["email"],
+            "password": other_user_data["password"],
+        },
+    )
     other_token = other_login.json()["access_token"]
     other_headers = {"Authorization": f"Bearer {other_token}"}
     # Try to cancel as non-owner
-    fail_cancel = await async_client.post(f"/api/orders/{order_id}/cancel", headers=other_headers)
-    assert fail_cancel.status_code == 403 
+    fail_cancel = await async_client.post(
+        f"/api/orders/{order_id}/cancel", headers=other_headers
+    )
+    assert fail_cancel.status_code == 403

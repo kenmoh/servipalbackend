@@ -46,22 +46,23 @@ async def suspend_user_with_order_cancel_count_equal_3():
 
             # --- AUDIT LOG ---
             for user in users:
-                await session.exeute(insert(AuditLog).values(
-                    actor_id=user.id,
-                    actor_name=getattr(user, "email", "unknown"),
-                    actor_role=str(getattr(user, "user_type", "unknown")),
-                    action="auto_suspend_user",
-                    resource_type="User",
-                    resource_id=user.id,
-                    resource_summary=user.email,
-                    changes={
-                        "rider_is_suspended_for_order_cancel": [False, True],
-                        "rider_is_suspension_until": [None, suspension_until],
-                    },
-                    extra_metadata={"reason": "3 order cancellations (auto)"},
-                ))
+                await session.exeute(
+                    insert(AuditLog).values(
+                        actor_id=user.id,
+                        actor_name=getattr(user, "email", "unknown"),
+                        actor_role=str(getattr(user, "user_type", "unknown")),
+                        action="auto_suspend_user",
+                        resource_type="User",
+                        resource_id=user.id,
+                        resource_summary=user.email,
+                        changes={
+                            "rider_is_suspended_for_order_cancel": [False, True],
+                            "rider_is_suspension_until": [None, suspension_until],
+                        },
+                        extra_metadata={"reason": "3 order cancellations (auto)"},
+                    )
+                )
                 await session.commit()
-
 
         except Exception as e:
             await session.rollback()

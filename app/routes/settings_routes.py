@@ -38,7 +38,6 @@ async def get_charge_commission_settings(
     return await get_charge_and_commission_settings(db)
 
 
-
 @router.put(
     "/charge-commission",
     response_model=SettingsResponseSchema,

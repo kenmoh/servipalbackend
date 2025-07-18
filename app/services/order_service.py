@@ -44,7 +44,7 @@ from app.schemas.order_schema import (
 from app.schemas.delivery_schemas import (
     DeliveryResponse,
     DeliveryType,
-    PaginatedDeliveryResponse
+    PaginatedDeliveryResponse,
 )
 from app.schemas.item_schemas import ItemType
 
@@ -148,11 +148,13 @@ async def get_user_orders(db: AsyncSession, user_id: UUID) -> list[DeliveryRespo
     return delivery_responses
 
 
-async def get_all_orders(db: AsyncSession, skip: int = 0, limit: int = 20) -> list[DeliveryResponse]:
+async def get_all_orders(
+    db: AsyncSession, skip: int = 0, limit: int = 20
+) -> list[DeliveryResponse]:
     """
     Get all orders with their deliveries (if any) with caching
     """
-    cache_key = f'ALL_DELIVERY-{skip}-{limit}'
+    cache_key = f"ALL_DELIVERY-{skip}-{limit}"
 
     # Try cache first with error handling
 
@@ -194,13 +196,13 @@ async def get_all_orders(db: AsyncSession, skip: int = 0, limit: int = 20) -> li
     return delivery_responses
 
 
-
-
-async def get_all_require_delivery_orders(db: AsyncSession, skip: int = 0, limit: int = 20) -> PaginatedDeliveryResponse:
+async def get_all_require_delivery_orders(
+    db: AsyncSession, skip: int = 0, limit: int = 20
+) -> PaginatedDeliveryResponse:
     """
     Get all orders with their deliveries (if any) with caching and total count
     """
-    cache_key = f'require_delivery_orders-{skip}-{limit}'
+    cache_key = f"require_delivery_orders-{skip}-{limit}"
 
     # Try cache first with error handling
     cached_deliveries = redis_client.get(cache_key)
@@ -209,7 +211,11 @@ async def get_all_require_delivery_orders(db: AsyncSession, skip: int = 0, limit
         return cached
 
     # 1. Get total count (without skip/limit)
-    total_stmt = select(func.count()).select_from(Order).where(Order.require_delivery == RequireDeliverySchema.DELIVERY)
+    total_stmt = (
+        select(func.count())
+        .select_from(Order)
+        .where(Order.require_delivery == RequireDeliverySchema.DELIVERY)
+    )
     total_result = await db.execute(total_stmt)
     total = total_result.scalar_one()
 
@@ -236,10 +242,7 @@ async def get_all_require_delivery_orders(db: AsyncSession, skip: int = 0, limit
         format_delivery_response(order, order.delivery) for order in orders
     ]
 
-    response = {
-        "data": [d.model_dump() for d in delivery_responses],
-        "total": total
-    }
+    response = {"data": [d.model_dump() for d in delivery_responses], "total": total}
 
     # Cache the formatted responses with error handling
     redis_client.setex(
@@ -251,11 +254,13 @@ async def get_all_require_delivery_orders(db: AsyncSession, skip: int = 0, limit
     return response
 
 
-async def get_all_pickup_delivery_orders(db: AsyncSession, skip: int = 0, limit: int = 20) -> PaginatedDeliveryResponse:
+async def get_all_pickup_delivery_orders(
+    db: AsyncSession, skip: int = 0, limit: int = 20
+) -> PaginatedDeliveryResponse:
     """
     Get all orders with their deliveries (if any) with caching and total count
     """
-    cache_key = f'pickup_delivery_orders-{skip}-{limit}'
+    cache_key = f"pickup_delivery_orders-{skip}-{limit}"
 
     # Try cache first with error handling
     cached_deliveries = redis_client.get(cache_key)
@@ -264,7 +269,11 @@ async def get_all_pickup_delivery_orders(db: AsyncSession, skip: int = 0, limit:
         return cached
 
     # 1. Get total count (without skip/limit)
-    total_stmt = select(func.count()).select_from(Order).where(Order.require_delivery == RequireDeliverySchema.DELIVERY)
+    total_stmt = (
+        select(func.count())
+        .select_from(Order)
+        .where(Order.require_delivery == RequireDeliverySchema.DELIVERY)
+    )
     total_result = await db.execute(total_stmt)
     total = total_result.scalar_one()
 
@@ -291,10 +300,7 @@ async def get_all_pickup_delivery_orders(db: AsyncSession, skip: int = 0, limit:
         format_delivery_response(order, order.delivery) for order in orders
     ]
 
-    response = {
-        "data": [d.model_dump() for d in delivery_responses],
-        "total": total
-    }
+    response = {"data": [d.model_dump() for d in delivery_responses], "total": total}
 
     # Cache the formatted responses with error handling
     redis_client.setex(
@@ -304,6 +310,7 @@ async def get_all_pickup_delivery_orders(db: AsyncSession, skip: int = 0, limit:
     )
 
     return response
+
 
 async def create_package_order(
     db: AsyncSession, data: PackageCreate, image: UploadFile, current_user: User
@@ -461,8 +468,6 @@ async def create_package_order(
 
         delivery_stmt = select(Delivery).where(Delivery.id == delivery_data.id)
         delivery = (await db.execute(delivery_stmt)).scalar_one()
-
-        
 
         redis_client.delete("paid_pending_deliveries")
         redis_client.delete(f"user_related_orders:{current_user.id}")
@@ -703,10 +708,9 @@ async def order_food_or_request_laundy_service(
             )
             order = (await db.execute(stmt)).scalar_one()
 
-
             redis_client.delete(f"{ALL_DELIVERY}")
 
-            await ws_service.broadcast_new_order({'order_id': order.id})
+            await ws_service.broadcast_new_order({"order_id": order.id})
 
             token = await get_user_notification_token(db=db, user_id=vendor_id)
 
@@ -757,7 +761,7 @@ async def _cancel_delivery_and_order_with_audit(
         audit_summary: Summary string for audit log
         extra_metadata: Optional extra metadata for audit log
     """
-    
+
     # Set delivery status
     db.execute(
         update(Delivery)
@@ -826,7 +830,7 @@ async def cancel_delivery(
             new_balance = wallet.balance + max(
                 wallet.escrow_balance - delivery.delivery_fee, 0
             )
-            
+
             await db.execute(
                 update(Wallet)
                 .where(Wallet.id == current_user.sender_id)
@@ -909,7 +913,9 @@ async def cancel_delivery(
             redis_client.delete("paid_pending_deliveries")
             redis_client.delete(f"user_related_orders:{current_user.id}")
 
-            await ws_service.broadcast_delivery_status_update(delivery_id=delivery.id, delivery_status=delivery.delivery_status)
+            await ws_service.broadcast_delivery_status_update(
+                delivery_id=delivery.id, delivery_status=delivery.delivery_status
+            )
 
             return DeliveryStatusUpdateSchema(delivery_status=delivery.delivery_status)
 
@@ -1087,7 +1093,6 @@ async def vendor_or_owner_mark_order_delivered_or_received(
             await db.commit()
             await db.refresh(order)
 
-
             token = await get_user_notification_token(db=db, user_id=order.vendor_id)
 
             if token:
@@ -1103,8 +1108,9 @@ async def vendor_or_owner_mark_order_delivered_or_received(
             redis_client.delete("paid_pending_deliveries")
             redis_client.delete(f"user_related_orders:{current_user.id}")
 
-            await ws_service.broadcast_order_status_update(order_id=order.id, order_status=order.order_status)
-
+            await ws_service.broadcast_order_status_update(
+                order_id=order.id, order_status=order.order_status
+            )
 
             return DeliveryStatusUpdateSchema(delivery_status=order.order_status)
     except Exception as e:
@@ -1216,7 +1222,6 @@ async def rider_accept_delivery_order(
         await db.commit()
         await db.refresh(delivery)
 
-
     token = await get_user_notification_token(db=db, user_id=delivery.rider_id)
     sender_token = await get_user_notification_token(db=db, user_id=delivery.sender_id)
 
@@ -1240,8 +1245,9 @@ async def rider_accept_delivery_order(
     redis_client.delete("paid_pending_deliveries")
     redis_client.delete(f"user_related_orders:{current_user.id}")
 
-    await ws_service.broadcast_delivery_status_update(delivery_id=delivery.id, delivery_status=delivery.delivery_status)
-
+    await ws_service.broadcast_delivery_status_update(
+        delivery_id=delivery.id, delivery_status=delivery.delivery_status
+    )
 
     return DeliveryStatusUpdateSchema(delivery_status=delivery.delivery_status)
 
@@ -1448,7 +1454,9 @@ async def sender_confirm_delivery_received(
             )
 
         token = await get_user_notification_token(db=db, user_id=delivery.rider_id)
-        await ws_service.broadcast_delivery_status_update(delivery_id=delivery.id, delivery_status=delivery.delivery_status)
+        await ws_service.broadcast_delivery_status_update(
+            delivery_id=delivery.id, delivery_status=delivery.delivery_status
+        )
         sender_token = await get_user_notification_token(
             db=db, user_id=delivery.sender_id
         )
@@ -1542,9 +1550,7 @@ async def vendor_mark_laundry_item_received(
             dispatch_amount,
             TransactionDirection.CREDIT,
             transaction_direction=TransactionType.USER_TO_USER,
-            from_user=profile.full_name
-            if profile.full_name
-            else profile.business_name,
+            from_user=profile.full_name if profile.full_name else profile.business_name,
             to_user=dispatch_profile.full_name
             if dispatch_profile.full_name
             else dispatch_profile.business_name,
@@ -1578,8 +1584,9 @@ async def vendor_mark_laundry_item_received(
         redis_client.delete("paid_pending_deliveries")
         redis_client.delete(f"user_related_orders:{current_user.id}")
 
-        await ws_service.broadcast_delivery_status_update(delivery_id=delivery.id, delivery_status=delivery.delivery_status)
-
+        await ws_service.broadcast_delivery_status_update(
+            delivery_id=delivery.id, delivery_status=delivery.delivery_status
+        )
 
         return DeliveryStatusUpdateSchema(delivery_status=delivery.delivery_status)
 
@@ -1640,7 +1647,9 @@ async def rider_mark_delivered(
     redis_client.delete("paid_pending_deliveries")
     redis_client.delete(f"user_related_orders:{current_user.id}")
 
-    await ws_service.broadcast_delivery_status_update(delivery_id=delivery.id, delivery_status=delivery.delivery_status)
+    await ws_service.broadcast_delivery_status_update(
+        delivery_id=delivery.id, delivery_status=delivery.delivery_status
+    )
 
     return DeliveryStatusUpdateSchema(delivery_status=delivery.delivery_status)
 
@@ -1692,18 +1701,18 @@ async def admin_modify_delivery_status(
         await db.refresh(delivery)
 
         # --- AUDIT LOG ---
-        await db.execute(insert(AuditLog).values(
-            actor_id=current_user.get("id"),
-            actor_name=current_user.get("email", "unknown"),
-            actor_role=str(current_user.get("user_type", "unknown")),
-            action="admin_modify_delivery_status",
-            resource_type="Delivery",
-            resource_id=delivery_id,
-            resource_summary=f"Admin changed delivery status for {delivery_id}",
-            changes={"delivery_status": [str(old_status), str(new_status)]},
-            extra_metadata=None,
-        )
-           
+        await db.execute(
+            insert(AuditLog).values(
+                actor_id=current_user.get("id"),
+                actor_name=current_user.get("email", "unknown"),
+                actor_role=str(current_user.get("user_type", "unknown")),
+                action="admin_modify_delivery_status",
+                resource_type="Delivery",
+                resource_id=delivery_id,
+                resource_summary=f"Admin changed delivery status for {delivery_id}",
+                changes={"delivery_status": [str(old_status), str(new_status)]},
+                extra_metadata=None,
+            )
         )
         await db.commit()
 
@@ -1715,7 +1724,9 @@ async def admin_modify_delivery_status(
         redis_client.delete("paid_pending_deliveries")
         redis_client.delete(f"user_related_orders:{current_user.id}")
 
-        await ws_service.broadcast_delivery_status_update(delivery_id=delivery.id, delivery_status=delivery.delivery_status)
+        await ws_service.broadcast_delivery_status_update(
+            delivery_id=delivery.id, delivery_status=delivery.delivery_status
+        )
 
         return DeliveryStatusUpdateSchema(delivery_status=new_status)
 
@@ -2250,15 +2261,14 @@ async def cancel_order(
 
     # Fetch the order
     order_result = await db.execute(
-        select(Order)
-        .where(Order.id == order_id)
-        .options(selectinload(Order.delivery))
+        select(Order).where(Order.id == order_id).options(selectinload(Order.delivery))
     )
 
-   
     order = order_result.scalar_one_or_none()
     if not order:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Order not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Order not found"
+        )
 
     # Get Users Wallet
     buyer_result = await db.execute(select(Wallet).where(Wallet.id == order.owner_id))
@@ -2269,7 +2279,10 @@ async def cancel_order(
 
     # Only allow owner or vendor to cancel
     if current_user.id not in [order.owner_id, order.vendor_id]:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized to cancel this order")
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Not authorized to cancel this order",
+        )
 
     # If already cancelled, do nothing
     if order.order_status == OrderStatus.CANCELLED:
@@ -2279,12 +2292,8 @@ async def cancel_order(
     update_values = {"order_status": OrderStatus.CANCELLED}
     if reason:
         update_values["cancel_reason"] = reason
-    await db.execute(
-        update(Order)
-        .where(Order.id == order_id)
-        .values(**update_values)
-    )
-  
+    await db.execute(update(Order).where(Order.id == order_id).values(**update_values))
+
     # Refund buyer
     refund_amount = min(buyer_wallet.escrow_balance, order.total_price)
     new_buyer_balance = buyer_wallet.balance + refund_amount
@@ -2303,9 +2312,13 @@ async def cancel_order(
     )
     # If delivery, remove dispatch escrow
     if order.delivery:
-        dispatch_result = await db.execute(select(Wallet).where(Wallet.id == order.dispatch_id))
+        dispatch_result = await db.execute(
+            select(Wallet).where(Wallet.id == order.dispatch_id)
+        )
         dispatch_wallet = dispatch_result.scalar_one_or_none()
-        new_dispatch_escrow = max(dispatch_wallet.escrow_balance - order.amount_due_dispatch, 0)
+        new_dispatch_escrow = max(
+            dispatch_wallet.escrow_balance - order.amount_due_dispatch, 0
+        )
         await db.execute(
             update(Wallet)
             .where(Wallet.id == order.dispatch_id)
@@ -2330,10 +2343,12 @@ async def cancel_order(
     )
     db.add(refund_tx)
     await db.flush()
-    
+
     # If order has a delivery, optionally cancel delivery too
     if order.delivery:
-        dispatch_result = await db.execute(select(Wallet).where(Wallet.id == order.dispatch_id))
+        dispatch_result = await db.execute(
+            select(Wallet).where(Wallet.id == order.dispatch_id)
+        )
         dispatch_wallet = dispatch_result.scalar_one_or_none()
         await db.execute(
             update(Delivery)
@@ -2342,10 +2357,15 @@ async def cancel_order(
         )
 
         await db.execute(
-        update(Wallet)
-        .where(Wallet.id == order.dispatch_id)
-        .values({"escrow_balance": dispatch_wallet.escrow_balance-order.amount_due_vendor})
-    )
+            update(Wallet)
+            .where(Wallet.id == order.dispatch_id)
+            .values(
+                {
+                    "escrow_balance": dispatch_wallet.escrow_balance
+                    - order.amount_due_vendor
+                }
+            )
+        )
         await db.commit()
     # Invalidate caches
     invalidate_order_cache(order_id)
@@ -2370,9 +2390,7 @@ async def reaccept_order(
         DeliveryStatusUpdateSchema with the new order status
     """
     order_result = await db.execute(
-        select(Order)
-        .where(Order.id == order_id)
-        .options(selectinload(Order.delivery))
+        select(Order).where(Order.id == order_id).options(selectinload(Order.delivery))
     )
     order = order_result.scalar_one_or_none()
     if not order:
@@ -2386,7 +2404,7 @@ async def reaccept_order(
         .values(order_status=OrderStatus.PENDING)
     )
     # Move funds from wallet back to escrow for buyer (reverse refund)
- 
+
     buyer_result = await db.execute(select(Wallet).where(Wallet.id == order.owner_id))
     buyer_wallet = buyer_result.scalar_one_or_none()
     vendor_result = await db.execute(select(Wallet).where(Wallet.id == order.vendor_id))
@@ -2409,7 +2427,9 @@ async def reaccept_order(
     )
     # If delivery, move dispatch escrow back if needed
     if order.delivery:
-        dispatch_result = await db.execute(select(Wallet).where(Wallet.id == order.dispatch_id))
+        dispatch_result = await db.execute(
+            select(Wallet).where(Wallet.id == order.dispatch_id)
+        )
         dispatch_wallet = dispatch_result.scalar_one_or_none()
         new_dispatch_escrow = dispatch_wallet.escrow_balance + order.amount_due_dispatch
         await db.execute(
@@ -2436,7 +2456,7 @@ async def reaccept_order(
     db.add(debit_tx)
     await db.flush()
     await db.commit()
-    
+
     # Invalidate caches
     invalidate_order_cache(order_id)
     redis_client.delete(f"user_orders:{order.owner_id}")

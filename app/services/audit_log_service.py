@@ -9,7 +9,6 @@ from fastapi import HTTPException, status
 from app.schemas.audit_logs import AuditLogResponse
 
 
-
 class AuditLogService:
     @staticmethod
     async def log_action(
@@ -115,5 +114,7 @@ class AuditLogService:
         result = await db.execute(stmt)
         log = result.scalar_one_or_none()
         if not log:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Audit log not found")
-        return log 
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="Audit log not found"
+            )
+        return log

@@ -23,7 +23,6 @@ class RequireDeliverySchema(str, Enum):
 #     CREDIT = "credit"
 
 
-
 class UserType(str, Enum):
     CUSTOMER: str = os.getenv("CUSTOMER")
     DISPATCH: str = os.getenv("DISPATCH")
@@ -41,7 +40,7 @@ class DeliveryStatus(str, Enum):
     DELIVERED: str = "delivered"  # Rider/Dispatch ops
     RECEIVED: str = "received"  # Sender ops
     VENDOR_RECEIVED_LAUNDRY_ITEM: str = "laundry_received"  # Vendor ops
-    CANCELLED: str = "canceled"  
+    CANCELLED: str = "canceled"
 
 
 class OrderStatus(str, Enum):
@@ -96,9 +95,9 @@ class AccountStatus(str, Enum):
 class TransactionType(str, Enum):
     FUND_WALLET: str = "fund-wallet"
     PAY_WITH_WALLET: str = "pay-with-wallet"
-    USER_TO_USER = 'user-to-user'
-    WITHDRAWAL = 'withdrawal'
-    REFUND='refund'
+    USER_TO_USER = "user-to-user"
+    WITHDRAWAL = "withdrawal"
+    REFUND = "refund"
 
 
 class TransactionDirection(str, Enum):
