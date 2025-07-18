@@ -52,7 +52,6 @@ from app.utils.utils import (
 )
 from app.config.config import settings, redis_client
 from app.services import ws_service
-from app.services.audit_log_service import AuditLogService
 
 logger = setup_logger()
 
@@ -571,20 +570,7 @@ async def top_up_wallet(
         transaction.payment_link = payment_link
         await db.commit()
         await db.refresh(transaction)
-        # --- AUDIT LOG ---
-        await AuditLogService.log_action(
-            db=db,
-            actor_id=current_user.id,
-            actor_name=getattr(current_user, "email", "unknown"),
-            actor_role=str(current_user.user_type),
-            action="wallet_top_up_initiated",
-            resource_type="Transaction",
-            resource_id=transaction.id,
-            resource_summary=f"Top-up {transaction.amount} by {current_user.email}",
-            changes={"amount": [None, str(transaction.amount)]},
-            metadata=None,
-        )
-        return transaction
+      
 
     except Exception as e:
         # Log error for debugging
@@ -1185,19 +1171,7 @@ async def fund_wallet_callback(request: Request, db: AsyncSession):
         )
         await db.commit()
         await db.refresh(transaction)
-        # --- AUDIT LOG ---
-        await AuditLogService.log_action(
-            db=db,
-            actor_id=transaction.wallet_id,
-            actor_name="unknown",
-            actor_role="unknown",
-            action="wallet_top_up_status_changed",
-            resource_type="Transaction",
-            resource_id=transaction.id,
-            resource_summary=f"Wallet top-up {transaction.amount}",
-            changes={"payment_status": ["PENDING", str(new_status)]},
-            metadata=None,
-        )
+     
 
     except Exception as e:
         logging.error(f"Error updating transaction status: {e}")
@@ -1348,19 +1322,6 @@ async def order_payment_callback(request: Request, db: AsyncSession):
 
     buyer = await get_user_profile(order.owner_id, db)
 
-    # --- AUDIT LOG ---
-    await AuditLogService.log_action(
-        db=db,
-        actor_id=order.owner_id,
-        actor_name=getattr(order.owner, "email", "unknown") if hasattr(order, "owner") else "unknown",
-        actor_role=str(order.owner.user_type) if hasattr(order, "owner") else "unknown",
-        action="order_payment_callback",
-        resource_type="Order",
-        resource_id=order.id,
-        resource_summary=f"Order {order.id} payment callback",
-        changes={"order_payment_status": ["PENDING", str(order.order_payment_status)]},
-        metadata=None,
-    )
 
     # Only move funds and create transactions if payment is successful
     if new_status == PaymentStatus.PAID:
@@ -1424,19 +1385,7 @@ async def order_payment_callback(request: Request, db: AsyncSession):
             redis_client.delete(f"user_orders:{order.owner_id}")
             redis_client.delete("paid_pending_deliveries")
             redis_client.delete("orders")
-            # --- AUDIT LOG ---
-            # await AuditLogService.log_action(
-            #     db=db,
-            #     actor_id=buyer.id,
-            #     actor_name=getattr(buyer, "email", "unknown"),
-            #     actor_role=str(buyer.user_type),
-            #     action="order_paid_with_wallet",
-            #     resource_type="Order",
-            #     resource_id=order.id,
-            #     resource_summary=f"Order {order.id} paid by {buyer.email}",
-            #     changes={"order_payment_status": ["PENDING", "PAID"]},
-            #     metadata=None,
-            # )
+          
             return {
                 "payment_status": order.order_payment_status,
                 "charged_amount": delivery_fee,
@@ -1538,19 +1487,7 @@ async def order_payment_callback(request: Request, db: AsyncSession):
         redis_client.delete(f"user_orders:{order.vendor_id}")
         redis_client.delete("paid_pending_deliveries")
         redis_client.delete("orders")
-        # --- AUDIT LOG ---
-        # await AuditLogService.log_action(
-        #     db=db,
-        #     actor_id=buyer.id,
-        #     actor_name=getattr(buyer, "email", "unknown"),
-        #     actor_role=str(buyer.user_type),
-        #     action="order_paid_with_wallet",
-        #     resource_type="Order",
-        #     resource_id=order.id,
-        #     resource_summary=f"Order {order.id} paid by {buyer.email}",
-        #     changes={"order_payment_status": ["PENDING", str(order.order_payment_status)]},
-        #     metadata=None,
-        # )
+       
 
         return {
             "payment_status": order.order_payment_status,
@@ -1751,19 +1688,7 @@ async def pay_with_wallet(
         redis_client.delete(f"user_orders:{order.owner_id}")
         redis_client.delete("paid_pending_deliveries")
         redis_client.delete("orders")
-        # --- AUDIT LOG ---
-        await AuditLogService.log_action(
-            db=db,
-            actor_id=buyer.id,
-            actor_name=getattr(buyer, "email", "unknown"),
-            actor_role=str(buyer.user_type),
-            action="order_paid_with_wallet",
-            resource_type="Order",
-            resource_id=order.id,
-            resource_summary=f"Order {order.id} paid by {buyer.email}",
-            changes={"order_payment_status": ["PENDING", "PAID"]},
-            metadata=None,
-        )
+      
         return {
             "payment_status": order.order_payment_status,
             "charged_amount": delivery_fee,
@@ -1863,19 +1788,7 @@ async def pay_with_wallet(
     redis_client.delete(f"user_orders:{order.vendor_id}")
     redis_client.delete("paid_pending_deliveries")
     redis_client.delete("orders")
-    # --- AUDIT LOG ---
-    await AuditLogService.log_action(
-        db=db,
-        actor_id=buyer.id,
-        actor_name=getattr(buyer, "email", "unknown"),
-        actor_role=str(buyer.user_type),
-        action="order_paid_with_wallet",
-        resource_type="Order",
-        resource_id=order.id,
-        resource_summary=f"Order {order.id} paid by {buyer.email}",
-        changes={"order_payment_status": ["PENDING", str(order.order_payment_status)]},
-        metadata=None,
-    )
+ 
 
     return {
         "payment_status": order.order_payment_status,
@@ -1936,19 +1849,7 @@ async def initiate_bank_transfer(
                     status_code=status.HTTP_400_BAD_REQUEST, detail=f"{message}"
                 )
             auth_data = result["meta"]["authorization"]
-            # --- AUDIT LOG ---
-            # await AuditLogService.log_action(
-            #     db=db,
-            #     actor_id=current_user.id,
-            #     actor_name=getattr(current_user, "email", "unknown"),
-            #     actor_role=str(current_user.user_type),
-            #     action="bank_transfer_initiated",
-            #     resource_type="Order",
-            #     resource_id=order.id,
-            #     resource_summary=f"Bank transfer for order {order.id} by {current_user.email}",
-            #     changes={"amount": [None, str(order.total_price)]},
-            #     metadata=None,
-            # )
+
 
             return {
                 "status": result["status"],
@@ -2047,19 +1948,6 @@ async def make_withdrawal(db: AsyncSession, current_user: User) -> WithdrawalShe
         if transfer_response.get("status") == "success":
             withdrawal.payment_status = PaymentStatus.PAID
             await db.commit()
-            # --- AUDIT LOG (withdrawal success) ---
-            await AuditLogService.log_action(
-                db=db,
-                actor_id=current_user.id,
-                actor_name=getattr(current_user, "email", "unknown"),
-                actor_role=str(current_user.user_type),
-                action="withdrawal_success",
-                resource_type="Transaction",
-                resource_id=withdrawal.id,
-                resource_summary=f"Withdrawal {withdrawal_amount} by {current_user.email}",
-                changes={"payment_status": ["PENDING", "PAID"]},
-                metadata=None,
-            )
             return {
                 "status": "success",
                 "message": "Withdrawal processed successfully",
@@ -2075,19 +1963,7 @@ async def make_withdrawal(db: AsyncSession, current_user: User) -> WithdrawalShe
             user.wallet.balance += withdrawal_amount
             withdrawal.payment_status = PaymentStatus.FAILED
             await db.commit()
-            # --- AUDIT LOG (withdrawal failed) ---
-            await AuditLogService.log_action(
-                db=db,
-                actor_id=current_user.id,
-                actor_name=getattr(current_user, "email", "unknown"),
-                actor_role=str(current_user.user_type),
-                action="withdrawal_failed",
-                resource_type="Transaction",
-                resource_id=withdrawal.id,
-                resource_summary=f"Withdrawal {withdrawal_amount} by {current_user.email}",
-                changes={"payment_status": ["PENDING", "FAILED"]},
-                metadata=None,
-            )
+         
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail=f"Bank transfer failed: {transfer_response.get('message', 'Unknown error occurred')}",

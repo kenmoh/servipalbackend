@@ -8,6 +8,7 @@ from fastapi import UploadFile
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import joinedload, selectinload
 from app.models.models import (
+    AuditLog,
     ChargeAndCommission,
     Delivery,
     Item,
@@ -50,7 +51,6 @@ from app.schemas.item_schemas import ItemType
 
 from app.schemas.status_schema import RequireDeliverySchema, DeliveryStatus
 from app.schemas.user_schemas import UserType, WalletRespose
-from app.services.auth_service import invalidate_rider_cache
 from app.utils.utils import (
     get_dispatch_id,
     get_payment_link,
@@ -59,7 +59,7 @@ from app.utils.utils import (
 )
 from app.config.config import redis_client, settings
 from app.utils.s3_service import add_image
-from app.services.audit_log_service import AuditLogService
+
 
 ALL_DELIVERY = "orders"
 
@@ -769,22 +769,6 @@ async def _cancel_delivery_and_order_with_audit(
         update(Order)
         .where(Order.id == delivery.order_id)
         .values(order_status=order_status_after)
-    )
-    # Audit log
-    await AuditLogService.log_action(
-        db=db,
-        actor_id=current_user.id,
-        actor_name=getattr(current_user, "email", "unknown"),
-        actor_role=str(current_user.user_type),
-        action=audit_action,
-        resource_type="Order",
-        resource_id=delivery.order_id,
-        resource_summary=audit_summary,
-        changes={
-            "order_status": [str(order_status_before), str(order_status_after)],
-            "delivery_status": [str(delivery_status_before), str(delivery_status_after)],
-        },
-        extra_metadata=extra_metadata,
     )
     # Commit after both updates and audit
     await db.commit()
@@ -1708,8 +1692,7 @@ async def admin_modify_delivery_status(
         await db.refresh(delivery)
 
         # --- AUDIT LOG ---
-        await AuditLogService.log_action(
-            db=db,
+        await db.execute(insert(AuditLog).values(
             actor_id=current_user.get("id"),
             actor_name=current_user.get("email", "unknown"),
             actor_role=str(current_user.get("user_type", "unknown")),
@@ -1720,6 +1703,9 @@ async def admin_modify_delivery_status(
             changes={"delivery_status": [str(old_status), str(new_status)]},
             extra_metadata=None,
         )
+           
+        )
+        await db.commit()
 
         invalidate_delivery_cache(delivery_id)
         redis_client.delete("all_deliveries")
@@ -2344,32 +2330,7 @@ async def cancel_order(
     )
     db.add(refund_tx)
     await db.flush()
-    await AuditLogService.log_action(
-        db=db,
-        actor_id=current_user.id,
-        actor_name=getattr(current_user, "email", "unknown"),
-        actor_role=str(getattr(current_user, "user_type", "unknown")),
-        action="refund_on_order_cancel",
-        resource_type="Transaction",
-        resource_id=refund_tx.id,
-        resource_summary=f"Refund of {refund_amount} to buyer for order {order_id}",
-        changes={"balance": [str(buyer_wallet.balance), str(new_buyer_balance)], "escrow_balance": [str(buyer_wallet.escrow_balance), str(new_buyer_escrow)]},
-        extra_metadata=None,
-    )
-    await db.commit()
-
-    await AuditLogService.log_action(
-        db=db,
-        actor_id=current_user.id,
-        actor_name=getattr(current_user, "email", "unknown"),
-        actor_role=str(getattr(current_user, "user_type", "unknown")),
-        action="cancel_order",
-        resource_type="Order",
-        resource_id=order_id,
-        resource_summary=f"Order {order_id} cancelled by {current_user.email}",
-        changes={"order_status": [str(old_status), str(OrderStatus.CANCELLED)]},
-        extra_metadata={"reason": reason} if reason else None,
-    )
+    
     # If order has a delivery, optionally cancel delivery too
     if order.delivery:
         dispatch_result = await db.execute(select(Wallet).where(Wallet.id == order.dispatch_id))
@@ -2474,31 +2435,8 @@ async def reaccept_order(
     )
     db.add(debit_tx)
     await db.flush()
-    await AuditLogService.log_action(
-        db=db,
-        actor_id=current_user.id,
-        actor_name=getattr(current_user, "email", "unknown"),
-        actor_role=str(getattr(current_user, "user_type", "unknown")),
-        action="reescrow_on_order_reaccept",
-        resource_type="Transaction",
-        resource_id=debit_tx.id,
-        resource_summary=f"Re-escrow of {reescrow_amount} from buyer for order {order_id}",
-        changes={"balance": [str(buyer_wallet.balance), str(new_buyer_balance)], "escrow_balance": [str(buyer_wallet.escrow_balance), str(new_buyer_escrow)]},
-        extra_metadata=None,
-    )
     await db.commit()
-    await AuditLogService.log_action(
-        db=db,
-        actor_id=current_user.id,
-        actor_name=getattr(current_user, "email", "unknown"),
-        actor_role=str(getattr(current_user, "user_type", "unknown")),
-        action="reaccept_order",
-        resource_type="Order",
-        resource_id=order_id,
-        resource_summary=f"Order {order_id} re-accepted by {current_user.email}",
-        changes={"order_status": [str(old_status), str(OrderStatus.PENDING)]},
-        extra_metadata=None,
-    )
+    
     # Invalidate caches
     invalidate_order_cache(order_id)
     redis_client.delete(f"user_orders:{order.owner_id}")

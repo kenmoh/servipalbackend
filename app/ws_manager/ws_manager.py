@@ -13,19 +13,29 @@ class ConnectionManager:
         }
         # Store subscriptions for each connection
         self.connection_subscriptions: Dict[WebSocket, Set[str]] = {}
+        # Map user_id to WebSocket(s)
+        self.user_connections: Dict[str, Set[WebSocket]] = {}
 
-    async def connect(self, websocket: WebSocket, client_type: str = "admin"):
-        """Accept a new WebSocket connection"""
+    async def connect(self, websocket: WebSocket, client_type: str = "admin", user_id: str = None):
+        """Accept a new WebSocket connection. Optionally register user_id for personal messaging."""
         await websocket.accept()
         self.active_connections[client_type].add(websocket)
         self.connection_subscriptions[websocket] = set()
+        if user_id:
+            if user_id not in self.user_connections:
+                self.user_connections[user_id] = set()
+            self.user_connections[user_id].add(websocket)
         print(f"Client connected. Total {client_type} connections: {len(self.active_connections[client_type])}")
 
-    def disconnect(self, websocket: WebSocket, client_type: str = "admin"):
-        """Remove a WebSocket connection"""
+    def disconnect(self, websocket: WebSocket, client_type: str = "admin", user_id: str = None):
+        """Remove a WebSocket connection. Optionally remove from user mapping."""
         self.active_connections[client_type].discard(websocket)
         if websocket in self.connection_subscriptions:
             del self.connection_subscriptions[websocket]
+        if user_id and user_id in self.user_connections:
+            self.user_connections[user_id].discard(websocket)
+            if not self.user_connections[user_id]:
+                del self.user_connections[user_id]
         print(f"Client disconnected. Total {client_type} connections: {len(self.active_connections[client_type])}")
 
     async def subscribe(self, websocket: WebSocket, event: str):
@@ -72,6 +82,23 @@ class ConnectionManager:
         # Clean up disconnected clients
         for connection in disconnected:
             self.disconnect(connection, "mobile")
+
+    async def send_personal_message(self, message: dict, user_id: str):
+        """Send a message to all WebSocket connections for a specific user_id."""
+        if user_id not in self.user_connections:
+            return
+        disconnected = set()
+        for connection in self.user_connections[user_id]:
+            try:
+                await connection.send_text(json.dumps(message))
+            except Exception as e:
+                print(f"Error sending personal message to user {user_id}: {e}")
+                disconnected.add(connection)
+        # Clean up disconnected clients
+        for connection in disconnected:
+            self.user_connections[user_id].discard(connection)
+        if user_id in self.user_connections and not self.user_connections[user_id]:
+            del self.user_connections[user_id]
 
 # Global manager instance
 manager = ConnectionManager()

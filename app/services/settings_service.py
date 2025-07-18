@@ -2,21 +2,20 @@ from datetime import datetime
 import json
 from typing import Optional
 from fastapi import HTTPException, status
-from sqlalchemy import select, update
+from sqlalchemy import insert, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 import logging
 
-from app.models.models import ChargeAndCommission, User
+from app.models.models import AuditLog, ChargeAndCommission, User
 from app.schemas.settings_schema import (
     ChargeAndCommissionSchema,
     ChargeAndCommissionUpdateSchema,
-    ChargeAndCommissionCreateSchema,
     SettingsResponseSchema,
 )
 from app.schemas.status_schema import UserType
 from app.utils.logger_config import setup_logger
 from app.config.config import redis_client
-from app.services.audit_log_service import AuditLogService
+
 
 logger = setup_logger()
 
@@ -176,13 +175,9 @@ async def update_charge_and_commission_settings(
             .where(ChargeAndCommission.id == current_settings.id)
             .values(**update_dict)
         )
-        await db.execute(stmt)
-        await db.commit()
-
         # --- AUDIT LOG ---
-        await AuditLogService.log_action(
-            db=db,
-            actor_id=current_user.id,
+        await  db.execute(insert(AuditLog).values(
+             actor_id=current_user.id,
             actor_name=getattr(current_user, "email", "unknown"),
             actor_role=str(current_user.user_type),
             action="update_charge_and_commission_settings",
@@ -191,7 +186,9 @@ async def update_charge_and_commission_settings(
             resource_summary="Charge and Commission Settings",
             changes=update_dict,
             extra_metadata=None,
-        )
+        ))
+        await db.execute(stmt)
+        await db.commit()
 
         # Clear cache
         redis_client.delete("charge_commission_settings")

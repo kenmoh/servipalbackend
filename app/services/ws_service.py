@@ -1,5 +1,6 @@
 from datetime import datetime
 from app.ws_manager.ws_manager import manager
+from typing import List
 
 # Helper functions to broadcast events from your API endpoints
 async def broadcast_new_order(order_data: dict):
@@ -90,6 +91,24 @@ async def broadcast_transaction_update(transaction_id: str, new_status: str):
         "timestamp": datetime.now().isoformat()
     }
     await manager.broadcast_to_admins(message)
+
+
+async def broadcast_new_report_message(report_id: str, message_data: dict, recipient_ids: List[str]):
+    """
+    Broadcast a new report message to all relevant users (complainant, defendant, admin).
+    """
+    message = {
+        "type": "new_report_message",
+        "report_id": report_id,
+        "message": message_data,
+        "timestamp": datetime.now().isoformat()
+    }
+    # Broadcast to all recipients (user-specific channels)
+    for user_id in recipient_ids:
+        await manager.send_personal_message(message, user_id)
+    # Optionally, also broadcast to admins
+    await manager.broadcast_to_admins(message)
+
 
 # Additional debug function to test WebSocket connection
 async def test_websocket_broadcast():

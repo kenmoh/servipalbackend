@@ -1,11 +1,9 @@
-from decimal import Decimal
 from datetime import datetime
-from sqlalchemy import cast
 from sqlalchemy.dialects import postgresql
 from app.schemas.item_schemas import FoodGroup, ItemType
-from app.models.models import Delivery, User, Item, Category, RefreshToken, Session
+from app.models.models import AuditLog, Delivery, User, Item, RefreshToken, Session
 from sqlalchemy.orm import selectinload
-from sqlalchemy import func, select, distinct, delete, update, and_
+from sqlalchemy import func, select, insert, delete, update, and_
 from typing import List, Optional
 from uuid import UUID
 import json
@@ -18,11 +16,11 @@ from sqlalchemy.orm import selectinload
 from app.schemas.delivery_schemas import DeliveryStatus
 
 from app.schemas.schemas import DispatchRiderSchema
-from app.schemas.status_schema import AccountStatus, UserType
+from app.schemas.status_schema import  UserType
 from app.utils.logger_config import setup_logger
-from app.utils.s3_service import add_image, update_image, delete_s3_object
+from app.utils.s3_service import add_image, delete_s3_object
 from app.config.config import redis_client, settings
-from app.models.materialize_model import VendorReviewStats
+
 from app.models.models import (
     User,
     Wallet,
@@ -44,13 +42,13 @@ from app.schemas.user_schemas import (
     WalletSchema,
     VendorUserResponse,
     ProfileImageResponseSchema,
-    RatingSchema,
+
     CreateReviewSchema,
     ProfileSchema,
     UpdateRider,
     WalletUserData,
 )
-from app.services.audit_log_service import AuditLogService
+
 
 logger = setup_logger()
 
@@ -336,8 +334,7 @@ async def toggle_user_block_status(
         )
 
         # --- AUDIT LOG ---
-        await AuditLogService.log_action(
-            db=db,
+        await db.execute(insert(AuditLog).values(
             actor_id=current_user.id,
             actor_name=getattr(current_user, "email", "unknown"),
             actor_role=str(current_user.user_type),
@@ -347,7 +344,10 @@ async def toggle_user_block_status(
             resource_summary=user.email,
             changes={"is_blocked": [not user.is_blocked, user.is_blocked]},
             extra_metadata=None,
-        )
+            ))
+        
+        await db.commit()
+
 
         return user.is_blocked
 
@@ -503,9 +503,8 @@ async def update_profile(
     # --- AUDIT LOG ---
     changed_fields = {k: [old_profile.get(k), getattr(profile, k)] for k in profile_data.model_dump(exclude_unset=True).keys() if old_profile.get(k) != getattr(profile, k)}
     if changed_fields:
-        await AuditLogService.log_action(
-            db=db,
-            actor_id=current_user.id,
+        await db.execute(insert(AuditLog).values(
+             actor_id=current_user.id,
             actor_name=getattr(current_user, "email", "unknown"),
             actor_role=str(current_user.user_type),
             action="update_profile",
@@ -514,7 +513,9 @@ async def update_profile(
             resource_summary=current_user.email,
             changes=changed_fields,
             extra_metadata=None,
-        )
+            ))
+        await db.commit()
+
     return profile
 
 
@@ -619,8 +620,7 @@ async def update_rider_profile(
         # --- AUDIT LOG ---
         changed_fields = {k: [old_profile.get(k), getattr(profile, k)] for k in ["full_name", "phone_number", "bike_number"] if old_profile.get(k) != getattr(profile, k)}
         if changed_fields:
-            await AuditLogService.log_action(
-                db=db,
+            await db.execute(insert(AuditLog).values(
                 actor_id=current_user.id,
                 actor_name=getattr(current_user, "email", "unknown"),
                 actor_role=str(current_user.user_type),
@@ -630,7 +630,10 @@ async def update_rider_profile(
                 resource_summary=profile.full_name,
                 changes=changed_fields,
                 extra_metadata=None,
-            )
+            ))
+
+            await db.commit()
+
         return profile
 
     except Exception as e:
@@ -1272,8 +1275,7 @@ async def delete_rider(rider_id: UUID, db: AsyncSession, current_user: User) -> 
         )
 
         # --- AUDIT LOG ---
-        await AuditLogService.log_action(
-            db=db,
+        await db.execute(insert(AuditLog).valuses(
             actor_id=current_user.id,
             actor_name=getattr(current_user, "email", "unknown"),
             actor_role=str(current_user.user_type),
@@ -1283,7 +1285,8 @@ async def delete_rider(rider_id: UUID, db: AsyncSession, current_user: User) -> 
             resource_summary=rider_email or rider_name,
             changes=None,
             extra_metadata=None,
-        )
+        ))
+        await db.commit()
 
         return None
 

@@ -1,9 +1,9 @@
 from datetime import datetime, timedelta
-from sqlalchemy import select, update
-from app.models.models import User
+from sqlalchemy import insert, select, update
+from app.models.models import AuditLog, User
 from app.database.database import async_session
 from app.utils.logger_config import setup_logger
-from app.services.audit_log_service import AuditLogService
+
 # import logging
 
 # logger = logging.getLogger(__name__)
@@ -46,8 +46,7 @@ async def suspend_user_with_order_cancel_count_equal_3():
 
             # --- AUDIT LOG ---
             for user in users:
-                await AuditLogService.log_action(
-                    db=session,
+                await session.exeute(insert(AuditLog).values(
                     actor_id=user.id,
                     actor_name=getattr(user, "email", "unknown"),
                     actor_role=str(getattr(user, "user_type", "unknown")),
@@ -60,7 +59,9 @@ async def suspend_user_with_order_cancel_count_equal_3():
                         "rider_is_suspension_until": [None, suspension_until],
                     },
                     extra_metadata={"reason": "3 order cancellations (auto)"},
-                )
+                ))
+                await session.commit()
+
 
         except Exception as e:
             await session.rollback()

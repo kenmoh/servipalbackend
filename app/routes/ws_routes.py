@@ -1,16 +1,33 @@
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Depends
+from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Query
 from fastapi.security import HTTPBearer
+from jose import jwt, JWTError
 from app.ws_manager.ws_manager import manager
 import json
 from datetime import datetime
+from app.config.config import settings
 
 router = APIRouter(prefix="/ws", tags=["websocket"])
 security = HTTPBearer()
 
 @router.websocket("")
-async def websocket_endpoint(websocket: WebSocket):
+async def websocket_endpoint(
+    websocket: WebSocket,
+    client_type: str = Query("admin"),
+    token: str = Query(...)
+):
+    
+    try:
+        payload = jwt.decode(token, settings.JWT_SECRET_KEY, algorithms=[settings.JWT_ALGORITHM])
+        user_id = payload.get("sub") 
+        if not user_id:
+            await websocket.close()
+            return
+    except JWTError:
+        await websocket.close()
+        return
+
     """Main WebSocket endpoint for real-time communication"""
-    await manager.connect(websocket, "admin")
+    await manager.connect(websocket, client_type, user_id)
     
     try:
         while True:
@@ -56,7 +73,7 @@ async def websocket_endpoint(websocket: WebSocket):
                 }))
                 
     except WebSocketDisconnect:
-        manager.disconnect(websocket, "admin")
+        manager.disconnect(websocket, client_type, user_id)
     except Exception as e:
         print(f"WebSocket error: {e}")
-        manager.disconnect(websocket, "admin")
+        manager.disconnect(websocket, client_type, user_id)

@@ -28,6 +28,7 @@ from app.schemas.review_schema import (
     SenderInfo,
 )
 from app.models.models import (
+    AuditLog,
     Message,
     MessageReadStatus,
     User,
@@ -47,7 +48,8 @@ from sqlalchemy.exc import NoResultFound
 from uuid import UUID
 
 from app.utils.utils import get_user_notification_token, send_push_notification
-from app.services.audit_log_service import AuditLogService
+from app.services.ws_service import broadcast_new_report_message
+
 
 
 def convert_report_to_response(report: ReportType) -> ReportIssueResponse:
@@ -388,6 +390,21 @@ async def add_message_to_report(
     redis_client.delete(f"user:{report.defendant_id}:report_threads")
     redis_client.delete(f"report:{report_id}:thread:{report.complainant_id}")
     redis_client.delete(f"report:{report_id}:thread:{report.defendant_id}")
+
+    # --- WebSocket broadcast for new report message ---
+    recipient_ids = [str(report.complainant_id), str(report.defendant_id)]
+    # Optionally, filter out the sender if you don't want to notify them
+    # if str(current_user.id) in recipient_ids:
+    #     recipient_ids.remove(str(current_user.id))
+    message_payload = {
+        "id": str(message_obj.id),
+        "content": message_obj.content,
+        "sender_id": str(current_user.id),
+        "role": str(current_user.user_type),
+        "created_at": message_obj.created_at.isoformat() if hasattr(message_obj, 'created_at') else None,
+    }
+    await broadcast_new_report_message(str(report_id), message_payload, recipient_ids)
+
     return message_obj
 
 
@@ -604,9 +621,8 @@ async def delete_report_if_allowed(db: AsyncSession, report_id: UUID, current_us
     redis_client.delete(f"report:{report_id}:thread:{report.complainant_id}")
     redis_client.delete(f"report:{report_id}:thread:{report.defendant_id}")
     # --- AUDIT LOG ---
-    await AuditLogService.log_action(
-        db=db,
-        actor_id=current_user.id,
+    await db.execute(insert(AuditLog).values(
+          actor_id=current_user.id,
         actor_name=getattr(current_user, "email", "unknown"),
         actor_role=str(getattr(current_user, "user_type", "unknown")),
         action="delete_report",
@@ -615,7 +631,8 @@ async def delete_report_if_allowed(db: AsyncSession, report_id: UUID, current_us
         resource_summary=f'Updated report with ID {report_id}',
         changes=None,
         metadata=None,
-    )
+    ))
+    await db.commit()
     return None
 
 
@@ -649,9 +666,8 @@ async def update_report_status(
     redis_client.delete(f"report:{report_id}:thread:{report.complainant_id}")
     redis_client.delete(f"report:{report_id}:thread:{report.defendant_id}")
     # --- AUDIT LOG ---
-    await AuditLogService.log_action(
-        db=db,
-        actor_id=current_user.id,
+    await db.execute(insert(AuditLog).values(
+          actor_id=current_user.id,
         actor_name=getattr(current_user, "email", "unknown"),
         actor_role=str(getattr(current_user, "user_type", "unknown")),
         action="update_report_status",
@@ -660,7 +676,8 @@ async def update_report_status(
         resource_summary=str(report_id),
         changes={"report_status": [old_status, new_status]},
         metadata=None,
-    )
+          ))
+    await db.commit()
     return StatusUpdate.model_validate(new_status)
 
 

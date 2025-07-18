@@ -8,56 +8,6 @@ from fastapi import HTTPException, status
 
 from app.schemas.audit_logs import AuditLogResponse
 
-# class AuditLogService:
-#     @staticmethod
-#     async def log_action(
-#         db: AsyncSession,
-#         *,
-#         actor_id: UUID,
-#         actor_name: str,
-#         actor_role: str,
-#         action: str,
-#         resource_type: str,
-#         resource_id: Optional[UUID] = None,
-#         resource_summary: Optional[str] = None,
-#         changes: Optional[Dict[str, Any]] = None,
-#         ip_address: Optional[str] = None,
-#         extra_metadata: Optional[Dict[str, Any]] = None,
-#     ) -> AuditLogResponse:
-#         """
-#         Log an action to the audit log.
-#         Args:
-#             db: Database session
-#             actor_id: UUID of the user performing the action
-#             actor_name: Name of the actor
-#             actor_role: Role of the actor
-#             action: Action performed (e.g., 'update', 'delete', 'create')
-#             resource_type: Type of resource affected (e.g., 'User', 'Order')
-#             resource_id: ID of the resource affected
-#             resource_summary: Short summary of the resource
-#             changes: Dict of changed fields and their old/new values
-#             ip_address: IP address of the actor
-#             extra_metadata: Extra context (user agent, request id, etc.)
-#         Returns:
-#             The created AuditLog instance
-#         """
-#         log = AuditLog(
-#             timestamp=datetime.now(),
-#             actor_id=actor_id,
-#             actor_name=actor_name,
-#             actor_role=actor_role,
-#             action=action,
-#             resource_type=resource_type,
-#             resource_id=resource_id,
-#             resource_summary=resource_summary,
-#             changes=changes,
-#             ip_address=ip_address,
-#             extra_metadata=extra_metadata,
-#         )
-#         db.add(log)
-#         await db.commit()
-#         await db.refresh(log)
-#         return log
 
 
 class AuditLogService:
