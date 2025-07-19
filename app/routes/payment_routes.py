@@ -9,7 +9,6 @@ from app.models.models import User
 from app.schemas.marketplace_schemas import (
     TopUpRequestSchema,
     TransferDetailResponseSchema,
-    BankCode,
     WithdrawalShema,
     TopUpResponseSchema,
 )

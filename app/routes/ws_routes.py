@@ -1,16 +1,9 @@
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Query, Cookie, Depends
+from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Query
 from fastapi.security import HTTPBearer
-from uuid import UUID
-from http.cookies import SimpleCookie
-from jose import jwt, JWTError
 from app.ws_manager.ws_manager import manager
 import json
 from datetime import datetime
-from app.config.config import settings
-from app.database.database import async_session
-from app.auth.auth import get_db, get_current_user
 from app.utils.logger_config import setup_logger
-from app.models.models import User
 
 logger = setup_logger()
 

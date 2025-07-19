@@ -9,7 +9,7 @@ from fastapi import HTTPException, Request, status
 from fastapi_mail import FastMail, MessageSchema
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import func, insert, select, update, or_
+from sqlalchemy import func, select, update, or_
 from sqlalchemy.orm import joinedload, selectinload
 from passlib.context import CryptContext
 
@@ -35,7 +35,6 @@ from app.utils.utils import (
     validate_password,
 )
 from app.config.config import redis_client
-from app.services.audit_log_service import AuditLogService
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
@@ -717,7 +716,7 @@ async def create_session(db: AsyncSession, user_id: UUID, request: Request) -> S
 async def delete_rider(current_user: User, db: AsyncSession, rider_id: UUID) -> None:
     if current_user.user_type != UserType.DISPATCH:
         raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN, detail=f"Permission denied"
+            status_code=status.HTTP_403_FORBIDDEN, detail="Permission denied"
         )
     stmt = (
         select(User)
@@ -888,7 +887,7 @@ async def logout_user(db: AsyncSession, current_user: User) -> bool:
         await db.commit()
         redis_client.delete(f"current_useer_profile:{current_user.id}")
         return True
-    except Exception as e:
+    except Exception:
         await db.rollback()
         # Instead of raising, just return True for UI logout success
         return True

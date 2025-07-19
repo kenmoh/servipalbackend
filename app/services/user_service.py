@@ -1,9 +1,8 @@
 from datetime import datetime
-from sqlalchemy.dialects import postgresql
 from app.schemas.item_schemas import FoodGroup, ItemType
 from app.models.models import AuditLog, Delivery, User, Item, RefreshToken, Session
 from sqlalchemy.orm import selectinload
-from sqlalchemy import func, select, insert, delete, update, and_
+from sqlalchemy import func, select, delete, update, and_
 from typing import List, Optional
 from uuid import UUID
 import json
@@ -26,7 +25,6 @@ from app.models.models import (
     Wallet,
     Profile,
     ProfileImage,
-    Transaction,
     Review,
     Order,
     Item,
@@ -1055,7 +1053,7 @@ async def get_users_by_laundry_services(db: AsyncSession) -> list[VendorUserResp
     - avg review (from Review via Order)
     - review count
     """
-    cache_key = f"laundry_vendors"
+    cache_key = "laundry_vendors"
     cached_data = redis_client.get(cache_key)
     if cached_data:
         logger.info(f"Cache hit for {cache_key}")
@@ -1593,7 +1591,7 @@ async def get_teams(db: AsyncSession) -> list[UserProfileResponse]:
 
         # Cache the users data
         redis_client.set(
-            f"teams", json.dumps(users_data, default=str), ex=settings.REDIS_EX
+            "teams", json.dumps(users_data, default=str), ex=settings.REDIS_EX
         )
 
         # Convert to response objects

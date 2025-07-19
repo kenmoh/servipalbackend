@@ -1,6 +1,5 @@
 from fastapi import Form, File, UploadFile, HTTPException
 from uuid import UUID
-import json
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, status, HTTPException, UploadFile, File, Form
@@ -12,11 +11,9 @@ from app.schemas.delivery_schemas import DeliveryResponse, PaginatedDeliveryResp
 
 from app.schemas.order_schema import (
     OrderAndDeliverySchema,
-    OrderResponseSchema,
     PackageCreate,
     DeliveryStatusUpdateSchema,
 )
-from app.schemas.delivery_schemas import DeliveryStatus, DeliveryType
 from app.schemas.schemas import ReviewSchema
 from app.services import order_service
 

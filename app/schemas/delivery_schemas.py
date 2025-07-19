@@ -6,7 +6,7 @@ from datetime import datetime
 from pydantic import BaseModel
 
 from app.schemas.order_schema import OrderResponseSchema
-from app.schemas.status_schema import RequireDeliverySchema, DeliveryStatus
+from app.schemas.status_schema import DeliveryStatus
 
 
 # class DeliveryStatus(str, Enum):

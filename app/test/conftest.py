@@ -7,8 +7,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select  # Removed List as it's not used directly here
 import pytest
 from httpx import AsyncClient, ASGITransport
-from alembic.config import Config
-from alembic import command
 
 from app.main import app
 from app.database.database import Base, TestingSessionLocal, get_db, test_engine

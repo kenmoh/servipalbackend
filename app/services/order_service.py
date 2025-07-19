@@ -1,5 +1,4 @@
 from datetime import timedelta, datetime
-import profile
 from typing import Optional
 from sqlalchemy import func, or_, and_, select, update, insert
 
@@ -35,7 +34,6 @@ from app.schemas.status_schema import OrderStatus, TransactionDirection, Transac
 
 from app.schemas.order_schema import (
     PaymentStatus,
-    OrderItemResponseSchema,
     OrderItemCreate,
     PackageCreate,
     DeliveryStatusUpdateSchema,
@@ -372,7 +370,7 @@ async def create_package_order(
                     "require_delivery": RequireDeliverySchema.DELIVERY,
                 }
             )
-            .returning(Order.id, Order.id, Order.owner_id)
+            .returning(Order.id, Order.id, Order.owner_id, Order.vendor_id)
         )
 
         order_data = order_insert_result.fetchone()
@@ -445,8 +443,8 @@ async def create_package_order(
         invalidate_order_cache(delivery_data.order_id)
 
         redis_client.delete(f"user_orders:{current_user.id}")
-        redis_client.delete(f"user_orders:{order.owner_id}")
-        redis_client.delete(f"user_orders:{order.vendor_id}")
+        redis_client.delete(f"user_orders:{order_data.owner_id}")
+        redis_client.delete(f"user_orders:{order_data.vendor_id}")
         redis_client.delete(f"{ALL_DELIVERY}")
         redis_client.delete("paid_pending_deliveries")
         redis_client.delete(f"user_related_orders:{current_user.id}")
@@ -1017,7 +1015,7 @@ async def vendor_or_owner_mark_order_delivered_or_received(
         ):
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"You already mark this order as delivered.",
+                detail="You already mark this order as delivered.",
             )
 
         if (
@@ -1041,7 +1039,7 @@ async def vendor_or_owner_mark_order_delivered_or_received(
                 await send_push_notification(
                     tokens=[owner_token],
                     title="Order Delivered",
-                    message=f"Your order has been marked as delivered by the vendor, please verify before marking as received.",
+                    message="Your order has been marked as delivered by the vendor, please verify before marking as received.",
                     navigate_to="/(app)/delivery/orders",
                 )
 
@@ -1056,12 +1054,12 @@ async def vendor_or_owner_mark_order_delivered_or_received(
             if order.order_status == OrderStatus.RECEIVED:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
-                    detail=f"You already mark this order as received.",
+                    detail="You already mark this order as received.",
                 )
             if order.order_status != OrderStatus.DELIVERED:
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,
-                    detail=f"Order is not yet delivered.",
+                    detail="Order is not yet delivered.",
                 )
             await db.execute(
                 update(Order)
@@ -1229,7 +1227,7 @@ async def rider_accept_delivery_order(
         await send_push_notification(
             tokens=[token],
             title="Order Assigned",
-            message=f"This order has been assigned to you. Drive safely",
+            message="This order has been assigned to you. Drive safely",
             navigate_to="/(app)/delivery/orders",
         )
     if sender_token:
@@ -1638,7 +1636,7 @@ async def rider_mark_delivered(
         await send_push_notification(
             tokens=[token],
             title="Order Delivered",
-            message=f"Your order has been delivered. Please confirm with the receipient before marking as received.",
+            message="Your order has been delivered. Please confirm with the receipient before marking as received.",
             navigate_to="/(app)/delivery",
         )
 

@@ -1,4 +1,3 @@
-from redis import Redis
 from typing import Optional
 import json
 from uuid import UUID
@@ -36,7 +35,7 @@ async def get_marketplace_items(db: AsyncSession) -> list[ItemResponse]:
     """Retrieves all marketplace items"""
 
     # Try cache first
-    cached_items = redis_client.get(f"marketplace_items")
+    cached_items = redis_client.get("marketplace_items")
     if cached_items:
         item_dicts = json.loads(cached_items)
         return [ItemResponse(**item) for item in item_dicts]
@@ -253,7 +252,7 @@ async def buy_product(
         set_cached_order(order.id, order.dict())
 
         return order
-    except Exception as e:
+    except Exception:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail="Unable to buy item"
         )
@@ -295,13 +294,13 @@ async def vendor_mark_item_delivered(
                 await send_push_notification(
                     tokens=[token],
                     title="Item Delivered",
-                    message=f"Your item has been marked as delivered. Ensure it is what you ordered before marking as received.",
+                    message="Your item has been marked as delivered. Ensure it is what you ordered before marking as received.",
                     navigate_to="/delivery/orders",
                 )
 
             return {"order_status": order.order_status}
 
-    except Exception as e:
+    except Exception:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail="Unable to update order."
         )
@@ -406,7 +405,7 @@ async def owner_mark_item_received(
 
             return {"order_status": order.order_status}
 
-    except Exception as e:
+    except Exception:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail="Unable to update order."
         )
@@ -454,7 +453,7 @@ async def owner_mark_item_rejected(
 
             return {"order_status": order.order_status}
 
-    except Exception as e:
+    except Exception:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail="Unable to update order."
         )
@@ -521,7 +520,7 @@ async def vendor_mark_rejected_item_received(
 
             return {"order_status": order.order_status}
 
-    except Exception as e:
+    except Exception:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail="Unable to update order."
         )

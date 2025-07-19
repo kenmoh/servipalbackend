@@ -3,13 +3,12 @@ from fastapi import (
     Depends,
     HTTPException,
     status,
-    Query,
     UploadFile,
     File,
     BackgroundTasks,
 )
 from sqlalchemy.ext.asyncio import AsyncSession
-from typing import List, Optional
+from typing import List
 from uuid import UUID
 
 # Assuming these dependencies exist and are correctly defined elsewhere

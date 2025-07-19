@@ -2,7 +2,6 @@ from datetime import datetime
 from typing import Union
 from uuid import UUID
 from enum import Enum
-import dateutil
 from pydantic import BaseModel, Field
 
 
@@ -167,3 +166,21 @@ class StatusUpdate(BaseModel):
 
 class BadgeCount(BaseModel):
     unread_count: int
+
+
+class ReviewFilter(str, Enum):
+    POSITIVE = "positive"
+    NEGATIVE = "negative"
+    AVERAGE = "average"
+
+
+class ReviewStats(BaseModel):
+    positive_reviews: int
+    negative_reviews: int
+    average_reviews: int
+    total_reviews: int
+
+
+class FilteredReviewsResponse(BaseModel):
+    reviews: list[ReviewResponse]
+    stats: ReviewStats

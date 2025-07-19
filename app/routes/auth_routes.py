@@ -1,4 +1,3 @@
-from math import e
 from uuid import UUID
 from fastapi import (
     APIRouter,
@@ -27,14 +26,12 @@ from app.schemas.user_schemas import (
     SessionResponse,
     TokenResponse,
     UserBase,
-    UserCreate,
     StaffCreate,
     VerificationSchema,
     CreateUserSchema,
     UpdateStaffSchema,
 )
 from app.services import auth_service
-from app.config.config import email_conf
 from pydantic import BaseModel
 
 
@@ -277,7 +274,7 @@ async def logout_all(
     """Logout from all devices"""
     await auth_service.logout_all_sessions(db, current_user.id)
 
-    return {"message": f" You're logged out from all devices"}
+    return {"message": " You're logged out from all devices"}
 
 
 # @router.get("/test-email")

@@ -139,6 +139,18 @@ async def get_current_active_superuser(
     return current_user
 
 
+async def get_current_admin_user(
+    current_user: User = Depends(get_current_user),
+) -> User:
+    if current_user.user_type != "ADMIN":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Not enough permissions for this resource",
+        )
+    return current_user
+
+
+
 async def revoke_refresh_token(token: str, db: AsyncSession) -> bool:
     result = await db.execute(
         "UPDATE refresh_tokens SET is_revoked = TRUE WHERE token = :token RETURNING id",

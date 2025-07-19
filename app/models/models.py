@@ -1,7 +1,5 @@
-from re import L
 from typing import Optional
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
-from sqlalchemy.dialects import postgresql
 import random
 from uuid import UUID, uuid4
 import uuid

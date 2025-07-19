@@ -1,21 +1,16 @@
 from uuid import UUID
-from decimal import Decimal
 
-from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
+from fastapi import APIRouter, Depends, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth.auth import get_db, get_current_user
+from app.auth.auth import get_db, get_current_user, get_current_admin_user
 from app.models.models import User
 from app.schemas.review_schema import (
     ReviewCreate,
     ReviewResponse,
-    ReviewResponse,
-    ReviewType,
-    ReportIssueResponse,
-    ReportIssueUpdate,
+    ReviewFilter,
     ReportCreate,
     ReportResponseSchema,
-    ReportMessage,
 )
 from app.services import review_service
 
@@ -67,6 +62,22 @@ async def get_user_reviews(
     """
     return await review_service.fetch_vendor_reviews(
         db=db, vendor_id=vendor_id, current_user=current_user
+    )
+
+
+@router.get("/admin/reviews", status_code=status.HTTP_200_OK)
+async def get_reviews_for_admin(
+    db: AsyncSession = Depends(get_db),
+    review_filter: ReviewFilter | None = None,
+    page: int = 1,
+    page_size: int = 10,
+    current_user: User = Depends(get_current_admin_user),
+):
+    """
+    Admin endpoint to get reviews with stats.
+    """
+    return await review_service.get_filtered_reviews_and_stats(
+        db=db, review_filter=review_filter, page=page, page_size=page_size
     )
 
 

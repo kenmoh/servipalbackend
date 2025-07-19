@@ -3,7 +3,7 @@ import json
 
 from fastapi import HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import or_, select, and_, update, insert
+from sqlalchemy import or_, select, update, insert
 from sqlalchemy.orm import selectinload
 
 
@@ -33,18 +33,16 @@ from app.models.models import (
     MessageReadStatus,
     User,
     Review,
-    Delivery,
     Order,
     UserReport,
     Profile,
     UserReportReadStatus,
 )
-from app.schemas.status_schema import DeliveryStatus, OrderStatus, UserType
+from app.schemas.status_schema import OrderStatus, UserType
 from app.config.config import redis_client, settings
 
 # from app.services.notification_service import create_automatic_report_thread
 
-from sqlalchemy.exc import NoResultFound
 from uuid import UUID
 
 from app.utils.utils import get_user_notification_token, send_push_notification
@@ -321,14 +319,14 @@ async def create_report(
         if "uq_reporter_order_report" in error_msg:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
-                detail=f"You have already submitted a report for this order against this user. "
-                f"Please check your existing reports or contact support if you need to update your report.",
+                detail="You have already submitted a report for this order against this user. "
+                "Please check your existing reports or contact support if you need to update your report.",
             )
         elif "uq_reporter_delivery_report" in error_msg:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
-                detail=f"You have already submitted a report for this delivery against this user. "
-                f"Please check your existing reports or contact support if you need to update your report.",
+                detail="You have already submitted a report for this delivery against this user. "
+                "Please check your existing reports or contact support if you need to update your report.",
             )
         else:
             # Generic constraint violation
@@ -342,7 +340,7 @@ async def create_report(
         await db.rollback()
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
-    except Exception as e:
+    except Exception:
         # Rollback on any other error
         await db.rollback()
         raise HTTPException(
@@ -771,3 +769,83 @@ async def get_unread_badge_count(db: AsyncSession, user_id: UUID) -> BadgeCount:
     unread_result = await db.execute(unread_stmt)
     unread_count = len(unread_result.fetchall())
     return {"unread_count": unread_count}
+
+
+async def get_filtered_reviews_and_stats(
+    db: AsyncSession,
+    review_filter: ReviewFilter | None = None,
+    page: int = 1,
+    page_size: int = 10,
+) -> FilteredReviewsResponse:
+    """
+    Get reviews based on a filter and return statistics.
+    """
+    # Base query
+    base_query = select(Review).options(
+        selectinload(Review.reviewer)
+        .selectinload(User.profile)
+        .selectinload(Profile.profile_image)
+    )
+
+    # Filtering logic
+    if review_filter:
+        if review_filter == ReviewFilter.POSITIVE:
+            base_query = base_query.where(Review.rating >= 4)
+        elif review_filter == ReviewFilter.NEGATIVE:
+            base_query = base_query.where(Review.rating <= 2)
+        elif review_filter == ReviewFilter.AVERAGE:
+            base_query = base_query.where(Review.rating == 3)
+
+    # Pagination
+    offset = (page - 1) * page_size
+    paginated_query = (
+        base_query.order_by(Review.created_at.desc()).limit(page_size).offset(offset)
+    )
+
+    result = await db.execute(paginated_query)
+    reviews = result.scalars().all()
+
+    response_list = [
+        ReviewResponse(
+            id=r.id,
+            rating=r.rating,
+            comment=r.comment,
+            created_at=r.created_at,
+            reviewer=ReviewerProfile(
+                id=r.reviewer.id,
+                full_name=r.reviewer.profile.full_name
+                if r.reviewer.profile and r.reviewer.profile.full_name
+                else r.reviewer.profile.business_name
+                if r.reviewer.profile
+                else None,
+                profile_image_url=(
+                    r.reviewer.profile.profile_image.profile_image_url
+                    if r.reviewer.profile and r.reviewer.profile.profile_image
+                    else None
+                ),
+            ),
+        )
+        for r in reviews
+    ]
+
+    # Stats calculation
+    positive_reviews_count = await db.scalar(
+        select(func.count(Review.id)).where(Review.rating >= 4)
+    )
+    negative_reviews_count = await db.scalar(
+        select(func.count(Review.id)).where(Review.rating <= 2)
+    )
+    average_reviews_count = await db.scalar(
+        select(func.count(Review.id)).where(Review.rating == 3)
+    )
+    total_reviews_count = await db.scalar(select(func.count(Review.id)))
+
+    stats = ReviewStats(
+        positive_reviews=positive_reviews_count,
+        negative_reviews=negative_reviews_count,
+        average_reviews=average_reviews_count,
+        total_reviews=total_reviews_count,
+    )
+
+    return FilteredReviewsResponse(reviews=response_list, stats=stats)
+

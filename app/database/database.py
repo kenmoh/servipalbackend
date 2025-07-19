@@ -1,10 +1,6 @@
 from contextlib import asynccontextmanager
-from fastapi import HTTPException, status
-from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncSession
-import asyncio
 from typing import AsyncGenerator
-import os
 
 from sqlalchemy.orm import DeclarativeBase
 from sqlalchemy.ext.asyncio import (

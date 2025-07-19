@@ -1,5 +1,4 @@
 from contextlib import asynccontextmanager
-import logging
 import asyncio
 from functools import partial
 import logfire

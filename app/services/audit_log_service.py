@@ -1,8 +1,8 @@
 from datetime import datetime
-from typing import Optional, List, Dict, Any
+from typing import Optional, List
 from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, and_, or_
+from sqlalchemy import select, and_
 from app.models.models import AuditLog
 from fastapi import HTTPException, status
 

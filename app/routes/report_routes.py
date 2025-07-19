@@ -1,5 +1,5 @@
 from uuid import UUID
-from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
+from fastapi import APIRouter, Depends, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.auth import get_db, get_current_user
@@ -7,11 +7,9 @@ from app.models.models import User
 from app.schemas.review_schema import (
     ReportCreate,
     ReportMessage,
-    ReportIssueResponse,
     ReportIssueUpdate,
     MessageCreate,
     BadgeCount,
-    ReportStatus,
     StatusUpdate,
     ReportResponseSchema,
 )

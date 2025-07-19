@@ -1,10 +1,8 @@
 from datetime import datetime
 import json
-from typing import Optional
 from fastapi import HTTPException, status
-from sqlalchemy import insert, select, update
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
-import logging
 
 from app.models.models import AuditLog, ChargeAndCommission, User
 from app.schemas.settings_schema import (

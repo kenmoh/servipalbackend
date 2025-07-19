@@ -8,7 +8,6 @@ from app.models.models import User
 from app.schemas.settings_schema import (
     ChargeAndCommissionSchema,
     ChargeAndCommissionUpdateSchema,
-    ChargeAndCommissionCreateSchema,
     SettingsResponseSchema,
 )
 from app.services.settings_service import (

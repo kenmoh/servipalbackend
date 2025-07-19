@@ -1,6 +1,5 @@
 from uuid import uuid4, uuid1
 from app.config.config import settings
-import os
 import secrets
 import logging
 

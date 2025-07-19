@@ -38,11 +38,11 @@ from app.schemas.status_schema import (
     PaymentMethod,
     PaymentStatus,
     RequireDeliverySchema,
+    TransactionDirection,
     TransactionType,
 )
 from app.utils.logger_config import setup_logger
 from app.utils.utils import (
-    get_bank_code,
     get_fund_wallet_payment_link,
     transfer_money_to_user_account,
     verify_transaction_tx_ref,
@@ -51,7 +51,6 @@ from app.utils.utils import (
     get_user_notification_token,
 )
 from app.config.config import settings, redis_client
-from app.services import ws_service
 
 logger = setup_logger()
 
@@ -565,7 +564,7 @@ async def top_up_wallet(
         if wallet.balance >= 100_000 or (topup_data.amount + wallet.balance) > 100_000:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Wallet balance cannot be more than NGN 100, 000",
+                detail="Wallet balance cannot be more than NGN 100, 000",
             )
 
         # Create the transaction record
@@ -1183,7 +1182,7 @@ async def fund_wallet_callback(request: Request, db: AsyncSession):
         await db.execute(
             update(Transaction)
             .where(Transaction.id == UUID(tx_ref))
-            .values(payment_status=new_status)
+            .values(payment_status=new_status,payment_method=PaymentMethod.CARD, transaction_type=TransactionType.FUND_WALLET, transaction_direction=TransactionDirection.CREDIT)
         )
 
         await db.execute(
@@ -1351,7 +1350,7 @@ async def order_payment_callback(request: Request, db: AsyncSession):
         )
         buyer_wallet = buyer_wallet_result.scalar_one_or_none()
         if not buyer_wallet:
-            raise HTTPException(status_code=404, detail="Buyer wallet not found")
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Buyer wallet not found")
 
         current_time = datetime.now()
         transaction_values = []
@@ -1379,7 +1378,8 @@ async def order_payment_callback(request: Request, db: AsyncSession):
                 {
                     "wallet_id": buyer_wallet.id,
                     "amount": delivery_fee,
-                    "transaction_type": TransactionType.DEBIT,
+                    "transaction_type": TransactionType.USER_TO_USER,
+                    "trasaction_direction": TransactionDirection.DEBIT,
                     "payment_status": PaymentStatus.PAID,
                     "created_at": current_time,
                     "payment_method": PaymentMethod.CARD,
@@ -1457,10 +1457,11 @@ async def order_payment_callback(request: Request, db: AsyncSession):
             {
                 "wallet_id": buyer_wallet.id,
                 "amount": charged_amount,
-                "transaction_type": TransactionType.DEBIT,
+                "transaction_type": TransactionType.USER_TO_USER,
+                "trasaction_direction": TransactionDirection.DEBIT,
                 "payment_status": PaymentStatus.PAID,
                 "created_at": current_time,
-                "payment_method": PaymentMethod.WALLET,
+                "payment_method": PaymentMethod.CARD,
                 "to_user": seller.profile.full_name or seller.profile.business_name,
                 "updated_at": current_time,
             }
@@ -1470,10 +1471,11 @@ async def order_payment_callback(request: Request, db: AsyncSession):
             {
                 "wallet_id": seller_wallet.id,
                 "amount": total_price,
-                "transaction_type": TransactionType.CREDIT,
+                "transaction_type": TransactionType.USER_TO_USER,
+                "trasaction_direction": TransactionDirection.CREDIT,
                 "payment_status": PaymentStatus.PAID,
                 "created_at": current_time,
-                "payment_method": PaymentMethod.WALLET,
+                "payment_method": PaymentMethod.CARD,
                 "from_user": buyer.profile.full_name or buyer.profile.business_name,
                 "updated_at": current_time,
             }
@@ -1681,7 +1683,8 @@ async def pay_with_wallet(
             {
                 "wallet_id": buyer_wallet.id,
                 "amount": delivery_fee,
-                "transaction_type": TransactionType.DEBIT,
+                "transaction_direction": TransactionDirection.DEBIT,
+                "transaction_type": TransactionType.USER_TO_USER,
                 "payment_status": PaymentStatus.PAID,
                 "created_at": current_time,
                 "payment_method": PaymentMethod.WALLET,
@@ -1752,12 +1755,13 @@ async def pay_with_wallet(
     buyer_wallet.escrow_balance += charged_amount
     seller_wallet.escrow_balance += total_price
 
-    # Buyer transaction (DEBIT)
+    # Buyer transaction ()
     transaction_values.append(
         {
             "wallet_id": buyer_wallet.id,
             "amount": charged_amount,
-            "transaction_type": TransactionType.DEBIT,
+            "transaction_type": TransactionType.USER_TO_USER,
+            "transaction_direction": TransactionDirection.DEBIT,
             "payment_status": PaymentStatus.PAID,
             "created_at": current_time,
             "payment_method": PaymentMethod.WALLET,
@@ -1770,7 +1774,8 @@ async def pay_with_wallet(
         {
             "wallet_id": seller_wallet.id,
             "amount": total_price,
-            "transaction_type": TransactionType.CREDIT,
+            "transaction_type": TransactionType.USER_TO_USER,
+            "transaction_direction": TransactionDirection.CREDIT,
             "payment_status": PaymentStatus.PAID,
             "created_at": current_time,
             "payment_method": PaymentMethod.WALLET,
@@ -1944,6 +1949,8 @@ async def make_withdrawal(db: AsyncSession, current_user: User) -> WithdrawalShe
             amount=withdrawal_amount,
             payment_status=PaymentStatus.PENDING,
             transaction_type=TransactionType.WITHDRAWAL,
+            payment_method=PaymentMethod.BANK_TRANSFER,
+            transaction_direction=TransactionDirection.DEBIT,
         )
         db.add(withdrawal)
         await db.flush()

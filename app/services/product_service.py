@@ -1,6 +1,6 @@
 import json
 from uuid import UUID
-from typing import List, Optional
+from typing import Optional
 
 from fastapi import HTTPException, status, UploadFile, BackgroundTasks
 from sqlalchemy.ext.asyncio import AsyncSession

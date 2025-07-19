@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 from fastapi import Form
 from typing import Optional, List
 from uuid import UUID

@@ -1,12 +1,9 @@
-from functools import cache
 import logging
-from unittest import result
 from uuid import UUID
 import json
 from fastapi import HTTPException, UploadFile, status
-import redis
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import joinedload, selectinload
+from sqlalchemy.orm import selectinload
 from sqlalchemy import select, delete, update, and_
 from sqlalchemy.exc import IntegrityError
 import asyncpg.exceptions
@@ -495,7 +492,7 @@ async def update_menu_item(
     )
     if not db_item:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail=f"Item not found"
+            status_code=status.HTTP_404_NOT_FOUND, detail="Item not found"
         )
 
     update_data = item_data.model_dump(exclude_unset=True)

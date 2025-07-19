@@ -1,12 +1,10 @@
-from datetime import datetime, date, timedelta
-from typing import List, Optional, Dict, Any
+from datetime import date, timedelta
+from typing import List, Optional, Dict
 from decimal import Decimal
 from fastapi import HTTPException, status
-from sqlalchemy import select, func, and_, or_, cast, Date, desc
+from sqlalchemy import select, func, and_, cast, Date, desc
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
 import json
-import logging
 
 from app.models.models import (
     User,
@@ -16,8 +14,6 @@ from app.models.models import (
     Review,
     Delivery,
     Profile,
-    OrderItem,
-    Item,
 )
 from app.schemas.stats_schema import (
     StatsPeriod,
@@ -35,7 +31,6 @@ from app.schemas.stats_schema import (
     DeliveryStats,
     WalletStats,
     ComprehensiveStatsResponse,
-    StatsResponseWrapper,
 )
 from app.schemas.order_schema import OrderType
 from app.schemas.status_schema import (
@@ -48,7 +43,7 @@ from app.schemas.status_schema import (
 )
 from app.schemas.review_schema import ReviewType
 from app.utils.logger_config import setup_logger
-from app.config.config import redis_client, settings
+from app.config.config import redis_client
 
 logger = setup_logger()
 

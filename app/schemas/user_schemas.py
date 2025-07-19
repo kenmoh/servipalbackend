@@ -1,10 +1,7 @@
 from datetime import datetime, time
-from dataclasses import dataclass
-from enum import Enum
 from decimal import Decimal
 from uuid import UUID
-from fastapi import Depends, Form
-from pydantic import EmailStr, BaseModel, Field, constr, ConfigDict
+from pydantic import EmailStr, BaseModel, Field, ConfigDict
 from app.schemas.status_schema import (
     AccountStatus,
     TransactionType,

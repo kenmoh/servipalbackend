@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, Query, HTTPException
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from uuid import UUID
 from datetime import datetime
@@ -6,7 +6,6 @@ from typing import Optional
 from app.database.database import get_db
 from app.schemas.audit_logs import AuditLogResponse
 from app.services.audit_log_service import AuditLogService
-from app.models.models import AuditLog
 
 router = APIRouter(prefix="/api/audit-logs", tags=["Audit Logs"])
 

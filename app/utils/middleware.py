@@ -4,7 +4,6 @@ import asyncio
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.exc import DBAPIError
 from fastapi import HTTPException, status
-from app.config.config import settings
 
 
 def with_db_retry(max_retries: int = 3, delay: int = 1):
