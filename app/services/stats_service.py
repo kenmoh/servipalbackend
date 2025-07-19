@@ -37,7 +37,7 @@ from app.schemas.status_schema import (
     OrderStatus,
     PaymentMethod,
     PaymentStatus,
-    TransactionType,
+    TransactionDirection,
     UserType,
     DeliveryStatus,
 )
@@ -693,16 +693,16 @@ async def get_comprehensive_stats(db: AsyncSession) -> ComprehensiveStatsRespons
         transaction_stats_stmt = select(
             func.count(Transaction.id).label("total_transactions"),
             func.count(Transaction.id)
-            .filter(Transaction.transaction_type == TransactionType.CREDIT)
+            .filter(Transaction.transaction_type == TransactionDirection.CREDIT)
             .label("topups"),
             func.count(Transaction.id)
-            .filter(Transaction.transaction_type == TransactionType.DEBIT)
+            .filter(Transaction.transaction_type == TransactionDirection.DEBIT)
             .label("withdrawals"),
             func.sum(Transaction.amount)
-            .filter(Transaction.transaction_type == TransactionType.CREDIT)
+            .filter(Transaction.transaction_type == TransactionDirection.CREDIT)
             .label("topup_volume"),
             func.sum(Transaction.amount)
-            .filter(Transaction.transaction_type == TransactionType.DEBIT)
+            .filter(Transaction.transaction_type == TransactionDirection.DEBIT)
             .label("withdrawal_volume"),
         )
         transaction_result = await db.execute(transaction_stats_stmt)
