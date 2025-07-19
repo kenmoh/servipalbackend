@@ -733,7 +733,9 @@ async def order_food_or_request_laundy_service(
         )
 
 
-async def _cancel_delivery_and_order(db: AsyncSession, order_id: UUID) -> DeliveryResponse:
+async def _cancel_delivery_and_order(
+    db: AsyncSession, order_id: UUID
+) -> DeliveryResponse:
     """
     Helper to set delivery and order status to cancelled and log the audit.
     Args:
@@ -777,7 +779,6 @@ async def _cancel_delivery_and_order(db: AsyncSession, order_id: UUID) -> Delive
             await db.commit()
             await db.refresh(order)
 
-
         elif (
             order.require_delivery == RequireDeliverySchema.PICKUP
             and order.order_status
@@ -794,11 +795,7 @@ async def _cancel_delivery_and_order(db: AsyncSession, order_id: UUID) -> Delive
             await db.commit()
             await db.refresh(order)
 
-        
-
-
         return format_delivery_response(order, order.delivery)
-
 
     except Exception as e:
         await db.rollback()
@@ -824,6 +821,18 @@ async def cancel_delivery(
     wallet_result = await db.execute(select(Wallet).where(Wallet.id == current_user.id))
     wallet = wallet_result.scalar_one_or_none()
     order = await _cancel_delivery_and_order(db=db, order_id=order_id)
+
+    if current_user.id not in [
+        order.delivery.sender_id,
+        order.delivery.vendor_id,
+        order.delivery.rider_id,
+        order.order.owner_id,
+        order.ordervendor_id,
+    ]:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You are not authorized to cancel this order.",
+        )
 
     if current_user.user_type in [
         UserType.CUSTOMER,
@@ -852,10 +861,11 @@ async def cancel_delivery(
         invalidate_delivery_cache(order.delivery.id)
         redis_client.delete("paid_pending_deliveries")
         redis_client.delete(f"user_related_orders:{current_user.id}")
-        return DeliveryStatusUpdateSchema(delivery_status=order.delivery.delivery_status)
+        return DeliveryStatusUpdateSchema(
+            delivery_status=order.delivery.delivery_status
+        )
 
     if current_user.user_type in [UserType.RIDER, UserType.DISPATCH]:
-
         if order.delivery.delivery_status == DeliveryStatus.ACCEPTED:
             await _cancel_delivery_and_order(db=db, order_id=order_id)
 
@@ -863,7 +873,9 @@ async def cancel_delivery(
             await db.commit()
 
             # UPDATE RIDER ESCROW BALANCE
-            new_escrow = max(wallet.escrow_balance - order.delivery.amount_due_dispatch, 0)
+            new_escrow = max(
+                wallet.escrow_balance - order.delivery.amount_due_dispatch, 0
+            )
             await db.execute(
                 update(Wallet)
                 .where(Wallet.id == current_user.sender_id)
@@ -876,7 +888,9 @@ async def cancel_delivery(
             invalidate_delivery_cache(order.delivery.id)
             redis_client.delete(f"{ALL_DELIVERY}")
 
-            token = await get_user_notification_token(db=db, user_id=order.delivery.vendor_id)
+            token = await get_user_notification_token(
+                db=db, user_id=order.delivery.vendor_id
+            )
             rider_token = await get_user_notification_token(
                 db=db, user_id=order.delivery.rider_id
             )
@@ -901,10 +915,13 @@ async def cancel_delivery(
             redis_client.delete(f"user_related_orders:{current_user.id}")
 
             await ws_service.broadcast_delivery_status_update(
-                delivery_id=order.delivery.id, delivery_status=order.delivery.delivery_status
+                delivery_id=order.delivery.id,
+                delivery_status=order.delivery.delivery_status,
             )
 
-            return DeliveryStatusUpdateSchema(delivery_status=order.delivery.delivery_status)
+            return DeliveryStatusUpdateSchema(
+                delivery_status=order.delivery.delivery_status
+            )
 
 
 async def re_list_item_for_delivery(
