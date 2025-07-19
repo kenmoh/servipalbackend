@@ -623,16 +623,16 @@ async def delete_report_if_allowed(
     redis_client.delete(f"report:{report_id}:thread:{report.defendant_id}")
     # --- AUDIT LOG ---
     audit = AuditLog(
-            actor_id=current_user.id,
-            actor_name=getattr(current_user, "email", "unknown"),
-            actor_role=str(getattr(current_user, "user_type", "unknown")),
-            action="delete_report",
-            resource_type="UserReport",
-            resource_id=report_id,
-            resource_summary=f"Updated report with ID {report_id}",
-            changes=None,
-            metadata=None,
-        )
+        actor_id=current_user.id,
+        actor_name=getattr(current_user, "email", "unknown"),
+        actor_role=str(getattr(current_user, "user_type", "unknown")),
+        action="delete_report",
+        resource_type="UserReport",
+        resource_id=report_id,
+        resource_summary=f"Updated report with ID {report_id}",
+        changes=None,
+        metadata=None,
+    )
     db.add(audit)
     await db.commit()
     return None
@@ -669,16 +669,16 @@ async def update_report_status(
     redis_client.delete(f"report:{report_id}:thread:{report.defendant_id}")
     # --- AUDIT LOG ---
     audit = AuditLog(
-            actor_id=current_user.id,
-            actor_name=getattr(current_user, "email", "unknown"),
-            actor_role=str(getattr(current_user, "user_type", "unknown")),
-            action="update_report_status",
-            resource_type="UserReport",
-            resource_id=report_id,
-            resource_summary=str(report_id),
-            changes={"report_status": [old_status, new_status]},
-            metadata=None,
-        )
+        actor_id=current_user.id,
+        actor_name=getattr(current_user, "email", "unknown"),
+        actor_role=str(getattr(current_user, "user_type", "unknown")),
+        action="update_report_status",
+        resource_type="UserReport",
+        resource_id=report_id,
+        resource_summary=str(report_id),
+        changes={"report_status": [old_status, new_status]},
+        metadata=None,
+    )
     db.add(audit)
     await db.commit()
     return StatusUpdate.model_validate(new_status)
@@ -848,4 +848,3 @@ async def get_filtered_reviews_and_stats(
     )
 
     return FilteredReviewsResponse(reviews=response_list, stats=stats)
-

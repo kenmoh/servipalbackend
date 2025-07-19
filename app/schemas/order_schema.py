@@ -130,3 +130,7 @@ class OrderResponseSchema(BaseModel):
 
 class DeliveryStatusUpdateSchema(BaseModel):
     delivery_status: str
+
+
+class OrderStatusResponseSchema(BaseModel):
+    order_status: str

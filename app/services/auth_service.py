@@ -406,17 +406,16 @@ async def create_new_staff(
         # --- AUDIT LOG ---
 
         audit = AuditLog(
-                actor_id=current_user.id,
-                actor_name=current_user.profile.full_name or current_user.email,
-                actor_role=current_user.user_type,
-                action="create_staff",
-                resource_type="User",
-                resource_id=new_staff.id,
-                resource_summary=f"create_staff: {new_staff.email}, {staff_profile.full_name}",
-                changes=None,
-                extra_metadata=None,
-            )
-
+            actor_id=current_user.id,
+            actor_name=current_user.profile.full_name or current_user.email,
+            actor_role=current_user.user_type,
+            action="create_staff",
+            resource_type="User",
+            resource_id=new_staff.id,
+            resource_summary=f"create_staff: {new_staff.email}, {staff_profile.full_name}",
+            changes=None,
+            extra_metadata=None,
+        )
 
         db.add(audit)
 
@@ -685,16 +684,16 @@ async def update_staff(
     }
     if changed_fields:
         audit = AuditLog(
-                actor_id=current_user.id,
-                actor_name=current_user.profile.full_name or current_user.email,
-                actor_role=current_user.user_type,
-                action="update_staff_profile",
-                resource_type="Profile",
-                resource_id=profile.user_id,
-                resource_summary=f"updated user with email: {staff.email}",
-                changes=changed_fields,
-                metadata=None,
-            )
+            actor_id=current_user.id,
+            actor_name=current_user.profile.full_name or current_user.email,
+            actor_role=current_user.user_type,
+            action="update_staff_profile",
+            resource_type="Profile",
+            resource_id=profile.user_id,
+            resource_summary=f"updated user with email: {staff.email}",
+            changes=changed_fields,
+            metadata=None,
+        )
         db.add(audit)
         db.commit()
     return staff
@@ -843,17 +842,17 @@ async def change_password(
         # --- AUDIT LOG ---
 
         audit = AuditLog(
-                actor_id=current_user.id,
-                actor_name=current_user.profile.full_name or current_user.email,
-                actor_role=current_user.user_type,
-                action="change_password",
-                resource_type="User",
-                resource_id=current_user.id,
-                resource_summary=current_user.email,
-                changes={"password": [old_password_hash, "***"]},
-                metadata=None,
-            )
-        
+            actor_id=current_user.id,
+            actor_name=current_user.profile.full_name or current_user.email,
+            actor_role=current_user.user_type,
+            action="change_password",
+            resource_type="User",
+            resource_id=current_user.id,
+            resource_summary=current_user.email,
+            changes={"password": [old_password_hash, "***"]},
+            metadata=None,
+        )
+
         db.add(audit)
         await db.commit()
         return {"message": "Password changed successfully"}
@@ -1307,17 +1306,17 @@ async def update_staff_password(
     await db.commit()
     # --- AUDIT LOG ---
     audit = AuditLog(
-            actor_id=current_user.id,
-            actor_name=current_user.profile.full_name or current_user.email,
-            actor_role=current_user.user_type,
-            action="change_password",
-            resource_type="User",
-            resource_id=current_user.id,
-            resource_summary=current_user.email,
-            changes={"password": [old_password_hash, "***"]},
-            metadata=None,
-        )
-    
+        actor_id=current_user.id,
+        actor_name=current_user.profile.full_name or current_user.email,
+        actor_role=current_user.user_type,
+        action="change_password",
+        resource_type="User",
+        resource_id=current_user.id,
+        resource_summary=current_user.email,
+        changes={"password": [old_password_hash, "***"]},
+        metadata=None,
+    )
+
     db.add(audit)
     await db.commit()
     return {"message": "Staff password updated successfully."}

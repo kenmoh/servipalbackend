@@ -168,17 +168,16 @@ async def update_charge_and_commission_settings(
             .values(**update_dict)
         )
         # --- AUDIT LOG ---
-        audit = (AuditLog(
-                actor_id=current_user.id,
-                actor_name=getattr(current_user, "email", "unknown"),
-                actor_role=str(current_user.user_type),
-                action="update_charge_and_commission_settings",
-                resource_type="ChargeAndCommission",
-                resource_id=current_settings.id,
-                resource_summary="Charge and Commission Settings",
-                changes=update_dict,
-                extra_metadata=None,
-            )
+        audit = AuditLog(
+            actor_id=current_user.id,
+            actor_name=getattr(current_user, "email", "unknown"),
+            actor_role=str(current_user.user_type),
+            action="update_charge_and_commission_settings",
+            resource_type="ChargeAndCommission",
+            resource_id=current_settings.id,
+            resource_summary="Charge and Commission Settings",
+            changes=update_dict,
+            extra_metadata=None,
         )
         db.add(audit)
         await db.commit()

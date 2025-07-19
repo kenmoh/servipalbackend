@@ -150,7 +150,6 @@ async def get_current_admin_user(
     return current_user
 
 
-
 async def revoke_refresh_token(token: str, db: AsyncSession) -> bool:
     result = await db.execute(
         "UPDATE refresh_tokens SET is_revoked = TRUE WHERE token = :token RETURNING id",

@@ -341,16 +341,16 @@ async def toggle_user_block_status(
 
         # --- AUDIT LOG ---
         audit = AuditLog(
-                actor_id=current_user.id,
-                actor_name=getattr(current_user, "email", "unknown"),
-                actor_role=str(current_user.user_type),
-                action=f"user_{action}",
-                resource_type="User",
-                resource_id=user.id,
-                resource_summary=user.email,
-                changes={"is_blocked": [not user.is_blocked, user.is_blocked]},
-                extra_metadata=None,
-            )
+            actor_id=current_user.id,
+            actor_name=getattr(current_user, "email", "unknown"),
+            actor_role=str(current_user.user_type),
+            action=f"user_{action}",
+            resource_type="User",
+            resource_id=user.id,
+            resource_summary=user.email,
+            changes={"is_blocked": [not user.is_blocked, user.is_blocked]},
+            extra_metadata=None,
+        )
         db.add(audit)
         await db.commit()
 
@@ -507,21 +507,20 @@ async def update_profile(
         if old_profile.get(k) != getattr(profile, k)
     }
     if changed_fields:
-  
-            audit = AuditLog(
-                actor_id=current_user.id,
-                actor_name=current_user.profile.full_name or current_user.email,
-                actor_role=str(current_user.user_type),
-                action="update_profile",
-                resource_type="Profile",
-                resource_id=profile.user_id,
-                resource_summary=f'{current_user.profile.full_name or current_user.email} update {changed_fields}',
-                changes=changed_fields,
-                extra_metadata=None,
-            )
-        
-            db.add(audit)
-            await db.commit()
+        audit = AuditLog(
+            actor_id=current_user.id,
+            actor_name=current_user.profile.full_name or current_user.email,
+            actor_role=str(current_user.user_type),
+            action="update_profile",
+            resource_type="Profile",
+            resource_id=profile.user_id,
+            resource_summary=f"{current_user.profile.full_name or current_user.email} update {changed_fields}",
+            changes=changed_fields,
+            extra_metadata=None,
+        )
+
+        db.add(audit)
+        await db.commit()
 
     return profile
 
@@ -632,17 +631,17 @@ async def update_rider_profile(
         }
         if changed_fields:
             audit = AuditLog(
-                    actor_id=current_user.id,
-                    actor_name=getattr(current_user, "email", "unknown"),
-                    actor_role=str(current_user.user_type),
-                    action="update_rider_profile",
-                    resource_type="Profile",
-                    resource_id=profile.user_id,
-                    resource_summary=profile.full_name,
-                    changes=changed_fields,
-                    extra_metadata=None,
-                )
-            
+                actor_id=current_user.id,
+                actor_name=getattr(current_user, "email", "unknown"),
+                actor_role=str(current_user.user_type),
+                action="update_rider_profile",
+                resource_type="Profile",
+                resource_id=profile.user_id,
+                resource_summary=profile.full_name,
+                changes=changed_fields,
+                extra_metadata=None,
+            )
+
             db.add(audit)
             await db.commit()
 
@@ -1291,16 +1290,16 @@ async def delete_rider(rider_id: UUID, db: AsyncSession, current_user: User) -> 
 
         # --- AUDIT LOG ---
         audit = AuditLog(
-                actor_id=current_user.id,
-                actor_name=getattr(current_user, "email", "unknown"),
-                actor_role=str(current_user.user_type),
-                action="delete_rider",
-                resource_type="User",
-                resource_id=rider_id_val,
-                resource_summary=rider_email or rider_name,
-                changes=None,
-                extra_metadata=None,
-            )
+            actor_id=current_user.id,
+            actor_name=getattr(current_user, "email", "unknown"),
+            actor_role=str(current_user.user_type),
+            action="delete_rider",
+            resource_type="User",
+            resource_id=rider_id_val,
+            resource_summary=rider_email or rider_name,
+            changes=None,
+            extra_metadata=None,
+        )
         db.add(audit)
         await db.commit()
 

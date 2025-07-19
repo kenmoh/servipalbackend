@@ -42,6 +42,7 @@ async def get_logs(
 async def get_user_log_by_actor_id(actor_id: UUID, db: AsyncSession = Depends(get_db)):
     return await AuditLogService.get_user_log_by_actor_id(db, actor_id)
 
+
 @router.get("/{log_id}", response_model=AuditLogResponse)
 async def get_log_by_id(log_id: UUID, db: AsyncSession = Depends(get_db)):
     return await AuditLogService.get_log_by_id(db, log_id)

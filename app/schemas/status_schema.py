@@ -44,11 +44,13 @@ class DeliveryStatus(str, Enum):
 
 
 class OrderStatus(str, Enum):
+    ACCEPTED: str = "accepted"  # Rider/Dispatch ops
     PENDING: str = "pending"
     DELIVERED: str = "delivered"
     RECEIVED: str = "received"
     CANCELLED: str = "canceled"
     REJECTED: str = "rejected"
+    VENDOR_RECEIVED_LAUNDRY_ITEM: str = "laundry_received"  # Vendor ops
 
 
 class ItemStatus(str, Enum):

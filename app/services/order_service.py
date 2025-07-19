@@ -24,7 +24,7 @@ from app.services import ws_service
 
 import json
 from decimal import Decimal
-from uuid import UUID
+from uuid import UUID, uuid1
 
 from fastapi import HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -733,51 +733,83 @@ async def order_food_or_request_laundy_service(
         )
 
 
-async def _cancel_delivery_and_order_with_audit(
-    db: AsyncSession,
-    delivery,
-    current_user: User,
-    delivery_status_before,
-    delivery_status_after,
-    order_status_before,
-    order_status_after,
-    audit_action: str,
-    audit_summary: str,
-    extra_metadata=None,
-):
+async def _cancel_delivery_and_order(db: AsyncSession, order_id: UUID) -> DeliveryResponse:
     """
     Helper to set delivery and order status to cancelled and log the audit.
     Args:
         db: Database session
         delivery: Delivery object
-        current_user: User performing the action
-        delivery_status_before: Previous delivery status
-        delivery_status_after: New delivery status
-        order_status_before: Previous order status
-        order_status_after: New order status
-        audit_action: Action string for audit log
-        audit_summary: Summary string for audit log
-        extra_metadata: Optional extra metadata for audit log
+        delivery_status
+        order_status: New order status
+
     """
 
-    # Set delivery status
-    db.execute(
-        update(Delivery)
-        .where(Delivery.id == delivery.id)
-        .values(delivery_status=delivery_status_after)
+    order_stmt = (
+        select(Order).options(selectinload(Order.delivery)).where(Order.id == order_id)
     )
-    # Set order status
-    db.execute(
-        update(Order)
-        .where(Order.id == delivery.order_id)
-        .values(order_status=order_status_after)
-    )
-    # Commit after both updates and audit
-    await db.commit()
+
+    order_result = await db.execute(order_stmt)
+    order = order_result.scalar_one_or_none()
+
+    try:
+        if (
+            order.require_delivery == RequireDeliverySchema.DELIVERY
+            and order.delivery.delivery_status
+            not in [
+                DeliveryStatus.DELIVERED,
+                DeliveryStatus.RECEIVED,
+                DeliveryStatus.VENDOR_RECEIVED_LAUNDRY_ITEM,
+            ]
+        ):
+            # Set delivery status
+            db.execute(
+                update(Delivery)
+                .where(Delivery.id == order.delivery.id)
+                .values(delivery_status=DeliveryStatus.CANCELLED)
+            )
+            # Set order status
+            db.execute(
+                update(Order)
+                .where(Order.id == order.id)
+                .values(order_status=OrderStatus.CANCELLED)
+            )
+            # Commit after both updates and audit
+            await db.commit()
+            await db.refresh(order)
+
+
+        elif (
+            order.require_delivery == RequireDeliverySchema.PICKUP
+            and order.order_status
+            not in [
+                OrderStatus.DELIVERED,
+                OrderStatus.RECEIVED,
+            ]
+        ):
+            db.execute(
+                update(Order)
+                .where(Order.id == order.id)
+                .values(order_status=OrderStatus.CANCELLED)
+            )
+            await db.commit()
+            await db.refresh(order)
+
+        
+
+
+        return format_delivery_response(order, order.delivery)
+
+
+    except Exception as e:
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to cancel delivery - {e}",
+        )
 
 
 async def cancel_delivery(
-    db: AsyncSession, delivery_id: UUID, current_user: User
+    db: AsyncSession, order_id: UUID, current_user: User
 ) -> DeliveryStatusUpdateSchema:
     """
     Cancel a delivery (Owner/Rider/Dispatch). This sets both the delivery and related order status to CANCELLED,
@@ -791,90 +823,47 @@ async def cancel_delivery(
     """
     wallet_result = await db.execute(select(Wallet).where(Wallet.id == current_user.id))
     wallet = wallet_result.scalar_one_or_none()
+    order = await _cancel_delivery_and_order(db=db, order_id=order_id)
 
     if current_user.user_type in [
         UserType.CUSTOMER,
         UserType.LAUNDRY_VENDOR,
         UserType.RESTAURANT_VENDOR,
     ]:
-        result = await db.execute(
-            select(Delivery)
-            .where(Delivery.id == delivery_id)
-            .where(Delivery.sender_id == current_user.id)
+        # helper for status update and audit
+
+        # UPDATE USER WALLET
+        new_escrow = max(wallet.escrow_balance - order.order.total_price, 0)
+        new_balance = wallet.balance + order.order.total_price
+
+        await db.execute(
+            update(Wallet)
+            .where(Wallet.id == current_user.sender_id)
+            .values(
+                {
+                    "balance": new_balance,
+                    "escrow_balance": new_escrow,
+                }
+            )
         )
-        delivery = result.scalar_one_or_none()
+        await db.commit()
+        await db.refresh(order.delivery)
 
-        if delivery.delivery_status not in [
-            DeliveryStatus.DELIVERED,
-            DeliveryStatus.RECEIVED,
-            DeliveryStatus.LAUNDRY_DELIVERES_TO_VENDORR,
-        ]:
-            # DRY: Use helper for status update and audit
-            await _cancel_delivery_and_order_with_audit(
-                db=db,
-                delivery=delivery,
-                current_user=current_user,
-                delivery_status_before=delivery.delivery_status,
-                delivery_status_after=DeliveryStatus.CANCELLED,
-                order_status_before=None,  # If you want to fetch, can do so
-                order_status_after=OrderStatus.CANCELLED,
-                audit_action="cancel_delivery",
-                audit_summary=f"Order {delivery.order_id} cancelled by {current_user.email}",
-                extra_metadata=None,
-            )
-
-            # UPDATE USER WALLET
-            new_escrow = max(wallet.escrow_balance - delivery.delivery_fee, 0)
-            new_balance = wallet.balance + max(
-                wallet.escrow_balance - delivery.delivery_fee, 0
-            )
-
-            await db.execute(
-                update(Wallet)
-                .where(Wallet.id == current_user.sender_id)
-                .values(
-                    {
-                        "balance": new_balance,
-                        "escrow_balance": new_escrow,
-                    }
-                )
-            )
-            await db.commit()
-            await db.refresh(delivery)
-
-            invalidate_delivery_cache(delivery.id)
-            redis_client.delete("paid_pending_deliveries")
-            redis_client.delete(f"user_related_orders:{current_user.id}")
-            return DeliveryStatusUpdateSchema(delivery_status=delivery.delivery_status)
+        invalidate_delivery_cache(order.delivery.id)
+        redis_client.delete("paid_pending_deliveries")
+        redis_client.delete(f"user_related_orders:{current_user.id}")
+        return DeliveryStatusUpdateSchema(delivery_status=order.delivery.delivery_status)
 
     if current_user.user_type in [UserType.RIDER, UserType.DISPATCH]:
-        result = await db.execute(
-            select(Delivery)
-            .where(Delivery.id == delivery_id)
-            .where(Delivery.rider_id == current_user.id)
-        )
-        delivery = result.scalar_one_or_none()
 
-        if delivery.delivery_status == DeliveryStatus.ACCEPTED:
-            # DRY: Use helper for status update and audit
-            await _cancel_delivery_and_order_with_audit(
-                db=db,
-                delivery=delivery,
-                current_user=current_user,
-                delivery_status_before=DeliveryStatus.ACCEPTED,
-                delivery_status_after=DeliveryStatus.PENDING,
-                order_status_before=None,  # If you want to fetch, can do so
-                order_status_after=OrderStatus.CANCELLED,
-                audit_action="cancel_delivery_by_rider_or_dispatch",
-                audit_summary=f"Order {delivery.order_id} cancelled by {current_user.email}",
-                extra_metadata=None,
-            )
+        if order.delivery.delivery_status == DeliveryStatus.ACCEPTED:
+            await _cancel_delivery_and_order(db=db, order_id=order_id)
 
             current_user.order_cancel_count += 1
             await db.commit()
 
             # UPDATE RIDER ESCROW BALANCE
-            new_escrow = max(wallet.escrow_balance - delivery.amount_due_dispatch, 0)
+            new_escrow = max(wallet.escrow_balance - order.delivery.amount_due_dispatch, 0)
             await db.execute(
                 update(Wallet)
                 .where(Wallet.id == current_user.sender_id)
@@ -884,12 +873,12 @@ async def cancel_delivery(
             await db.commit()
             await db.refresh()
 
-            invalidate_delivery_cache(delivery.id)
+            invalidate_delivery_cache(order.delivery.id)
             redis_client.delete(f"{ALL_DELIVERY}")
 
-            token = await get_user_notification_token(db=db, user_id=delivery.vendor_id)
+            token = await get_user_notification_token(db=db, user_id=order.delivery.vendor_id)
             rider_token = await get_user_notification_token(
-                db=db, user_id=delivery.rider_id
+                db=db, user_id=order.delivery.rider_id
             )
 
             if token:
@@ -912,10 +901,10 @@ async def cancel_delivery(
             redis_client.delete(f"user_related_orders:{current_user.id}")
 
             await ws_service.broadcast_delivery_status_update(
-                delivery_id=delivery.id, delivery_status=delivery.delivery_status
+                delivery_id=order.delivery.id, delivery_status=order.delivery.delivery_status
             )
 
-            return DeliveryStatusUpdateSchema(delivery_status=delivery.delivery_status)
+            return DeliveryStatusUpdateSchema(delivery_status=order.delivery.delivery_status)
 
 
 async def re_list_item_for_delivery(
@@ -1700,16 +1689,16 @@ async def admin_modify_delivery_status(
 
         # --- AUDIT LOG ---
         audit = AuditLog(
-                actor_id=current_user.get("id"),
-                actor_name=current_user.get("email", "unknown"),
-                actor_role=str(current_user.get("user_type", "unknown")),
-                action="admin_modify_delivery_status",
-                resource_type="Delivery",
-                resource_id=delivery_id,
-                resource_summary=f"Admin changed delivery status for {delivery_id}",
-                changes={"delivery_status": [str(old_status), str(new_status)]},
-                extra_metadata=None,
-            )
+            actor_id=current_user.get("id"),
+            actor_name=current_user.get("email", "unknown"),
+            actor_role=str(current_user.get("user_type", "unknown")),
+            action="admin_modify_delivery_status",
+            resource_type="Delivery",
+            resource_id=delivery_id,
+            resource_summary=f"Admin changed delivery status for {delivery_id}",
+            changes={"delivery_status": [str(old_status), str(new_status)]},
+            extra_metadata=None,
+        )
         db.add(audit)
         await db.commit()
 

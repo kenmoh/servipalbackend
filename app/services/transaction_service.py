@@ -1182,7 +1182,12 @@ async def fund_wallet_callback(request: Request, db: AsyncSession):
         await db.execute(
             update(Transaction)
             .where(Transaction.id == UUID(tx_ref))
-            .values(payment_status=new_status,payment_method=PaymentMethod.CARD, transaction_type=TransactionType.FUND_WALLET, transaction_direction=TransactionDirection.CREDIT)
+            .values(
+                payment_status=new_status,
+                payment_method=PaymentMethod.CARD,
+                transaction_type=TransactionType.FUND_WALLET,
+                transaction_direction=TransactionDirection.CREDIT,
+            )
         )
 
         await db.execute(
@@ -1329,6 +1334,7 @@ async def order_payment_callback(request: Request, db: AsyncSession):
         .options(
             selectinload(Order.owner).selectinload(User.profile),
             selectinload(Order.vendor).selectinload(User.profile),
+            selectinload(Order.delivery),
         )
     )
     order = order_result.scalar_one_or_none()
@@ -1350,7 +1356,9 @@ async def order_payment_callback(request: Request, db: AsyncSession):
         )
         buyer_wallet = buyer_wallet_result.scalar_one_or_none()
         if not buyer_wallet:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Buyer wallet not found")
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="Buyer wallet not found"
+            )
 
         current_time = datetime.now()
         transaction_values = []

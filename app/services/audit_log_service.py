@@ -10,7 +10,6 @@ from app.schemas.audit_logs import AuditLogResponse
 
 
 class AuditLogService:
-
     @staticmethod
     async def get_logs(
         db: AsyncSession,
@@ -68,7 +67,7 @@ class AuditLogService:
             log_id: UUID of the log
         Returns:
             list of AuditLog instance or []
-   
+
         """
         stmt = select(AuditLog).where(AuditLog.id == log_id)
         result = await db.execute(stmt)
@@ -78,9 +77,11 @@ class AuditLogService:
                 status_code=status.HTTP_404_NOT_FOUND, detail="Audit log not found"
             )
         return log
-    
+
     @staticmethod
-    async def get_user_log_by_actor_id(db: AsyncSession, actor_id: UUID) -> AuditLogResponse:
+    async def get_user_log_by_actor_id(
+        db: AsyncSession, actor_id: UUID
+    ) -> AuditLogResponse:
         """
         Fetch a single audit log by its ID.
         Args:
@@ -94,5 +95,5 @@ class AuditLogService:
         stmt = select(AuditLog).where(AuditLog.actor_id == actor_id)
         result = await db.execute(stmt)
         logs = result.scalars().all()
-      
+
         return logs
