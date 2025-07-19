@@ -162,10 +162,11 @@ async def get_current_user(
     session_result = await db.execute(
         select(Session).where(Session.user_id == user.id, Session.is_active == True)
     )
-    session_obj = session_result.scalar_one_or_none()
-    if session_obj:
+    sessions = session_result.scalars().all()
+    for session_obj in sessions:
         session_obj.last_active = datetime.now()
         session_obj.is_active = True
+    if sessions:
         await db.commit()
 
     return user
