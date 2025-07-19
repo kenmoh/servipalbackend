@@ -1,6 +1,7 @@
 from uuid import UUID
 from fastapi import (
     APIRouter,
+    Body,
     Depends,
     HTTPException,
     Query,
@@ -14,6 +15,7 @@ from fastapi.security import OAuth2PasswordRequestForm
 from pydantic import EmailStr
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app import auth
 from app.auth.auth import create_tokens, get_current_user
 from app.database.database import get_db
 from app.models.models import User
@@ -113,23 +115,39 @@ async def login_admin_user(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
 
-@router.post("/logout", include_in_schema=False, status_code=status.HTTP_200_OK)
+# @router.post("/logout", include_in_schema=False, status_code=status.HTTP_200_OK)
+# async def logout(
+#     current_user: User = Depends(get_current_user),
+#     db: AsyncSession = Depends(get_db),
+# ) -> dict:
+#     """Logout user by revoking their refresh token"""
+#     try:
+#         success = await auth_service.logout_user(db=db, current_user=current_user)
+#         if not success:
+#             raise HTTPException(
+#                 status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid token"
+#             )
+#         return {"message": "Successfully logged out"}
+
+#     except Exception as e:
+#         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+
+
+@router.post("/logout", status_code=200)
 async def logout(
-    current_user: User = Depends(get_current_user),
+    refresh_token: str = Body(None),
     db: AsyncSession = Depends(get_db),
-) -> dict:
-    """Logout user by revoking their refresh token"""
-    try:
-        success = await auth_service.logout_user(db=db, current_user=current_user)
-        if not success:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid token"
-            )
-        return {"message": "Successfully logged out"}
-
-    except Exception as e:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
-
+):
+    """
+    Logout endpoint that always returns 200. Optionally revokes refresh token if provided.
+    """
+    if refresh_token:
+        # Try to revoke the refresh token, ignore errors for logout UX
+        try:
+            await auth.revoke_refresh_token(refresh_token, db)
+        except Exception:
+            pass
+    return {"message": "Logged out successfully"}
 
 @router.post("/register", status_code=status.HTTP_201_CREATED)
 async def create_user(

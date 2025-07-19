@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timedelta
 from app.schemas.item_schemas import FoodGroup, ItemType
 from app.models.models import AuditLog, Delivery, User, Item, RefreshToken, Session
 from sqlalchemy.orm import selectinload
@@ -291,6 +291,73 @@ async def get_users(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to retrieve users: {str(e)}",
         )
+
+
+
+async def get_active_users(db: AsyncSession, window_minutes: int = 10) -> list[UserProfileResponse]:
+    """
+    Returns users with active sessions (is_active == True and last_active within the window).
+    Args:
+        db: Async database session
+        window_minutes: How recent the last activity must be to be considered active
+    Returns:
+        List of UserProfileResponse objects
+    """
+    now = datetime.now()
+    window = timedelta(minutes=window_minutes)
+
+    # Get active sessions
+    session_stmt = (
+        select(Session.user_id)
+        .where(Session.is_active == True)
+        .where(Session.last_active >= now - window)
+    )
+    result = await db.execute(session_stmt)
+    user_ids = [row[0] for row in result.all()]
+    if not user_ids:
+        return []
+
+    # Get users with profiles and profile images
+    user_stmt = (
+        select(User)
+        .options(selectinload(User.profile).selectinload(Profile.profile_image))
+        .where(User.id.in_(user_ids))
+    )
+    result = await db.execute(user_stmt)
+    users = result.scalars().all()
+
+    # Format as UserProfileResponse
+    users_data = []
+    for user in users:
+        user_data = {
+            "email": user.email,
+            "user_type": getattr(user, "user_type", "customer"),
+            "id": str(user.id),
+            "is_blocked": user.is_blocked,
+            "account_status": user.account_status,
+        }
+        if user.profile:
+            user_data["profile"] = {
+                "user_id": user.id,
+                "phone_number": user.profile.phone_number,
+                "bike_number": getattr(user.profile, "bike_number", None),
+                "bank_account_number": getattr(user.profile, "bank_account_number", None),
+                "bank_name": getattr(user.profile, "bank_name", None),
+                "full_name": user.profile.full_name,
+                "store_name": user.profile.store_name,
+                "business_name": getattr(user.profile, "business_name", None),
+                "business_address": getattr(user.profile, "business_address", None),
+                "backdrop_image_url": getattr(user.profile.profile_image, "backdrop_image_url", None),
+                "profile_image_url": getattr(user.profile.profile_image, "profile_image_url", None),
+                "business_registration_number": getattr(user.profile, "business_registration_number", None),
+                "closing_hours": user.profile.closing_hours.isoformat() if getattr(user.profile, "closing_hours", None) else None,
+                "opening_hours": user.profile.opening_hours.isoformat() if getattr(user.profile, "opening_hours", None) else None,
+            }
+        else:
+            user_data["profile"] = None
+        users_data.append(user_data)
+
+    return [UserProfileResponse(**user_data) for user_data in users_data]
 
 
 async def toggle_user_block_status(

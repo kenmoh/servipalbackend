@@ -8,6 +8,7 @@ from fastapi import (
     UploadFile,
     status,
     BackgroundTasks,
+    Body,
 )
 
 
@@ -62,6 +63,18 @@ async def get_users(
     db: AsyncSession = Depends(get_db),
 ) -> list[UserProfileResponse]:
     return await user_service.get_users(db=db, skip=skip, limit=limit)
+
+
+@router.get("/active", status_code=status.HTTP_200_OK)
+async def get_active_users(
+    window_minutes: int = Query(10, ge=1, le=120),
+    db: AsyncSession = Depends(get_db),
+) -> list[UserProfileResponse]:
+    """
+    Get users with active sessions (is_active == True and last_active within the window).
+    window_minutes: How recent the last activity must be to be considered active (default 10 min)
+    """
+    return await user_service.get_active_users(db=db, window_minutes=window_minutes)
 
 
 @router.get("/wallets", include_in_schema=False, status_code=status.HTTP_200_OK)
@@ -290,3 +303,6 @@ async def get_push_notification(
     return await user_service.get_current_user_notification_token(
         db=db, current_user=current_user
     )
+
+
+

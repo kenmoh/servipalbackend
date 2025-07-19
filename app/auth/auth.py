@@ -8,7 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import joinedload
 from pydantic import EmailStr
 
-from app.models.models import User, RefreshToken
+from app.models.models import User, RefreshToken, Session
 from app.schemas.status_schema import AccountStatus
 from app.schemas.user_schemas import TokenResponse
 from app.database.database import get_db
@@ -99,6 +99,8 @@ async def verify_refresh_token(token: str, db: AsyncSession) -> str:
     return user_id
 
 
+
+"""
 async def get_current_user(
     token: str = Depends(oauth2_scheme), db: AsyncSession = Depends(get_db)
 ) -> User:
@@ -126,6 +128,47 @@ async def get_current_user(
         raise credentials_exception
 
     return user
+"""
+
+
+
+async def get_current_user(
+    token: str = Depends(oauth2_scheme), db: AsyncSession = Depends(get_db)
+) -> User:
+    credentials_exception = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Could not validate credentials",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+
+    try:
+        payload = jwt.decode(
+            token, settings.JWT_SECRET_KEY, algorithms=[settings.JWT_ALGORITHM]
+        )
+        user_id: str = payload.get("sub")
+        if user_id is None:
+            raise credentials_exception
+    except JWTError:
+        raise credentials_exception
+
+    query = select(User).where(User.id == user_id)
+    result = await db.execute(query)
+    user = result.scalar_one_or_none()
+
+    if user is None or user.is_blocked:
+        raise credentials_exception
+
+    # Update session activity
+    session_result = await db.execute(
+        select(Session).where(Session.user_id == user.id, Session.is_active == True)
+    )
+    session_obj = session_result.scalar_one_or_none()
+    if session_obj:
+        session_obj.last_active = datetime.now()
+        session_obj.is_active = True
+        await db.commit()
+
+    return user
 
 
 async def get_current_active_superuser(
@@ -151,14 +194,14 @@ async def get_current_admin_user(
 
 
 async def revoke_refresh_token(token: str, db: AsyncSession) -> bool:
-    result = await db.execute(
-        "UPDATE refresh_tokens SET is_revoked = TRUE WHERE token = :token RETURNING id",
-        {"token": token},
-    )
-    row = result.fetchone()
+    stmt = select(RefreshToken).where(RefreshToken.token == token)
+    result = await db.execute(stmt)
+    refresh_token = result.scalar_one_or_none()
+    if not refresh_token:
+        return False
+    refresh_token.is_revoked = True
     await db.commit()
-
-    return row is not None
+    return True
 
 
 async def refresh_access_token(refresh_token: str, db: AsyncSession) -> dict:
