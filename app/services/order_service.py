@@ -764,13 +764,13 @@ async def _cancel_delivery_and_order(
             ]
         ):
             # Set delivery status
-            db.execute(
+            await db.execute(
                 update(Delivery)
                 .where(Delivery.id == order.delivery.id)
                 .values(delivery_status=DeliveryStatus.CANCELLED)
             )
             # Set order status
-            db.execute(
+            await db.execute(
                 update(Order)
                 .where(Order.id == order.id)
                 .values(order_status=OrderStatus.CANCELLED)
@@ -787,7 +787,7 @@ async def _cancel_delivery_and_order(
                 OrderStatus.RECEIVED,
             ]
         ):
-            db.execute(
+            await db.execute(
                 update(Order)
                 .where(Order.id == order.id)
                 .values(order_status=OrderStatus.CANCELLED)
@@ -805,7 +805,58 @@ async def _cancel_delivery_and_order(
         )
 
 
-async def cancel_delivery(
+async def _update_delivery_and_order(
+    db: AsyncSession, order_id: UUID, delivery_status: DeliveryStatus = None, order_status: OrderStatus = None
+) -> DeliveryResponse:
+    """
+    Update delivery and/or order status.
+    Args:
+        db: Database session
+        order_id: UUID of the order
+        delivery_status: New status for delivery (optional)
+        order_status: New status for order (optional)
+    Returns:
+        DeliveryResponse
+    """
+    order_stmt = (
+        select(Order).options(selectinload(Order.delivery)).where(Order.id == order_id)
+    )
+    order_result = await db.execute(order_stmt)
+    order = order_result.scalar_one_or_none()
+
+    if not order:
+        raise HTTPException(status_code=404, detail="Order not found")
+
+    try:
+        # Update delivery if needed
+        if order.require_delivery == RequireDeliverySchema.DELIVERY and order.delivery and delivery_status:
+            await db.execute(
+                update(Delivery)
+                .where(Delivery.id == order.delivery.id)
+                .values(delivery_status=delivery_status)
+            )
+        # Update order if needed
+        if order_status:
+            await db.execute(
+                update(Order)
+                .where(Order.id == order.id)
+                .values(order_status=order_status)
+            )
+        await db.commit()
+        # Refresh order and delivery
+        await db.refresh(order)
+        if order.delivery:
+            await db.refresh(order.delivery)
+        return format_delivery_response(order, order.delivery)
+    except Exception as e:
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to update delivery/order - {e}",
+        )
+
+
+async def cancel_order_or_delivery(
     db: AsyncSession, order_id: UUID, current_user: User
 ) -> DeliveryStatusUpdateSchema:
     """
@@ -925,12 +976,11 @@ async def cancel_delivery(
 
 
 async def re_list_item_for_delivery(
-    db: AsyncSession, delivery_id: UUID, current_user: User
+    db: AsyncSession, order_id: UUID, current_user: User
 ) -> DeliveryStatusUpdateSchema:
     """
     Re-list delivery(Owner)
     """
-
     wallet_result = await db.execute(select(Wallet).where(Wallet.id == current_user.id))
 
     wallet = wallet_result.scalar_one_or_none()
@@ -940,51 +990,54 @@ async def re_list_item_for_delivery(
         UserType.LAUNDRY_VENDOR,
         UserType.RESTAURANT_VENDOR,
     ]:
-        result = await db.execute(
-            select(Delivery)
-            .where(Delivery.id == delivery_id)
-            .where(Delivery.sender_id == current_user.id)
-        )
-        delivery = result.scalar_one_or_none()
+        # result = await db.execute(
+        #     select(Delivery)
+        #     .where(Delivery.id == order.delivery.id)
+        #     .where(Delivery.sender_id == current_user.id)
+        # )
+        # delivery = result.scalar_one_or_none()
 
         try:
-            if delivery.delivery_status == DeliveryStatus.CANCELLED:
-                result = await db.execute(
-                    update(Delivery)
-                    .where(Delivery.id == delivery_id)
-                    .where(Delivery.sender_id == current_user.id)
-                    .values(delivery_status=DeliveryStatus.PENDING)
-                )
-                await db.commit()
+            order = await _update_delivery_and_order(db=db, order_id=order_id, delivery_status=DeliveryStatus.PENDING)
 
-                # UPDATE USER WALLET
-                new_escrow = wallet.escrow_balance + delivery.delivery_fee
-                new_balance = wallet.balance - delivery.delivery_fee
-                if new_balance < 0:
-                    raise HTTPException(
-                        status_code=400,
-                        detail="Insufficient balance to re-list delivery.",
-                    )
-                await db.execute(
-                    update(Wallet)
-                    .where(Wallet.id == current_user.sender_id)
-                    .values(
-                        {
-                            "balance": new_balance,
-                            "escrow_balance": new_escrow,
-                        }
-                    )
-                )
-                await db.commit()
-                await db.refresh(delivery)
 
-                invalidate_delivery_cache(delivery.id)
-                redis_client.delete(ALL_DELIVERY)
-                redis_client.delete("paid_pending_deliveries")
-                redis_client.delete(f"user_related_orders:{current_user.id}")
-                return DeliveryStatusUpdateSchema(
-                    delivery_status=delivery.delivery_status
+            # if delivery.delivery_status == DeliveryStatus.CANCELLED:
+            #     result = await db.execute(
+            #         update(Delivery)
+            #         .where(Delivery.id == order.delivery.id)
+            #         .where(Delivery.sender_id == current_user.id)
+            #         .values(delivery_status=DeliveryStatus.PENDING)
+            #     )
+            #     await db.commit()
+
+            # UPDATE USER WALLET
+            new_escrow = wallet.escrow_balance + order.delivery.delivery_fee
+            new_balance = max( wallet.balance - order.delivery.delivery_fee, 0)
+            if new_balance < 0:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Insufficient balance to re-list delivery.",
                 )
+            await db.execute(
+                update(Wallet)
+                .where(Wallet.id == current_user.sender_id)
+                .values(
+                    {
+                        "balance": new_balance,
+                        "escrow_balance": new_escrow,
+                    }
+                )
+            )
+            await db.commit()
+            await db.refresh(order.delivery)
+
+            invalidate_delivery_cache(order.delivery.id)
+            redis_client.delete(ALL_DELIVERY)
+            redis_client.delete("paid_pending_deliveries")
+            redis_client.delete(f"user_related_orders:{current_user.id}")
+            return DeliveryStatusUpdateSchema(
+                delivery_status=order.delivery.delivery_status
+            )
 
         except Exception as e:
             raise HTTPException(

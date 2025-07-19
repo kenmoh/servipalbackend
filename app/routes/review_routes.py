@@ -61,7 +61,7 @@ async def get_user_reviews(
     Endpoint to get current user reviews
     """
     return await review_service.fetch_vendor_reviews(
-        db=db, vendor_id=vendor_id, current_user=current_user
+        db=db, vendor_id=vendor_id
     )
 
 
@@ -70,7 +70,7 @@ async def get_reviews_for_admin(
     db: AsyncSession = Depends(get_db),
     review_filter: ReviewFilter | None = None,
     page: int = 1,
-    page_size: int = 10,
+    page_size: int = 20,
     current_user: User = Depends(get_current_admin_user),
 ):
     """

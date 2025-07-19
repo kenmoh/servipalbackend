@@ -247,13 +247,13 @@ async def admin_modify_delivery_status(
     status_code=status.HTTP_202_ACCEPTED,
 )
 async def cancel_delivery(
-    delivery_id: UUID,
+    order_id: UUID,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> DeliveryStatusUpdateSchema:
     try:
-        return await order_service.cancel_delivery(
-            db=db, current_user=current_user, delivery_id=delivery_id
+        return await order_service.cancel_order_or_delivery(
+            db=db, current_user=current_user, order_id=order_id
         )
 
     except Exception as e:

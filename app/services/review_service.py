@@ -3,18 +3,21 @@ import json
 
 from fastapi import HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import or_, select, update, insert
+from sqlalchemy import func, or_, select, update, insert
 from sqlalchemy.orm import selectinload
 
 
 from app.schemas.review_schema import (
     BadgeCount,
+    FilteredReviewsResponse,
     MessageCreate,
     MessageType,
     ReportCreate,
     ReportMessage,
     ReportTag,
     ReviewCreate,
+    ReviewFilter,
+    ReviewStats,
     ReviewerProfile,
     ReviewType,
     ReportedUserType,
@@ -775,7 +778,7 @@ async def get_filtered_reviews_and_stats(
     db: AsyncSession,
     review_filter: ReviewFilter | None = None,
     page: int = 1,
-    page_size: int = 10,
+    page_size: int = 20,
 ) -> FilteredReviewsResponse:
     """
     Get reviews based on a filter and return statistics.
