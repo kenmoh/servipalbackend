@@ -1,16 +1,17 @@
 from pydantic import BaseModel, Field
+from uuid import UUID
 from typing import Optional, Dict, Any, List
 from datetime import datetime
 
 
 class AuditLogBase(BaseModel):
     timestamp: datetime = Field(default_factory=datetime.utcnow)
-    actor_id: str
+    actor_id: UUID
     actor_name: str
     actor_role: str
     action: str
     resource_type: str
-    resource_id: Optional[str] = None
+    resource_id: Optional[UUID] = None
     resource_summary: Optional[str] = None
     changes: Optional[Dict[str, List[Any]]] = None  # e.g., {"field": [old, new]}
     ip_address: Optional[str] = None
@@ -18,4 +19,4 @@ class AuditLogBase(BaseModel):
 
 
 class AuditLogResponse(AuditLogBase):
-    id: str
+    id: UUID
