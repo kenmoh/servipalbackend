@@ -433,7 +433,7 @@ async def toggle_user_block_status(
         audit = AuditLog(
             actor_id=current_user.id,
             actor_name=getattr(current_user, "email", "unknown"),
-            actor_role=str(current_user.user_type),
+            actor_role=current_user.user_type,
             action=f"user_{action}",
             resource_type="User",
             resource_id=user.id,
@@ -600,7 +600,7 @@ async def update_profile(
         audit = AuditLog(
             actor_id=current_user.id,
             actor_name=current_user.profile.full_name or current_user.email,
-            actor_role=str(current_user.user_type),
+            actor_role=current_user.user_type,
             action="update_profile",
             resource_type="Profile",
             resource_id=profile.user_id,
@@ -723,7 +723,7 @@ async def update_rider_profile(
             audit = AuditLog(
                 actor_id=current_user.id,
                 actor_name=getattr(current_user, "email", "unknown"),
-                actor_role=str(current_user.user_type),
+                actor_role=current_user.user_type,
                 action="update_rider_profile",
                 resource_type="Profile",
                 resource_id=profile.user_id,
@@ -1382,7 +1382,7 @@ async def delete_rider(rider_id: UUID, db: AsyncSession, current_user: User) -> 
         audit = AuditLog(
             actor_id=current_user.id,
             actor_name=getattr(current_user, "email", "unknown"),
-            actor_role=str(current_user.user_type),
+            actor_role=current_user.user_type,
             action="delete_rider",
             resource_type="User",
             resource_id=rider_id_val,
