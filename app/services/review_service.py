@@ -624,8 +624,7 @@ async def delete_report_if_allowed(
     redis_client.delete(f"report:{report_id}:thread:{report.complainant_id}")
     redis_client.delete(f"report:{report_id}:thread:{report.defendant_id}")
     # --- AUDIT LOG ---
-    await db.execute(
-        insert(AuditLog).values(
+    audit = AuditLog(
             actor_id=current_user.id,
             actor_name=getattr(current_user, "email", "unknown"),
             actor_role=str(getattr(current_user, "user_type", "unknown")),
@@ -636,7 +635,7 @@ async def delete_report_if_allowed(
             changes=None,
             metadata=None,
         )
-    )
+    db.add(audit)
     await db.commit()
     return None
 
@@ -671,8 +670,7 @@ async def update_report_status(
     redis_client.delete(f"report:{report_id}:thread:{report.complainant_id}")
     redis_client.delete(f"report:{report_id}:thread:{report.defendant_id}")
     # --- AUDIT LOG ---
-    await db.execute(
-        insert(AuditLog).values(
+    audit = AuditLog(
             actor_id=current_user.id,
             actor_name=getattr(current_user, "email", "unknown"),
             actor_role=str(getattr(current_user, "user_type", "unknown")),
@@ -683,7 +681,7 @@ async def update_report_status(
             changes={"report_status": [old_status, new_status]},
             metadata=None,
         )
-    )
+    db.add(audit)
     await db.commit()
     return StatusUpdate.model_validate(new_status)
 

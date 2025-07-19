@@ -342,8 +342,7 @@ async def toggle_user_block_status(
         )
 
         # --- AUDIT LOG ---
-        await db.execute(
-            insert(AuditLog).values(
+        audit = AuditLog(
                 actor_id=current_user.id,
                 actor_name=getattr(current_user, "email", "unknown"),
                 actor_role=str(current_user.user_type),
@@ -354,8 +353,7 @@ async def toggle_user_block_status(
                 changes={"is_blocked": [not user.is_blocked, user.is_blocked]},
                 extra_metadata=None,
             )
-        )
-
+        db.add(audit)
         await db.commit()
 
         return user.is_blocked
@@ -367,18 +365,6 @@ async def toggle_user_block_status(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to update user block status",
         )
-
-
-# async def get_user_wallets(db: AsyncSession) -> list[WalletSchema]:
-#     stmt = select(Wallet).options(selectinload(Wallet.transactions))
-#     result = await db.execute(stmt)
-#     wallets = result.scalars().all()
-#     for wallet in wallets:
-#         if hasattr(wallet, "transactions") and wallet.transactions:
-#             wallet.transactions.sort(
-#                 key=lambda t: getattr(t, "created_at", None), reverse=True
-#             )
-#     return wallets
 
 
 async def get_user_wallets(
@@ -523,20 +509,21 @@ async def update_profile(
         if old_profile.get(k) != getattr(profile, k)
     }
     if changed_fields:
-        await db.execute(
-            insert(AuditLog).values(
+  
+            audit = AuditLog(
                 actor_id=current_user.id,
-                actor_name=getattr(current_user, "email", "unknown"),
+                actor_name=current_user.profile.full_name or current_user.email,
                 actor_role=str(current_user.user_type),
                 action="update_profile",
                 resource_type="Profile",
                 resource_id=profile.user_id,
-                resource_summary=current_user.email,
+                resource_summary=f'{current_user.profile.full_name or current_user.email} update {changed_fields}',
                 changes=changed_fields,
                 extra_metadata=None,
             )
-        )
-        await db.commit()
+        
+            db.add(audit)
+            await db.commit()
 
     return profile
 
@@ -646,8 +633,7 @@ async def update_rider_profile(
             if old_profile.get(k) != getattr(profile, k)
         }
         if changed_fields:
-            await db.execute(
-                insert(AuditLog).values(
+            audit = AuditLog(
                     actor_id=current_user.id,
                     actor_name=getattr(current_user, "email", "unknown"),
                     actor_role=str(current_user.user_type),
@@ -658,8 +644,8 @@ async def update_rider_profile(
                     changes=changed_fields,
                     extra_metadata=None,
                 )
-            )
-
+            
+            db.add(audit)
             await db.commit()
 
         return profile
@@ -1306,8 +1292,7 @@ async def delete_rider(rider_id: UUID, db: AsyncSession, current_user: User) -> 
         )
 
         # --- AUDIT LOG ---
-        await db.execute(
-            insert(AuditLog).valuses(
+        audit = AuditLog(
                 actor_id=current_user.id,
                 actor_name=getattr(current_user, "email", "unknown"),
                 actor_role=str(current_user.user_type),
@@ -1318,7 +1303,7 @@ async def delete_rider(rider_id: UUID, db: AsyncSession, current_user: User) -> 
                 changes=None,
                 extra_metadata=None,
             )
-        )
+        db.add(audit)
         await db.commit()
 
         return None

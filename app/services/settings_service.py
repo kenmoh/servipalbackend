@@ -170,8 +170,7 @@ async def update_charge_and_commission_settings(
             .values(**update_dict)
         )
         # --- AUDIT LOG ---
-        await db.execute(
-            insert(AuditLog).values(
+        audit = (AuditLog(
                 actor_id=current_user.id,
                 actor_name=getattr(current_user, "email", "unknown"),
                 actor_role=str(current_user.user_type),
@@ -183,7 +182,7 @@ async def update_charge_and_commission_settings(
                 extra_metadata=None,
             )
         )
-        await db.execute(stmt)
+        db.add(audit)
         await db.commit()
 
         # Clear cache

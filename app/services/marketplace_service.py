@@ -28,7 +28,7 @@ from app.schemas.status_schema import (
     TransactionType,
 )
 from app.services.order_service import fetch_wallet
-from app.utils.utils import get_fund_wallet_payment_link, get_user_notification_token
+from app.utils.utils import get_fund_wallet_payment_link, get_user_notification_token, send_push_notification
 from app.config.config import redis_client
 
 

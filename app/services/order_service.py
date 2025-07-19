@@ -1701,8 +1701,7 @@ async def admin_modify_delivery_status(
         await db.refresh(delivery)
 
         # --- AUDIT LOG ---
-        await db.execute(
-            insert(AuditLog).values(
+        audit = AuditLog(
                 actor_id=current_user.get("id"),
                 actor_name=current_user.get("email", "unknown"),
                 actor_role=str(current_user.get("user_type", "unknown")),
@@ -1713,7 +1712,7 @@ async def admin_modify_delivery_status(
                 changes={"delivery_status": [str(old_status), str(new_status)]},
                 extra_metadata=None,
             )
-        )
+        db.add(audit)
         await db.commit()
 
         invalidate_delivery_cache(delivery_id)

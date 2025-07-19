@@ -10,45 +10,6 @@ from app.schemas.audit_logs import AuditLogResponse
 
 
 class AuditLogService:
-    @staticmethod
-    async def log_action(
-        db: AsyncSession,
-        *,
-        actor_id: UUID,
-        actor_name: str,
-        actor_role: str,
-        action: str,
-        resource_type: str,
-        resource_id: Optional[UUID] = None,
-        resource_summary: Optional[str] = None,
-        changes: Optional[Dict[str, Any]] = None,
-        ip_address: Optional[str] = None,
-        extra_metadata: Optional[Dict[str, Any]] = None,
-    ) -> AuditLogResponse:
-        """
-        Log an action to the audit log.
-        """
-        try:
-            log = AuditLog(
-                timestamp=datetime.now(),
-                actor_id=actor_id,
-                actor_name=actor_name,
-                actor_role=actor_role,
-                action=action,
-                resource_type=resource_type,
-                resource_id=resource_id,
-                resource_summary=resource_summary,
-                changes=changes,
-                ip_address=ip_address,
-                extra_metadata=extra_metadata,
-            )
-            db.add(log)
-            await db.commit()
-            await db.refresh(log)
-            return log
-        except Exception as e:
-            await db.rollback()
-            raise
 
     @staticmethod
     async def get_logs(
@@ -99,7 +60,27 @@ class AuditLogService:
         return result.scalars().all()
 
     @staticmethod
-    async def get_log_by_id(db: AsyncSession, log_id: UUID) -> AuditLogResponse:
+    async def get_log_by_id(db: AsyncSession, log_id: UUID) -> list[AuditLogResponse]:
+        """
+        Fetch a user audit logs.
+        Args:
+            db: Database session
+            log_id: UUID of the log
+        Returns:
+            list of AuditLog instance or []
+   
+        """
+        stmt = select(AuditLog).where(AuditLog.id == log_id)
+        result = await db.execute(stmt)
+        log = result.scalar_one_or_none()
+        if not log:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="Audit log not found"
+            )
+        return log
+    
+    @staticmethod
+    async def get_user_log_by_actor_id(db: AsyncSession, actor_id: UUID) -> AuditLogResponse:
         """
         Fetch a single audit log by its ID.
         Args:
@@ -110,11 +91,8 @@ class AuditLogService:
         Raises:
             HTTPException if not found
         """
-        stmt = select(AuditLog).where(AuditLog.id == log_id)
+        stmt = select(AuditLog).where(AuditLog.actor_id == actor_id)
         result = await db.execute(stmt)
-        log = result.scalar_one_or_none()
-        if not log:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND, detail="Audit log not found"
-            )
-        return log
+        logs = result.scalars().all()
+      
+        return logs

@@ -405,19 +405,6 @@ async def create_new_staff(
         db.flush()
 
         # --- AUDIT LOG ---
-        # await db.execute(
-        #     insert(AuditLog).values(
-        #         actor_id=current_user.id,
-        #         actor_name=current_user.profile.full_name or current_user.email,
-        #         actor_role=current_user.user_type,
-        #         action="create_staff",
-        #         resource_type="User",
-        #         resource_id=new_staff.id,
-        #         resource_summary=f"create_staff: {new_staff.email}, {staff_profile.full_name}",
-        #         changes=None,
-        #         extra_metadata=None,
-        #     )
-        # )
 
         audit = AuditLog(
                 actor_id=current_user.id,
@@ -698,8 +685,7 @@ async def update_staff(
         if old_profile.get(k) != getattr(profile, k)
     }
     if changed_fields:
-        await db.execute(
-            insert(AuditLog).values(
+        audit = AuditLog(
                 actor_id=current_user.id,
                 actor_name=current_user.profile.full_name or current_user.email,
                 actor_role=current_user.user_type,
@@ -710,7 +696,7 @@ async def update_staff(
                 changes=changed_fields,
                 metadata=None,
             )
-        )
+        db.add(audit)
         db.commit()
     return staff
 
@@ -857,8 +843,7 @@ async def change_password(
         await logout_user(db, current_user.id)
         # --- AUDIT LOG ---
 
-        await db.execute(
-            insert(AuditLog).valuses(
+        audit = AuditLog(
                 actor_id=current_user.id,
                 actor_name=current_user.profile.full_name or current_user.email,
                 actor_role=current_user.user_type,
@@ -869,8 +854,8 @@ async def change_password(
                 changes={"password": [old_password_hash, "***"]},
                 metadata=None,
             )
-        )
-
+        
+        db.add(audit)
         await db.commit()
         return {"message": "Password changed successfully"}
     except Exception as e:
@@ -1322,8 +1307,7 @@ async def update_staff_password(
     staff.updated_at = datetime.now()
     await db.commit()
     # --- AUDIT LOG ---
-    await db.execute(
-        insert(AuditLog).valuses(
+    audit = AuditLog(
             actor_id=current_user.id,
             actor_name=current_user.profile.full_name or current_user.email,
             actor_role=current_user.user_type,
@@ -1334,7 +1318,7 @@ async def update_staff_password(
             changes={"password": [old_password_hash, "***"]},
             metadata=None,
         )
-    )
-
+    
+    db.add(audit)
     await db.commit()
     return {"message": "Staff password updated successfully."}
