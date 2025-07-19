@@ -360,6 +360,29 @@ async def get_active_users(db: AsyncSession, window_minutes: int = 10) -> list[U
     return [UserProfileResponse(**user_data) for user_data in users_data]
 
 
+async def get_active_user_count(db: AsyncSession, window_minutes: int = 10) -> int:
+    """
+    Returns the count of users with active sessions (is_active == True and last_active within the window).
+    Args:
+        db: Async database session
+        window_minutes: How recent the last activity must be to be considered active
+    Returns:
+        int: Count of active users
+    """
+    
+    now = datetime.now()
+    window = timedelta(minutes=window_minutes)
+
+    session_stmt = (
+        select(Session.user_id)
+        .where(Session.is_active == True)
+        .where(Session.last_active >= now - window)
+    )
+    result = await db.execute(session_stmt)
+    user_ids = {row[0] for row in result.all()}
+    return len(user_ids)
+
+
 async def toggle_user_block_status(
     db: AsyncSession, user_id: UUID, current_user: User
 ) -> bool:

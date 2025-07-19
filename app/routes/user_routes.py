@@ -77,6 +77,18 @@ async def get_active_users(
     return await user_service.get_active_users(db=db, window_minutes=window_minutes)
 
 
+@router.get("/active/count", status_code=status.HTTP_200_OK)
+async def get_active_user_count(
+    window_minutes: int = Query(10, ge=1, le=120),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Get the count of users with active sessions (is_active == True and last_active within the window).
+    """
+    count = await user_service.get_active_user_count(db=db, window_minutes=window_minutes)
+    return {"count": count}
+
+
 @router.get("/wallets", include_in_schema=False, status_code=status.HTTP_200_OK)
 async def get_user_wallets(
     skip: int = Query(0, ge=0),
