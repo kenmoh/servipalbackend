@@ -662,7 +662,7 @@ async def update_report_status(
         )
 
     old_status = report.report_status
-    report.report_status = new_status.issue_status
+    report.report_status = new_status.report_status
     await db.commit()
     await db.refresh(report)
     # Invalidate cache for both users
