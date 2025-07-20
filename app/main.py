@@ -164,6 +164,10 @@ async def lifespan(application: FastAPI):
 sentry_sdk.init(
     dsn="https://29793bfca41a89530399ca6c906484a8@o4505603287023616.ingest.us.sentry.io/4509700294311936",
     send_default_pii=True,
+    traces_sample_rate=1.0,
+    profile_session_sample_rate=1.0,
+    profile_lifecycle="trace",
+   
 )
 
 
