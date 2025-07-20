@@ -347,7 +347,7 @@ async def get_restaurant_menu(
                     "price": str(item.price),
                     "item_type": item.item_type,
                     "food_group": item.food_group,
-                    "image_url": [
+                    "images": [
                         {"id": img.id, "url": img.url, "item_id": img.item_id}
                         for img in item.images
                     ],
@@ -406,7 +406,7 @@ async def get_laundry_menu(
                     "description": item.description or None,
                     "price": str(item.price),
                     "item_type": item.item_type,
-                    "image_url": [
+                    "images": [
                         {"id": img.id, "url": img.url, "item_id": img.item_id}
                         for img in item.images
                     ],
@@ -455,13 +455,13 @@ async def get_all_food_items(db: AsyncSession) -> list[MenuResponseSchema]:
             food_response.append(
                 {
                     "id": str(item.id),
-                    "vendor_id": item.user_id,
+                    "user_id": item.user_id,
                     "name": item.name,
                     "description": item.description,
                     "price": str(item.price),
                     "item_type": item.item_type,
                     "food_group": item.food_group,
-                    "image_url": [
+                    "images": [
                         {"id": img.id, "url": img.url, "item_id": img.item_id}
                         for img in item.images
                     ],
@@ -508,12 +508,12 @@ async def get_all_laundry_items(db: AsyncSession) -> list[MenuResponseSchema]:
             laundry_response.append(
                 {
                     "id": str(item.id),
-                    "vendor_id": item.user_id,
+                    "user_id": item.user_id,
                     "name": item.name,
-                    "description": item.description,
+                    "description": item.description or None,
                     "price": str(item.price),
                     "item_type": item.item_type,
-                    "image_url": [
+                    "images": [
                         {"id": img.id, "url": img.url, "item_id": img.item_id}
                         for img in item.images
                     ],
