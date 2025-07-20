@@ -435,8 +435,8 @@ async def get_all_food_items(db: AsyncSession) -> list[MenuResponseSchema]:
     try:
         # Try cache first
         cached_foods = redis_client.get("all_food_items")
-        # if cached_foods:
-        #     return [MenuResponseSchema(**m) for m in json.loads(cached_foods)]
+        if cached_foods:
+            return [MenuResponseSchema(**m) for m in json.loads(cached_foods)]
 
         # Get all food items
         food_query = (
@@ -488,8 +488,8 @@ async def get_all_laundry_items(db: AsyncSession) -> list[MenuResponseSchema]:
     try:
         # Try cache first
         cached_laundries = redis_client.get("all_laundry_items")
-        # if cached_laundries:
-        #     return [MenuResponseSchema(**m) for m in json.loads(cached_laundries)]
+        if cached_laundries:
+            return [MenuResponseSchema(**m) for m in json.loads(cached_laundries)]
 
         # Get all laundry items
         laundry_query = (
