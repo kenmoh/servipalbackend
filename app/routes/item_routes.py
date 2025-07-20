@@ -115,6 +115,26 @@ async def get_categories(
     return await item_service.get_categories(db)
 
 
+@router.get("/foods", status_code=status.HTTP_200_OK)
+async def get_all_food_items(
+    db: AsyncSession = Depends(get_db),
+) -> list[MenuResponseSchema]:
+    """
+    Endpoint to get all food items.
+    """
+    return await item_service.get_all_food_items(db)
+
+
+@router.get("/laundries", status_code=status.HTTP_200_OK)
+async def get_all_laundry_items(
+    db: AsyncSession = Depends(get_db),
+) -> list[MenuResponseSchema]:
+    """
+    Endpoint to get all laundry items.
+    """
+    return await item_service.get_all_laundry_items(db)
+
+
 # @router.get(
 #     "/{vendor_id}/restaurant",
 #     status_code=status.HTTP_200_OK,

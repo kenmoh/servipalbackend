@@ -428,6 +428,111 @@ async def get_laundry_menu(
         )
 
 
+async def get_all_food_items(db: AsyncSession) -> list[MenuResponseSchema]:
+    """
+    Get all food items from all vendors.
+    """
+    try:
+        # Try cache first
+        cached_foods = redis_client.get("all_food_items")
+        if cached_foods:
+            return [MenuResponseSchema(**m) for m in json.loads(cached_foods)]
+
+        # Get all food items
+        food_query = (
+            select(Item)
+            .where(Item.item_type == ItemType.FOOD)
+            .options(selectinload(Item.images))
+            .order_by(Item.name)
+        )
+
+        result = await db.execute(food_query)
+        food_items = result.unique().scalars().all()
+
+        # Format response
+        food_response = []
+        for item in food_items:
+            food_response.append(
+                {
+                    "id": str(item.id),
+                    "vendor_id": item.user_id,
+                    "name": item.name,
+                    "description": item.description,
+                    "price": str(item.price),
+                    "item_type": item.item_type,
+                    "food_group": item.food_group,
+                    "image_url": [
+                        {"id": img.id, "url": img.url, "item_id": img.item_id}
+                        for img in item.images
+                    ],
+                }
+            )
+
+        # Cache the response
+        redis_client.setex("all_food_items", settings.REDIS_EX, json.dumps(food_response, default=str))
+
+        return [MenuResponseSchema(**food) for food in food_response]
+
+    except Exception as e:
+        logger.error(f"Error fetching all food items: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to fetch food items",
+        )
+
+
+async def get_all_laundry_items(db: AsyncSession) -> list[MenuResponseSchema]:
+    """
+    Get all laundry items from all vendors.
+    """
+    try:
+        # Try cache first
+        cached_laundries = redis_client.get("all_laundry_items")
+        if cached_laundries:
+            return [MenuResponseSchema(**m) for m in json.loads(cached_laundries)]
+
+        # Get all laundry items
+        laundry_query = (
+            select(Item)
+            .where(Item.item_type == ItemType.LAUNDRY)
+            .options(selectinload(Item.images))
+            .order_by(Item.name)
+        )
+
+        result = await db.execute(laundry_query)
+        laundry_items = result.unique().scalars().all()
+
+        # Format response
+        laundry_response = []
+        for item in laundry_items:
+            laundry_response.append(
+                {
+                    "id": str(item.id),
+                    "vendor_id": item.user_id,
+                    "name": item.name,
+                    "description": item.description,
+                    "price": str(item.price),
+                    "item_type": item.item_type,
+                    "image_url": [
+                        {"id": img.id, "url": img.url, "item_id": img.item_id}
+                        for img in item.images
+                    ],
+                }
+            )
+
+        # Cache the response
+        redis_client.setex("all_laundry_items", settings.REDIS_EX, json.dumps(laundry_response, default=str))
+
+        return [MenuResponseSchema(**laundry) for laundry in laundry_response]
+
+    except Exception as e:
+        logger.error(f"Error fetching all laundry items: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to fetch laundry items",
+        )
+
+
 async def get_menu_item_by_id(
     db: AsyncSession, menu_item_id: UUID
 ) -> MenuResponseSchema:

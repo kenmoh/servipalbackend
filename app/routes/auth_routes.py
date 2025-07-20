@@ -133,7 +133,7 @@ async def login_admin_user(
 #         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
 
-@router.post("/logout", status_code=200)
+@router.post("/logout", status_code=status.HTTP_200_OK, include_in_schema=False)
 async def logout(
     refresh_token: str = Body(None),
     db: AsyncSession = Depends(get_db),
