@@ -14,6 +14,7 @@ from app.schemas.review_schema import (
     MessageType,
     ReportCreate,
     ReportMessage,
+    ReportIssueUpdate,
     ReportTag,
     ReviewCreate,
     ReviewFilter,
@@ -642,7 +643,7 @@ async def delete_report_if_allowed(
 
 
 async def update_report_status(
-    db: AsyncSession, report_id: UUID, new_status: ReportStatus, current_user: User
+    db: AsyncSession, report_id: UUID, new_status: StatusUpdate, current_user: User
 ) -> StatusUpdate:
     """Update the status of a report. Only admin or the complainant can update."""
     stmt = select(UserReport).where(UserReport.id == report_id)
@@ -685,7 +686,7 @@ async def update_report_status(
     )
     db.add(audit)
     await db.commit()
-    return StatusUpdate.model_validate(new_status)
+    return ReportIssueUpdate.model_validate(new_status)
 
 
 async def get_report_by_id(

@@ -101,7 +101,7 @@ async def mark_report_thread_read(
 @router.put("/{report_id}/status", status_code=status.HTTP_202_ACCEPTED)
 async def update_report_status(
     report_id: UUID,
-    issue_status: ReportStatus,
+    issue_status: StatusUpdate,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> StatusUpdate:
