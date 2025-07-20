@@ -12,6 +12,7 @@ from app.schemas.review_schema import (
     BadgeCount,
     StatusUpdate,
     ReportResponseSchema,
+    ReportStatus
 )
 from app.services import review_service
 
@@ -100,7 +101,7 @@ async def mark_report_thread_read(
 @router.put("/{report_id}/status", status_code=status.HTTP_202_ACCEPTED)
 async def update_report_status(
     report_id: UUID,
-    update_data: ReportIssueUpdate,
+    issue_status: ReportStatus,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> StatusUpdate:
@@ -110,7 +111,7 @@ async def update_report_status(
     return await review_service.update_report_status(
         db=db,
         report_id=report_id,
-        new_status=update_data.issue_status,
+        new_status=issue_status,
         current_user=current_user,
     )
 
