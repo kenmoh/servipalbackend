@@ -24,6 +24,7 @@ dependencies = [
     "python-jose[cryptography]>=3.4.0",
     "python-multipart>=0.0.20",
     "redis",
+    "sentry-sdk[fastapi]>=2.33.0",
     "slowapi>=0.1.9",
     "sqlalchemy[asyncio]>=2.0.40",
     "websockets>=15.0.1",

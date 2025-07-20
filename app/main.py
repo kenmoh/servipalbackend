@@ -2,6 +2,7 @@ from contextlib import asynccontextmanager
 import asyncio
 from functools import partial
 import logfire
+import sentry_sdk
 # from opentelemetry.instrumentation.sqlalchemy import SQLAlchemyInstrumentor
 
 
@@ -32,18 +33,6 @@ from app.routes import (
     ws_routes,
     audit_log_routes,
 )
-# from app.routes import auth_routes
-
-# from app.routes import user_routes
-# from app.routes import payment_routes
-# from app.routes import item_routes
-# from app.routes import order_routes
-# from app.routes import product_routes
-# from app.routes import marketplace_routes
-# from app.routes import review_routes
-# from app.routes import report_routes
-# from app.routes import settings_routes
-# from app.routes import stats_routes
 
 
 from app.utils.cron_job import (
@@ -170,6 +159,12 @@ async def lifespan(application: FastAPI):
         logger.info("Cleaning up resources...")
         await db.close()
         logger.info("Cleanup complete")
+
+
+sentry_sdk.init(
+    dsn="https://29793bfca41a89530399ca6c906484a8@o4505603287023616.ingest.us.sentry.io/4509700294311936",
+    send_default_pii=True,
+)
 
 
 app = FastAPI(
