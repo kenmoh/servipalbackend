@@ -654,7 +654,7 @@ async def update_report_status(
         )
 
     # Allow only admin or the complainant to update
-    is_admin = getattr(current_user, "user_type", None) == UserType.ADMIN
+    is_admin = getattr(current_user, "user_type", None) in [UserType.ADMIN, UserType.MODERATOR, UserType.SUPER_ADMIN]
     if current_user.id != report.complainant_id and not is_admin:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
