@@ -54,10 +54,23 @@ async def broadcast_new_team(team_data: dict):
     """Broadcast new team member to admin dashboard"""
     message = {
         "type": "new_team",
-        "team_id": team_data.get("id"),  # Add team_id for better identification
+        "team_id": team_data.get("id"),  
         "email": team_data.get("email"),
         "user_type": team_data.get("user_type"),
         "full_name": team_data.get("full_name"),
+        "timestamp": datetime.now().isoformat(),
+    }
+
+    await manager.broadcast_to_admins(message)
+
+
+async def broadcast_user_update(team_data: dict):
+    """Broadcast new team member to admin dashboard"""
+    message = {
+        "type": "user_update",
+        "user_id": team_data.get("id"),
+        "email": team_data.get("email"),
+        "user_type": team_data.get("user_type"),
         "timestamp": datetime.now().isoformat(),
     }
 

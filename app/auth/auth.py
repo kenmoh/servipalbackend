@@ -161,6 +161,7 @@ async def get_current_user(
     # Update session activity
     session_result = await db.execute(
         select(Session).where(Session.user_id == user.id, Session.is_active == True)
+        
     )
     sessions = session_result.scalars().all()
     for session_obj in sessions:

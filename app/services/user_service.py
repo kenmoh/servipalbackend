@@ -31,6 +31,7 @@ from app.models.models import (
 )
 from app.schemas.review_schema import ReviewType
 from app.schemas.item_schemas import MenuResponseSchema
+from app.services import ws_service
 from app.schemas.user_schemas import (
     Notification,
     ProfileSchema,
@@ -388,6 +389,7 @@ async def toggle_user_block_status(
 ) -> bool:
     """
     Toggle user block status - block if unblocked, unblock if blocked.
+    If a user is blocked, all their active sessions will be terminated.
 
     Args:
         db: Database session
@@ -417,6 +419,19 @@ async def toggle_user_block_status(
     user.is_blocked = not user.is_blocked
 
     try:
+        # If user is blocked, invalidate their sessions and refresh tokens
+        if user.is_blocked:
+            # Terminate all active sessions for the user
+            await db.execute(
+                update(Session)
+                .where(Session.user_id == user_id)
+                .values(is_active=False, termination_reason="user_blocked")
+            )
+            # Revoke all refresh tokens for the user
+            await db.execute(
+                delete(RefreshToken).where(RefreshToken.user_id == user_id)
+            )
+
         await db.commit()
         await db.refresh(user)
 
@@ -424,10 +439,21 @@ async def toggle_user_block_status(
         invalidate_user_cache(user_id)
         redis_client.delete("all_users")
 
+
+        await ws_service.broadcast_user_update(
+            {
+                "user_id": user.id,
+                "email": user.email,
+                "user_type": new_staff.user_type,
+            }
+        )
+
+
         action = "blocked" if user.is_blocked else "unblocked"
         logger.info(
             f"User {user_id} ({user.email}) has been {action} by {current_user.email}"
         )
+
 
         # --- AUDIT LOG ---
         audit = AuditLog(
