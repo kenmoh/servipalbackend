@@ -662,7 +662,7 @@ async def update_report_status(
         )
 
     old_status = report.report_status
-    report.report_status = new_status
+    report.report_status = new_status.issue_status
     await db.commit()
     await db.refresh(report)
     # Invalidate cache for both users
@@ -670,6 +670,7 @@ async def update_report_status(
     redis_client.delete(f"user:{report.defendant_id}:report_threads")
     redis_client.delete(f"report:{report_id}:thread:{report.complainant_id}")
     redis_client.delete(f"report:{report_id}:thread:{report.defendant_id}")
+
     # --- AUDIT LOG ---
     audit = AuditLog(
         actor_id=current_user.id,
