@@ -444,7 +444,7 @@ async def toggle_user_block_status(
             {
                 "user_id": user.id,
                 "email": user.email,
-                "user_type": new_staff.user_type,
+                "user_type": user.user_type,
             }
         )
 
