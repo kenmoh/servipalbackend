@@ -1,6 +1,5 @@
 from datetime import datetime, time
 from decimal import Decimal
-from turtle import st
 from uuid import UUID
 from pydantic import EmailStr, BaseModel, Field, ConfigDict
 from app.schemas.status_schema import (
