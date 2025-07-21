@@ -66,6 +66,7 @@ async def create_tokens(
             "user_type": user_type,
             "email": email,
             "account_status": account_status,
+            "chat_token": chat_token,
         }
     )
     refresh_token = await create_refresh_token(
