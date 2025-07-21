@@ -126,4 +126,4 @@ email_conf = ConnectionConfig(
 
 
 server_client = StreamChat(api_key=settings.STREAM_API_KEY, api_secret=settings.STREAM_API_SECRET) 
-channel = server_client.channel()
+channel = server_client.channel('messaging', 'ServiPal')
