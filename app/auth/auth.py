@@ -58,6 +58,7 @@ async def create_tokens(
     email: EmailStr,
     account_status: AccountStatus,
     db: AsyncSession,
+    chat_token
 ) -> TokenResponse:
     access_token = create_access_token(
         {
@@ -77,6 +78,7 @@ async def create_tokens(
         user_type=user_type,
         email=email,
         account_status=account_status,
+        chat_token=chat_token,
         token_type="bearer",
     )
 
