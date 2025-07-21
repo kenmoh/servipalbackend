@@ -296,7 +296,7 @@ class Transaction(Base):
 
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
     wallet_id: Mapped[UUID] = mapped_column(ForeignKey("wallets.id"))
-    to_wallet_id: Mapped[UUID] = mapped_column(ForeignKey("wallets.id"), nullable=True)
+    to_wallet_id: Mapped[UUID] = mapped_column(ForeignKey("users.id"), nullable=True)
     amount: Mapped[Decimal] = mapped_column(default=0.00)
     payment_by: Mapped[str] = mapped_column(nullable=True)  # Remove beore Production
     from_user: Mapped[str] = mapped_column(nullable=True)
