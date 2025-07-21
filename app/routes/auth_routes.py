@@ -70,7 +70,7 @@ async def login_user(
             user_type=token.user_type,
             account_status=token.account_status,
             access_token=token.access_token,
-            chat_token=server_client.create_token(user.id),
+            chat_token=server_client.create_token(user.email),
             
         )
 

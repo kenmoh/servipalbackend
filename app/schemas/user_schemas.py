@@ -371,7 +371,7 @@ class TokenResponse(BaseModel):
     token_type: str = "bearer"
     user_type: str
     email: str | None = None
-    chat_token: UUID | None = None
+    chat_token: str | None = None
     account_status: AccountStatus
 
 
