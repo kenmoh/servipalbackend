@@ -5,6 +5,11 @@ from pydantic import EmailStr
 from pydantic_settings import BaseSettings
 from dotenv import load_dotenv
 import redis
+from stream_chat import StreamChat
+
+
+
+# Load environment variables from .env file
 
 load_dotenv()
 
@@ -74,6 +79,11 @@ class Settings(BaseSettings):
 
     TEST_BASE_URL: str = "http://test"
 
+    # Stream Chat
+    STREAM_API_KEY: str = os.getenv("STREAM_API_KEY")
+    STREAM_API_SECRET: str = os.getenv("STREAM_API_SECRET")
+
+
 
 settings = Settings()
 
@@ -113,3 +123,7 @@ email_conf = ConnectionConfig(
     USE_CREDENTIALS=settings.USE_CREDENTIALS,
     TEMPLATE_FOLDER=settings.EMAIL_TEMPLATES_DIR,
 )
+
+
+server_client = StreamChat(api_key=settings.STREAM_API_KEY, api_secret=settings.STREAM_API_SECRET) 
+channel = server_client.channel()

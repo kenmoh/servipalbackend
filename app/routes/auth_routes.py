@@ -35,6 +35,7 @@ from app.schemas.user_schemas import (
 )
 from app.services import auth_service
 from pydantic import BaseModel
+from app.config.config import server_client
 
 
 router = APIRouter(prefix="/api/auth", tags=["Authentication"])
@@ -69,6 +70,8 @@ async def login_user(
             user_type=token.user_type,
             account_status=token.account_status,
             access_token=token.access_token,
+            chat_token=server_client.create_token(user.id),
+            
         )
 
     except Exception as e:
@@ -109,6 +112,7 @@ async def login_admin_user(
             user_type=token.user_type,
             account_status=token.account_status,
             access_token=token.access_token,
+            chat_token=server_client.create_token(user.id),
         )
 
     except Exception as e:

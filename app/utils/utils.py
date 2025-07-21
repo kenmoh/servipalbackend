@@ -16,7 +16,7 @@ from exponent_server_sdk_async import (
     DeviceNotRegisteredError,
     PushServerError,
 )
-from app.models.models import ChargeAndCommission, User
+from app.models.models import ChargeAndCommission, User, Profile
 from app.schemas.status_schema import UserType, BankSchema
 from app.config.config import settings, redis_client
 from app.schemas.user_schemas import AccountDetails, AccountDetailResponse
@@ -497,3 +497,21 @@ async def get_user_notification_token(db: AsyncSession, user_id):
             status_code=status.HTTP_404_NOT_FOUND, detail="Notification token missing"
         )
     return token
+
+
+async def get_full_name_or_business_name(db: AsyncSession, user_id: UUID) -> str:
+    result = await db.execute(select(Profile).where(Profile.user_id == user_id))
+    profile = result.scalar_one_or_none()
+
+    if not profile:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Profile not found"
+        )
+
+    name = profile.full_name or profile.business_name
+    if not name:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User name or business name not found in profile",
+        )
+    return name

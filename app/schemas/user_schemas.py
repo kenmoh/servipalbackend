@@ -1,5 +1,6 @@
 from datetime import datetime, time
 from decimal import Decimal
+from turtle import st
 from uuid import UUID
 from pydantic import EmailStr, BaseModel, Field, ConfigDict
 from app.schemas.status_schema import (
@@ -371,6 +372,7 @@ class TokenResponse(BaseModel):
     token_type: str = "bearer"
     user_type: str
     email: str | None = None
+    chat_token: str | None = None
     account_status: AccountStatus
 
 

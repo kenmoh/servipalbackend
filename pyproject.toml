@@ -27,5 +27,6 @@ dependencies = [
     "sentry-sdk[fastapi]>=2.24.1",
     "slowapi>=0.1.9",
     "sqlalchemy[asyncio]>=2.0.40",
+    "stream-chat>=4.26.0",
     "websockets>=15.0.1",
 ]
