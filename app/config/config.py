@@ -83,6 +83,9 @@ class Settings(BaseSettings):
     STREAM_API_KEY: str = os.getenv("STREAM_API_KEY")
     STREAM_API_SECRET: str = os.getenv("STREAM_API_SECRET")
 
+    # Timezone
+    TZ: str = os.getenv("TZ", "Etc/UTC")
+
 
 
 settings = Settings()

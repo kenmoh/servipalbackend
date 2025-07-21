@@ -1,3 +1,11 @@
+import os
+from app.config.config import settings
+
+# Set the timezone for the application process. This is crucial for libraries
+# like tzlocal (a dependency of apscheduler) to work correctly in environments
+# where timezone auto-detection can fail (e.g., servers without GUI libraries).
+os.environ['TZ'] = settings.TZ
+
 from contextlib import asynccontextmanager
 import asyncio
 from functools import partial
