@@ -60,6 +60,7 @@ async def login_user(
             email=user.email,
             account_status=user.account_status,
             user_type=user.user_type,
+            chat_token=server_client.create_token(user.email),
             db=db,
         )
 
@@ -70,7 +71,7 @@ async def login_user(
             user_type=token.user_type,
             account_status=token.account_status,
             access_token=token.access_token,
-            chat_token=server_client.create_token(user.email),
+            chat_token=token.chat_token,
             
         )
 
