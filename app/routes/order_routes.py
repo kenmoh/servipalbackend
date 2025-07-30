@@ -243,10 +243,10 @@ async def admin_modify_delivery_status(
 
 
 @router.put(
-    "/{delivery_id}/cancel-delivery",
+    "/{order_id}/cancel-order",
     status_code=status.HTTP_202_ACCEPTED,
 )
-async def cancel_delivery(
+async def cancel_order_or_delivery(
     order_id: UUID,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),

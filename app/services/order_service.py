@@ -878,7 +878,7 @@ async def cancel_order_or_delivery(
         order.delivery.vendor_id,
         order.delivery.rider_id,
         order.order.owner_id,
-        order.ordervendor_id,
+        order.order.vendor_id,
     ]:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
