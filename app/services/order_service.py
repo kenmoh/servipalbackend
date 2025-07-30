@@ -801,7 +801,7 @@ async def _cancel_delivery_and_order(
         await db.rollback()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to cancel delivery - {e}",
+            detail=f"Failed to cancel order - {e}",
         )
 
 
@@ -907,18 +907,18 @@ async def cancel_order_or_delivery(
             )
         )
         await db.commit()
-        await db.refresh(order.delivery)
+        await db.refresh(order)
 
         invalidate_delivery_cache(order.delivery.id)
         redis_client.delete("paid_pending_deliveries")
         redis_client.delete(f"user_related_orders:{current_user.id}")
         return DeliveryStatusUpdateSchema(
-            delivery_status=order.delivery.delivery_status
+            delivery_status=order.order.order_status
         )
 
     if current_user.user_type in [UserType.RIDER, UserType.DISPATCH]:
         if order.delivery.delivery_status == DeliveryStatus.ACCEPTED:
-            await _cancel_delivery_and_order(db=db, order_id=order_id)
+            # await _cancel_delivery_and_order(db=db, order_id=order_id)
 
             current_user.order_cancel_count += 1
             await db.commit()
@@ -934,7 +934,7 @@ async def cancel_order_or_delivery(
             )
 
             await db.commit()
-            await db.refresh()
+            await db.refresh(order)
 
             invalidate_delivery_cache(order.delivery.id)
             redis_client.delete(f"{ALL_DELIVERY}")
@@ -971,7 +971,7 @@ async def cancel_order_or_delivery(
             )
 
             return DeliveryStatusUpdateSchema(
-                delivery_status=order.delivery.delivery_status
+                delivery_status=order.order.order_status
             )
 
 
