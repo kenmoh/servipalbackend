@@ -1773,7 +1773,7 @@ async def pay_with_wallet(
             "payment_status": PaymentStatus.PAID,
             "created_at": current_time,
             "payment_method": PaymentMethod.WALLET,
-            "to_user": seller.profile.full_name or seller.profile.business_name,
+            "to_user": seller.full_name or seller.business_name,
             "updated_at": current_time,
         }
     )
