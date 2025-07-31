@@ -1409,8 +1409,9 @@ async def order_payment_callback(request: Request, db: AsyncSession):
                     message=f"Your payment of ₦{delivery_fee} for delivery was successful.",
                 )
             # Clear caches
-            redis_client.delete(f"user_related_orders:{buyer.id}")
+            redis_client.delete(f"user_related_orders:{buyer.user_id}")
             redis_client.delete(f"user_orders:{order.owner_id}")
+            redis_client.delete(f"user_orders:{order.vendor_id}")
             redis_client.delete("paid_pending_deliveries")
             redis_client.delete("orders")
 
