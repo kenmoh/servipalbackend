@@ -1496,7 +1496,7 @@ async def order_payment_callback(request: Request, db: AsyncSession):
         await db.refresh(order)
 
         # Send notifications
-        buyer_token = await get_user_notification_token(db=db, user_id=buyer.id)
+        buyer_token = await get_user_notification_token(db=db, user_id=buyer.user_id)
         seller_token = await get_user_notification_token(db=db, user_id=order.vendor_id)
         if buyer_token:
             await send_push_notification(
@@ -1512,7 +1512,7 @@ async def order_payment_callback(request: Request, db: AsyncSession):
             )
 
         # Clear relevant caches
-        redis_client.delete(f"user_related_orders:{buyer.id}")
+        redis_client.delete(f"user_related_orders:{buyer.user_id}")
         redis_client.delete(f"user_related_orders:{order.vendor_id}")
         redis_client.delete(f"user_orders:{order.owner_id}")
         redis_client.delete(f"user_orders:{order.vendor_id}")

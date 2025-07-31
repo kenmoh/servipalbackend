@@ -537,13 +537,7 @@ class Delivery(Base):
     sender: Mapped["User"] = relationship(
         back_populates="deliveries_as_sender", foreign_keys=[sender_id]
     )
-    issues: Mapped[list["UserReport"]] = relationship(
-        "UserReport",
-        back_populates="delivery",
-        lazy="selectin",
-        cascade="all, delete-orphan",
-    )
-
+  
 
 class ChargeAndCommission(Base):
     __tablename__ = "charges"

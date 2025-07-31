@@ -967,6 +967,8 @@ async def cancel_order_or_delivery(
             redis_client.delete(f"{ALL_DELIVERY}")
             redis_client.delete("paid_pending_deliveries")
             redis_client.delete(f"user_related_orders:{current_user.id}")
+            redis_client.delete('orders')
+
 
             await ws_service.broadcast_delivery_status_update(
                 delivery_id=order.delivery.id,
