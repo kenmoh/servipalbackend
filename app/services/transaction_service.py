@@ -1470,7 +1470,7 @@ async def order_payment_callback(request: Request, db: AsyncSession):
                 "payment_status": PaymentStatus.PAID,
                 "created_at": current_time,
                 "payment_method": PaymentMethod.CARD,
-                "to_user": seller.profile.full_name or seller.profile.business_name,
+                "to_user": seller.full_name or seller.business_name,
                 "updated_at": current_time,
             }
         )
@@ -1484,7 +1484,7 @@ async def order_payment_callback(request: Request, db: AsyncSession):
                 "payment_status": PaymentStatus.PAID,
                 "created_at": current_time,
                 "payment_method": PaymentMethod.CARD,
-                "from_user": buyer.profile.full_name or buyer.profile.business_name,
+                "from_user": buyer.full_name or buyer.business_name,
                 "updated_at": current_time,
             }
         )
