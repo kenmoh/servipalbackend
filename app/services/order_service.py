@@ -448,6 +448,7 @@ async def create_package_order(
         redis_client.delete(f"{ALL_DELIVERY}")
         redis_client.delete("paid_pending_deliveries")
         redis_client.delete(f"user_related_orders:{current_user.id}")
+        redis_client.delete(f'{ALL_DELIVERY}')
         if hasattr(delivery_data, "vendor_id"):
             redis_client.delete(f"vendor_orders:{delivery_data.vendor_id}")
         else:
@@ -723,6 +724,7 @@ async def order_food_or_request_laundy_service(
             redis_client.delete(f"user_related_orders:{current_user.id}")
             redis_client.delete(f"user_orders:{order.owner_id}")
             redis_client.delete(f"user_orders:{order.vendor_id}")
+            redis_client.delete('orders')
             return format_delivery_response(order, delivery=None)
 
     except Exception as e:
@@ -912,6 +914,7 @@ async def cancel_order_or_delivery(
         invalidate_delivery_cache(order.delivery.id)
         redis_client.delete("paid_pending_deliveries")
         redis_client.delete(f"user_related_orders:{current_user.id}")
+        redis_client.delete('orders')
         return DeliveryStatusUpdateSchema(
             delivery_status=order.order.order_status
         )

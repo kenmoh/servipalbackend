@@ -1401,7 +1401,7 @@ async def order_payment_callback(request: Request, db: AsyncSession):
             await db.commit()
             await db.refresh(order)
             # Notify buyer
-            buyer_token = await get_user_notification_token(db=db, user_id=buyer.id)
+            buyer_token = await get_user_notification_token(db=db, user_id=buyer_wallet.id)
             if buyer_token:
                 await send_push_notification(
                     tokens=[buyer_token],
