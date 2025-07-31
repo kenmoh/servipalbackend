@@ -662,9 +662,6 @@ class UserReport(Base):
         "Order", back_populates="issues", lazy="selectin"
     )
 
-    delivery: Mapped[Optional["Delivery"]] = relationship(
-        "Delivery", back_populates="issues", lazy="selectin"
-    )
     __table_args__ = (
         # One report per reporter per order (if vendor is involved)
         UniqueConstraint(
