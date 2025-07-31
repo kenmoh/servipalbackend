@@ -448,7 +448,7 @@ async def create_package_order(
         redis_client.delete(f"{ALL_DELIVERY}")
         redis_client.delete("paid_pending_deliveries")
         redis_client.delete(f"user_related_orders:{current_user.id}")
-        redis_client.delete(f'{ALL_DELIVERY}')
+        redis_client.delete('orders')
         if hasattr(delivery_data, "vendor_id"):
             redis_client.delete(f"vendor_orders:{delivery_data.vendor_id}")
         else:

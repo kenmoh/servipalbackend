@@ -39,8 +39,8 @@ class DeliveryStatus(str, Enum):
     PENDING: str = "pending"  # Default
     DELIVERED: str = "delivered"  # Rider/Dispatch ops
     RECEIVED: str = "received"  # Sender ops
-    VENDOR_RECEIVED_LAUNDRY_ITEM: str = "laundry_received"  # Vendor ops
     CANCELLED: str = "canceled"
+    VENDOR_RECEIVED_LAUNDRY_ITEM: str = "laundry_received"  # Vendor ops
 
 
 class OrderStatus(str, Enum):

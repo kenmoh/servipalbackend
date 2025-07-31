@@ -298,7 +298,6 @@ class Transaction(Base):
     wallet_id: Mapped[UUID] = mapped_column(ForeignKey("wallets.id"))
     to_wallet_id: Mapped[UUID] = mapped_column(ForeignKey("users.id"), nullable=True)
     amount: Mapped[Decimal] = mapped_column(default=0.00)
-    payment_by: Mapped[str] = mapped_column(nullable=True)  # Remove beore Production
     from_user: Mapped[str] = mapped_column(nullable=True)
     to_user: Mapped[str] = mapped_column(nullable=True)
     transaction_type: Mapped[TransactionType]
@@ -321,10 +320,10 @@ class RefreshToken(Base):
     )
     token: Mapped[str] = mapped_column(unique=True, index=True, nullable=False)
     account_status: Mapped[AccountStatus] = mapped_column(
-        default=AccountStatus.PENDING, nullable=True
-    )  # TODO: remove nullable
-    user_type: Mapped[str] = mapped_column(nullable=True)  # TODO: change to False
-    email: Mapped[str] = mapped_column(nullable=True)  # TODO: change to False
+        default=AccountStatus.PENDING
+    ) 
+    user_type: Mapped[str]
+    email: Mapped[str]
     expires_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False
     )
@@ -395,8 +394,7 @@ class Item(Base):
     reviews: Mapped[list["Review"]] = relationship(
         back_populates="item", cascade="all, delete-orphan"
     )
-    # __table_args__ = (UniqueConstraint(
-    #     "name", "user_id", name="uq_name_item"),)
+   
 
     __table_args__ = (
         Index(
@@ -607,7 +605,7 @@ class Review(Base):
     item: Mapped[Optional["Item"]] = relationship(back_populates="reviews")
 
     __table_args__ = (
-        # Optional: Prevent duplicate reviews (e.g., per reviewer/order/item)
+        # Prevent duplicate reviews (e.g., per reviewer/order/item)
         UniqueConstraint("reviewer_id", "order_id", name="uq_user_order_review"),
         UniqueConstraint("reviewer_id", "item_id", name="uq_user_item_review"),
     )
@@ -624,10 +622,6 @@ class UserReport(Base):
     # Foreign keys to either Order or Delivery
     order_id: Mapped[Optional[UUID]] = mapped_column(
         ForeignKey("orders.id"), nullable=True
-    )
-    # REMOVE
-    delivery_id: Mapped[Optional[UUID]] = mapped_column(
-        ForeignKey("deliveries.id"), nullable=True
     )
 
     complainant_id: Mapped[UUID] = mapped_column(ForeignKey("users.id"), nullable=False)
@@ -685,13 +679,7 @@ class UserReport(Base):
             "defendant_id",
             name="uq_reporter_order_report",
         ),
-        # One report per reporter per delivery (if dispatch is involved)
-        UniqueConstraint(
-            "complainant_id",
-            "delivery_id",  # REMOVE
-            "defendant_id",
-            name="uq_reporter_delivery_report",
-        ),
+       
     )
 
 
