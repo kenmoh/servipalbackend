@@ -1356,15 +1356,16 @@ async def order_payment_callback(request: Request, db: AsyncSession):
         )
         buyer_wallet = buyer_wallet_result.scalar_one_or_none()
         if not buyer_wallet:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND, detail="Buyer wallet not found"
-            )
+            # Create wallet if it does not exist
+            buyer_wallet = Wallet(id=order.owner_id, balance=0, escrow_balance=0)
+            db.add(buyer_wallet)
+            await db.flush()
 
         current_time = datetime.now()
         transaction_values = []
 
         # --- PACKAGE ORDER ---
-        if order.order_type == "package":
+        if order.order_type == OrderType.PACKAGE:
             # Must have delivery, no seller at this stage
             if not order.delivery or not order.delivery.delivery_fee:
                 raise HTTPException(
@@ -1372,26 +1373,21 @@ async def order_payment_callback(request: Request, db: AsyncSession):
                     detail="Delivery fee required for package order.",
                 )
             delivery_fee = order.delivery.delivery_fee
-            charged_amount = delivery_fee
-            if buyer_wallet.balance < delivery_fee:
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="Insufficient funds in wallet",
-                )
+
             # Move delivery_fee from buyer wallet to escrow
-            buyer_wallet.balance -= delivery_fee
-            buyer_wallet.escrow_balance += delivery_fee
+            buyer_wallet.balance += delivery_fee
             # Only buyer transaction
             transaction_values.append(
                 {
                     "wallet_id": buyer_wallet.id,
                     "amount": delivery_fee,
                     "transaction_type": TransactionType.USER_TO_USER,
-                    "trasaction_direction": TransactionDirection.DEBIT,
+                    "transaction_direction": TransactionDirection.CREDIT,
                     "payment_status": PaymentStatus.PAID,
                     "created_at": current_time,
                     "payment_method": PaymentMethod.CARD,
-                    "from_user": None,
+                    "from_user": buyer.full_name or buyer.business_name,
+                    "to_user": buyer.full_name or buyer.business_name,
                     "updated_at": current_time,
                 }
             )
@@ -1401,7 +1397,9 @@ async def order_payment_callback(request: Request, db: AsyncSession):
             await db.commit()
             await db.refresh(order)
             # Notify buyer
-            buyer_token = await get_user_notification_token(db=db, user_id=buyer_wallet.id)
+            buyer_token = await get_user_notification_token(
+                db=db, user_id=buyer_wallet.id
+            )
             if buyer_token:
                 await send_push_notification(
                     tokens=[buyer_token],
@@ -1429,9 +1427,10 @@ async def order_payment_callback(request: Request, db: AsyncSession):
         seller_wallet = result.scalar_one_or_none()
 
         if not seller_wallet:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND, detail="Seller wallet not found"
-            )
+            # Create wallet if it does not exist
+            seller_wallet = Wallet(id=order.vendor_id, balance=0, escrow_balance=0)
+            db.add(seller_wallet)
+            await db.flush()
 
         seller = await get_user_profile(order.vendor_id, db)
 
@@ -1450,15 +1449,8 @@ async def order_payment_callback(request: Request, db: AsyncSession):
         else:
             charged_amount = total_price
 
-        if buyer_wallet.balance < charged_amount:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Insufficient funds in wallet",
-            )
-
         # Move funds to escrow
-        buyer_wallet.balance -= charged_amount
-        buyer_wallet.escrow_balance += charged_amount
+        buyer_wallet.balance += charged_amount
         seller_wallet.escrow_balance += total_price
 
         # Buyer transaction (DEBIT)
@@ -1467,11 +1459,12 @@ async def order_payment_callback(request: Request, db: AsyncSession):
                 "wallet_id": buyer_wallet.id,
                 "amount": charged_amount,
                 "transaction_type": TransactionType.USER_TO_USER,
-                "trasaction_direction": TransactionDirection.DEBIT,
+                "transaction_direction": TransactionDirection.CREDIT,
                 "payment_status": PaymentStatus.PAID,
                 "created_at": current_time,
                 "payment_method": PaymentMethod.CARD,
                 "to_user": seller.full_name or seller.business_name,
+                "from_user": buyer.full_name or buyer.business_name,
                 "updated_at": current_time,
             }
         )
@@ -1481,11 +1474,12 @@ async def order_payment_callback(request: Request, db: AsyncSession):
                 "wallet_id": seller_wallet.id,
                 "amount": total_price,
                 "transaction_type": TransactionType.USER_TO_USER,
-                "trasaction_direction": TransactionDirection.CREDIT,
+                "transaction_direction": TransactionDirection.CREDIT,
                 "payment_status": PaymentStatus.PAID,
                 "created_at": current_time,
                 "payment_method": PaymentMethod.CARD,
                 "from_user": buyer.full_name or buyer.business_name,
+                "to_user": seller.full_name or seller.business_name,
                 "updated_at": current_time,
             }
         )

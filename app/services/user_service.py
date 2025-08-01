@@ -294,8 +294,9 @@ async def get_users(
         )
 
 
-
-async def get_active_users(db: AsyncSession, window_minutes: int = 10) -> list[UserProfileResponse]:
+async def get_active_users(
+    db: AsyncSession, window_minutes: int = 10
+) -> list[UserProfileResponse]:
     """
     Returns users with active sessions (is_active == True and last_active within the window).
     Args:
@@ -342,17 +343,29 @@ async def get_active_users(db: AsyncSession, window_minutes: int = 10) -> list[U
                 "user_id": user.id,
                 "phone_number": user.profile.phone_number,
                 "bike_number": getattr(user.profile, "bike_number", None),
-                "bank_account_number": getattr(user.profile, "bank_account_number", None),
+                "bank_account_number": getattr(
+                    user.profile, "bank_account_number", None
+                ),
                 "bank_name": getattr(user.profile, "bank_name", None),
                 "full_name": user.profile.full_name,
                 "store_name": user.profile.store_name,
                 "business_name": getattr(user.profile, "business_name", None),
                 "business_address": getattr(user.profile, "business_address", None),
-                "backdrop_image_url": getattr(user.profile.profile_image, "backdrop_image_url", None),
-                "profile_image_url": getattr(user.profile.profile_image, "profile_image_url", None),
-                "business_registration_number": getattr(user.profile, "business_registration_number", None),
-                "closing_hours": str(user.profile.closing_hours.isoformat())if getattr(user.profile, "closing_hours", None) else None,
-                "opening_hours": str(user.profile.opening_hours.isoformat()) if getattr(user.profile, "opening_hours", None) else None,
+                "backdrop_image_url": getattr(
+                    user.profile.profile_image, "backdrop_image_url", None
+                ),
+                "profile_image_url": getattr(
+                    user.profile.profile_image, "profile_image_url", None
+                ),
+                "business_registration_number": getattr(
+                    user.profile, "business_registration_number", None
+                ),
+                "closing_hours": str(user.profile.closing_hours.isoformat())
+                if getattr(user.profile, "closing_hours", None)
+                else None,
+                "opening_hours": str(user.profile.opening_hours.isoformat())
+                if getattr(user.profile, "opening_hours", None)
+                else None,
             }
         else:
             user_data["profile"] = None
@@ -370,7 +383,7 @@ async def get_active_user_count(db: AsyncSession, window_minutes: int = 10) -> i
     Returns:
         int: Count of active users
     """
-    
+
     now = datetime.now()
     window = timedelta(minutes=window_minutes)
 
@@ -439,7 +452,6 @@ async def toggle_user_block_status(
         invalidate_user_cache(user_id)
         redis_client.delete("all_users")
 
-
         await ws_service.broadcast_user_update(
             {
                 "user_id": user.id,
@@ -448,12 +460,10 @@ async def toggle_user_block_status(
             }
         )
 
-
         action = "blocked" if user.is_blocked else "unblocked"
         logger.info(
             f"User {user_id} ({user.email}) has been {action} by {current_user.email}"
         )
-
 
         # --- AUDIT LOG ---
         audit = AuditLog(

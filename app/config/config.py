@@ -8,7 +8,6 @@ import redis
 from stream_chat import StreamChat
 
 
-
 # Load environment variables from .env file
 
 load_dotenv()
@@ -87,7 +86,6 @@ class Settings(BaseSettings):
     TZ: str = os.getenv("TZ", "Etc/UTC")
 
 
-
 settings = Settings()
 
 
@@ -128,5 +126,7 @@ email_conf = ConnectionConfig(
 )
 
 
-server_client = StreamChat(api_key=settings.STREAM_API_KEY, api_secret=settings.STREAM_API_SECRET) 
-channel = server_client.channel('messaging', 'ServiPal')
+server_client = StreamChat(
+    api_key=settings.STREAM_API_KEY, api_secret=settings.STREAM_API_SECRET
+)
+channel = server_client.channel("messaging", "ServiPal")

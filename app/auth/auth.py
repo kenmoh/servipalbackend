@@ -58,7 +58,7 @@ async def create_tokens(
     email: EmailStr,
     account_status: AccountStatus,
     db: AsyncSession,
-    chat_token
+    chat_token,
 ) -> TokenResponse:
     access_token = create_access_token(
         {
@@ -102,7 +102,6 @@ async def verify_refresh_token(token: str, db: AsyncSession) -> str:
     return user_id
 
 
-
 """
 async def get_current_user(
     token: str = Depends(oauth2_scheme), db: AsyncSession = Depends(get_db)
@@ -134,7 +133,6 @@ async def get_current_user(
 """
 
 
-
 async def get_current_user(
     token: str = Depends(oauth2_scheme), db: AsyncSession = Depends(get_db)
 ) -> User:
@@ -164,7 +162,6 @@ async def get_current_user(
     # Update session activity
     session_result = await db.execute(
         select(Session).where(Session.user_id == user.id, Session.is_active == True)
-        
     )
     sessions = session_result.scalars().all()
     for session_obj in sessions:

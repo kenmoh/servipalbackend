@@ -51,7 +51,11 @@ from app.config.config import redis_client, settings, channel, server_client
 
 from uuid import UUID
 
-from app.utils.utils import get_full_name_or_business_name, get_user_notification_token, send_push_notification
+from app.utils.utils import (
+    get_full_name_or_business_name,
+    get_user_notification_token,
+    send_push_notification,
+)
 from app.services.ws_service import broadcast_new_report_message
 
 
@@ -190,7 +194,6 @@ async def create_report(
     db: AsyncSession, order_id: UUID, current_user: User, report_data: ReportCreate
 ) -> ReportResponseSchema:
     """Create a new report with automatic admin acknowledgment message"""
-   
 
     try:
         # Get the order with delivery information
@@ -267,8 +270,6 @@ async def create_report(
             report_status=ReportStatus.PENDING,
         )
 
-
-
         db.add(report)
         await db.flush()  # Flush to get the report ID
 
@@ -301,7 +302,9 @@ async def create_report(
 
         token = await get_user_notification_token(db=db, user_id=report.defendant_id)
         defendant_name = get_full_name_or_business_name(db=db, user_id=defendant_id)
-        complainant_name = current_user.profile.full_name or current_user.profile.business_name
+        complainant_name = (
+            current_user.profile.full_name or current_user.profile.business_name
+        )
 
         if token:
             await send_push_notification(
@@ -310,36 +313,36 @@ async def create_report(
                 message="You have been reported for your latest order. We want to here your own side before a final decision is made.",
                 navigate_to="/(app)/delivery/orders",
             )
-        image = current_user.profile.profile_image.profile_image_url if current_user.profile.profile_image else current_user.profile.profile_image.backdrop_image_url or None
+        image = (
+            current_user.profile.profile_image.profile_image_url
+            if current_user.profile.profile_image
+            else current_user.profile.profile_image.backdrop_image_url or None
+        )
         moderators = [
             UserType.MODERATOR.value,
             UserType.ADMIN.value,
             UserType.SUPER_ADMIN.value,
         ]
         channel.create(current_user.id)
-        channel.update({
-            'name': complainant_name, 
-            'report_tag': ReportTag.COMPLAINANT.value,
-            "image": image, 
-            "order_id":order_id,
-            'role': current_user.user_type})
-        channel.add_members([f'{defendant_name}'])
+        channel.update(
+            {
+                "name": complainant_name,
+                "report_tag": ReportTag.COMPLAINANT.value,
+                "image": image,
+                "order_id": order_id,
+                "role": current_user.user_type,
+            }
+        )
+        channel.add_members([f"{defendant_name}"])
         channel.add_moderators(moderators)
 
         message = {
             "text": report_data.description,
-            "attachments": [
-                {
-                    'type': 'image',
-                    'asset_url': image,
-                    'thumb_url': image
-                }
-            ],
-            'mentioned_users': [*moderators, defendant_name]
+            "attachments": [{"type": "image", "asset_url": image, "thumb_url": image}],
+            "mentioned_users": [*moderators, defendant_name],
         }
 
-        channel.send_message(message,complainant_name)
-        
+        channel.send_message(message, complainant_name)
 
         return report
 
@@ -690,7 +693,11 @@ async def update_report_status(
         )
 
     # Allow only admin or the complainant to update
-    is_admin = getattr(current_user, "user_type", None) in [UserType.ADMIN, UserType.MODERATOR, UserType.SUPER_ADMIN]
+    is_admin = getattr(current_user, "user_type", None) in [
+        UserType.ADMIN,
+        UserType.MODERATOR,
+        UserType.SUPER_ADMIN,
+    ]
     if current_user.id != report.complainant_id and not is_admin:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,

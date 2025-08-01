@@ -20,4 +20,3 @@ class AuditLogBase(BaseModel):
 
 class AuditLogResponse(AuditLogBase):
     id: UUID
-    

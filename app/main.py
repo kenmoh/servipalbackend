@@ -4,7 +4,7 @@ from app.config.config import settings
 # Set the timezone for the application process. This is crucial for libraries
 # like tzlocal (a dependency of apscheduler) to work correctly in environments
 # where timezone auto-detection can fail (e.g., servers without GUI libraries).
-os.environ['TZ'] = settings.TZ
+os.environ["TZ"] = settings.TZ
 
 from contextlib import asynccontextmanager
 import asyncio
@@ -175,7 +175,6 @@ sentry_sdk.init(
     traces_sample_rate=1.0,
     profile_session_sample_rate=1.0,
     profile_lifecycle="trace",
-   
 )
 
 

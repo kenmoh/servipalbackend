@@ -60,9 +60,7 @@ async def get_user_reviews(
     """
     Endpoint to get current user reviews
     """
-    return await review_service.fetch_vendor_reviews(
-        db=db, vendor_id=vendor_id
-    )
+    return await review_service.fetch_vendor_reviews(db=db, vendor_id=vendor_id)
 
 
 @router.get("/admin/reviews", status_code=status.HTTP_200_OK)

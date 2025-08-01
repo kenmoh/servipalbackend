@@ -72,7 +72,6 @@ async def login_user(
             account_status=token.account_status,
             access_token=token.access_token,
             chat_token=token.chat_token,
-            
         )
 
     except Exception as e:
@@ -153,6 +152,7 @@ async def logout(
         except Exception:
             pass
     return {"message": "Logged out successfully"}
+
 
 @router.post("/register", status_code=status.HTTP_201_CREATED)
 async def create_user(

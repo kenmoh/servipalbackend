@@ -85,7 +85,9 @@ async def get_active_user_count(
     """
     Get the count of users with active sessions (is_active == True and last_active within the window).
     """
-    count = await user_service.get_active_user_count(db=db, window_minutes=window_minutes)
+    count = await user_service.get_active_user_count(
+        db=db, window_minutes=window_minutes
+    )
     return {"count": count}
 
 
@@ -315,6 +317,3 @@ async def get_push_notification(
     return await user_service.get_current_user_notification_token(
         db=db, current_user=current_user
     )
-
-
-

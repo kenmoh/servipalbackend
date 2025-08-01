@@ -12,7 +12,7 @@ from app.schemas.review_schema import (
     BadgeCount,
     StatusUpdate,
     ReportResponseSchema,
-    ReportStatus
+    ReportStatus,
 )
 from app.services import review_service
 

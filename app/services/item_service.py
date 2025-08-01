@@ -469,7 +469,9 @@ async def get_all_food_items(db: AsyncSession) -> list[MenuResponseSchema]:
             )
 
         # Cache the response
-        redis_client.setex("all_food_items", settings.REDIS_EX, json.dumps(food_response, default=str))
+        redis_client.setex(
+            "all_food_items", settings.REDIS_EX, json.dumps(food_response, default=str)
+        )
 
         return [MenuResponseSchema(**food) for food in food_response]
 
@@ -521,7 +523,11 @@ async def get_all_laundry_items(db: AsyncSession) -> list[MenuResponseSchema]:
             )
 
         # Cache the response
-        redis_client.setex("all_laundry_items", settings.REDIS_EX, json.dumps(laundry_response, default=str))
+        redis_client.setex(
+            "all_laundry_items",
+            settings.REDIS_EX,
+            json.dumps(laundry_response, default=str),
+        )
 
         return [MenuResponseSchema(**laundry) for laundry in laundry_response]
 

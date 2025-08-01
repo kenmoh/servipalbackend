@@ -319,9 +319,7 @@ class RefreshToken(Base):
         primary_key=True, nullable=False, default=uuid.uuid1, index=True
     )
     token: Mapped[str] = mapped_column(unique=True, index=True, nullable=False)
-    account_status: Mapped[AccountStatus] = mapped_column(
-        default=AccountStatus.PENDING
-    ) 
+    account_status: Mapped[AccountStatus] = mapped_column(default=AccountStatus.PENDING)
     user_type: Mapped[str]
     email: Mapped[str]
     expires_at: Mapped[datetime] = mapped_column(
@@ -394,7 +392,6 @@ class Item(Base):
     reviews: Mapped[list["Review"]] = relationship(
         back_populates="item", cascade="all, delete-orphan"
     )
-   
 
     __table_args__ = (
         Index(
@@ -537,7 +534,7 @@ class Delivery(Base):
     sender: Mapped["User"] = relationship(
         back_populates="deliveries_as_sender", foreign_keys=[sender_id]
     )
-  
+
 
 class ChargeAndCommission(Base):
     __tablename__ = "charges"
@@ -670,7 +667,6 @@ class UserReport(Base):
             "defendant_id",
             name="uq_reporter_order_report",
         ),
-       
     )
 
 
