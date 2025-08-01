@@ -5,6 +5,7 @@ from pydantic import BaseModel
 
 
 class FoodGroup(str, Enum):
+    """ Food Group Enum"""
     APPETIZER = "appetizer"
     MAIN_COURSE = "main_course"
     DESSERT = "dessert"
@@ -12,6 +13,7 @@ class FoodGroup(str, Enum):
 
 
 class CategoryType(str, Enum):
+    """ Category Type Enum"""
     FOOD = "food"
     PRODUCT = "product"
 
@@ -21,6 +23,7 @@ class CategoryCreate(BaseModel):
 
 
 class CategoryResponse(CategoryCreate):
+    """Category Response"""
     id: UUID
     category_type: CategoryType
 
