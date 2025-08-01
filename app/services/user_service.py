@@ -159,10 +159,10 @@ async def get_current_user_details(
                 "business_registration_number": getattr(
                     user.profile, "business_registration_number", None
                 ),
-                "closing_hours": user.profile.closing_hours.isoformat()
+                "closing_hours": str(user.profile.closing_hours.isoformat())
                 if getattr(user.profile, "closing_hours", None)
                 else None,
-                "opening_hours": user.profile.opening_hours.isoformat()
+                "opening_hours": str(user.profile.opening_hours.isoformat())
                 if getattr(user.profile, "opening_hours", None)
                 else None,
             },
@@ -264,10 +264,10 @@ async def get_users(
                     "business_registration_number": getattr(
                         user.profile, "business_registration_number", None
                     ),
-                    "closing_hours": user.profile.closing_hours.isoformat()
+                    "closing_hours": str(user.profile.closing_hours.isoformat())
                     if getattr(user.profile, "closing_hours", None)
                     else None,
-                    "opening_hours": user.profile.opening_hours.isoformat()
+                    "opening_hours": str(user.profile.opening_hours.isoformat())
                     if getattr(user.profile, "opening_hours", None)
                     else None,
                 }
@@ -351,8 +351,8 @@ async def get_active_users(db: AsyncSession, window_minutes: int = 10) -> list[U
                 "backdrop_image_url": getattr(user.profile.profile_image, "backdrop_image_url", None),
                 "profile_image_url": getattr(user.profile.profile_image, "profile_image_url", None),
                 "business_registration_number": getattr(user.profile, "business_registration_number", None),
-                "closing_hours": user.profile.closing_hours.isoformat() if getattr(user.profile, "closing_hours", None) else None,
-                "opening_hours": user.profile.opening_hours.isoformat() if getattr(user.profile, "opening_hours", None) else None,
+                "closing_hours": str(user.profile.closing_hours.isoformat())if getattr(user.profile, "closing_hours", None) else None,
+                "opening_hours": str(user.profile.opening_hours.isoformat()) if getattr(user.profile, "opening_hours", None) else None,
             }
         else:
             user_data["profile"] = None
