@@ -2315,7 +2315,7 @@ async def get_paid_pending_deliveries(db: AsyncSession) -> list[DeliveryResponse
 
 
 async def get_user_related_orders(
-    db: AsyncSession, user_id: UUID, skip: int = 0, limit: int = 10
+    db: AsyncSession, user_id: UUID,
 ) -> list[DeliveryResponse]:
     """
     Returns deliveries where the user is involved as:
@@ -2324,7 +2324,7 @@ async def get_user_related_orders(
       - delivery.dispatch_id
       - delivery.rider_id
     """
-    cache_key = f"user_related_orders:{user_id}:{skip}:{limit}"
+    cache_key = f"user_related_orders:{user_id}"
     cached_orders = redis_client.get(cache_key)
     if cached_orders:
         return [DeliveryResponse(**d) for d in json.loads(cached_orders)]
@@ -2348,8 +2348,6 @@ async def get_user_related_orders(
             )
         )
         .order_by(Order.updated_at.desc())
-        .offset(skip)
-        .limit(limit)
     )
     result = await db.execute(stmt)
     orders = result.unique().scalars().all()

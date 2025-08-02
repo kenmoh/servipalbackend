@@ -1419,7 +1419,7 @@ async def order_payment_callback(request: Request, db: AsyncSession):
 
 
             return templates.TemplateResponse(
-            "/payment/payment-status.html",
+            "payment/payment-status.html",
             {
                 "request": request,
                 "payment_status": order.order_payment_status,
@@ -1526,7 +1526,7 @@ async def order_payment_callback(request: Request, db: AsyncSession):
 
 
         return templates.TemplateResponse(
-            "/payment/payment-status.html",
+            "payment/payment-status.html",
             {
                 "request": request,
                 "payment_status": order.order_payment_status,
