@@ -1415,7 +1415,7 @@ async def order_payment_callback(request: Request, db: AsyncSession):
 
             return {
                 "payment_status": order.order_payment_status,
-                "charged_amount": delivery_fee,
+                "charged_amount": str(delivery_fee),
             }
 
         # --- FOOD/LAUNDRY ORDER ---
@@ -1514,7 +1514,7 @@ async def order_payment_callback(request: Request, db: AsyncSession):
 
         return {
             "payment_status": order.order_payment_status,
-            "charged_amount": charged_amount,
+            "charged_amount": str(charged_amount),
         }
 
     # For failed/cancelled payments, just commit the status update
@@ -1916,7 +1916,7 @@ async def pay_with_wallet(
 
         return {
             "payment_status": order.order_payment_status,
-            "charged_amount": delivery_fee,
+            "charged_amount": str(delivery_fee),
         }
 
     # --- FOOD/LAUNDRY LOGIC ---
@@ -2018,7 +2018,7 @@ async def pay_with_wallet(
 
     return {
         "payment_status": order.order_payment_status,
-        "charged_amount": charged_amount,
+        "charged_amount": str(charged_amount),
     }
 
 
