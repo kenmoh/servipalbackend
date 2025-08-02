@@ -8,6 +8,7 @@ import httpx
 from sqlalchemy import insert, select, update, and_, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
+from fastapi.templating import Jinja2Templates
 
 import hmac
 from typing import Optional
@@ -53,6 +54,8 @@ from app.utils.utils import (
 from app.config.config import settings, redis_client
 
 logger = setup_logger()
+
+templates = Jinja2Templates(directory="templates")
 
 
 async def get_transactions(
@@ -1316,6 +1319,7 @@ async def order_payment_callback(request: Request, db: AsyncSession):
     """
     tx_ref = request.query_params["tx_ref"]
     tx_status = request.query_params["status"]
+    transx_id = request.query_params['transaction_id']
 
     # Defensive: verify transaction status with payment provider
     verify_tranx = await verify_transaction_tx_ref(tx_ref)
@@ -1413,10 +1417,18 @@ async def order_payment_callback(request: Request, db: AsyncSession):
             redis_client.delete("paid_pending_deliveries")
             redis_client.delete("orders")
 
-            return {
+
+            return templates.TemplateResponse(
+            "/payment/payment-status.html",
+            {
+                "request": request,
                 "payment_status": order.order_payment_status,
-                "charged_amount": str(delivery_fee),
+                "amount": str(charged_amount),
+                "tx_ref": tx_ref,
+                "date": datetime.now().strftime("%b %d, %Y"),
+                "transaction_id": transx_id,
             }
+        )
 
         # --- FOOD/LAUNDRY ORDER ---
         seller = await get_user_profile(order.vendor_id, db)
@@ -1512,10 +1524,19 @@ async def order_payment_callback(request: Request, db: AsyncSession):
         redis_client.delete("paid_pending_deliveries")
         redis_client.delete("orders")
 
-        return {
-            "payment_status": order.order_payment_status,
-            "charged_amount": str(charged_amount),
-        }
+
+        return templates.TemplateResponse(
+            "/payment/payment-status.html",
+            {
+                "request": request,
+                "payment_status": order.order_payment_status,
+                "amount": str(charged_amount),
+                "tx_ref": tx_ref,
+                "date": datetime.now().strftime("%b %d, %Y"),
+                "transaction_id": transx_id,
+            }
+        )
+
 
     # For failed/cancelled payments, just commit the status update
     await db.commit()
@@ -1528,7 +1549,15 @@ async def order_payment_callback(request: Request, db: AsyncSession):
     redis_client.delete("paid_pending_deliveries")
     redis_client.delete("orders")
 
-    return {"order_payment_status": order.order_payment_status}
+    return templates.TemplateResponse(
+            "/payment/payment-status.html",
+            {
+                "request": request,
+                "payment_status": order.order_payment_status,
+                "amount": str(charged_amount),
+              
+            }
+        )
 # async def order_payment_callback(request: Request, db: AsyncSession):
 #     """
 #     Handles payment callback for orders, supporting scenarios:
