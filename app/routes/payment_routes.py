@@ -1,6 +1,7 @@
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Request, status, Query
+from fastapi.responses import HTMLResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.auth import get_current_user
@@ -125,7 +126,7 @@ async def get_transaction(
 
 
 @router.get(
-    "/order-payment-callback", include_in_schema=False, status_code=status.HTTP_200_OK
+    "/order-payment-callback", include_in_schema=False, response_class=HTMLResponse, status_code=status.HTTP_200_OK
 )
 async def order_payment_callback(
     request: Request, db: AsyncSession = Depends(get_db)
