@@ -1419,7 +1419,7 @@ async def order_payment_callback(request: Request, db: AsyncSession):
 
 
             return templates.TemplateResponse(
-            "payment/payment-status.html",
+            "payment-status.html",
             {
                 "request": request,
                 "payment_status": order.order_payment_status,
@@ -1477,21 +1477,21 @@ async def order_payment_callback(request: Request, db: AsyncSession):
         )
 
         # Create seller transaction (order amount to escrow)
-        seller_transaction = Transaction(
-            wallet_id=seller_wallet.id,
-            amount=total_price,
-            transaction_type=TransactionType.USER_TO_USER,
-            transaction_direction=TransactionDirection.CREDIT,
-            payment_status=PaymentStatus.PAID,
-            created_at=current_time,
-            payment_method=PaymentMethod.CARD,
-            from_user=buyer.full_name or buyer.business_name,
-            to_user=seller.full_name or seller.business_name,
-            updated_at=current_time,
-        )
+        # seller_transaction = Transaction(
+        #     wallet_id=seller_wallet.id,
+        #     amount=total_price,
+        #     transaction_type=TransactionType.USER_TO_USER,
+        #     transaction_direction=TransactionDirection.CREDIT,
+        #     payment_status=PaymentStatus.PAID,
+        #     created_at=current_time,
+        #     payment_method=PaymentMethod.CARD,
+        #     from_user=buyer.full_name or buyer.business_name,
+        #     to_user=seller.full_name or seller.business_name,
+        #     updated_at=current_time,
+        # )
 
         db.add(buyer_transaction)
-        db.add(seller_transaction)
+        # db.add(seller_transaction)
         
         # Commit all changes
         await db.commit()
@@ -1546,11 +1546,11 @@ async def order_payment_callback(request: Request, db: AsyncSession):
     redis_client.delete(f"user_related_orders:{order.owner_id}")
     redis_client.delete(f"user_orders:{order.owner_id}")
     redis_client.delete(f"user_orders:{order.vendor_id}")
-    redis_client.delete("paid_pending_deliveries")
+    redis_client.delete("paid_pending_deliveries)
     redis_client.delete("orders")
 
     return templates.TemplateResponse(
-            "/payment/payment-status.html",
+            "payment-status.html",
             {
                 "request": request,
                 "payment_status": order.order_payment_status,

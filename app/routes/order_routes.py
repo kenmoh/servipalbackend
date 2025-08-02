@@ -61,12 +61,10 @@ async def get_paid_pending_deliveries(
 @router.get("/{user_id}/user-related-orders", status_code=status.HTTP_200_OK)
 async def get_user_related_deliveries(
     user_id: UUID,
-    skip: int = 0,
-    limit: int = 20,
     db: AsyncSession = Depends(get_db),
 ) -> list[DeliveryResponse]:
     return await order_service.get_user_related_orders(
-        db=db, user_id=user_id, skip=skip, limit=limit
+        db=db, user_id=user_id
     )
 
 
