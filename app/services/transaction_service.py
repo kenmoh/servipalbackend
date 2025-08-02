@@ -1423,7 +1423,7 @@ async def order_payment_callback(request: Request, db: AsyncSession):
             {
                 "request": request,
                 "payment_status": order.order_payment_status,
-                "amount": str(charged_amount),
+                "amount": str(delivery_fee),
                 "tx_ref": tx_ref,
                 "date": datetime.now().strftime("%b %d, %Y"),
                 "transaction_id": transx_id,

@@ -101,7 +101,7 @@ async def get_user_wallets(
     return await user_service.get_user_wallets(db=db, skip=skip, limit=limit)
 
 
-@router.get("/user-wallet", include_in_schema=False, status_code=status.HTTP_200_OK)
+@router.get("/user-wallet",  status_code=status.HTTP_200_OK)
 async def get_user_wallet(
     db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)
 ) -> WalletSchema:
