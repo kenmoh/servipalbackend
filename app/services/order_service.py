@@ -2367,6 +2367,7 @@ async def get_user_related_orders(
     return delivery_responses
 
 
+
 async def cancel_order(
     db: AsyncSession,
     order_id: UUID,
@@ -2395,13 +2396,6 @@ async def cancel_order(
             status_code=status.HTTP_404_NOT_FOUND, detail="Order not found"
         )
 
-    # Get Users Wallet
-    buyer_result = await db.execute(select(Wallet).where(Wallet.id == order.owner_id))
-    buyer_wallet = buyer_result.scalar_one_or_none()
-
-    vendor_result = await db.execute(select(Wallet).where(Wallet.id == order.vendor_id))
-    vendor_wallet = vendor_result.scalar_one_or_none()
-
     # Only allow owner or vendor to cancel
     if current_user.id not in [order.owner_id, order.vendor_id]:
         raise HTTPException(
@@ -2413,91 +2407,295 @@ async def cancel_order(
     if order.order_status == OrderStatus.CANCELLED:
         return DeliveryStatusUpdateSchema(delivery_status=OrderStatus.CANCELLED)
 
-    old_status = order.order_status
-    update_values = {"order_status": OrderStatus.CANCELLED}
-    if reason:
-        update_values["cancel_reason"] = reason
-    await db.execute(update(Order).where(Order.id == order_id).values(**update_values))
-
-    # Refund buyer
-    refund_amount = min(buyer_wallet.escrow_balance, order.total_price)
-    new_buyer_balance = buyer_wallet.balance + refund_amount
-    new_buyer_escrow = max(buyer_wallet.escrow_balance - refund_amount, 0)
-    await db.execute(
-        update(Wallet)
-        .where(Wallet.id == order.owner_id)
-        .values({"balance": new_buyer_balance, "escrow_balance": new_buyer_escrow})
-    )
-    # Remove vendor escrow
-    new_vendor_escrow = max(vendor_wallet.escrow_balance - order.amount_due_vendor, 0)
-    await db.execute(
-        update(Wallet)
-        .where(Wallet.id == order.vendor_id)
-        .values({"escrow_balance": new_vendor_escrow})
-    )
-    # If delivery, remove dispatch escrow
-    if order.delivery:
-        dispatch_result = await db.execute(
-            select(Wallet).where(Wallet.id == order.dispatch_id)
-        )
-        dispatch_wallet = dispatch_result.scalar_one_or_none()
-        new_dispatch_escrow = max(
-            dispatch_wallet.escrow_balance - order.amount_due_dispatch, 0
-        )
-        await db.execute(
-            update(Wallet)
-            .where(Wallet.id == order.dispatch_id)
-            .values({"escrow_balance": new_dispatch_escrow})
-        )
-        await db.execute(
-            update(Delivery)
-            .where(Delivery.id == order.delivery.id)
-            .values(delivery_status=DeliveryStatus.CANCELLED)
-        )
-    await db.commit()
-    # Create refund transaction for buyer
-    refund_tx = Transaction(
-        wallet_id=buyer_wallet.id,
-        amount=refund_amount,
-        transaction_direction=TransactionDirection.CREDIT,
-        transaction_type=TransactionType.REFUND,
-        payment_status=PaymentStatus.PAID,
-        payment_by="system_refund",
-        created_at=datetime.now(),
-        updated_at=datetime.now(),
-    )
-    db.add(refund_tx)
-    await db.flush()
-
-    # If order has a delivery, optionally cancel delivery too
-    if order.delivery:
-        dispatch_result = await db.execute(
-            select(Wallet).where(Wallet.id == order.dispatch_id)
-        )
-        dispatch_wallet = dispatch_result.scalar_one_or_none()
-        await db.execute(
-            update(Delivery)
-            .where(Delivery.id == order.delivery.id)
-            .values(delivery_status=DeliveryStatus.CANCELLED)
-        )
-
-        await db.execute(
-            update(Wallet)
-            .where(Wallet.id == order.dispatch_id)
-            .values(
-                {
-                    "escrow_balance": dispatch_wallet.escrow_balance
-                    - order.amount_due_vendor
-                }
+    # Check if order was paid - only process refunds if payment was successful
+    if order.order_payment_status != PaymentStatus.PAID:
+        # Just update order status if not paid
+        update_values = {"order_status": OrderStatus.CANCELLED}
+        if reason:
+            update_values["cancel_reason"] = reason
+        await db.execute(update(Order).where(Order.id == order_id).values(**update_values))
+        
+        # Cancel delivery if exists
+        if order.delivery:
+            await db.execute(
+                update(Delivery)
+                .where(Delivery.id == order.delivery.id)
+                .values(delivery_status=DeliveryStatus.CANCELLED)
             )
-        )
+        
         await db.commit()
-    # Invalidate caches
-    invalidate_order_cache(order_id)
-    redis_client.delete(f"user_orders:{order.owner_id}")
-    redis_client.delete(f"user_orders:{order.vendor_id}")
-    redis_client.delete("orders")
-    return DeliveryStatusUpdateSchema(delivery_status=OrderStatus.CANCELLED)
+        
+        # Clear caches
+        await invalidate_order_cache_async(order_id)  # Make sure this is async
+        await redis_client.delete(f"user_orders:{order.owner_id}")
+        await redis_client.delete(f"user_orders:{order.vendor_id}")
+        await redis_client.delete("orders")
+        
+        return DeliveryStatusUpdateSchema(delivery_status=OrderStatus.CANCELLED)
+
+    # Process refunds for paid orders
+    try:
+        # Get wallets
+        buyer_result = await db.execute(select(Wallet).where(Wallet.id == order.owner_id))
+        buyer_wallet = buyer_result.scalar_one_or_none()
+
+        vendor_result = await db.execute(select(Wallet).where(Wallet.id == order.vendor_id))
+        vendor_wallet = vendor_result.scalar_one_or_none()
+
+        if not buyer_wallet or not vendor_wallet:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Wallet not found for buyer or vendor"
+            )
+
+        # Calculate refund amounts
+        total_refund = 0
+        vendor_escrow_deduction = 0
+        dispatch_escrow_deduction = 0
+
+        # For package orders - refund delivery fee
+        if order.order_type == OrderType.PACKAGE:
+            if order.delivery and order.delivery.delivery_fee:
+                total_refund = order.delivery.delivery_fee
+                # Remove from dispatch escrow if assigned
+                if order.dispatch_id:
+                    dispatch_escrow_deduction = order.delivery.delivery_fee
+        else:
+            # For food/laundry orders - refund full amount
+            total_refund = order.total_price
+            if order.require_delivery == RequireDeliverySchema.DELIVERY and order.delivery:
+                total_refund += order.delivery.delivery_fee
+                if order.dispatch_id:
+                    dispatch_escrow_deduction = order.delivery.delivery_fee
+            
+            vendor_escrow_deduction = order.total_price
+
+        # Update buyer wallet - move money back to balance from escrow
+        refund_amount = min(buyer_wallet.escrow_balance, total_refund)
+        new_buyer_balance = buyer_wallet.balance + refund_amount
+        new_buyer_escrow = max(buyer_wallet.escrow_balance - refund_amount, 0)
+
+        await db.execute(
+            update(Wallet)
+            .where(Wallet.id == order.owner_id)
+            .values(balance=new_buyer_balance, escrow_balance=new_buyer_escrow)
+        )
+
+        # Update vendor escrow if applicable
+        if vendor_escrow_deduction > 0:
+            new_vendor_escrow = max(vendor_wallet.escrow_balance - vendor_escrow_deduction, 0)
+            await db.execute(
+                update(Wallet)
+                .where(Wallet.id == order.vendor_id)
+                .values(escrow_balance=new_vendor_escrow)
+            )
+
+        # Update dispatch escrow if applicable
+        if order.dispatch_id and dispatch_escrow_deduction > 0:
+            dispatch_result = await db.execute(
+                select(Wallet).where(Wallet.id == order.dispatch_id)
+            )
+            dispatch_wallet = dispatch_result.scalar_one_or_none()
+            
+            if dispatch_wallet:
+                new_dispatch_escrow = max(dispatch_wallet.escrow_balance - dispatch_escrow_deduction, 0)
+                await db.execute(
+                    update(Wallet)
+                    .where(Wallet.id == order.dispatch_id)
+                    .values(escrow_balance=new_dispatch_escrow)
+                )
+
+        # Update order status
+        update_values = {"order_status": OrderStatus.CANCELLED}
+        if reason:
+            update_values["cancel_reason"] = reason
+        await db.execute(update(Order).where(Order.id == order_id).values(**update_values))
+
+        # Update delivery status if exists
+        if order.delivery:
+            await db.execute(
+                update(Delivery)
+                .where(Delivery.id == order.delivery.id)
+                .values(delivery_status=DeliveryStatus.CANCELLED)
+            )
+
+        # Create refund transaction record
+        if refund_amount > 0:
+            current_time = datetime.now()
+            refund_tx = Transaction(
+                wallet_id=buyer_wallet.id,
+                amount=refund_amount,
+                transaction_direction=TransactionDirection.CREDIT,
+                transaction_type=TransactionType.REFUND,
+                payment_status=PaymentStatus.PAID,
+                payment_method=PaymentMethod.SYSTEM_REFUND,
+                from_user="System Refund",
+                to_user=current_user.profile.full_name or current_user.profile.business_name,
+                created_at=current_time,
+                updated_at=current_time,
+            )
+            db.add(refund_tx)
+
+        # Commit all changes in one transaction
+        await db.commit()
+
+        # Clear caches - make sure these are async if redis_client expects async
+       
+        # If using sync redis client
+        redis_client.delete(f"user_orders:{order.owner_id}")
+        redis_client.delete(f"user_orders:{order.vendor_id}")
+        redis_client.delete("orders")
+        redis_client.delete("paid_pending_deliveries")
+
+        # Clear order cache
+        if hasattr(invalidate_order_cache, '__call__'):
+            if asyncio.iscoroutinefunction(invalidate_order_cache):
+                await invalidate_order_cache(order_id)
+            else:
+                invalidate_order_cache(order_id)
+
+        return DeliveryStatusUpdateSchema(delivery_status=OrderStatus.CANCELLED)
+
+    except Exception as e:
+        # Rollback on error
+        await db.rollback()
+        logger.error(f"Error cancelling order {order_id}: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to cancel order"
+        )
+
+# async def cancel_order(
+#     db: AsyncSession,
+#     order_id: UUID,
+#     current_user: User,
+#     reason: str = None,
+# ) -> DeliveryStatusUpdateSchema:
+#     """
+#     Cancel an order (with or without delivery). Sets order_status to CANCELLED, logs an audit, and updates caches.
+#     Args:
+#         db: Database session
+#         order_id: UUID of the order to cancel
+#         current_user: User performing the cancellation
+#         reason: Optional reason for cancellation
+#     Returns:
+#         DeliveryStatusUpdateSchema with the new order status
+#     """
+
+#     # Fetch the order
+#     order_result = await db.execute(
+#         select(Order).where(Order.id == order_id).options(selectinload(Order.delivery))
+#     )
+
+#     order = order_result.scalar_one_or_none()
+#     if not order:
+#         raise HTTPException(
+#             status_code=status.HTTP_404_NOT_FOUND, detail="Order not found"
+#         )
+
+#     # Get Users Wallet
+#     buyer_result = await db.execute(select(Wallet).where(Wallet.id == order.owner_id))
+#     buyer_wallet = buyer_result.scalar_one_or_none()
+
+#     vendor_result = await db.execute(select(Wallet).where(Wallet.id == order.vendor_id))
+#     vendor_wallet = vendor_result.scalar_one_or_none()
+
+#     # Only allow owner or vendor to cancel
+#     if current_user.id not in [order.owner_id, order.vendor_id]:
+#         raise HTTPException(
+#             status_code=status.HTTP_403_FORBIDDEN,
+#             detail="Not authorized to cancel this order",
+#         )
+
+#     # If already cancelled, do nothing
+#     if order.order_status == OrderStatus.CANCELLED:
+#         return DeliveryStatusUpdateSchema(delivery_status=OrderStatus.CANCELLED)
+
+#     old_status = order.order_status
+#     update_values = {"order_status": OrderStatus.CANCELLED}
+#     if reason:
+#         update_values["cancel_reason"] = reason
+#     await db.execute(update(Order).where(Order.id == order_id).values(**update_values))
+
+#     # Refund buyer
+#     refund_amount = min(buyer_wallet.escrow_balance, order.total_price)
+#     new_buyer_balance = buyer_wallet.balance + refund_amount
+#     new_buyer_escrow = max(buyer_wallet.escrow_balance - refund_amount, 0)
+#     await db.execute(
+#         update(Wallet)
+#         .where(Wallet.id == order.owner_id)
+#         .values({"balance": new_buyer_balance, "escrow_balance": new_buyer_escrow})
+#     )
+#     # Remove vendor escrow
+#     new_vendor_escrow = max(vendor_wallet.escrow_balance - order.amount_due_vendor, 0)
+#     await db.execute(
+#         update(Wallet)
+#         .where(Wallet.id == order.vendor_id)
+#         .values({"escrow_balance": new_vendor_escrow})
+#     )
+#     # If delivery, remove dispatch escrow
+#     if order.delivery:
+#         dispatch_result = await db.execute(
+#             select(Wallet).where(Wallet.id == order.dispatch_id)
+#         )
+#         dispatch_wallet = dispatch_result.scalar_one_or_none()
+#         new_dispatch_escrow = max(
+#             dispatch_wallet.escrow_balance - order.amount_due_dispatch, 0
+#         )
+#         await db.execute(
+#             update(Wallet)
+#             .where(Wallet.id == order.dispatch_id)
+#             .values({"escrow_balance": new_dispatch_escrow})
+#         )
+#         await db.execute(
+#             update(Delivery)
+#             .where(Delivery.id == order.delivery.id)
+#             .values(delivery_status=DeliveryStatus.CANCELLED)
+#         )
+#     await db.commit()
+#     # Create refund transaction for buyer
+#     refund_tx = Transaction(
+#         wallet_id=buyer_wallet.id,
+#         amount=refund_amount,
+#         transaction_direction=TransactionDirection.CREDIT,
+#         transaction_type=TransactionType.REFUND,
+#         payment_status=PaymentStatus.PAID,
+#         payment_by="system_refund",
+#         created_at=datetime.now(),
+#         updated_at=datetime.now(),
+#     )
+#     db.add(refund_tx)
+#     await db.flush()
+
+#     # If order has a delivery, optionally cancel delivery too
+#     if order.delivery:
+#         dispatch_result = await db.execute(
+#             select(Wallet).where(Wallet.id == order.dispatch_id)
+#         )
+#         dispatch_wallet = dispatch_result.scalar_one_or_none()
+#         await db.execute(
+#             update(Delivery)
+#             .where(Delivery.id == order.delivery.id)
+#             .values(delivery_status=DeliveryStatus.CANCELLED)
+#         )
+
+#         await db.execute(
+#             update(Wallet)
+#             .where(Wallet.id == order.dispatch_id)
+#             .values(
+#                 {
+#                     "escrow_balance": dispatch_wallet.escrow_balance
+#                     - order.amount_due_vendor
+#                 }
+#             )
+#         )
+#         await db.commit()
+#     # Invalidate caches
+#     invalidate_order_cache(order_id)
+#     redis_client.delete(f"user_orders:{order.owner_id}")
+#     redis_client.delete(f"user_orders:{order.vendor_id}")
+#     redis_client.delete("orders")
+#     return DeliveryStatusUpdateSchema(delivery_status=OrderStatus.CANCELLED)
 
 
 async def reaccept_order(
