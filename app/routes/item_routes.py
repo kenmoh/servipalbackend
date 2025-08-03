@@ -190,6 +190,7 @@ async def get_menu_item_by_id(
 )
 @limiter.limit("5/minute")
 async def update_menu_item(
+    request: Request,
     item_id: UUID,
     item_data: MenuItemCreate,
     db: AsyncSession = Depends(get_db),
