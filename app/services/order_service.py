@@ -29,10 +29,11 @@ from uuid import UUID, uuid1
 from fastapi import HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.schemas.schemas import ReviewSchema
-from app.schemas.status_schema import OrderStatus, TransactionDirection, TransactionType
+from app.schemas.status_schema import OrderStatus, PaymentMethod, TransactionDirection, TransactionType
 
 
 from app.schemas.order_schema import (
+    OrderType,
     PaymentStatus,
     OrderItemCreate,
     PackageCreate,
@@ -49,6 +50,7 @@ from app.schemas.item_schemas import ItemType
 
 from app.schemas.status_schema import RequireDeliverySchema, DeliveryStatus
 from app.schemas.user_schemas import UserType, WalletRespose
+from app.utils import logger_config
 from app.utils.utils import (
     get_dispatch_id,
     get_payment_link,
@@ -1581,6 +1583,7 @@ async def sender_confirm_delivery_received(
         redis_client.delete(f"{ALL_DELIVERY}")
         redis_client.delete("paid_pending_deliveries")
         redis_client.delete(f"user_related_orders:{current_user.id}")
+        
 
         return DeliveryStatusUpdateSchema(delivery_status=delivery.delivery_status)
 
@@ -2424,10 +2427,10 @@ async def cancel_order(
         await db.commit()
         
         # Clear caches
-        await invalidate_order_cache_async(order_id)  # Make sure this is async
-        await redis_client.delete(f"user_orders:{order.owner_id}")
-        await redis_client.delete(f"user_orders:{order.vendor_id}")
-        await redis_client.delete("orders")
+        redis_client.delete(order_id)  
+        redis_client.delete(f"user_orders:{order.owner_id}")
+        redis_client.delete(f"user_orders:{order.vendor_id}")
+        redis_client.delete("orders")
         
         return DeliveryStatusUpdateSchema(delivery_status=OrderStatus.CANCELLED)
 
@@ -2545,19 +2548,12 @@ async def cancel_order(
         redis_client.delete("orders")
         redis_client.delete("paid_pending_deliveries")
 
-        # Clear order cache
-        if hasattr(invalidate_order_cache, '__call__'):
-            if asyncio.iscoroutinefunction(invalidate_order_cache):
-                await invalidate_order_cache(order_id)
-            else:
-                invalidate_order_cache(order_id)
-
         return DeliveryStatusUpdateSchema(delivery_status=OrderStatus.CANCELLED)
 
     except Exception as e:
         # Rollback on error
         await db.rollback()
-        logger.error(f"Error cancelling order {order_id}: {str(e)}")
+        logger_config.error(f"Error cancelling order {order_id}: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to cancel order"

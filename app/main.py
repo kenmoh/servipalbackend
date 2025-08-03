@@ -2,8 +2,6 @@ import os
 from app.config.config import settings
 
 # Set the timezone for the application process. This is crucial for libraries
-# like tzlocal (a dependency of apscheduler) to work correctly in environments
-# where timezone auto-detection can fail (e.g., servers without GUI libraries).
 os.environ["TZ"] = settings.TZ
 
 from contextlib import asynccontextmanager
@@ -13,13 +11,11 @@ import logfire
 import sentry_sdk
 # from opentelemetry.instrumentation.sqlalchemy import SQLAlchemyInstrumentor
 
-
 from fastapi import Depends, FastAPI
 from fastapi.openapi.docs import get_swagger_ui_html, get_redoc_html
 from fastapi.responses import RedirectResponse
 from fastapi_mcp import FastApiMCP
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.templating import Jinja2Templates
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 from apscheduler.schedulers.background import BackgroundScheduler
@@ -262,8 +258,6 @@ app.add_middleware(
     ],
     expose_headers=["Set-Cookie"],
 )
-templates = Jinja2Templates(directory="templates")
-
 
 @app.get("/api/db", tags=["Health Status"])
 async def check_db_health(db: AsyncSession = Depends(get_db)):

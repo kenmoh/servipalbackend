@@ -8,7 +8,6 @@ import httpx
 from sqlalchemy import insert, select, update, and_, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
-from fastapi.templating import Jinja2Templates
 
 import hmac
 from typing import Optional
@@ -52,10 +51,9 @@ from app.utils.utils import (
     get_user_notification_token,
 )
 from app.config.config import settings, redis_client
+from app.templating import templates
 
 logger = setup_logger()
-
-templates = Jinja2Templates(directory="templates")
 
 
 async def get_transactions(
