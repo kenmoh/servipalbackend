@@ -259,6 +259,8 @@ app.add_middleware(
     expose_headers=["Set-Cookie"],
 )
 
+
+
 @app.get("/api/db", tags=["Health Status"])
 async def check_db_health(db: AsyncSession = Depends(get_db)):
     """Check database connectivity"""
