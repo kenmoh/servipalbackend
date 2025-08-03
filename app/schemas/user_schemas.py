@@ -387,7 +387,6 @@ class UserBase(BaseModel):
 
 
 class ProfileSchema(BaseModel):
-    user_id: UUID | None = None
     phone_number: str
     bike_number: str | None = None
     bank_account_number: str | None = None
@@ -397,8 +396,8 @@ class ProfileSchema(BaseModel):
     store_name: str | None = None
     business_address: str | None = None
     business_registration_number: str | None = None
-    closing_hours: time | str | None = None
-    opening_hours: time | str | None = None
+    closing_hours: time |  None = None
+    opening_hours: time |  None = None
     account_holder_name: str | None = None
     profile_image_url: str | None = None
     backdrop_image_url: str | None = None
