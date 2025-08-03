@@ -1,8 +1,7 @@
 import asyncio
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, time
 import secrets
 from uuid import UUID
-from datetime import datetime
 from fastapi import HTTPException, Request, status
 
 # from psycopg2 import IntegrityError
@@ -683,6 +682,12 @@ async def update_staff(
         if old_profile.get(k) != getattr(profile, k)
     }
     if changed_fields:
+        # Convert non-serializable types like datetime and time to strings for JSON
+        for key, values in changed_fields.items():
+            for i, value in enumerate(values):
+                if isinstance(value, (datetime, time)):
+                    values[i] = value.isoformat()
+
         audit = AuditLog(
             actor_id=current_user.id,
             actor_name=current_user.profile.full_name or current_user.email,
