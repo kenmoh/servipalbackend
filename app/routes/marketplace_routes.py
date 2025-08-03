@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from uuid import UUID
 
@@ -10,6 +10,7 @@ from app.schemas.order_schema import OrderResponseSchema
 from app.schemas.status_schema import OrderStatus
 from app.services import marketplace_service
 from app.schemas.item_schemas import ItemResponse
+from app.utils.limiter import limiter
 
 router = APIRouter(prefix="/marketplace", tags=["Marketplace"])
 
@@ -47,7 +48,9 @@ async def get_marketplace_item(
     summary="Buy a product",
     description="Allows an authenticated user to purchase a specified quantity of a product.",
 )
+@limiter.limit("5/minute")
 async def buy_listed_product(
+    request: Request,
     product_id: UUID,
     buy_request: ProductBuyRequest,
     db: AsyncSession = Depends(get_db),

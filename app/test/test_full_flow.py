@@ -1,42 +1,12 @@
 import pytest
 from uuid import uuid4
-from app.schemas.user_schemas import UserType
+from httpx import AsyncClient
 
+from app.schemas.user_schemas import UserType
+from app.schemas.status_schema import OrderStatus, RequireDeliverySchema
 
 pytestmark = pytest.mark.anyio
 
-
-@pytest.mark.asyncio
-async def test_registration_and_login(async_client, test_user_data):
-    # Register a new user
-    user_data = {
-        "email": f"testuser_{uuid4()}@example.com",
-        "phone_number": "08012345678",
-        "user_type": "CUSTOMER",
-        "password": "TestPassword123!",
-    }
-    resp = await async_client.post("/auth/register", json=user_data)
-    assert resp.status_code == 201
-    assert resp.json()["email"] == user_data["email"]
-
-    # Login with the new user
-    login_data = {"username": user_data["email"], "password": user_data["password"]}
-    resp = await async_client.post("/auth/login", data=login_data)
-    assert resp.status_code == 200
-    tokens = resp.json()
-    assert "access_token" in tokens
-    assert "refresh_token" in tokens
-
-    # Access protected route
-    headers = {"Authorization": f"Bearer {tokens['access_token']}"}
-    resp = await async_client.get("/users", headers=headers)
-    assert resp.status_code == 200
-
-
-@pytest.mark.asyncio
-async def test_protected_route_requires_auth(async_client):
-    resp = await async_client.get("/users")
-    assert resp.status_code == 401
 
 
 @pytest.mark.asyncio

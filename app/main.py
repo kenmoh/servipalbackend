@@ -1,5 +1,6 @@
 import os
 from app.config.config import settings
+from app.utils import limiter
 
 # Set the timezone for the application process. This is crucial for libraries
 os.environ["TZ"] = settings.TZ
@@ -21,6 +22,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.interval import IntervalTrigger
 from app.database.database import async_session, get_db
+from slowapi import _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
 
 from app.routes import (
     auth_routes,
@@ -188,6 +191,9 @@ app = FastAPI(
     },
 )
 
+app.state.limiter = limiter.limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
 
 FAVICON_URL = "https://mohdelivery.s3.us-east-1.amazonaws.com/favion/favicon.ico"
 
@@ -307,39 +313,7 @@ app.include_router(ws_routes.router)
 app.include_router(audit_log_routes.router)
 
 
-mcp = FastApiMCP(app, include_tags=["Notifications", "Reports"])
+# mcp = FastApiMCP(app, include_tags=["Notifications", "Reports"])
 
-mcp.mount()
+# mcp.mount()
 
-
-"""
-MCP_URL = https://servipalbackend.onrender.com/mcp
-
-For any MCP client supporting SSE, you will simply need to provide the MCP url.
-
-All the most popular MCP clients (Claude Desktop, Cursor & Windsurf) use the following config format:
-{
-  "mcpServers": {
-    "fastapi-mcp": {
-      "url": "http://localhost:8000/mcp"
-    }
-  }
-}
-
-
-For any MCP client supporting SSE, you will simply need to provide the MCP url.
-
-All the most popular MCP clients (Claude Desktop, Cursor & Windsurf) use the following config format:
-{
-  "mcpServers": {
-    "fastapi-mcp": {
-      "command": "npx",
-      "args": [
-        "mcp-remote",
-        "http://localhost:8000/mcp",
-        "8080"  // Optional port number. Necessary if you want your OAuth to work and you don't have dynamic client registration.
-      ]
-    }
-  }
-}
-"""

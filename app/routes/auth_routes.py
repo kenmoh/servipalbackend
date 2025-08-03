@@ -36,6 +36,7 @@ from app.schemas.user_schemas import (
 from app.services import auth_service
 from pydantic import BaseModel
 from app.config.config import server_client
+from app.utils.limiter import limiter
 
 
 router = APIRouter(prefix="/api/auth", tags=["Authentication"])
@@ -46,6 +47,7 @@ class StaffPasswordUpdateRequest(BaseModel):
 
 
 @router.post("/login", status_code=status.HTTP_200_OK)
+@limiter.limit('5/minute')
 async def login_user(
     request: Request,
     response: Response,
@@ -79,6 +81,7 @@ async def login_user(
 
 
 @router.post("/admin-login", status_code=status.HTTP_200_OK, include_in_schema=False)
+@limiter.limit('5/minute')
 async def login_admin_user(
     request: Request,
     response: Response,
@@ -155,7 +158,9 @@ async def logout(
 
 
 @router.post("/register", status_code=status.HTTP_201_CREATED)
+@limiter.limit('2/minute')
 async def create_user(
+    request: Request,
     user_data: CreateUserSchema,
     db: AsyncSession = Depends(get_db),
 ) -> UserBase:
@@ -167,7 +172,9 @@ async def create_user(
 @router.post(
     "/register-rider", include_in_schema=False, status_code=status.HTTP_201_CREATED
 )
+@limiter.limit('5/minute')
 async def create_user(
+    request: Request,
     data: RiderCreate,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -231,7 +238,9 @@ async def verify_token(token: str, db: AsyncSession = Depends(get_db)):
 
 
 @router.post("/verify-contacts")
+@limiter.limit('5/minute')
 async def verify_user_contacts(
+    request: Request,
     verification_data: VerificationSchema,
     db: AsyncSession = Depends(get_db),
 ) -> dict:
@@ -239,13 +248,6 @@ async def verify_user_contacts(
     return await auth_service.verify_user_contact(
         verification_data.email_code, verification_data.phone_code, db
     )
-
-
-# @router.put("/resend-verification")
-# async def resend_verification_codes(email: EmailStr, db: AsyncSession = Depends(get_db)) -> dict:
-#     """Resend verification codes"""
-#     email_code, phone_code = await auth_service.generate_resend_verification_code(email=email, db=db)
-#     return await auth_service.send_verification_codes(email_code=email_code, phone_code=phone_code, db=db)
 
 
 @router.put("/resend-verification")
@@ -300,63 +302,10 @@ async def logout_all(
     return {"message": " You're logged out from all devices"}
 
 
-# @router.get("/test-email")
-# async def test_email():
-#     """Send a test password reset email to verify email and template setup."""
-#     message = MessageSchema(
-#         subject="Password Reset Request",
-#         recipients=['hopearemoh@yahoo.com'],
-#         template_body={
-#             "reset_url": "https://example.com/reset-password?token=123456",
-#             "user": 'Hope Aremoh',
-#             "expires_in": "24 hours",
-#             "code": "123456"
-#         },
-#         subtype="html",
-#     )
-#     fm = FastMail(email_conf)
-#     await fm.send_message(message, template_name="email.html")
-#     return {"message": f"Test email sent to {'Hope Aremoh'}"}
-
-
-# @router.get("/test-resend-email")
-# async def test_resend_email():
-#     """Send a dummy verification email to a hardcoded recipient for testing."""
-#     message = MessageSchema(
-#         subject="Verify Your Email",
-#         recipients=["hopemoh2020@gmail.com"],
-#         template_body={
-#             "code": "654321",
-#             "expires_in": "10 minutes",
-#         },
-#         subtype="html",
-#     )
-#     fm = FastMail(email_conf)
-#     await fm.send_message(message, template_name="email.html")
-#     return {"message": "Dummy verification email sent to Hope Aremoh"}
-
-
-# @router.get("/test-welcome-email")
-# async def test_welcome_email():
-#     """Send a dummy welcome email to a hardcoded recipient for testing."""
-#     message = MessageSchema(
-#         subject="Welcome to ServiPal!",
-#         recipients=["kenneth.aremoh@gmail.com"],
-#         template_body={
-#             "title": "Welcome to ServiPal",
-#             "name": "kenneth.aremoh@gmail.com".split('@')[0],
-#             "body": "Thank you for joining our platform. We're excited to have you!",
-#             "code": "",
-#         },
-#         subtype="html",
-#     )
-#     fm = FastMail(email_conf)
-#     await fm.send_message(message, template_name="welcome_email.html")
-#     return {"message": "Dummy welcome email sent to Hope Aremoh"}
-
-
 @router.post("/create-staff", status_code=status.HTTP_201_CREATED)
+@limiter.limit('5/minute')
 async def create_staff(
+    request: Request,
     data: StaffCreate,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),

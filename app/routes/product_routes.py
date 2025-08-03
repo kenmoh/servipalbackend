@@ -2,6 +2,7 @@ from fastapi import (
     APIRouter,
     Depends,
     HTTPException,
+    Request,
     status,
     UploadFile,
     File,
@@ -24,6 +25,7 @@ from app.schemas.product_schemas import (
 
 # Assuming the service functions are correctly defined in app/services/product_service.py
 from app.services import product_service
+from app.utils.limiter import limiter
 
 router = APIRouter(prefix="/api/products", tags=["Products"])
 
@@ -35,7 +37,9 @@ router = APIRouter(prefix="/api/products", tags=["Products"])
     summary="Create a new product listing",
     description="Allows an authenticated user to list a new product for sale.",
 )
+@limiter.limit("5/minute")
 async def create_new_product(
+    request: Request,
     product_in: ProductCreate = Depends(),
     images: list[UploadFile] = File(...),
     db: AsyncSession = Depends(get_db),

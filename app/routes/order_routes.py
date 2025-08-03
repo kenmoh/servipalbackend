@@ -1,4 +1,4 @@
-from fastapi import Form, File, UploadFile, HTTPException
+from fastapi import Form, File, Request, UploadFile, HTTPException
 from uuid import UUID
 from decimal import Decimal
 
@@ -16,6 +16,7 @@ from app.schemas.order_schema import (
 )
 from app.schemas.schemas import ReviewSchema
 from app.services import order_service
+from app.utils.limiter import limiter
 
 router = APIRouter(prefix="/api/orders", tags=["Orders"])
 
@@ -71,7 +72,9 @@ async def get_user_related_deliveries(
 @router.post(
     "/send-item", response_model=DeliveryResponse, status_code=status.HTTP_201_CREATED
 )
+@limiter.limit("5/minute")
 async def send_item(
+    request: Request,
     name: str = Form(...),
     description: str = Form(...),
     distance: Decimal = Form(...),
@@ -118,7 +121,9 @@ async def send_item(
     response_model=DeliveryResponse,
     status_code=status.HTTP_201_CREATED,
 )
+@limiter.limit("5/minute")
 async def order_food_or_request_laundy_service(
+    request: Request,
     vendor_id: UUID,
     order_item: OrderAndDeliverySchema,
     db: AsyncSession = Depends(get_db),

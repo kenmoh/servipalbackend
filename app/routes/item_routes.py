@@ -1,7 +1,7 @@
 from uuid import UUID
 from decimal import Decimal
 
-from fastapi import APIRouter, Depends, File, UploadFile, status, Form
+from fastapi import APIRouter, Depends, File, Request, UploadFile, status, Form
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.auth import get_db, get_current_user
@@ -15,6 +15,7 @@ from app.schemas.item_schemas import (
     FoodGroup,
 )
 from app.services import item_service
+from app.utils.limiter import limiter
 
 router = APIRouter(prefix="/api/items", tags=["Items"])
 
@@ -42,7 +43,9 @@ async def create_new_category(
     "/menu-item-create",
     status_code=status.HTTP_201_CREATED,
 )
+@limiter.limit('5/minute')
 async def create_menu_item(
+    request: Request,
     name: str = Form(...),
     description: str = Form(None),
     price: Decimal = Form(...),
@@ -68,6 +71,7 @@ async def create_menu_item(
         item_type=item_type,
         category_id=category_id,
         food_group=food_group,
+        side=side or None
     )
 
     return await item_service.create_menu_item(
@@ -184,6 +188,7 @@ async def get_menu_item_by_id(
     "/{item_id}/update",
     status_code=status.HTTP_202_ACCEPTED,
 )
+@limiter.limit("5/minute")
 async def update_menu_item(
     item_id: UUID,
     item_data: MenuItemCreate,
