@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, time
 from app.schemas.item_schemas import FoodGroup, ItemType
 from app.models.models import AuditLog, Delivery, User, Item, RefreshToken, Session
 from sqlalchemy.orm import selectinload
@@ -623,7 +623,7 @@ async def update_profile(
 
     # Invalidate cached data
     redis_client.delete(f"current_useer_profile:{current_user.id}")
-    redis_client.get(f"user:{current_user.id}")
+    redis_client.delete(f"user:{current_user.id}")
     redis_client.delete("all_users")
 
     # --- AUDIT LOG ---
@@ -633,6 +633,12 @@ async def update_profile(
         if old_profile.get(k) != getattr(profile, k)
     }
     if changed_fields:
+        # Convert non-serializable types like datetime and time to strings for JSON
+        for key, values in changed_fields.items():
+            for i, value in enumerate(values):
+                if isinstance(value, (datetime, time)):
+                    values[i] = value.isoformat()
+
         audit = AuditLog(
             actor_id=current_user.id,
             actor_name=current_user.profile.full_name or current_user.email,
