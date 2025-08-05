@@ -1,3 +1,4 @@
+from decimal import Decimal
 from fastapi import (
     APIRouter,
     Depends,
@@ -7,9 +8,10 @@ from fastapi import (
     UploadFile,
     File,
     BackgroundTasks,
+    Form
 )
 from sqlalchemy.ext.asyncio import AsyncSession
-from typing import List
+from typing import List, Optional
 from uuid import UUID
 
 # Assuming these dependencies exist and are correctly defined elsewhere
@@ -40,7 +42,13 @@ router = APIRouter(prefix="/api/products", tags=["Products"])
 @limiter.limit("5/minute")
 async def create_new_product(
     request: Request,
-    product_in: ProductCreate = Depends(),
+    name: str = Form(...),
+    description: str = Form(...),
+    price: Decimal = Form(...),
+    stock: int = Form(...),
+    category_id: UUID = Form(...),
+    sizes: Optional[str] = Form(None),
+    colors: Optional[List[str]] = Form(None),
     images: list[UploadFile] = File(...),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -49,9 +57,19 @@ async def create_new_product(
     Endpoint to create a new product. Requires authentication.
     The logged-in user will be set as the seller.
     """
+
+    product_data = ProductCreate(
+        name=name,
+        description=description,
+        price=price,
+        stock=stock,
+        category_id=category_id,
+        sizes=sizes,
+        colors=colors
+        )
     # The service function handles checking category existence and creation logic
     product = await product_service.create_product(
-        db=db, product_data=product_in, seller=current_user, images=images
+        db=db, product_data=product_data, seller=current_user, images=images
     )
 
     return product
@@ -121,7 +139,13 @@ async def get_user_items(
 )
 async def update_existing_product(
     product_id: UUID,
-    product_in: ProductUpdate,
+    name: str = Form(...),
+    description: str = Form(...),
+    price: Decimal = Form(...),
+    stock: int = Form(...),
+    category_id: UUID = Form(...),
+    sizes: Optional[str] = Form(None),
+    colors: Optional[List[str]] = Form(None),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -130,8 +154,19 @@ async def update_existing_product(
     and the user must be the seller of the product.
     """
     # Service function handles checking ownership, category existence, and update logic
+
+    product_data = ProductCreate(
+        name=name,
+        description=description,
+        price=price,
+        stock=stock,
+        category_id=category_id,
+        sizes=sizes,
+        colors=colors
+        )
+
     updated_product = await product_service.update_product(
-        db=db, product_id=product_id, product_data=product_in, current_user=current_user
+        db=db, product_id=product_id, product_data=product_data, current_user=current_user
     )
     if updated_product is None:
         # This case is hit if the product wasn't found initially in the service

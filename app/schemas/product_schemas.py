@@ -18,10 +18,9 @@ class ProductBase(BaseModel):
     description: str = Form(...)
     price: Decimal = Form(...)
     stock: int = Form(...)
-    category_id: UUID
-    sizes: Optional[str]
+    category_id: UUID = Form(...)
+    sizes: Optional[str] = Form(None)
     colors: Optional[List[str]] = Form(None)
-    in_stock: Optional[bool] = True
 
 
 # Schema for creating a new product (input)
