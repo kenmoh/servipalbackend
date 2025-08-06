@@ -29,6 +29,7 @@ from app.schemas.status_schema import (
 from app.services.order_service import fetch_wallet
 from app.utils.utils import (
     get_fund_wallet_payment_link,
+    get_product_payment_link,
     get_user_notification_token,
     send_push_notification,
 )
@@ -217,7 +218,7 @@ async def buy_product(
         await db.flush()
 
         # Generate payment link
-        payment_link = get_fund_wallet_payment_link(
+        payment_link = get_product_payment_link(
             id=product_id, current_user=buyer, amount=total_cost
         )
 

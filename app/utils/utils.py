@@ -91,6 +91,36 @@ async def get_payment_link(id: UUID, amount: Decimal, current_user: User):
         raise HTTPException(
             status_code=500, detail=f"Failed to generate payment link: {str(e)}"
         )
+    
+# GET PAYMENT LINK
+async def get_product_payment_link(id: UUID, amount: Decimal, current_user: User):
+    try:
+        headers = {"Authorization": f"Bearer {settings.FLW_SECRET_KEY}"}
+        details = {
+            "tx_ref": str(id),
+            "amount": str(amount),
+            "currency": "NGN",
+            "redirect_url": f"{servipal_base_url}/payment/product-payment-callback",
+            "customer": {
+                "email": current_user.email,
+            },
+        }
+
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.post(
+                f"{flutterwave_base_url}/payments", json=details, headers=headers
+            )
+            response.raise_for_status()
+            response_data = response.json()
+            return response_data["data"]["link"]
+
+        return link
+    except httpx.HTTPStatusError as e:
+        raise HTTPException(status_code=502, detail=f"Payment gateway error: {str(e)}")
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, detail=f"Failed to generate payment link: {str(e)}"
+        )
 
 
 async def get_fund_wallet_payment_link(id: UUID, amount: Decimal, current_user: User):

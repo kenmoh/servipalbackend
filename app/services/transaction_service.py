@@ -1149,6 +1149,7 @@ async def fund_wallet_callback(request: Request, db: AsyncSession):
     # Get query parameters without awaiting them (they're not coroutines)
     tx_ref = request.query_params["tx_ref"]
     tx_status = request.query_params["status"]
+    transx_id = request.query_params['transaction_id']
 
     # First get the transaction
     stmt = select(Transaction).where(Transaction.id == UUID(tx_ref))
@@ -1198,6 +1199,19 @@ async def fund_wallet_callback(request: Request, db: AsyncSession):
         )
         await db.commit()
         await db.refresh(transaction)
+
+
+        return templates.TemplateResponse(
+            "payment-status.html",
+            {
+                "request": request,
+                "payment_status": transaction.payment_status,
+                "amount": str(transaction.amount),
+                "tx_ref": tx_ref,
+                "date": datetime.now().strftime("%b %d, %Y"),
+                "transaction_id": transx_id,
+            }
+        )
 
     except Exception as e:
         logging.error(f"Error updating transaction status: {e}")
@@ -1458,7 +1472,7 @@ async def order_payment_callback(request: Request, db: AsyncSession):
         buyer_wallet.balance += charged_amount
         
         # Move order amount to seller's escrow
-        seller_wallet.escrow_balance += total_price
+        seller_wallet.escrow_balance += order.amount_due_vendor
 
         # Create buyer transaction (payment received)
         buyer_transaction = Transaction(
@@ -1556,6 +1570,97 @@ async def order_payment_callback(request: Request, db: AsyncSession):
               
             }
         )
+
+# --- order_payment_callback ---
+async def product_order_payment_callback(request: Request, db: AsyncSession):
+  
+    tx_ref = request.query_params["tx_ref"]
+    tx_status = request.query_params["status"]
+    transx_id = request.query_params['transaction_id']
+
+    # Defensive: verify transaction status with payment provider
+    verify_tranx = await verify_transaction_tx_ref(tx_ref)
+    verify_status = verify_tranx.get("data", {}).get("status") if verify_tranx else None
+
+    # Determine payment status
+    if tx_status == "successful" and verify_status == "successful":
+        new_status = PaymentStatus.PAID
+    elif tx_status == "cancelled":
+        new_status = PaymentStatus.CANCELLED
+    else:
+        new_status = PaymentStatus.FAILED
+
+    # Fetch the order
+    order_result = await db.execute(
+        select(Order)
+        .where(Order.id == UUID(tx_ref), Order.order_type == OrderType.PRODUCT)
+        .options(
+            selectinload(Order.owner).selectinload(User.profile),
+            selectinload(Order.vendor).selectinload(User.profile),
+            selectinload(Order.delivery),
+        )
+    )
+    order = order_result.scalar_one_or_none()
+    if not order:
+        raise HTTPException(status_code=404, detail="Order not found")
+
+    # Update order payment status
+    order.order_payment_status = new_status
+    
+    buyer = await get_user_profile(order.owner_id, db)
+    seller = await get_user_profile(order.vendor_id, db)
+
+    # Only move funds and create transactions if payment is successful
+    if new_status == PaymentStatus.PAID:
+        # Fetch buyer wallet
+        buyer_wallet_result = await db.execute(
+            select(Wallet).where(Wallet.id == order.owner_id)
+        )
+        seller_wallet_result = await db.execute(
+            select(Wallet).where(Wallet.id == order.owner_id)
+        )
+        buyer_wallet = buyer_wallet_result.scalar_one_or_none()
+        seller_wallet = seller_wallet_result.scalar_one_or_none()
+
+        buyer_wallet.balance += order.total_price
+        seller_wallet.escrow_balance += order.amount_due_vendor
+
+        await db.commit()
+        await db.refresh(order)
+
+
+        buyer_tranx = Transaction(
+            wallet_id=buyer_wallet.id,
+            amount=order.total_price,
+            transaction_type=TransactionType.USER_TO_USER,
+            transaction_direction=TransactionDirection.CREDIT,
+            payment_status=PaymentStatus.PAID,
+            payment_method=PaymentMethod.CARD,
+            from_user=buyer.full_name or buyer.business_name,
+            to_user=seller.full_name or seller.business_name,
+            
+        )
+
+        db.add(buyer_tranx)
+        await db.commit()
+        await db.refresh(order)
+
+
+        return templates.TemplateResponse(
+            "payment-status.html",
+            {
+                "request": request,
+                "payment_status": order.order_payment_status,
+                "amount": str(order.total_price),
+                "tx_ref": tx_ref,
+                "date": datetime.now().strftime("%b %d, %Y"),
+                "transaction_id": transx_id,
+            }
+        )
+
+  
+
+        
 # async def order_payment_callback(request: Request, db: AsyncSession):
 #     """
 #     Handles payment callback for orders, supporting scenarios:
