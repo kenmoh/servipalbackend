@@ -44,6 +44,7 @@ class ProductResponse(BaseModel):
     stock: int | None = None
     category_id: UUID
     sizes: str | None = None
+    store_name: str | None = None
     colors: list[str] = []
     in_stock: bool
     images: list[ProductImage]

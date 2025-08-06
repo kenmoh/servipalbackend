@@ -41,6 +41,7 @@ async def create_product(
     Raises:
         HTTPException: If the category is not found or creation fails.
     """
+    
     # 1. Check if category exists
     category = await db.get(Category, product_data.category_id)
     if not category:
@@ -49,10 +50,16 @@ async def create_product(
             detail=f"Category with id {product_data.category_id} not found.",
         )
 
+    store_name = seller.profile.full_name or seller.profile.business_name
+    if not store_name:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"Store name is required. Please update your profile",
+        )
     try:
         # Create product first
         new_product = Item(
-            **product_data.model_dump(), user_id=seller.id, item_type=ItemType.PRODUCT
+            **product_data.model_dump(), user_id=seller.id, store_name=store_name, item_type=ItemType.PRODUCT
         )
         db.add(new_product)
         await db.flush()
