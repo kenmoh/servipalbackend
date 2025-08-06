@@ -5,6 +5,7 @@ from uuid import UUID
 from app.database.database import get_db
 from app.auth.auth import get_current_user
 from app.models.models import User
+from app.schemas.delivery_schemas import DeliveryResponse
 from app.schemas.marketplace_schemas import ProductBuyRequest
 from app.schemas.order_schema import OrderResponseSchema
 from app.schemas.status_schema import OrderStatus
@@ -25,6 +26,19 @@ async def get_marketplace_items(
     db: AsyncSession = Depends(get_db),
 ):
     return await marketplace_service.get_marketplace_items(db=db)
+
+
+@router.get(
+    "/{user_id}/user-orders",
+    response_model=list[DeliveryResponse],
+    status_code=status.HTTP_200_OK,
+
+)
+async def get_user_product_orders(
+    user_id: UUID,
+    db: AsyncSession = Depends(get_db),
+):
+    return await marketplace_service.get_user_orders(db=db, user_id=user_id)
 
 
 @router.get(

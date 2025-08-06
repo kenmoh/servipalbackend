@@ -756,7 +756,9 @@ async def get_item_by_id(db: AsyncSession, item_id: UUID, current_user: User):
 
     return result.scalar_one_or_none()
 
+
 # <<<<< ---------- CACHE UTILITY FOR ITEM ---------- >>>>>
+
 
 def get_cached_item(item_id: UUID) -> dict:
     """Get item from cache"""

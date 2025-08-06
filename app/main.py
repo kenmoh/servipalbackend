@@ -266,7 +266,6 @@ app.add_middleware(
 )
 
 
-
 @app.get("/api/db", tags=["Health Status"])
 async def check_db_health(db: AsyncSession = Depends(get_db)):
     """Check database connectivity"""
@@ -316,4 +315,3 @@ app.include_router(audit_log_routes.router)
 # mcp = FastApiMCP(app, include_tags=["Notifications", "Reports"])
 
 # mcp.mount()
-

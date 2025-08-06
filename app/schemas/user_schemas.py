@@ -396,8 +396,8 @@ class ProfileSchema(BaseModel):
     store_name: str | None = None
     business_address: str | None = None
     business_registration_number: str | None = None
-    closing_hours: time |  None = None
-    opening_hours: time |  None = None
+    closing_hours: time | None = None
+    opening_hours: time | None = None
     account_holder_name: str | None = None
     profile_image_url: str | None = None
     backdrop_image_url: str | None = None

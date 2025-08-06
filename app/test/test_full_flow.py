@@ -8,7 +8,6 @@ from app.schemas.status_schema import OrderStatus, RequireDeliverySchema
 pytestmark = pytest.mark.anyio
 
 
-
 @pytest.mark.asyncio
 async def test_broadcast_notification_flow(
     authorized_admin_client, authorized_customer_client, customer_user_and_token

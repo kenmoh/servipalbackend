@@ -126,7 +126,10 @@ async def get_transaction(
 
 
 @router.get(
-    "/order-payment-callback", include_in_schema=False, response_class=HTMLResponse, status_code=status.HTTP_200_OK
+    "/order-payment-callback",
+    include_in_schema=False,
+    response_class=HTMLResponse,
+    status_code=status.HTTP_200_OK,
 )
 async def order_payment_callback(
     request: Request, db: AsyncSession = Depends(get_db)
@@ -135,16 +138,24 @@ async def order_payment_callback(
 
 
 @router.get(
-    "/product-payment-callback", include_in_schema=False, response_class=HTMLResponse, status_code=status.HTTP_200_OK
+    "/product-payment-callback",
+    include_in_schema=False,
+    response_class=HTMLResponse,
+    status_code=status.HTTP_200_OK,
 )
 async def product_payment_callback(
     request: Request, db: AsyncSession = Depends(get_db)
 ) -> dict[str, str]:
-    return await transaction_service.product_order_payment_callback(request=request, db=db)
+    return await transaction_service.product_order_payment_callback(
+        request=request, db=db
+    )
 
 
 @router.get(
-    "/fund-wallet-callback", include_in_schema=False, response_class=HTMLResponse, status_code=status.HTTP_200_OK
+    "/fund-wallet-callback",
+    include_in_schema=False,
+    response_class=HTMLResponse,
+    status_code=status.HTTP_200_OK,
 )
 async def fund_wallet_payment_callback(
     request: Request, db: AsyncSession = Depends(get_db)

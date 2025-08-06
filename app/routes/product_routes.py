@@ -8,7 +8,7 @@ from fastapi import (
     UploadFile,
     File,
     BackgroundTasks,
-    Form
+    Form,
 )
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import List, Optional
@@ -65,8 +65,8 @@ async def create_new_product(
         stock=stock,
         category_id=category_id,
         sizes=sizes,
-        colors=colors
-        )
+        colors=colors,
+    )
     # The service function handles checking category existence and creation logic
     product = await product_service.create_product(
         db=db, product_data=product_data, seller=current_user, images=images
@@ -117,17 +117,18 @@ async def read_products(
 
 
 @router.get(
-    "",
+    "/{user_id}/user-products",
     response_model=List[ProductResponse],
     status_code=status.HTTP_200_OK,
 )
 async def get_user_items(
-    db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)
+    user_id: UUID,
+    db: AsyncSession = Depends(get_db),
 ):
     """
     Endpoint to retrieve a list of products. Supports pagination. Publicly accessible.
     """
-    return await product_service.get_user_products(db=db)
+    return await product_service.get_user_products(db=db, user_id=user_id)
 
 
 @router.put(
@@ -162,11 +163,14 @@ async def update_existing_product(
         stock=stock,
         category_id=category_id,
         sizes=sizes,
-        colors=colors
-        )
+        colors=colors,
+    )
 
     updated_product = await product_service.update_product(
-        db=db, product_id=product_id, product_data=product_data, current_user=current_user
+        db=db,
+        product_id=product_id,
+        product_data=product_data,
+        current_user=current_user,
     )
     if updated_product is None:
         # This case is hit if the product wasn't found initially in the service

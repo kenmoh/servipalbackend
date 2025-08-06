@@ -64,9 +64,7 @@ async def get_user_related_deliveries(
     user_id: UUID,
     db: AsyncSession = Depends(get_db),
 ) -> list[DeliveryResponse]:
-    return await order_service.get_user_related_orders(
-        db=db, user_id=user_id
-    )
+    return await order_service.get_user_related_orders(db=db, user_id=user_id)
 
 
 @router.post(

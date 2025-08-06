@@ -41,7 +41,7 @@ async def create_product(
     Raises:
         HTTPException: If the category is not found or creation fails.
     """
-    
+
     # 1. Check if category exists
     category = await db.get(Category, product_data.category_id)
     if not category:
@@ -50,7 +50,11 @@ async def create_product(
             detail=f"Category with id {product_data.category_id} not found.",
         )
 
-    store_name = seller.profile.store_name or seller.profile.full_name or seller.profile.business_name
+    store_name = (
+        seller.profile.store_name
+        or seller.profile.full_name
+        or seller.profile.business_name
+    )
     if not store_name:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -59,7 +63,10 @@ async def create_product(
     try:
         # Create product first
         new_product = Item(
-            **product_data.model_dump(), user_id=seller.id, store_name=store_name, item_type=ItemType.PRODUCT
+            **product_data.model_dump(),
+            user_id=seller.id,
+            store_name=store_name,
+            item_type=ItemType.PRODUCT,
         )
         db.add(new_product)
         await db.flush()
@@ -179,10 +186,8 @@ async def get_products(db: AsyncSession) -> list[ProductResponse]:
     return product_responses
 
 
-async def get_user_products(
-    db: AsyncSession, current_user: User
-) -> list[ProductResponse]:
-    cache_key = f"products:{current_user.id}"
+async def get_user_products(db: AsyncSession, user_id: UUID) -> list[ProductResponse]:
+    cache_key = f"products:{user_id}"
 
     cached_products = redis_client.get(cache_key)
     if cached_products:
@@ -191,7 +196,7 @@ async def get_user_products(
     # Get ALL products and cache them
     stmt = (
         select(Item)
-        .where(Item.item_type == ItemType.PRODUCT, Item.user_id == current_user.id)
+        .where(Item.item_type == ItemType.PRODUCT, Item.user_id == user_id)
         .options(selectinload(Item.images))
         .order_by(Item.created_at.desc())
     )

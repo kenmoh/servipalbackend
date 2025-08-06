@@ -1,3 +1,4 @@
+from datetime import timedelta
 from typing import Optional
 import json
 from uuid import UUID
@@ -5,7 +6,7 @@ from uuid import UUID
 
 from fastapi import HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import insert, select, update
+from sqlalchemy import insert, or_, select, update
 from sqlalchemy.orm import selectinload, joinedload
 from sqlalchemy.sql.expression import and_
 from app.models.models import (
@@ -17,6 +18,7 @@ from app.models.models import (
     OrderItem,
     Wallet,
 )
+from app.schemas.delivery_schemas import DeliveryResponse
 from app.schemas.marketplace_schemas import ProductBuyRequest
 from app.schemas.item_schemas import ItemType, ItemResponse
 from app.schemas.order_schema import OrderResponseSchema, OrderType
@@ -24,9 +26,14 @@ from app.schemas.status_schema import (
     OrderStatus,
     PaymentStatus,
     RequireDeliverySchema,
+    TransactionDirection,
     TransactionType,
 )
-from app.services.order_service import fetch_wallet
+from app.services.order_service import (
+    fetch_wallet,
+    format_delivery_response,
+    get_user_profile,
+)
 from app.utils.utils import (
     get_fund_wallet_payment_link,
     get_product_payment_link,
@@ -332,6 +339,7 @@ async def owner_mark_item_received(
 
     vendor_wallet = fetch_wallet(db=db, user_id=order.vendor_id)
     owner_wallet = fetch_wallet(db=db, user_id=order.owner_id)
+    vendor_profile = get_user_profile(order.vendor_id, db=db)
 
     if current_user.id != order.owner_id:
         raise HTTPException(
@@ -342,7 +350,7 @@ async def owner_mark_item_received(
         if order.order_status == OrderStatus.DELIVERED:
             order.order_status = OrderStatus.RECEIVED
 
-            await db.commit
+            await db.commit()
             await db.refresh(order)
 
             await db.execute(
@@ -352,9 +360,7 @@ async def owner_mark_item_received(
                     {
                         "balance": vendor_wallet.balance + order.amount_due_vendor,
                         "escrow_balance": vendor_wallet.escrow_balance
-                        - order.amount_due_vendor
-                        if vendor_wallet.escrow_balance >= order.amount_due_vendor
-                        else 0,
+                        - max(order.amount_due_vendor, 0),
                     }
                 )
             )
@@ -363,39 +369,24 @@ async def owner_mark_item_received(
                 .where(Wallet.id == order.owner_id)
                 .values(
                     {
-                        # "balance": vendor_wallet.balance  order.amount_due_vendor,
                         "escrow_balance": owner_wallet.escrow_balance
-                        - order.total_price
-                        if vendor_wallet.escrow_balance >= order.total_price
-                        else 0,
+                        - max(order.total_price, 0)
                     }
                 )
             )
 
-            await db.execute(
-                insert(Transaction).values(
-                    wallet_id=vendor_wallet.id,
-                    amount=order.amount_due_vendor,
-                    payment_by=current_user.profile.full_name
-                    if current_user.profile.full_name
-                    else current_user.profile.business_name,
-                    transaction_type=TransactionType.CREDIT,
-                    payment_status=PaymentStatus.PAID,
-                )
+            owner_transx = Transaction(
+                wallet_id=current_user.id,
+                amount=order.total_price,
+                payment_status=PaymentStatus.PAID,
+                transaction_type=TransactionType.USER_TO_USER,
+                transaction_direction=TransactionDirection.DEBIT,
+                to_user=vendor_profile.full_name or vendor_profile.business_name,
+                from_user=current_user.profile.full_name
+                or current_user.profile.business_name,
             )
 
-            await db.execute(
-                insert(Transaction).values(
-                    wallet_id=owner_wallet.id,
-                    amount=order.total_price,
-                    payment_by=order.vendor.profile.full_name
-                    if order.vendor.profile.full_name
-                    else order.vendor.profile.business_name,
-                    transaction_type=TransactionType.DEBIT,
-                    payment_status=PaymentStatus.PAID,
-                )
-            )
-
+            db.add(owner_transx)
             await db.commit()
 
             token = await get_user_notification_token(db=db, user_id=order.vendor_id)
@@ -414,6 +405,49 @@ async def owner_mark_item_received(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail="Unable to update order."
         )
+
+
+async def get_user_orders(db: AsyncSession, user_id: UUID) -> list[DeliveryResponse]:
+    """
+    Get all orders with their deliveries (if any) with caching
+    """
+    cache_key = f"user_orders:{user_id}"
+
+    # Try cache first with error handling
+
+    cached_deliveries = redis_client.get(cache_key)
+    if cached_deliveries:
+        return [DeliveryResponse(**d) for d in json.loads(cached_deliveries)]
+
+    stmt = (
+        select(Order)
+        .where(or_(Order.owner_id == user_id, Order.vendor_id == user_id, Order.order_type==OrderType.PACKAGE))
+        .order_by(Order.updated_at.desc())
+        .options(
+            selectinload(Order.order_items).options(
+                joinedload(OrderItem.item).options(selectinload(Item.images))
+            ),
+            joinedload(Order.vendor).joinedload(User.profile),
+        )
+    )
+
+    result = await db.execute(stmt)
+    orders = result.unique().scalars().all()
+
+    # Format responses - delivery will be None for orders without delivery
+    products_response = [
+        format_delivery_response(order, order.delivery) for order in orders
+    ]
+
+    # Cache the formatted responses with error handling
+
+    redis_client.setex(
+        cache_key,
+        timedelta(seconds=CACHE_TTL),
+        json.dumps([d.model_dump() for d in products_response], default=str),
+    )
+
+    return products_response
 
 
 async def owner_mark_item_rejected(

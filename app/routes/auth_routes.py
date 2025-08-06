@@ -47,7 +47,7 @@ class StaffPasswordUpdateRequest(BaseModel):
 
 
 @router.post("/login", status_code=status.HTTP_200_OK)
-@limiter.limit('5/minute')
+@limiter.limit("5/minute")
 async def login_user(
     request: Request,
     response: Response,
@@ -81,7 +81,7 @@ async def login_user(
 
 
 @router.post("/admin-login", status_code=status.HTTP_200_OK, include_in_schema=False)
-@limiter.limit('5/minute')
+@limiter.limit("5/minute")
 async def login_admin_user(
     request: Request,
     response: Response,
@@ -158,7 +158,7 @@ async def logout(
 
 
 @router.post("/register", status_code=status.HTTP_201_CREATED)
-@limiter.limit('2/minute')
+@limiter.limit("2/minute")
 async def create_user(
     request: Request,
     user_data: CreateUserSchema,
@@ -172,7 +172,7 @@ async def create_user(
 @router.post(
     "/register-rider", include_in_schema=False, status_code=status.HTTP_201_CREATED
 )
-@limiter.limit('5/minute')
+@limiter.limit("5/minute")
 async def create_user(
     request: Request,
     data: RiderCreate,
@@ -238,7 +238,7 @@ async def verify_token(token: str, db: AsyncSession = Depends(get_db)):
 
 
 @router.post("/verify-contacts")
-@limiter.limit('5/minute')
+@limiter.limit("5/minute")
 async def verify_user_contacts(
     request: Request,
     verification_data: VerificationSchema,
@@ -303,7 +303,7 @@ async def logout_all(
 
 
 @router.post("/create-staff", status_code=status.HTTP_201_CREATED)
-@limiter.limit('5/minute')
+@limiter.limit("5/minute")
 async def create_staff(
     request: Request,
     data: StaffCreate,

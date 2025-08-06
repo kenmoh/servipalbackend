@@ -43,7 +43,7 @@ async def create_new_category(
     "/menu-item-create",
     status_code=status.HTTP_201_CREATED,
 )
-@limiter.limit('5/minute')
+@limiter.limit("5/minute")
 async def create_menu_item(
     request: Request,
     name: str = Form(...),
@@ -71,7 +71,7 @@ async def create_menu_item(
         item_type=item_type,
         category_id=category_id,
         food_group=food_group,
-        side=side or None
+        side=side or None,
     )
 
     return await item_service.create_menu_item(

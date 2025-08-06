@@ -29,7 +29,12 @@ from uuid import UUID, uuid1
 from fastapi import HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.schemas.schemas import ReviewSchema
-from app.schemas.status_schema import OrderStatus, PaymentMethod, TransactionDirection, TransactionType
+from app.schemas.status_schema import (
+    OrderStatus,
+    PaymentMethod,
+    TransactionDirection,
+    TransactionType,
+)
 
 
 from app.schemas.order_schema import (
@@ -1583,7 +1588,6 @@ async def sender_confirm_delivery_received(
         redis_client.delete(f"{ALL_DELIVERY}")
         redis_client.delete("paid_pending_deliveries")
         redis_client.delete(f"user_related_orders:{current_user.id}")
-        
 
         return DeliveryStatusUpdateSchema(delivery_status=delivery.delivery_status)
 
@@ -2029,7 +2033,6 @@ async def create_wallet_transaction(
         payment_status=PaymentStatus.PAID,
         transaction_type=transaction_type,
         transaction_direction=TransactionDirection,
-        payment_by=payment_by,
         to_user=to_user,
         from_user=from_user,
     )
@@ -2318,7 +2321,8 @@ async def get_paid_pending_deliveries(db: AsyncSession) -> list[DeliveryResponse
 
 
 async def get_user_related_orders(
-    db: AsyncSession, user_id: UUID,
+    db: AsyncSession,
+    user_id: UUID,
 ) -> list[DeliveryResponse]:
     """
     Returns deliveries where the user is involved as:
@@ -2368,7 +2372,6 @@ async def get_user_related_orders(
     return delivery_responses
 
 
-
 async def cancel_order(
     db: AsyncSession,
     order_id: UUID,
@@ -2414,8 +2417,10 @@ async def cancel_order(
         update_values = {"order_status": OrderStatus.CANCELLED}
         if reason:
             update_values["cancel_reason"] = reason
-        await db.execute(update(Order).where(Order.id == order_id).values(**update_values))
-        
+        await db.execute(
+            update(Order).where(Order.id == order_id).values(**update_values)
+        )
+
         # Cancel delivery if exists
         if order.delivery:
             await db.execute(
@@ -2423,30 +2428,34 @@ async def cancel_order(
                 .where(Delivery.id == order.delivery.id)
                 .values(delivery_status=DeliveryStatus.CANCELLED)
             )
-        
+
         await db.commit()
-        
+
         # Clear caches
-        redis_client.delete(order_id)  
+        redis_client.delete(order_id)
         redis_client.delete(f"user_orders:{order.owner_id}")
         redis_client.delete(f"user_orders:{order.vendor_id}")
         redis_client.delete("orders")
-        
+
         return DeliveryStatusUpdateSchema(delivery_status=OrderStatus.CANCELLED)
 
     # Process refunds for paid orders
     try:
         # Get wallets
-        buyer_result = await db.execute(select(Wallet).where(Wallet.id == order.owner_id))
+        buyer_result = await db.execute(
+            select(Wallet).where(Wallet.id == order.owner_id)
+        )
         buyer_wallet = buyer_result.scalar_one_or_none()
 
-        vendor_result = await db.execute(select(Wallet).where(Wallet.id == order.vendor_id))
+        vendor_result = await db.execute(
+            select(Wallet).where(Wallet.id == order.vendor_id)
+        )
         vendor_wallet = vendor_result.scalar_one_or_none()
 
         if not buyer_wallet or not vendor_wallet:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail="Wallet not found for buyer or vendor"
+                detail="Wallet not found for buyer or vendor",
             )
 
         # Calculate refund amounts
@@ -2464,11 +2473,14 @@ async def cancel_order(
         else:
             # For food/laundry orders - refund full amount
             total_refund = order.total_price
-            if order.require_delivery == RequireDeliverySchema.DELIVERY and order.delivery:
+            if (
+                order.require_delivery == RequireDeliverySchema.DELIVERY
+                and order.delivery
+            ):
                 total_refund += order.delivery.delivery_fee
                 if order.dispatch_id:
                     dispatch_escrow_deduction = order.delivery.delivery_fee
-            
+
             vendor_escrow_deduction = order.total_price
 
         # Update buyer wallet - move money back to balance from escrow
@@ -2484,7 +2496,9 @@ async def cancel_order(
 
         # Update vendor escrow if applicable
         if vendor_escrow_deduction > 0:
-            new_vendor_escrow = max(vendor_wallet.escrow_balance - vendor_escrow_deduction, 0)
+            new_vendor_escrow = max(
+                vendor_wallet.escrow_balance - vendor_escrow_deduction, 0
+            )
             await db.execute(
                 update(Wallet)
                 .where(Wallet.id == order.vendor_id)
@@ -2497,9 +2511,11 @@ async def cancel_order(
                 select(Wallet).where(Wallet.id == order.dispatch_id)
             )
             dispatch_wallet = dispatch_result.scalar_one_or_none()
-            
+
             if dispatch_wallet:
-                new_dispatch_escrow = max(dispatch_wallet.escrow_balance - dispatch_escrow_deduction, 0)
+                new_dispatch_escrow = max(
+                    dispatch_wallet.escrow_balance - dispatch_escrow_deduction, 0
+                )
                 await db.execute(
                     update(Wallet)
                     .where(Wallet.id == order.dispatch_id)
@@ -2510,7 +2526,9 @@ async def cancel_order(
         update_values = {"order_status": OrderStatus.CANCELLED}
         if reason:
             update_values["cancel_reason"] = reason
-        await db.execute(update(Order).where(Order.id == order_id).values(**update_values))
+        await db.execute(
+            update(Order).where(Order.id == order_id).values(**update_values)
+        )
 
         # Update delivery status if exists
         if order.delivery:
@@ -2531,7 +2549,8 @@ async def cancel_order(
                 payment_status=PaymentStatus.PAID,
                 payment_method=PaymentMethod.SYSTEM_REFUND,
                 from_user="System Refund",
-                to_user=current_user.profile.full_name or current_user.profile.business_name,
+                to_user=current_user.profile.full_name
+                or current_user.profile.business_name,
                 created_at=current_time,
                 updated_at=current_time,
             )
@@ -2541,7 +2560,7 @@ async def cancel_order(
         await db.commit()
 
         # Clear caches - make sure these are async if redis_client expects async
-       
+
         # If using sync redis client
         redis_client.delete(f"user_orders:{order.owner_id}")
         redis_client.delete(f"user_orders:{order.vendor_id}")
@@ -2556,8 +2575,9 @@ async def cancel_order(
         logger_config.error(f"Error cancelling order {order_id}: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to cancel order"
+            detail="Failed to cancel order",
         )
+
 
 # async def cancel_order(
 #     db: AsyncSession,

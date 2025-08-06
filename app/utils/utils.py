@@ -91,7 +91,8 @@ async def get_payment_link(id: UUID, amount: Decimal, current_user: User):
         raise HTTPException(
             status_code=500, detail=f"Failed to generate payment link: {str(e)}"
         )
-    
+
+
 # GET PAYMENT LINK
 async def get_product_payment_link(id: UUID, amount: Decimal, current_user: User):
     try:
