@@ -50,7 +50,7 @@ async def create_product(
             detail=f"Category with id {product_data.category_id} not found.",
         )
 
-    store_name = seller.profile.full_name or seller.profile.business_name
+    store_name = seller.profile.store_name or seller.profile.full_name or seller.profile.business_name
     if not store_name:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
