@@ -19,7 +19,7 @@ class OrderType(str, Enum):
     FOOD = "food"
     PACKAGE = "package"
     LAUNDRY = "laundry"
-    # PRODUCT = "product"
+    PRODUCT = "product"
 
 
 class OrderIssueCreate(BaseModel):
@@ -129,7 +129,8 @@ class OrderResponseSchema(BaseModel):
 
 
 class DeliveryStatusUpdateSchema(BaseModel):
-    delivery_status: str
+    delivery_status: str | None = None
+    order_status: str | None = None
 
 
 class OrderStatusResponseSchema(BaseModel):

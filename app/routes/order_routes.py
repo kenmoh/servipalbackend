@@ -140,44 +140,50 @@ async def get_delivery_by_order_id(
     return await order_service.get_delivery_by_order_id(db=db, order_id=order_id)
 
 
-@router.put("/{delivery_id}/confirm-delivery", status_code=status.HTTP_202_ACCEPTED)
+@router.put(
+    "/{order_id}/sender-confirm-delivery-or-order-received",
+    status_code=status.HTTP_202_ACCEPTED,
+)
 async def sender_confirm_delivery_received(
-    delivery_id: UUID,
+    order_id: UUID,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> DeliveryStatusUpdateSchema:
     try:
-        return await order_service.sender_confirm_delivery_received(
+        return await order_service.sender_confirm_delivery_or_order_received(
             db=db,
             current_user=current_user,
-            delivery_id=delivery_id,
+            order_id=order_id,
         )
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
 
 @router.put("/{order_id}/update-status", status_code=status.HTTP_202_ACCEPTED)
-async def update_order_status(
+async def vendor_mark_order_delivered(
     order_id: UUID,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> DeliveryStatusUpdateSchema:
-    return await order_service.vendor_or_owner_mark_order_delivered_or_received(
+    """
+    Mark order delivered(without delivery) by vendor
+    """
+    return await order_service.vendor_mark_order_delivered(
         db=db,
         current_user=current_user,
         order_id=order_id,
     )
 
 
-@router.put("/{delivery_id}/accept-delivery", status_code=status.HTTP_202_ACCEPTED)
+@router.put("/{order_id}/accept-delivery", status_code=status.HTTP_202_ACCEPTED)
 async def rider_accept_delivery(
-    delivery_id: UUID,
+    order_id: UUID,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> DeliveryStatusUpdateSchema:
     try:
         return await order_service.rider_accept_delivery_order(
-            db=db, current_user=current_user, delivery_id=delivery_id
+            db=db, current_user=current_user, order_id=order_id
         )
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))

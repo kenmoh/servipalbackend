@@ -421,7 +421,13 @@ async def get_user_orders(db: AsyncSession, user_id: UUID) -> list[DeliveryRespo
 
     stmt = (
         select(Order)
-        .where(or_(Order.owner_id == user_id, Order.vendor_id == user_id, Order.order_type==OrderType.PACKAGE))
+        .where(
+            or_(
+                Order.owner_id == user_id,
+                Order.vendor_id == user_id,
+                Order.order_type == OrderType.PACKAGE,
+            )
+        )
         .order_by(Order.updated_at.desc())
         .options(
             selectinload(Order.order_items).options(

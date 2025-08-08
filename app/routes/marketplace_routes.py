@@ -32,7 +32,6 @@ async def get_marketplace_items(
     "/{user_id}/user-orders",
     response_model=list[DeliveryResponse],
     status_code=status.HTTP_200_OK,
-
 )
 async def get_user_product_orders(
     user_id: UUID,
