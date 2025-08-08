@@ -13,7 +13,7 @@ from app.services import marketplace_service
 from app.schemas.item_schemas import ItemResponse
 from app.utils.limiter import limiter
 
-router = APIRouter(prefix="/marketplace", tags=["Marketplace"])
+router = APIRouter(prefix="/api/marketplace", tags=["Marketplace"])
 
 
 @router.get(
