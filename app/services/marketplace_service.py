@@ -234,7 +234,7 @@ async def buy_product(
 
         # UPDATE ITEM sTOCK
         for order_item in order.order_items:
-            item = await db.execute(
+            item_result = await db.execute(
                 select(Item).where(
                     and_(
                         Item.id == order_item.item_id,
@@ -242,10 +242,12 @@ async def buy_product(
                     )
                 )
             )
+            item = item_result.scalar_one_or_none()
+            new_stock = max(item.stock, 0) -max(order_item.quantity, 0)
             await db.execute(
                 update(Item)
                 .where(Item.id == item.item_id)
-                .values({"stock": item.quantity - order_item.quantity})
+                .values({"stock": new_stock})
             )
 
         await db.commit()
@@ -291,11 +293,11 @@ async def vendor_mark_item_delivered(
 
     if current_user.id != order.vendor_id:
         raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN, detail="Unauthorized."
+            status_code=status.HTTP_403_FORBIDDEN, detail="Permission denied."
         )
 
     try:
-        if order.order_status == OrderStatus.PENDING:
+        if order.order_status == OrderStatus.PENDING and order.order_type == OrderType.PRODUCT:
             order.order_status = OrderStatus.DELIVERED
             await db.commit
             await db.refresh(order)
@@ -343,33 +345,37 @@ async def owner_mark_item_received(
 
     if current_user.id != order.owner_id:
         raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN, detail="Unauthorized."
+            status_code=status.HTTP_403_FORBIDDEN, detail="Permission denied."
         )
 
     try:
-        if order.order_status == OrderStatus.DELIVERED:
+        if order.order_status == OrderStatus.DELIVERED and order.order_type == OrderType.PRODUCT:
             order.order_status = OrderStatus.RECEIVED
 
             await db.commit()
             await db.refresh(order)
 
+
+            # Update vendor wallet
             await db.execute(
                 update(Wallet)
                 .where(Wallet.id == order.vendor_id)
                 .values(
                     {
-                        "balance": vendor_wallet.balance + order.amount_due_vendor,
-                        "escrow_balance": vendor_wallet.escrow_balance
+                        "balance": max(vendor_wallet.balance + order.amount_due_vendor,0),
+                        "escrow_balance": max(vendor_wallet.escrow_balance, 0)
                         - max(order.amount_due_vendor, 0),
                     }
                 )
             )
+
+            # Update buyer wallet
             await db.execute(
                 update(Wallet)
                 .where(Wallet.id == order.owner_id)
                 .values(
                     {
-                        "escrow_balance": owner_wallet.escrow_balance
+                        "escrow_balance": max(owner_wallet.escrow_balance, 0)
                         - max(order.total_price, 0)
                     }
                 )
@@ -524,14 +530,14 @@ async def vendor_mark_rejected_item_received(
     vendor_wallet = fetch_wallet(db=db, user_id=order.vendor_id)
     owner_wallet = fetch_wallet(db=db, user_id=order.owner_id)
 
-    if current_user.id != order.owner_id:
+    if current_user.id != order.vendor_id:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN, detail="Unauthorized."
         )
 
     try:
         if order.order_status == OrderStatus.REJECTED:
-            order.order_status = OrderStatus.RECEIVED
+            order.order_status = OrderStatus.REJECTED_REJECTED_PRODUCT
             await db.commit
             await db.refresh(order)
 
@@ -540,7 +546,7 @@ async def vendor_mark_rejected_item_received(
                 .where(Wallet.id == order.vendor_id)
                 .values(
                     {
-                        "balance": vendor_wallet.balance - order.amount_due_vendor,
+                        "balance": max(vendor_wallet.balance -max( order.amount_due_vendor, 0)),
                     }
                 )
             )
@@ -549,7 +555,7 @@ async def vendor_mark_rejected_item_received(
             await db.execute(
                 update(Wallet)
                 .where(Wallet.id == order.owner_id)
-                .values({"balance": owner_wallet.balance + order.total_price})
+                .values({"balance": max(owner_wallet.balance + order.total_price, 0)})
             )
             await db.commit()
 
@@ -559,7 +565,7 @@ async def vendor_mark_rejected_item_received(
                 await send_push_notification(
                     tokens=[token],
                     title="Received",
-                    message=f"Your rejected item with order #{order.order_number} been received by the vendour and the sum of ₦{order.total_price} has been released t your wallet.",
+                    message=f"Your rejected item with order #{order.order_number} has been received by the vendour and the sum of ₦{order.total_price} has been released t your wallet.",
                     navigate_to="/delivery/orders",
                 )
 

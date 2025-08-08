@@ -20,7 +20,7 @@ class ProductBuyRequest(BaseModel):
     quantity: int = Field(1, gt=0, description="Number of units to purchase")
     sizes: str | None = None
     colors: list[str] = []
-    additional_info: str | None = None
+    additional_info: str
 
 
 class TopUpRequestSchema(BaseModel):

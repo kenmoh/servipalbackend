@@ -50,6 +50,7 @@ class OrderStatus(str, Enum):
     RECEIVED: str = "received"
     CANCELLED: str = "canceled"
     REJECTED: str = "rejected"
+    RECEIVED_REJECTED_PRODUCT: str = "received_rejected_product"
     VENDOR_RECEIVED_LAUNDRY_ITEM: str = "laundry_received"  # Vendor ops
 
 
