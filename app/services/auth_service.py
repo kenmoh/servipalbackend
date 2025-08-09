@@ -692,16 +692,14 @@ async def recover_password(email: str, db: AsyncSession) -> dict:
     user.reset_token = reset_token
     user.reset_token_expires = token_expires
     await db.commit()
-
-    app_link_url = f"servipal://reset-password?token={reset_token}"
     
     # Send reset email
     message = MessageSchema(
         subject="Password Reset Request",
         recipients=[email],
         template_body={
-            "url": app_link_url, 
-            # "reset_token": reset_token, 
+            "url": settings.FRONTEND_URL, 
+            "reset_token": reset_token, 
             "user": user.email,
             "expires_in": "24 hours",
         },

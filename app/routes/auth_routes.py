@@ -274,6 +274,41 @@ async def password_recovery(
     return await auth_service.recover_password(email_data.email, db)
 
 
+@router.get("/reset-password")
+async def handle_reset_password_link(
+    token: str = Query(...),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Handle password reset link from email
+    """
+    if not token:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Reset token is required"
+        )
+    
+    stmt = select(User).where(
+        User.reset_token == token,
+        User.reset_token_expires > datetime.now()
+    )
+    result = await db.execute(stmt)
+    user = result.scalar_one_or_none()
+    
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid or expired reset token"
+        )
+    
+    # Token is valid
+    return {
+        "message": "Password reset link accessed successfully",
+        "token": token,
+        "valid": True
+    }
+
+
 @router.post("/reset-password", status_code=status.HTTP_200_OK)
 async def reset_password_confirm(
     reset_data: PasswordResetConfirm, db: AsyncSession = Depends(get_db)
