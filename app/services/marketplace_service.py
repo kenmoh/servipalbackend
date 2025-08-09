@@ -265,19 +265,11 @@ async def buy_product(
             )
 
 
-        # order_response = format_order_response(order)
-
-        # redis_client.setex(
-        # cache_key,
-        # timedelta(seconds=CACHE_TTL),
-        # json.dumps(order_response, default=str),
-    )
+        redis_client.delete('marketplace_items')
 
         return order
     except Exception:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail="Unable to buy item"
-        )
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Unable to buy item")
 
 
 async def vendor_mark_item_delivered(
