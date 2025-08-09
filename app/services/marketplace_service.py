@@ -582,7 +582,7 @@ def format_order_response(
             'payment_link': order.payment_link,
             'created_at': order.created_at,
             'order_items': [{
-                'id': item.id,
+                'id': item.order_id,
                 'user_id': item.user_id,
                 'name': item.name,
                 'price': item.price,
