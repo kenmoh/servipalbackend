@@ -15,6 +15,7 @@ import sentry_sdk
 from fastapi import Depends, FastAPI
 from fastapi.openapi.docs import get_swagger_ui_html, get_redoc_html
 from fastapi.responses import RedirectResponse
+from fastapi.responses import JSONResponse
 from fastapi_mcp import FastApiMCP
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
