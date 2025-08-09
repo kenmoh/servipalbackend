@@ -249,7 +249,7 @@ async def buy_product(
 
         redis_client.delete('marketplace_items')
 
-        return order
+        return format_order_response(order)
     except Exception:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Unable to buy item")
 
