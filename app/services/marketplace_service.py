@@ -264,7 +264,14 @@ async def buy_product(
                 navigate_to="/delivery/orders",
             )
 
-        set_cached_order(order.id, order.dict())
+
+        # order_response = format_order_response(order)
+
+        # redis_client.setex(
+        # cache_key,
+        # timedelta(seconds=CACHE_TTL),
+        # json.dumps(order_response, default=str),
+    )
 
         return order
     except Exception:
@@ -577,6 +584,56 @@ async def vendor_mark_rejected_item_received(
             status_code=status.HTTP_400_BAD_REQUEST, detail="Unable to update order."
         )
 
+
+
+
+def format_order_response(
+    order: Order
+) -> OrderResponseSchema:
+    # Format order items with proper image structure
+
+    order_items = []
+    for order_item in order.order_items:
+        item = order_item.item
+        images = [
+            {"id": image.id, "item_id": image.item_id, "url": image.url}
+            for image in item.images
+        ]
+
+        order_items.append(
+            {
+                "id": item.id,
+                "user_id": item.user_id,
+                "name": item.name,
+                "price": item.price,
+                "images": images,
+                "description": item.description or "",
+                "quantity": order_item.quantity,
+            }
+        )
+
+    
+    # Format order
+    order_data = {
+        "id": str(order.id),
+        "user_id": str(order.owner_id),
+        "order_number": order.order_number,
+        "vendor_id": str(order.vendor_id),
+        "business_name": order.vendor.profile.business_name
+        or order.vendor.profile.full_name,
+        "order_type": order.order_type.value,
+        "require_delivery": order.require_delivery,
+        "total_price": str(order.total_price),
+        "order_payment_status": order.order_payment_status.value,
+        "order_status": order.order_status.value if order.order_status else None,
+        "amount_due_vendor": str(order.amount_due_vendor),
+        "payment_link": order.payment_link or "",
+        "order_items": order_items,
+        "created_at": order.created_at.isoformat(),
+        "cancel_reason": getattr(order, "cancel_reason", None),
+    }
+
+    return OrderResponseSchema(order=order_data)
 
 
 # <<<<< ---------- CACHE UTILITY ---------- >>>>>
