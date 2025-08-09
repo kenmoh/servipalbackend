@@ -234,22 +234,22 @@ async def buy_product(
         order.payment_link = payment_link
 
         # UPDATE ITEM sTOCK
-        for order_item in order.order_items:
-            item_result = await db.execute(
-                select(Item).where(
-                    and_(
-                        Item.id == order_item.item_id,
-                        Item.user_id == order.vendor_id,
-                    )
-                )
-            )
-            item = item_result.scalar_one_or_none()
-            new_stock = max(item.stock, 0) -max(order_item.quantity, 0)
-            await db.execute(
-                update(Item)
-                .where(Item.id == item.item_id)
-                .values({"stock": new_stock})
-            )
+        # for order_item in order.order_items:
+        #     item_result = await db.execute(
+        #         select(Item).where(
+        #             and_(
+        #                 Item.id == order_item.item_id,
+        #                 Item.user_id == order.vendor_id,
+        #             )
+        #         )
+        #     )
+        #     item = item_result.scalar_one_or_none()
+        #     new_stock = max(item.stock, 0) -max(order_item.quantity, 0)
+        #     await db.execute(
+        #         update(Item)
+        #         .where(Item.id == item.item_id)
+        #         .values({"stock": new_stock})
+        #     )
 
         await db.commit()
         await db.refresh(order)

@@ -15,6 +15,7 @@ from typing import Optional
 from app.models.models import (
     ChargeAndCommission,
     Order,
+    Item,
     User,
     Wallet,
     Transaction,
@@ -1436,7 +1437,7 @@ async def order_payment_callback(request: Request, db: AsyncSession):
                     "request": request,
                     "payment_status": order.order_payment_status,
                     "amount": str(delivery_fee),
-                    "tx_ref": tx_ref,
+                    # "tx_ref": tx_ref,
                     "date": datetime.now().strftime("%b %d, %Y"),
                     "transaction_id": transx_id,
                 },
@@ -1551,7 +1552,7 @@ async def order_payment_callback(request: Request, db: AsyncSession):
                     "request": request,
                     "payment_status": order.order_payment_status,
                     "amount": str(charged_amount),
-                    "tx_ref": tx_ref,
+                    # "tx_ref": tx_ref,
                     "date": datetime.now().strftime("%b %d, %Y"),
                     "transaction_id": transx_id,
                 },
@@ -1631,6 +1632,14 @@ async def product_order_payment_callback(request: Request, db: AsyncSession):
         customer_wallet.escrow_balance += order.total_price
         vendor_wallet.escrow_balance += order.amount_due_vendor
 
+        quantity = order.order_items[0]['quantity']
+        item_id = order.order_items[0]['id']
+        vendor_id = order.order_items[0]['user_id']
+
+        await db.execute(update(Item).where(Item.id == item_id, item.user_id=vendor_id).values({
+            "stock": max(Item.stock - quantity, 0)
+            }))
+
         await db.commit()
         await db.refresh(order)
 
@@ -1665,7 +1674,7 @@ async def product_order_payment_callback(request: Request, db: AsyncSession):
                 "request": request,
                 "payment_status": order.order_payment_status,
                 "amount": str(order.total_price),
-                "tx_ref": tx_ref,
+                # "tx_ref": tx_ref,
                 "date": datetime.now().strftime("%b %d, %Y"),
                 "transaction_id": transx_id,
             },
