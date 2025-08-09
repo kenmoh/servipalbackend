@@ -284,24 +284,24 @@ async def handle_reset_password_link(
     """
     Handle password reset link from email
     """
-    if not token:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Reset token is required"
-        )
+    # if not token:
+    #     raise HTTPException(
+    #         status_code=status.HTTP_400_BAD_REQUEST,
+    #         detail="Reset token is required"
+    #     )
     
-    stmt = select(User).where(
-        User.reset_token == token,
-        User.reset_token_expires > datetime.now()
-    )
-    result = await db.execute(stmt)
-    user = result.scalar_one_or_none()
+    # stmt = select(User).where(
+    #     User.reset_token == token,
+    #     User.reset_token_expires > datetime.now()
+    # )
+    # result = await db.execute(stmt)
+    # user = result.scalar_one_or_none()
     
-    if not user:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invalid or expired reset token"
-        )
+    # if not user:
+    #     raise HTTPException(
+    #         status_code=status.HTTP_400_BAD_REQUEST,
+    #         detail="Invalid or expired reset token"
+    #     )
     
     # Token is valid
     return {
