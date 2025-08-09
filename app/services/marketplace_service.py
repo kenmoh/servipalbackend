@@ -208,6 +208,7 @@ async def buy_product(
             amount_due_vendor=amount_due_vendor,
             order_payment_status=PaymentStatus.PENDING,
             require_delivery=RequireDeliverySchema.PICKUP,
+            additional_info=buy_request.additional_info,
         )
         db.add(order)
         await db.flush()
@@ -219,7 +220,7 @@ async def buy_product(
             quantity=buy_request.quantity,
             colors=buy_request.colors,
             sizes=buy_request.sizes,
-            additional_info=buy_request.additional_info,
+            
         )
         db.add(order_item)
         await db.flush()
