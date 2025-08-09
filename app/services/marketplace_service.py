@@ -236,6 +236,8 @@ async def buy_product(
         await db.commit()
         await db.refresh(order)
 
+        
+
         token = await get_user_notification_token(db=db, user_id=order.vendor_id)
 
         if token:
@@ -566,48 +568,37 @@ def format_order_response(
 ) -> OrderResponseSchema:
     # Format order items with proper image structure
 
-    order_items = []
-    for order_item in order.order_items:
-        item = order_item.item
-        images = [
-            {"id": image.id, "item_id": image.item_id, "url": image.url}
-            for image in item.images
-        ]
-
-        order_items.append(
-            {
-                "id": item.id,
-                "user_id": item.user_id,
-                "name": item.name,
-                "price": item.price,
-                "images": images,
-                "description": item.description or "",
-                "quantity": order_item.quantity,
+    order_reponse_dict = {
+            'id': order.id,
+            'user_id': order.owner_id,
+            'vendor_id': order.order_items[0]['user_id'],
+            'order_type': order.order_type,
+            'total_price': order.total_price,
+            'order_payment_status': order.order_payment_status,
+            'business_name': order.business_name,
+            'require_delivery': order.require_delivery,
+            'order_status': order.order_status,
+            'order_number': order.order_number,
+            'amount_due_vendor': order.amount_due_vendor,
+            'payment_link': order.payment_link,
+            'created_at': order.created_at,
+            'order_items': list[{
+                'id': item.id,
+                'user_id': item.user_id,
+                'name': item.name,
+                'price': item.price,
+                'images': list[{
+                    'id': img.id,
+                    'item_id': img.item_id,
+                    'url': img.url
+                } for img in item.images],
+                'description': item.description,
+                'quantity': item.quantity
+            } for item in order.order_items]
+           
             }
-        )
 
-    
-    # Format order
-    order_data = {
-        "id": str(order.id),
-        "user_id": str(order.owner_id),
-        "order_number": order.order_number,
-        "vendor_id": str(order.vendor_id),
-        "business_name": order.vendor.profile.business_name
-        or order.vendor.profile.full_name,
-        "order_type": order.order_type.value,
-        "require_delivery": order.require_delivery,
-        "total_price": str(order.total_price),
-        "order_payment_status": order.order_payment_status.value,
-        "order_status": order.order_status.value if order.order_status else None,
-        "amount_due_vendor": str(order.amount_due_vendor),
-        "payment_link": order.payment_link or "",
-        "order_items": order_items,
-        "created_at": order.created_at.isoformat(),
-        "cancel_reason": getattr(order, "cancel_reason", None),
-    }
-
-    return OrderResponseSchema(order=order_data)
+    return order_reponse_dict
 
 
 # <<<<< ---------- CACHE UTILITY ---------- >>>>>
