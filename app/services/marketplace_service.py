@@ -233,24 +233,6 @@ async def buy_product(
         # Store link with the order
         order.payment_link = payment_link
 
-        # UPDATE ITEM sTOCK
-        # for order_item in order.order_items:
-        #     item_result = await db.execute(
-        #         select(Item).where(
-        #             and_(
-        #                 Item.id == order_item.item_id,
-        #                 Item.user_id == order.vendor_id,
-        #             )
-        #         )
-        #     )
-        #     item = item_result.scalar_one_or_none()
-        #     new_stock = max(item.stock, 0) -max(order_item.quantity, 0)
-        #     await db.execute(
-        #         update(Item)
-        #         .where(Item.id == item.item_id)
-        #         .values({"stock": new_stock})
-        #     )
-
         await db.commit()
         await db.refresh(order)
 
@@ -413,7 +395,7 @@ async def owner_mark_item_received(
         )
 
 
-async def get_user_orders(db: AsyncSession, user_id: UUID) -> list[DeliveryResponse]:
+async def get_user_orders(db: AsyncSession, user_id: UUID) -> list[OrderResponseSchema]:
     """
     Get all orders with their deliveries (if any) with caching
     """
@@ -421,9 +403,9 @@ async def get_user_orders(db: AsyncSession, user_id: UUID) -> list[DeliveryRespo
 
     # Try cache first with error handling
 
-    cached_deliveries = redis_client.get(cache_key)
-    if cached_deliveries:
-        return [DeliveryResponse(**d) for d in json.loads(cached_deliveries)]
+    cached_user_items = redis_client.get(cache_key)
+    if cached_user_items:
+        return [OrderResponseSchema(**o) for o in json.loads(cached_user_items)]
 
     stmt = (
         select(Order)
@@ -448,7 +430,7 @@ async def get_user_orders(db: AsyncSession, user_id: UUID) -> list[DeliveryRespo
 
     # Format responses - delivery will be None for orders without delivery
     products_order_response = [
-        format_delivery_response(order, order.delivery) for order in orders
+        format_order_response(order) for order in orders
     ]
 
     # Cache the formatted responses with error handling
