@@ -1636,7 +1636,7 @@ async def product_order_payment_callback(request: Request, db: AsyncSession):
         item_id = order.order_items[0]['id']
         vendor_id = order.order_items[0]['user_id']
 
-        await db.execute(update(Item).where(Item.id == item_id, item.user_id=vendor_id).values({
+        await db.execute(update(Item).where(Item.id == item_id, item.user_id==vendor_id).values({
             "stock": max(Item.stock - quantity, 0)
             }))
 
