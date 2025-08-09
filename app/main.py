@@ -304,7 +304,7 @@ async def get_assetlinks():
     """
     Dynamic asset links configuration from environment variables
     """
-    if not settings.FIN:
+    if not settings.FINGER_PRINT:
         # Return empty array if not configured (development mode)
         return JSONResponse(content=[])
     
