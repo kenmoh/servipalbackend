@@ -417,7 +417,7 @@ async def get_user_orders(db: AsyncSession, user_id: UUID) -> list[DeliveryRespo
     """
     Get all orders with their deliveries (if any) with caching
     """
-    cache_key = f"user_orders:{user_id}"
+    cache_key = f"marketplace_user_orders:{user_id}"
 
     # Try cache first with error handling
 
@@ -431,7 +431,7 @@ async def get_user_orders(db: AsyncSession, user_id: UUID) -> list[DeliveryRespo
             or_(
                 Order.owner_id == user_id,
                 Order.vendor_id == user_id,
-                Order.order_type == OrderType.PACKAGE,
+                Order.order_type == OrderType.PRODUCT,
             )
         )
         .order_by(Order.updated_at.desc())
@@ -447,7 +447,7 @@ async def get_user_orders(db: AsyncSession, user_id: UUID) -> list[DeliveryRespo
     orders = result.unique().scalars().all()
 
     # Format responses - delivery will be None for orders without delivery
-    products_response = [
+    products_order_response = [
         format_delivery_response(order, order.delivery) for order in orders
     ]
 
@@ -456,10 +456,10 @@ async def get_user_orders(db: AsyncSession, user_id: UUID) -> list[DeliveryRespo
     redis_client.setex(
         cache_key,
         timedelta(seconds=CACHE_TTL),
-        json.dumps([d.model_dump() for d in products_response], default=str),
+        json.dumps([d.model_dump() for d in products_order_response], default=str),
     )
 
-    return products_response
+    return products_order_response
 
 
 async def owner_mark_item_rejected(
@@ -575,6 +575,7 @@ async def vendor_mark_rejected_item_received(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail="Unable to update order."
         )
+
 
 
 # <<<<< ---------- CACHE UTILITY ---------- >>>>>

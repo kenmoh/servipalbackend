@@ -73,6 +73,7 @@ class Settings(BaseSettings):
     REDIS_PASSWORD: str | None = None  # Set this in production
 
     # API URL
+    FRONTEND_URL: str = os.getenv("FRONTEND_URL")
     API_URL: str = "http://localhost:8000"
     TEST_API_URL: str = "http://localhost:8000"
 
