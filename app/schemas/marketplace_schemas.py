@@ -5,7 +5,8 @@ from uuid import UUID
 from datetime import datetime
 from decimal import Decimal
 
-from app.schemas.status_schema import PaymentStatus, TransactionType
+from app.schemas.order_schema import OrderType
+from app.schemas.status_schema import OrderStatus, PaymentStatus, TransactionType
 
 # Schema for the request body when buying a product
 
@@ -21,6 +22,47 @@ class ProductBuyRequest(BaseModel):
     sizes: str | None = None
     colors: list[str] = []
     additional_info: str
+
+
+class ItemImageResponse(BaseModel):
+    id: UUID
+    item_id: UUID
+    url: str
+
+    class Config:
+        from_attributes = True
+
+
+class ProductOrderItemResponse(BaseModel):
+    item_id: UUID
+    user_id: UUID  # This is the vendor's user_id from the item
+    name: str
+    price: Decimal
+    images: list[ItemImageResponse]
+    description: str
+    quantity: int
+
+    class Config:
+        from_attributes = True
+
+
+class ProductOrderResponse(BaseModel):
+    id: UUID
+    user_id: UUID  # owner_id
+    vendor_id: UUID
+    order_type: OrderType
+    total_price: Decimal
+    order_payment_status: PaymentStatus
+    order_status: OrderStatus
+    order_number: int
+    additional_info: str | None = None
+    amount_due_vendor: Decimal
+    payment_link: str
+    created_at: datetime
+    order_items: list[ProductOrderItemResponse]
+
+    class Config:
+        from_attributes = True
 
 
 class TopUpRequestSchema(BaseModel):

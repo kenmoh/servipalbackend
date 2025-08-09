@@ -1351,6 +1351,7 @@ async def order_payment_callback(request: Request, db: AsyncSession):
     order_result = await db.execute(
         select(Order)
         .where(Order.id == UUID(tx_ref))
+        .where(Order.order_type.in_([OrderType.PACKAGE, OrderType.FOOD, OrderType.LAUNDRY]))
         .options(
             selectinload(Order.owner).selectinload(User.profile),
             selectinload(Order.vendor).selectinload(User.profile),
@@ -1636,7 +1637,7 @@ async def product_order_payment_callback(request: Request, db: AsyncSession):
         item_id = order.order_items[0]['id']
         vendor_id = order.order_items[0]['user_id']
 
-        await db.execute(update(Item).where(Item.id == item_id, item.user_id==vendor_id).values({
+        await db.execute(update(Item).where(Item.id == item_id, Item.user_id==vendor_id).values({
             "stock": max(Item.stock - quantity, 0)
             }))
 

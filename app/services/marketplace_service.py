@@ -19,7 +19,7 @@ from app.models.models import (
     Wallet,
 )
 from app.schemas.delivery_schemas import DeliveryResponse
-from app.schemas.marketplace_schemas import ProductBuyRequest
+from app.schemas.marketplace_schemas import ItemImageResponse, ProductBuyRequest, ProductOrderItemResponse, ProductOrderResponse
 from app.schemas.item_schemas import ItemType, ItemResponse
 from app.schemas.order_schema import OrderResponseSchema, OrderType
 from app.schemas.status_schema import (
@@ -142,7 +142,7 @@ async def buy_product(
     product_id: UUID,
     buyer: User,
     buy_request: ProductBuyRequest,
-) -> OrderResponseSchema:
+) -> ProductOrderResponse:
     """
     Handles the logic for a user buying a listed product.
 
@@ -563,41 +563,43 @@ async def vendor_mark_rejected_item_received(
 
 
 
-def format_order_response(
-    order: Order
-) -> OrderResponseSchema:
-    # Format order items with proper image structure
-
-    order_reponse_dict = {
-            'id': order.id,
-            'user_id': order.owner_id,
-            'vendor_id': order.vendor_id,
-            'order_type': order.order_type,
-            'total_price': order.total_price,
-            'order_payment_status': order.order_payment_status,
-            'require_delivery': order.require_delivery,
-            'order_status': order.order_status,
-            'order_number': order.order_number,
-            'amount_due_vendor': order.amount_due_vendor,
-            'payment_link': order.payment_link,
-            'created_at': order.created_at,
-            'order_items': [{
-                'id': item.order_id,
-                'user_id': item.user_id,
-                'name': item.name,
-                'price': item.price,
-                'images': [{
-                    'id': img.id,
-                    'item_id': img.item_id,
-                    'url': img.url
-                } for img in item.images],
-                'description': item.description,
-                'quantity': item.quantity
-            } for item in order.order_items]
-           
-            }
-
-    return order_reponse_dict
+def format_order_response(order) -> ProductOrderResponse:
+    """
+    Factory function to create OrderResponse from SQLAlchemy Order model
+    """
+    order_items = []
+    for order_item in order.order_items:
+        item = order_item.item
+        order_items.append(ProductOrderItemResponse(
+            item_id=item.id,
+            user_id=item.user_id,  # vendor's user_id
+            name=item.name,
+            price=item.price,
+            images=[ItemImageResponse(
+                id=img.id,
+                item_id=img.item_id,
+                url=img.url
+            ) for img in item.images],
+            description=item.description,
+            quantity=order_item.quantity
+        ))
+    
+    return ProductOrderResponse(
+        id=order.id,
+        user_id=order.owner_id,
+        vendor_id=order.vendor_id,
+        order_type=order.order_type,
+        total_price=order.total_price,
+        additional_info=order.additional_info,
+        order_payment_status=order.order_payment_status,
+        require_delivery=order.require_delivery,
+        order_status=order.order_status,
+        order_number=order.order_number,
+        amount_due_vendor=order.amount_due_vendor,
+        payment_link=order.payment_link,
+        created_at=order.created_at,
+        order_items=order_items
+    )
 
 
 # <<<<< ---------- CACHE UTILITY ---------- >>>>>
