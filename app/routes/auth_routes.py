@@ -14,6 +14,7 @@ from fastapi.security import OAuth2PasswordRequestForm
 
 from pydantic import EmailStr
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
 
 from app import auth
 from app.auth.auth import create_tokens, get_current_user
