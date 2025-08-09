@@ -614,14 +614,63 @@ async def delete_rider(current_user: User, db: AsyncSession, rider_id: UUID) -> 
     return None
 
 
+# async def recover_password(email: str, db: AsyncSession) -> dict:
+#     """
+#     Initiates password recovery process by sending reset token via email
+
+#     Args:
+#         email: User's email address
+#         db: Database session
+
+#     Returns:
+#         dict: Message confirming reset email sent
+#     """
+#     # Find user by email
+#     stmt = select(User).where(User.email == email)
+#     result = await db.execute(stmt)
+#     user = result.scalar_one_or_none()
+
+#     if not user:
+#         raise HTTPException(
+#             status_code=status.HTTP_404_NOT_FOUND,
+#             detail="No account found with this email",
+#         )
+
+#     # Generate reset token
+#     reset_token = secrets.token_urlsafe(32)
+#     token_expires = datetime.now() + timedelta(hours=24)
+
+#     # Save reset token to user record
+#     user.reset_token = reset_token
+#     user.reset_token_expires = token_expires
+#     await db.commit()
+
+#     # Send reset email with frontend URL
+#     reset_url = f"{settings.FRONTEND_URL}/reset-password?token={reset_token}"
+
+#     # Send reset email
+#     message = MessageSchema(
+#         subject="Password Reset Request",
+#         recipients=[email],
+#         template_body={
+#             "reset_url": reset_url,
+#             "user": user.email,
+#             "expires_in": "24 hours",
+#         },
+#         subtype="html",
+#     )
+
+#     fm = FastMail(email_conf)
+#     await fm.send_message(message, template_name="reset_password.html")
+
+#     return {"message": "Password reset instructions sent to your email"}
+
 async def recover_password(email: str, db: AsyncSession) -> dict:
     """
     Initiates password recovery process by sending reset token via email
-
     Args:
         email: User's email address
         db: Database session
-
     Returns:
         dict: Message confirming reset email sent
     """
@@ -629,40 +678,37 @@ async def recover_password(email: str, db: AsyncSession) -> dict:
     stmt = select(User).where(User.email == email)
     result = await db.execute(stmt)
     user = result.scalar_one_or_none()
-
     if not user:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="No account found with this email",
         )
-
+    
     # Generate reset token
     reset_token = secrets.token_urlsafe(32)
     token_expires = datetime.now() + timedelta(hours=24)
-
+    
     # Save reset token to user record
     user.reset_token = reset_token
     user.reset_token_expires = token_expires
     await db.commit()
-
-    # Send reset email with frontend URL
-    reset_url = f"{settings.FRONTEND_URL}/reset-password?token={reset_token}"
-
+    
     # Send reset email
     message = MessageSchema(
         subject="Password Reset Request",
         recipients=[email],
         template_body={
-            "reset_url": reset_url,
+            "url": settings.FRONTEND_URL,  # Base URL
+            "reset_token": reset_token,    # Token separately
             "user": user.email,
             "expires_in": "24 hours",
         },
         subtype="html",
     )
-
+    
     fm = FastMail(email_conf)
     await fm.send_message(message, template_name="reset_password.html")
-
+    
     return {"message": "Password reset instructions sent to your email"}
 
 
