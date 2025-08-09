@@ -582,12 +582,12 @@ def format_order_response(
             'amount_due_vendor': order.amount_due_vendor,
             'payment_link': order.payment_link,
             'created_at': order.created_at,
-            'order_items': list[{
+            'order_items': [{
                 'id': item.id,
                 'user_id': item.user_id,
                 'name': item.name,
                 'price': item.price,
-                'images': list[{
+                'images': [{
                     'id': img.id,
                     'item_id': img.item_id,
                     'url': img.url
