@@ -297,6 +297,39 @@ async def resolve_account_name(data: AccountDetails) -> AccountDetailResponse:
     return await resolve_account_details(data)
 
 
+
+@app.get("/.well-known/assetlinks.json")
+async def get_assetlinks():
+    """
+    Dynamic asset links configuration from environment variables
+    """
+    if not settings.FIN:
+        # Return empty array if not configured (development mode)
+        return JSONResponse(content=[])
+    
+    asset_links = [
+        {
+            "relation": ["delegate_permission/common.handle_all_urls"],
+            "target": {
+                "namespace": "android_app",
+                "package_name": settings.PACKAGE_NAME,
+                "sha256_cert_fingerprints": [
+                    settings.FINGER_PRINT
+                ]
+            }
+        }
+    ]
+    
+    return JSONResponse(
+        content=asset_links,
+        headers={
+            "Content-Type": "application/json",
+            "Cache-Control": "public, max-age=86400"
+        }
+    )
+
+
+
 app.include_router(auth_routes.router)
 app.include_router(user_routes.router)
 app.include_router(review_routes.router)
