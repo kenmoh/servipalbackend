@@ -698,8 +698,8 @@ async def recover_password(email: str, db: AsyncSession) -> dict:
         subject="Password Reset Request",
         recipients=[email],
         template_body={
-            "url": settings.FRONTEND_URL,  # Base URL
-            "reset_token": reset_token,    # Token separately
+            "url": settings.FRONTEND_URL, 
+            "reset_token": reset_token, 
             "user": user.email,
             "expires_in": "24 hours",
         },
