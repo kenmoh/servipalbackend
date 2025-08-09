@@ -571,7 +571,7 @@ def format_order_response(
     order_reponse_dict = {
             'id': order.id,
             'user_id': order.owner_id,
-            'vendor_id': order.order_items[0]['user_id'],
+            'vendor_id': order.vendor_id,
             'order_type': order.order_type,
             'total_price': order.total_price,
             'order_payment_status': order.order_payment_status,
