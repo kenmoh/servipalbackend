@@ -124,6 +124,7 @@ async def get_user_orders(db: AsyncSession, user_id: UUID) -> list[DeliveryRespo
     stmt = (
         select(Order)
         .where(or_(Order.owner_id == user_id, Order.vendor_id == user_id))
+        .where(Order.order_type.in_([OrderType.FOOD, OrderType.LAUNDRY, OrderType.PACKAGE]))
         .order_by(Order.updated_at.desc())
         .options(
             selectinload(Order.order_items).options(
@@ -179,6 +180,7 @@ async def get_all_orders(
             joinedload(Order.vendor).joinedload(User.profile),
         )
         .where(Order.require_delivery == RequireDeliverySchema.PICKUP)
+        .where(Order.order_type.in_([OrderType.FOOD, OrderType.LAUNDRY, OrderType.PACKAGE]))
         .order_by(Order.created_at.desc())
     )
 
@@ -237,6 +239,7 @@ async def get_all_require_delivery_orders(
             joinedload(Order.vendor).joinedload(User.profile),
         )
         .where(Order.require_delivery == RequireDeliverySchema.DELIVERY)
+        .where(Order.order_type.in_([OrderType.FOOD, OrderType.LAUNDRY, OrderType.PACKAGE]))
         .order_by(Order.created_at.desc())
     )
 
@@ -278,6 +281,7 @@ async def get_all_pickup_delivery_orders(
         select(func.count())
         .select_from(Order)
         .where(Order.require_delivery == RequireDeliverySchema.DELIVERY)
+        .where(Order.order_type.in_([OrderType.FOOD, OrderType.LAUNDRY, OrderType.PACKAGE]))
     )
     total_result = await db.execute(total_stmt)
     total = total_result.scalar_one()
@@ -295,6 +299,7 @@ async def get_all_pickup_delivery_orders(
             joinedload(Order.vendor).joinedload(User.profile),
         )
         .where(Order.require_delivery == RequireDeliverySchema.PICKUP)
+        .where(Order.order_type.in_([OrderType.FOOD, OrderType.LAUNDRY, OrderType.PACKAGE]))
         .order_by(Order.created_at.desc())
     )
 
