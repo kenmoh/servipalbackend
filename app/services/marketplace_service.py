@@ -575,7 +575,6 @@ def format_order_response(
             'order_type': order.order_type,
             'total_price': order.total_price,
             'order_payment_status': order.order_payment_status,
-            'business_name': order.business_name,
             'require_delivery': order.require_delivery,
             'order_status': order.order_status,
             'order_number': order.order_number,
