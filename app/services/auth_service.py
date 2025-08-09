@@ -642,19 +642,30 @@ async def recover_password(email: str, db: AsyncSession) -> dict:
     user.reset_token = reset_token
     user.reset_token_expires = token_expires
     await db.commit()
+
+   template_body={
+    "reset_url": f"https://api.servi-pal.com/api/auth/reset-password?token={reset_token}",
+    "custom_url": f"servipal://reset-password?token={reset_token}",
+    "reset_token": reset_token,
+    "user": user.email,
+    "expires_in": "24 hours",
+}
     
     # Send reset email
     message = MessageSchema(
         subject="Password Reset Request",
         recipients=[email],
-        template_body={
-            "url": settings.FRONTEND_URL, 
-            "reset_token": reset_token, 
-            "user": user.email,
-            "expires_in": "24 hours",
-        },
+        # template_body={
+        #     "url": settings.FRONTEND_URL, 
+        #     "reset_token": reset_token, 
+        #     "user": user.email,
+        #     "expires_in": "24 hours",
+        # },
+        template_body=template_body,
         subtype="html",
     )
+
+
     
     fm = FastMail(email_conf)
     await fm.send_message(message, template_name="reset_password.html")
