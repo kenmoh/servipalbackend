@@ -1,5 +1,4 @@
 from uuid import UUID
-from datetime import datetime
 from fastapi import (
     APIRouter,
     Body,
@@ -15,7 +14,6 @@ from fastapi.security import OAuth2PasswordRequestForm
 
 from pydantic import EmailStr
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
 
 from app import auth
 from app.auth.auth import create_tokens, get_current_user
@@ -39,6 +37,8 @@ from app.services import auth_service
 from pydantic import BaseModel
 from app.config.config import server_client
 from app.utils.limiter import limiter
+from app.templating import templates
+
 
 
 router = APIRouter(prefix="/api/auth", tags=["Authentication"])
@@ -104,10 +104,10 @@ async def login_admin_user(
         response.set_cookie(
             key="access_token",
             value=token.access_token,
-            httponly=True,  # Makes cookie HTTP-only
-            secure=True,  # Only send over HTTPS
-            samesite="lax",  # CSRF protection
-            max_age=3600,  # Expires in 1 hour
+            httponly=True,  
+            secure=True,  
+            samesite="lax", 
+            max_age=3600,  
         )
 
         if user:
@@ -122,24 +122,6 @@ async def login_admin_user(
 
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
-
-
-# @router.post("/logout", include_in_schema=False, status_code=status.HTTP_200_OK)
-# async def logout(
-#     current_user: User = Depends(get_current_user),
-#     db: AsyncSession = Depends(get_db),
-# ) -> dict:
-#     """Logout user by revoking their refresh token"""
-#     try:
-#         success = await auth_service.logout_user(db=db, current_user=current_user)
-#         if not success:
-#             raise HTTPException(
-#                 status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid token"
-#             )
-#         return {"message": "Successfully logged out"}
-
-#     except Exception as e:
-#         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
 
 @router.post("/logout", status_code=status.HTTP_200_OK, include_in_schema=False)
@@ -278,37 +260,27 @@ async def password_recovery(
 
 @router.get("/reset-password")
 async def handle_reset_password_link(
+    request: Request,
     token: str = Query(...),
-    db: AsyncSession = Depends(get_db)
+    
 ):
     """
     Handle password reset link from email
     """
-    # if not token:
-    #     raise HTTPException(
-    #         status_code=status.HTTP_400_BAD_REQUEST,
-    #         detail="Reset token is required"
-    #     )
+     
+    return templates.TemplateResponse(
+        'password-reset-form.html',
+        {
+            'request': request,
+            'token': token,
+            
+        }
+
+    )
     
-    # stmt = select(User).where(
-    #     User.reset_token == token,
-    #     User.reset_token_expires > datetime.now()
-    # )
-    # result = await db.execute(stmt)
-    # user = result.scalar_one_or_none()
+ 
+
     
-    # if not user:
-    #     raise HTTPException(
-    #         status_code=status.HTTP_400_BAD_REQUEST,
-    #         detail="Invalid or expired reset token"
-    #     )
-    
-    # Token is valid
-    return {
-        "message": "Password reset link accessed successfully",
-        "token": token,
-        "valid": True
-    }
 
 
 @router.post("/reset-password", status_code=status.HTTP_200_OK)

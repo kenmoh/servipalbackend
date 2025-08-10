@@ -1,4 +1,5 @@
 import asyncio
+from user_agents import parse
 from datetime import datetime, timedelta, time
 import secrets
 from uuid import UUID
@@ -34,6 +35,7 @@ from app.utils.utils import (
     validate_password,
 )
 from app.config.config import redis_client
+from app.templating import templates
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
@@ -760,11 +762,22 @@ async def logout_user(db: AsyncSession, current_user: User) -> bool:
         return True
 
 
-async def reset_password(reset_data: PasswordResetConfirm, db: AsyncSession) -> dict:
+async def reset_password(request:Request,reset_data: PasswordResetConfirm, db: AsyncSession) -> dict:
+    import re
     """Reset password using reset token"""
+
+
+    user_agent = request.headers.get("user-agent", "")
+    ua = parse(user_agent)
+
+    devices = [ua.is_mobile, ua.is_tablet]
+    is_browser  = ua.browser
+
+
 
     # Validate password first
     validate_password(reset_data.new_password)
+    validate_password(reset_data.confirm_new_password)
 
     # Find user with valid reset token
     stmt = select(User).where(
@@ -772,16 +785,28 @@ async def reset_password(reset_data: PasswordResetConfirm, db: AsyncSession) -> 
     )
     result = await db.execute(stmt)
     user = result.scalar_one_or_none()
+    old_password_hash = user.password
 
     if not user:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Invalid or expired reset token",
         )
+    
+    if user.user_type in [UserType.MODERATOR, UserType.ADMIN, UserType.SUPER_ADMIN]:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Permission denied")
+    
+    if reset_data.new_password != reset_data.confirm_new_password:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Passwords do not match")
+
+    if len(reset_data.password or reset_data.confirm_new_password) < 8:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Password too weak! Length must be at least 8 character long.")
+
+    if reset_data.token != user.reset_token:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid or expired token")
 
     try:
         # Update password
-        old_password_hash = user.password
         user.password = hash_password(reset_data.new_password)
         # Clear reset token
         user.reset_token = None
@@ -790,8 +815,35 @@ async def reset_password(reset_data: PasswordResetConfirm, db: AsyncSession) -> 
 
         await db.commit()
 
+
+        audit = AuditLog(
+            actor_id=user.id,
+            actor_name=user.email,
+            actor_role=user.user_type,
+            action="change_password",
+            resource_type="User",
+            resource_id=user.id,
+            resource_summary=user.email,
+            changes={"password": [old_password_hash, "***"]},
+            metadata=None,
+        )
+
+        db.add(audit)
+        await db.commit()
+
         # Log out from all devices for security
         await logout_user(db, user)
+
+        if is_browser:
+            return templates.TemplateResponse(
+                'password-reset-status.html',
+                {
+                    'request': request,
+                    'status': 'success',
+                    'message': 'Password reset successful'
+                }
+
+            )
         return {"message": "Password reset successful"}
 
     except Exception as e:
