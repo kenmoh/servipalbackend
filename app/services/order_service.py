@@ -2467,6 +2467,7 @@ async def get_user_related_orders(
                 Delivery.rider_id == user_id,
             )
         )
+        .where(Order.order_type.in_([OrderType.FOOD,OrderType.PACKAGE, OrderType.LAUNDRY]))
         .order_by(Order.updated_at.desc())
     )
     result = await db.execute(stmt)
