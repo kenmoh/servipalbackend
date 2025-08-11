@@ -397,7 +397,7 @@ async def owner_mark_item_received(
         )
 
 
-async def get_user_orders(db: AsyncSession, user_id: UUID) -> list[OrderResponseSchema]:
+async def get_user_orders(db: AsyncSession, user_id: UUID) -> list[ProductOrderResponse]:
     """
     Get all orders with their deliveries (if any) with caching
     """
@@ -407,7 +407,7 @@ async def get_user_orders(db: AsyncSession, user_id: UUID) -> list[OrderResponse
 
     cached_user_items = redis_client.get(cache_key)
     if cached_user_items:
-        return [OrderResponseSchema(**o) for o in json.loads(cached_user_items)]
+        return [ProductOrderResponse(**o) for o in json.loads(cached_user_items)]
 
     stmt = (
         select(Order)
