@@ -462,12 +462,6 @@ async def get_product_order_details(db: AsyncSession, order_id: UUID) -> Product
     stmt = (
         select(Order)
         .where(Order.order_type == OrderType.PRODUCT, Order.id == order_id)
-        .where(
-            or_(
-                Order.owner_id == user_id,
-                Order.vendor_id == user_id  
-            )
-        )
         .options(
             selectinload(Order.order_items).options(
                 joinedload(OrderItem.item).options(selectinload(Item.images))

@@ -127,7 +127,7 @@ async def get_product_by_id(
     # Not in cache, query database
     stmt = (
         select(Item)
-        .where(Item.id == product_id)
+        .where(Item.id == product_id, Item.item_type == ItemType.PRODUCT)
         .options(selectinload(Item.images), selectinload(Item.category))
     )
 
