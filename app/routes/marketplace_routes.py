@@ -6,8 +6,7 @@ from app.database.database import get_db
 from app.auth.auth import get_current_user
 from app.models.models import User
 from app.schemas.delivery_schemas import DeliveryResponse
-from app.schemas.marketplace_schemas import ProductBuyRequest
-from app.schemas.order_schema import OrderResponseSchema
+from app.schemas.marketplace_schemas import ProductBuyRequest, ProductOrderResponse
 from app.schemas.status_schema import OrderStatus
 from app.services import marketplace_service
 from app.schemas.item_schemas import ItemResponse
@@ -30,7 +29,7 @@ async def get_marketplace_items(
 
 @router.get(
     "/{user_id}/user-orders",
-    response_model=list[DeliveryResponse],
+    response_model=list[ProductOrderResponse],
     status_code=status.HTTP_200_OK,
 )
 async def get_user_product_orders(
@@ -56,7 +55,7 @@ async def get_marketplace_item(
 
 @router.post(
     "/{product_id}/buy",
-    response_model=OrderResponseSchema,
+    response_model=ProductOrderResponse,
     status_code=status.HTTP_200_OK,  # 200 OK for successful purchase
     summary="Buy a product",
     description="Allows an authenticated user to purchase a specified quantity of a product.",
