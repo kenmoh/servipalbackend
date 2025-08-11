@@ -38,7 +38,7 @@ async def get_product_order_details(
     order_id: UUID,
     db: AsyncSession = Depends(get_db),
 ):
-    return await marketplace_service.get_product_order_details(db=db, order_id: order_id)
+    return await marketplace_service.get_product_order_details(db=db, order_id=order_id)
 
 @router.get(
     "/{user_id}/user-orders",
