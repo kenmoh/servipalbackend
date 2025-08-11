@@ -106,8 +106,8 @@ async def create_product(
 
 
 async def get_product_by_id(
-    db: AsyncSession, product_id: UUID, background_task: BackgroundTasks | None = None
-) -> ProductResponse | None:
+    db: AsyncSession, product_id: UUID
+) -> ProductResponse:
     """
     Retrieves a single product by its ID, including seller and category info.
     Uses Redis caching to improve performance.
@@ -116,7 +116,6 @@ async def get_product_by_id(
         db: The database session.
         product_id: The ID of the product to retrieve.
         redis: Redis client instance.
-        background_tasks: FastAPI background tasks for cache invalidation.
 
     Returns:
         The product details or None if not found.
@@ -128,7 +127,7 @@ async def get_product_by_id(
     # Not in cache, query database
     stmt = (
         select(Item)
-        .where(Item.id == product_id, Item.item_type == ItemType.PRODUCT)
+        .where(Item.id == product_id)
         .options(selectinload(Item.images), selectinload(Item.category))
     )
 

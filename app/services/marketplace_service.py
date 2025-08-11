@@ -455,7 +455,7 @@ async def get_product_order_details(db: AsyncSession, order_id: UUID) -> Product
     # Try cache first with error handling
 
     cached_orders = redis_client.get(cache_key)
-    if cached_user_items:
+    if cached_orders:
         order = json.loads(cached_orders)
         return ProductOrderResponse(**order)
 
