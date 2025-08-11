@@ -2,7 +2,7 @@ import json
 from uuid import UUID
 from typing import Optional
 
-from fastapi import HTTPException, status, UploadFile, BackgroundTasks
+from fastapi import HTTPException, status, UploadFile
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, update, delete
 from sqlalchemy.orm import selectinload
@@ -181,7 +181,6 @@ async def get_products(db: AsyncSession) -> list[ProductResponse]:
                 [product.model_dump() for product in product_responses], default=str
             ),
         )
-        print(f"CACHE SET FOR {cache_key}")
     return product_responses
 
 
@@ -366,6 +365,7 @@ def convert_item_to_product_response(item) -> ProductResponse:
         name=item.name,
         description=item.description or "",
         price=item.price,
+        store_name=item.store_name,
         stock=item.stock,
         category_id=item.category_id,
         sizes=item.sizes,
