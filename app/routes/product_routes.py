@@ -82,16 +82,15 @@ async def create_new_product(
     summary="Get a specific product by ID",
     description="Retrieves detailed information about a single product.",
 )
-async def read_product(
+async def get_product_by_id(
     product_id: UUID,
-    background_task: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
 ):
     """
     Endpoint to retrieve a product by its unique ID. Publicly accessible.
     """
     product = await product_service.get_product_by_id(
-        db=db, product_id=product_id, background_task=background_task
+        db=db, product_id=product_id
     )
     if product is None:
         raise HTTPException(

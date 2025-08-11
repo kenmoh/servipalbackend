@@ -331,7 +331,7 @@ async def delete_product(
         await db.commit()
         invalidate_product_cache(product_id, current_user.id)
 
-        return result.rowcount > 0
+        return True if result.rowcount > 0 else False
     except Exception as e:
         await db.rollback()
         raise HTTPException(
