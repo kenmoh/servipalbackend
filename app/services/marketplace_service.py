@@ -411,19 +411,18 @@ async def get_user_orders(db: AsyncSession, user_id: UUID) -> list[ProductOrderR
 
     stmt = (
         select(Order)
+        .where(Order.order_type == OrderType.PRODUCT)
         .where(
             or_(
                 Order.owner_id == user_id,
-                Order.vendor_id == user_id,
-                Order.order_type == OrderType.PRODUCT,
+                Order.vendor_id == user_id  
             )
         )
         .order_by(Order.updated_at.desc())
         .options(
             selectinload(Order.order_items).options(
                 joinedload(OrderItem.item).options(selectinload(Item.images))
-            ),
-            joinedload(Order.vendor).joinedload(User.profile),
+            )
         )
     )
 
@@ -441,6 +440,54 @@ async def get_user_orders(db: AsyncSession, user_id: UUID) -> list[ProductOrderR
         cache_key,
         timedelta(seconds=CACHE_TTL),
         json.dumps([d.model_dump() for d in products_order_response], default=str),
+    )
+
+    return products_order_response
+
+
+
+async def get_product_order_details(db: AsyncSession, order_id: UUID) -> ProductOrderResponse:
+    """
+    Get all orders with their deliveries (if any) with caching
+    """
+    cache_key = f"marketplace_order_details:{order_id}"
+
+    # Try cache first with error handling
+
+    cached_orders = redis_client.get(cache_key)
+    if cached_user_items:
+        order = json.loads(cached_orders)
+        return ProductOrderResponse(**order)
+
+    stmt = (
+        select(Order)
+        .where(Order.order_type == OrderType.PRODUCT, Order.id == order_id)
+        .where(
+            or_(
+                Order.owner_id == user_id,
+                Order.vendor_id == user_id  
+            )
+        )
+        .options(
+            selectinload(Order.order_items).options(
+                joinedload(OrderItem.item).options(selectinload(Item.images))
+            )
+        )
+    )
+
+    result = await db.execute(stmt)
+    order = result.scalar_one_or_none()
+
+    # Format responses - delivery will be None for orders without delivery
+    products_order_response = format_order_response(order)
+    
+
+    # Cache the formatted responses with error handling
+
+    redis_client.setex(
+        cache_key,
+        timedelta(seconds=CACHE_TTL),
+        json.dumps(products_order_response.model_dump(), default=str),
     )
 
     return products_order_response

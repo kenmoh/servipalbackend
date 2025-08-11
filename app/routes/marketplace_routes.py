@@ -15,6 +15,7 @@ from app.utils.limiter import limiter
 router = APIRouter(prefix="/api/marketplace", tags=["Marketplace"])
 
 
+
 @router.get(
     "",
     response_model=list[ItemResponse],
@@ -26,6 +27,18 @@ async def get_marketplace_items(
 ):
     return await marketplace_service.get_marketplace_items(db=db)
 
+
+@router.get(
+    "/{order_id}/product-order-details",
+    response_model=ProductOrderResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Get marketplace order detail",
+)
+async def get_product_order_details(
+    order_id: UUID,
+    db: AsyncSession = Depends(get_db),
+):
+    return await marketplace_service.get_product_order_details(db=db, order_id: order_id)
 
 @router.get(
     "/{user_id}/user-orders",
