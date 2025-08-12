@@ -1580,11 +1580,11 @@ async def product_order_payment_callback(request: Request, db: AsyncSession):
         select(Order)
         .where(Order.id == UUID(tx_ref))
         .where(Order.order_type == OrderType.PRODUCT)
-        .options(
-            selectinload(Order.owner).selectinload(User.profile),
-            selectinload(Order.vendor).selectinload(User.profile),
-            selectinload(Order.delivery),
-        )
+        # .options(
+        #     selectinload(Order.owner).selectinload(User.profile),
+        #     selectinload(Order.vendor).selectinload(User.profile),
+        #     selectinload(Order.delivery),
+        # )
     )
     order = order_result.scalar_one_or_none()
     if not order:
@@ -1599,23 +1599,35 @@ async def product_order_payment_callback(request: Request, db: AsyncSession):
     # Only move funds and create transactions if payment is successful
     if new_status == PaymentStatus.PAID:
         # Fetch customer wallet
-        customer_wallet_result = await db.execute(
-            select(Wallet).where(Wallet.id == order.owner_id)
-        )
-        vendor_wallet_result = await db.execute(
-            select(Wallet).where(Wallet.id == order.vendor_id)
-        )
-        customer_wallet = customer_wallet_result.scalar_one_or_none()
-        vendor_wallet = vendor_wallet_result.scalar_one_or_none()
+        # customer_wallet_result = await db.execute(
+        #     select(Wallet).where(Wallet.id == order.owner_id)
+        # )
+        # vendor_wallet_result = await db.execute(
+        #     select(Wallet).where(Wallet.id == order.vendor_id)
+        # )
+        # customer_wallet = customer_wallet_result.scalar_one_or_none()
+        # vendor_wallet = vendor_wallet_result.scalar_one_or_none()
 
-        if not customer_wallet or not vendor_wallet:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Wallet not found for customer or vendor.",
+        # if not customer_wallet or not vendor_wallet:
+        #     raise HTTPException(
+        #         status_code=status.HTTP_404_NOT_FOUND,
+        #         detail="Wallet not found for customer or vendor.",
+        #     )
+
+
+
+        # customer_wallet.escrow_balance += order.total_price
+        # vendor_wallet.escrow_balance += order.amount_due_vendor
+
+        # Update customer escrow balance
+        await db.execute(update(Wallet).where(Wallet.id == order.owner_id)
+            .values(escrow_balance=Wallet.escrow_balance + order.total_price)
             )
 
-        customer_wallet.escrow_balance += order.total_price
-        vendor_wallet.escrow_balance += order.amount_due_vendor
+        # Update vendor escrow balance
+        await db.execute(update(Wallet).where(Wallet.id == order.vendor_id)
+            .values(escrow_balance=Wallet.escrow_balance + order.amount_due_vendor)
+            )
 
         if order.order_items:
             # Access the OrderItem and its related Item
@@ -1644,6 +1656,7 @@ async def product_order_payment_callback(request: Request, db: AsyncSession):
             from_user=customer.full_name or customer.business_name,
             to_user=vendor.full_name or vendor.business_name,
         )
+        
         # The vendor's transaction will be created when funds are released from escrow.
 
         db.add(customer_tranx)
