@@ -283,7 +283,7 @@ async def vendor_mark_item_delivered(
     try:
         if order.order_status == OrderStatus.PENDING and order.order_type == OrderType.PRODUCT:
             order.order_status = OrderStatus.DELIVERED
-            await db.commit
+            await db.commit()
             await db.refresh(order)
 
             token = await get_user_notification_token(db=db, user_id=order.owner_id)
