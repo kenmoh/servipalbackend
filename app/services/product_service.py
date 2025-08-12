@@ -186,6 +186,13 @@ async def get_products(db: AsyncSession) -> list[ProductResponse]:
 
 
 async def get_products_by_category(db: AsyncSession, category_id: UUID) -> list[ProductResponse]:
+    # Check if category exists
+    category = await db.get(Category, category_id)
+    
+    # If category doesn't exist, return all products
+    if not category:
+        return await get_products(db)
+    
     cache_key = f"all_products_by_category:{category_id}"
 
     cached_products = redis_client.get(cache_key)
