@@ -553,16 +553,6 @@ async def top_up_wallet(
         # Get or create wallet in a single operation
         wallet = await db.get(Wallet, current_user.id)
 
-        if not wallet:
-            wallet = Wallet(
-                id=current_user.id,
-                balance=0,
-                escrow_balance=0,
-                created_at=datetime.now(),
-                updated_at=datetime.now(),
-            )
-            db.add(wallet)
-
         if wallet.balance >= 100_000 or (topup_data.amount + wallet.balance) > 100_000:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -595,6 +585,11 @@ async def top_up_wallet(
         transaction.payment_link = payment_link
         await db.commit()
         await db.refresh(transaction)
+
+        return TopUpResponseSchema(
+            amount=transaction.amount,
+            payment_link=payment_link,
+        )
 
     except Exception as e:
         # Log error for debugging
@@ -1491,20 +1486,6 @@ async def order_payment_callback(request: Request, db: AsyncSession):
                 to_user=vendor_profile.full_name or vendor_profile.business_name,
                 updated_at=current_time,
             )
-
-            # Create vendor transaction (order amount to escrow)
-            # vendor_transaction = Transaction(
-            #     wallet_id=vendor_wallet.id,
-            #     amount=total_price,
-            #     transaction_type=TransactionType.USER_TO_USER,
-            #     transaction_direction=TransactionDirection.CREDIT,
-            #     payment_status=PaymentStatus.PAID,
-            #     created_at=current_time,
-            #     payment_method=PaymentMethod.CARD,
-            #     from_user=customer.full_name or customer.business_name,
-            #     to_user=vendor.full_name or vendor.business_name,
-            #     updated_at=current_time,
-            # )
 
             db.add(customer_transaction)
             # db.add(vendor_transaction)
