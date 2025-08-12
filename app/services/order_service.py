@@ -1407,30 +1407,17 @@ async def sender_confirm_delivery_or_order_received(
             detail="You already mark this order as received.",
         )
 
-    # Check Laundry Service
-    is_laundry_delivey_service = order.order_type==OrderType.LAUNDRY and order.delivery.delivery_status == DeliveryStatus.VENDOR_RECEIVED_LAUNDRY_ITEM
-
-    # Get wallets
-    dispatch_wallet = await fetch_wallet(db, order.delivery.dispatch_id)
     vendor_wallet = await fetch_wallet(db, order.delivery.vendor_id)
-    sender_wallet = await fetch_wallet(db, order.delivery.sender_id)
 
     # Calculate amounts to release/remove from escrow
-    dispatch_amount = max(order.delivery.amount_due_dispatch, 0) if not is_laundry_delivey_service else 0
-    vendor_amount = max(order.delivery.order.amount_due_vendor, 0)
-
-    # update wallet
-    total_amount = max(order.delivery.delivery_fee, 0) + max(order.total_price, 0) if not is_laundry_delivey_service else   max(order.total_price, 0)
-    new_dispatch_escrow = max(dispatch_wallet.escrow_balance - dispatch_amount, 0)
-    new_sender_escrow = max(sender_wallet.escrow_balance - total_amount, 0)
-    new_vendor_escrow = max(vendor_wallet.escrow_balance - vendor_amount, 0)
+    # dispatch_amount = max(order.delivery.amount_due_dispatch, 0) if not is_laundry_delivey_service else 0
+    vendor_amount = max(order.delivery.order.amount_due_vendor, 0)    
+    total_amount = max(order.delivery.delivery_fee, 0) + max(order.total_price, 0) 
 
     dispatch_profile = await get_user_profile(order.delivery.dispatch_id, db=db)
     vendor_profile = await get_user_profile(order.delivery.vendor_id, db=db)
     sender = (
-        current_user.profile.full_name
-        if current_user.profile.full_name
-        else current_user.profile.business_name
+        current_user.profile.full_name or current_user.profile.business_name
     )
 
     try:
@@ -1443,59 +1430,27 @@ async def sender_confirm_delivery_or_order_received(
             and order.require_delivery == RequireDeliverySchema.DELIVERY
         ):
             # Update dispatch wallet
-            await db.execute(
-                update(Wallet)
-                .where(Wallet.id == order.delivery.dispatch_id)
-                .values(
-                    {
-                        "balance": max(dispatch_wallet.balance + dispatch_amount, 0),
-                        "escrow_balance": max(new_dispatch_escrow, 0),
-                    }
-                )
-            )
+            await db.execute(update(Wallet).where(Wallet.id == order.delivery.dispatch_id).values(
+                balance=Wallet.balance + order.delivery.amount_due_dispatch,
+                escrow_balance=Wallet.escrow_balance - order.delivery.amount_due_dispatch
+            ))
 
-            await db.execute(
-                update(Wallet)
-                .where(Wallet.id == order.delivery.sender_id)
-                .values(
-                    {
-                        "balance": max(sender_wallet.balance - total_amount, 0),
-                        "escrow_balance": max(new_sender_escrow, 0),
-                    }
-                )
-            )
+            # Update sender wallet
+            await db.execute(update(Wallet).where(Wallet.id == order.delivery.sender_id).values(
+                escrow_balance=Wallet.escrow_balance - order.delivery.delivery_fee
+            ))
 
             order.delivery.delivery_status = DeliveryStatus.RECEIVED
             await db.commit()
             await db.refresh(order)
 
             # create transaction for dispatch
+            await create_wallet_transaction(db, order.delivery.dispatch_id, order.delivery.amount_due_dispatch,
+                                            transaction_direction=TransactionDirection.CREDIT,
+                                            transaction_type=TransactionType.USER_TO_USER,
+                                            from_user=sender,
+                                            to_user=dispatch_profile.full_name or dispatch_profile.business_name)
 
-            if not is_laundry_delivey_service:
-                await create_wallet_transaction(
-                    db,
-                    dispatch_wallet.id,
-                    dispatch_amount,
-                    transaction_direction=TransactionDirection.CREDIT,
-                    transaction_type=TransactionType.USER_TO_USER,
-                    from_user=sender,
-                    to_user=dispatch_profile.full_name
-                    if dispatch_profile.full_name
-                    else dispatch_profile.business_name,
-                )
-
-            # create transaction for sender
-            await create_wallet_transaction(
-                db,
-                sender_wallet.id,
-                total_amount,
-                transaction_direction=TransactionDirection.DEBIT,
-                transaction_type=TransactionType.USER_TO_USER,
-                from_user=sender,
-                to_user=dispatch_profile.full_name
-                if dispatch_profile.full_name
-                else dispatch_profile.business_name,
-            )
 
             await ws_service.broadcast_delivery_status_update(
                 delivery_id=order.delivery.id, new_status=order.delivery.delivery_status
@@ -1507,60 +1462,30 @@ async def sender_confirm_delivery_or_order_received(
             in [DeliveryType.FOOD, DeliveryType.LAUNDRY]
         ):
 
-            # update dispatch wallet
-            await db.execute(
-                update(Wallet)
-                .where(Wallet.id == order.delivery.dispatch_id)
-                .values(
-                    {
-                        "balance": max(dispatch_wallet.balance + dispatch_amount, 0),
-                        "escrow_balance": max(new_dispatch_escrow, 0),
-                    }
-                )
-            )
-
-            # update vendor wallet
-            await db.execute(
-                update(Wallet)
-                .where(Wallet.id == order.vendor_id)
-                .values(
-                    {
-                        "balance": max(vendor_wallet.balance + vendor_amount, 0),
-                        "escrow_balance": max(new_vendor_escrow, 0),
-                    }
-                )
-            )
-
-            # update sender wallet
-            await db.execute(
-                update(Wallet)
-                .where(Wallet.id == order.owner_id)
-                .values(
-                    {
-                        "balance": max(sender_wallet.balance - total_amount, 0),
-                        "escrow_balance": max(new_sender_escrow, 0),
-                    }
-                )
-            )
+            # Atomically update dispatch, vendor, and sender wallets
+            await db.execute(update(Wallet).where(Wallet.id == order.delivery.dispatch_id).values(
+                balance=Wallet.balance + order.delivery.amount_due_dispatch,
+                escrow_balance=Wallet.escrow_balance - order.delivery.amount_due_dispatch
+            ))
+            await db.execute(update(Wallet).where(Wallet.id == order.vendor_id).values(
+                balance=Wallet.balance + order.amount_due_vendor,
+                escrow_balance=Wallet.escrow_balance - order.amount_due_vendor
+            ))
+            total_spent = order.total_price + order.delivery.delivery_fee
+            await db.execute(update(Wallet).where(Wallet.id == order.owner_id).values(
+                escrow_balance=Wallet.escrow_balance - total_spent
+            ))
 
             order.order_status = OrderStatus.RECEIVED
 
             await db.commit()
             await db.refresh(order)
 
-            # create dispatch transactions
-            if not is_laundry_delivey_service:
-                await create_wallet_transaction(
-                    db,
-                    dispatch_wallet.id,
-                    dispatch_amount,
-                    transaction_direction=TransactionDirection.CREDIT,
-                    transaction_type=TransactionType.USER_TO_USER,
-                    from_user=sender,
-                    to_user=dispatch_profile.full_name
-                    if dispatch_profile.full_name
-                    else dispatch_profile.business_name,
-                )
+            # Create credit transactions for dispatch and vendor
+            await create_wallet_transaction(db, order.delivery.dispatch_id, order.delivery.amount_due_dispatch,
+                                            transaction_direction=TransactionDirection.CREDIT, transaction_type=TransactionType.USER_TO_USER,
+                                            from_user=sender, to_user=dispatch_profile.full_name or dispatch_profile.business_name)
+
             # create vendor transaction
             await create_wallet_transaction(
                 db,
@@ -1574,19 +1499,6 @@ async def sender_confirm_delivery_or_order_received(
                 else vendor_profile.business_name,
             )
 
-            # create sender transaction
-            await create_wallet_transaction(
-                db,
-                sender_wallet.id,
-                total_amount,
-                transaction_direction=TransactionDirection.DEBIT,
-                transaction_type=TransactionType.USER_TO_USER,
-                to_user=f"{vendor_profile.full_name
-                if vendor_profile.full_name
-                else vendor_profile.business_name} - {dispatch_profile.full_name if dispatch_profile.full_name else dispatch_profile.business_name}",
-                from_user=sender,
-            )
-
             await ws_service.broadcast_delivery_status_update(
                 delivery_id=order.delivery.id, new_status=order.delivery.delivery_status
             )
@@ -1598,29 +1510,14 @@ async def sender_confirm_delivery_or_order_received(
             order.require_delivery == RequireDeliverySchema.PICKUP
             and order.order_type in [OrderType.FOOD, OrderType.LAUNDRY]
         ):
-            # update vendor wallet
-            await db.execute(
-                update(Wallet)
-                .where(Wallet.id == order.vendor_id)
-                .values(
-                    {
-                        "balance": max(vendor_wallet.balance + vendor_amount, 0),
-                        "escrow_balance": max(new_vendor_escrow, 0),
-                    }
-                )
-            )
-
-            # update sender wallet
-            await db.execute(
-                update(Wallet)
-                .where(Wallet.id == order.owner_id)
-                .values(
-                    {
-                        "balance": max(sender_wallet.balance - total_amount, 0),
-                        "escrow_balance": max(new_sender_escrow, 0),
-                    }
-                )
-            )
+            # Atomically update vendor and sender wallets
+            await db.execute(update(Wallet).where(Wallet.id == order.vendor_id).values(
+                balance=Wallet.balance + order.amount_due_vendor,
+                escrow_balance=Wallet.escrow_balance - order.amount_due_vendor
+            ))
+            await db.execute(update(Wallet).where(Wallet.id == order.owner_id).values(
+                escrow_balance=Wallet.escrow_balance - order.total_price
+            ))
 
             order.delivery.order.order_status = OrderStatus.RECEIVED
 
@@ -1638,19 +1535,6 @@ async def sender_confirm_delivery_or_order_received(
                 to_user=vendor_profile.full_name
                 if vendor_profile.full_name
                 else vendor_profile.business_name,
-            )
-
-            # create sender transaction
-            await create_wallet_transaction(
-                db,
-                sender_wallet.id,
-                total_amount,
-                transaction_direction=TransactionDirection.DEBIT,
-                transaction_type=TransactionType.USER_TO_USER,
-                to_user=f"{vendor_profile.full_name
-                if vendor_profile.full_name
-                else vendor_profile.business_name} - {dispatch_profile.full_name if dispatch_profile.full_name else dispatch_profile.business_name}",
-                from_user=sender,
             )
 
             await ws_service.broadcast_order_status_update(
@@ -1731,110 +1615,75 @@ async def vendor_mark_laundry_item_received(
     profile = get_user_profile(delivery.sender_id, db=db)
     dispatch_profile = get_user_profile(delivery.dispatch_id, db=db)
 
-    try:
-        delivery.delivery_status = DeliveryStatus.VENDOR_RECEIVED_LAUNDRY_ITEM
+    if current_user.user_type in [UserType.LAUNDRY_VENDOR, UserType.RESTAURANT_VENDOR] and current_user.id == delivery.order.vendor_id:
 
-        # Get wallets
-        dispatch_wallet = await fetch_wallet(db, delivery.dispatch_id)
-        sender_wallet = await fetch_wallet(db, delivery.sender_id)
+        try:
+            delivery.delivery_status = DeliveryStatus.VENDOR_RECEIVED_LAUNDRY_ITEM
+            
+            # Atomically update dispatch and sender wallets
+            await db.execute(update(Wallet).where(Wallet.id == delivery.dispatch_id).values(
+                balance=Wallet.balance + delivery.amount_due_dispatch,
+                escrow_balance=Wallet.escrow_balance - delivery.amount_due_dispatch
+            ))
+            await db.execute(update(Wallet).where(Wallet.id == delivery.sender_id).values(
+                escrow_balance=Wallet.escrow_balance - delivery.delivery_fee
+            ))
+            
+            delivery.order.order_status = OrderStatus.VENDOR_RECEIVED_LAUNDRY_ITEM
 
-        # Calculate amounts to release from escrow
-        dispatch_amount = max(delivery.amount_due_dispatch, 0)
+            await db.commit()
+            await db.refresh(delivery)
 
-        # update wallet
-        new_dispatch_escrow = max(dispatch_wallet.escrow_balance - dispatch_amount, 0)
-        new_sender_escrow = max(sender_wallet.escrow_balance - delivery.delivery_fee, 0)
-
-        # Update dispatch wallet
-        await db.execute(
-            update(Wallet)
-            .where(Wallet.id == delivery.dispatch_id)
-            .values(
-                {
-                    "balance": max(dispatch_wallet.balance + dispatch_amount, 0),
-                    "escrow_balance": new_dispatch_escrow,
-                }
-            )
-        )
-        # Update sender escrow
-        await db.execute(
-            update(Wallet)
-            .where(Wallet.id == delivery.sender_id)
-            .values(
-                {
-                    "escrow_balance": new_sender_escrow,
-                }
-            )
-        )
-
-        delivery.order.order_status = OrderStatus.VENDOR_RECEIVED_LAUNDRY_ITEM
-
-        await db.commit()
-        await db.refresh(delivery)
-
-        # created dispatch transactions
-        await create_wallet_transaction(
-            db,
-            dispatch_wallet.id,
-            dispatch_amount,
-            TransactionDirection.CREDIT,
-            transaction_direction=TransactionType.USER_TO_USER,
-            from_user=profile.full_name if profile.full_name else profile.business_name,
-            to_user=dispatch_profile.full_name
-            if dispatch_profile.full_name
-            else dispatch_profile.business_name,
-        )
-
-        # create sender transaction
-        await create_wallet_transaction(
-            db,
-            sender_wallet.id,
-            delivery.delivery_fee,
-            TransactionDirection.DEBIT,
-            transaction_direction=TransactionType.USER_TO_USER,
-            from_user=profile.full_name if profile.full_name else profile.business_name,
-            to_user=dispatch_profile.full_name
-            if dispatch_profile.full_name
-            else dispatch_profile.business_name,
-        )
-
-        # redis_client.delete(f"{ALL_DELIVERY}")
-        token = await get_user_notification_token(db=db, user_id=delivery.sender_id)
-        rider_token = await get_user_notification_token(
-            db=db, user_id=delivery.rider_id
-        )
-
-        # Send notification to rider
-        if token:
-            await send_push_notification(
-                tokens=[token],
-                title="Order Completed",
-                message="Your laundry item has been received by the vendor",
-                navigate_to="/(app)/delivery",
+            # Create credit transaction for dispatch
+            await create_wallet_transaction(
+                db,
+                delivery.dispatch_id,
+                delivery.amount_due_dispatch,
+                TransactionDirection.CREDIT,
+                transaction_direction=TransactionType.USER_TO_USER,
+                from_user=profile.full_name if profile.full_name else profile.business_name,
+                to_user=dispatch_profile.full_name
+                if dispatch_profile.full_name
+                else dispatch_profile.business_name,
             )
 
-        if rider_token:
-            await send_push_notification(
-                tokens=[rider_token],
-                title="Payment Received",
-                message=f"Congratulations! Order complete. Your wallet has been credited with ₦ {dispatch_amount}",
-                navigate_to="/(app)/delivery",
+            # redis_client.delete(f"{ALL_DELIVERY}")
+            token = await get_user_notification_token(db=db, user_id=delivery.sender_id)
+            rider_token = await get_user_notification_token(
+                db=db, user_id=delivery.rider_id
             )
 
-        # redis_client.delete(f"delivery:{delivery_id}")
-        redis_client.delete(f"{ALL_DELIVERY}")
-        redis_client.delete("paid_pending_deliveries")
-        redis_client.delete(f"user_related_orders:{current_user.id}")
+            # Send notification to rider
+            if token:
+                await send_push_notification(
+                    tokens=[token],
+                    title="Order Completed",
+                    message="Your laundry item has been received by the vendor",
+                    navigate_to="/(app)/delivery",
+                )
 
-        await ws_service.broadcast_delivery_status_update(
-            delivery_id=delivery.id, delivery_status=delivery.delivery_status
-        )
+            if rider_token:
+                await send_push_notification(
+                    tokens=[rider_token],
+                    title="Payment Received",
+                    message=f"Congratulations! Order complete. Your wallet has been credited with ₦ {delivery.amount_due_dispatch}",
+                    navigate_to="/(app)/delivery",
+                )
 
-        return DeliveryStatusUpdateSchema(delivery_status=delivery.delivery_status, order_status=delivery.order.order_status)
+            # redis_client.delete(f"delivery:{delivery_id}")
+            redis_client.delete(f"{ALL_DELIVERY}")
+            redis_client.delete("paid_pending_deliveries")
+            redis_client.delete(f"user_related_orders:{current_user.id}")
 
-    except Exception as e:
-        await db.rollback()
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+            await ws_service.broadcast_delivery_status_update(
+                delivery_id=delivery.id, delivery_status=delivery.delivery_status
+            )
+
+            return DeliveryStatusUpdateSchema(delivery_status=delivery.delivery_status, order_status=delivery.order.order_status)
+
+        except Exception as e:
+            await db.rollback()
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
 
 async def rider_mark_delivered(

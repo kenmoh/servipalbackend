@@ -335,21 +335,16 @@ async def owner_mark_item_received(
     try:
         if order.order_status == OrderStatus.DELIVERED and order.order_type == OrderType.PRODUCT:
             order.order_status = OrderStatus.RECEIVED
-
             await db.commit()
             await db.refresh(order)
-
 
             # Update vendor wallet
             await db.execute(
                 update(Wallet)
                 .where(Wallet.id == order.vendor_id)
                 .values(
-                    {
-                        "balance": max(vendor_wallet.balance + order.amount_due_vendor,0),
-                        "escrow_balance": max(vendor_wallet.escrow_balance, 0)
-                        - max(order.amount_due_vendor, 0),
-                    }
+                    balance=Wallet.balance + order.amount_due_vendor,
+                    escrow_balance=Wallet.escrow_balance - order.amount_due_vendor,
                 )
             )
 
@@ -357,26 +352,23 @@ async def owner_mark_item_received(
             await db.execute(
                 update(Wallet)
                 .where(Wallet.id == order.owner_id)
-                .values(
-                    {
-                        "escrow_balance": max(owner_wallet.escrow_balance, 0)
-                        - max(order.total_price, 0)
-                    }
-                )
+                .values(escrow_balance=Wallet.escrow_balance - order.total_price)
             )
 
-            owner_transx = Transaction(
-                wallet_id=current_user.id,
-                amount=order.total_price,
+            # Create the transaction for the vendor now that funds are released.
+            # The buyer's debit transaction was already created at the time of payment.
+            vendor_transx = Transaction(
+                wallet_id=order.vendor_id,
+                amount=order.amount_due_vendor,
                 payment_status=PaymentStatus.PAID,
                 transaction_type=TransactionType.USER_TO_USER,
-                transaction_direction=TransactionDirection.DEBIT,
+                transaction_direction=TransactionDirection.CREDIT,
                 to_user=vendor_profile.full_name or vendor_profile.business_name,
                 from_user=current_user.profile.full_name
                 or current_user.profile.business_name,
             )
 
-            db.add(owner_transx)
+            db.add(vendor_transx)
             await db.commit()
 
             token = await get_user_notification_token(db=db, user_id=order.vendor_id)

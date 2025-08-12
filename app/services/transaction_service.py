@@ -1208,7 +1208,6 @@ async def fund_wallet_callback(request: Request, db: AsyncSession):
                 "request": request,
                 "payment_status": transaction.payment_status,
                 "amount": str(transaction.amount),
-                "tx_ref": tx_ref,
                 "date": datetime.now().strftime("%b %d, %Y"),
                 "transaction_id": transx_id,
             },
@@ -1320,9 +1319,6 @@ async def get_current_charge_settings(db: AsyncSession) -> ChargeAndCommission:
 
 
 # --- order_payment_callback ---
-
-
-# --- order_payment_callback ---
 async def order_payment_callback(request: Request, db: AsyncSession):
     """
     Handles payment callback for orders, supporting scenarios:
@@ -1393,7 +1389,7 @@ async def order_payment_callback(request: Request, db: AsyncSession):
             delivery_fee = order.delivery.delivery_fee
 
             # Update customer wallet
-            customer_wallet.balance += delivery_fee
+            customer_wallet.escrow_balance += delivery_fee
 
             transaction = Transaction(
                 wallet_id=customer_wallet.id,
@@ -1438,7 +1434,6 @@ async def order_payment_callback(request: Request, db: AsyncSession):
                     "request": request,
                     "payment_status": order.order_payment_status,
                     "amount": str(delivery_fee),
-                    # "tx_ref": tx_ref,
                     "date": datetime.now().strftime("%b %d, %Y"),
                     "transaction_id": transx_id,
                 },
@@ -1476,7 +1471,7 @@ async def order_payment_callback(request: Request, db: AsyncSession):
                 await db.flush()
 
             # Move funds to customer wallet
-            customer_wallet.balance += charged_amount
+            customer_wallet.escrow_balance += charged_amount
 
             # Move order amount to vendor's escrow
             vendor_wallet.escrow_balance += order.amount_due_vendor
@@ -1486,7 +1481,7 @@ async def order_payment_callback(request: Request, db: AsyncSession):
                 wallet_id=customer_wallet.id,
                 amount=charged_amount,
                 transaction_type=TransactionType.USER_TO_USER,
-                transaction_direction=TransactionDirection.CREDIT,
+                transaction_direction=TransactionDirection.DEBIT,
                 payment_status=PaymentStatus.PAID,
                 created_at=current_time,
                 payment_method=PaymentMethod.CARD,
@@ -1553,7 +1548,6 @@ async def order_payment_callback(request: Request, db: AsyncSession):
                     "request": request,
                     "payment_status": order.order_payment_status,
                     "amount": str(charged_amount),
-                    # "tx_ref": tx_ref,
                     "date": datetime.now().strftime("%b %d, %Y"),
                     "transaction_id": transx_id,
                 },
@@ -1580,7 +1574,7 @@ async def order_payment_callback(request: Request, db: AsyncSession):
         )
 
 
-# --- order_payment_callback ---
+# --- ptoduct_order_payment_callback ---
 async def product_order_payment_callback(request: Request, db: AsyncSession):
     tx_ref = request.query_params["tx_ref"]
     tx_status = request.query_params["status"]
@@ -1625,21 +1619,33 @@ async def product_order_payment_callback(request: Request, db: AsyncSession):
             select(Wallet).where(Wallet.id == order.owner_id)
         )
         vendor_wallet_result = await db.execute(
-            select(Wallet).where(Wallet.id == order.owner_id)
+            select(Wallet).where(Wallet.id == order.vendor_id)
         )
         customer_wallet = customer_wallet_result.scalar_one_or_none()
         vendor_wallet = vendor_wallet_result.scalar_one_or_none()
 
+        if not customer_wallet or not vendor_wallet:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Wallet not found for customer or vendor.",
+            )
+
         customer_wallet.escrow_balance += order.total_price
         vendor_wallet.escrow_balance += order.amount_due_vendor
 
-        quantity = order.order_items[0]['quantity']
-        item_id = order.order_items[0]['id']
-        vendor_id = order.order_items[0]['user_id']
+        if order.order_items:
+            # Access the OrderItem and its related Item
+            order_item = order.order_items[0]
+            quantity_to_deduct = order_item.quantity
+            item_to_update = order_item.item
 
-        await db.execute(update(Item).where(Item.id == item_id, Item.user_id==vendor_id).values({
-            "stock": max(Item.stock - quantity, 0)
-            }))
+            # Update the stock using a SQL expression.
+            # The database will handle the subtraction atomically.
+            await db.execute(
+                update(Item)
+                .where(Item.id == item_to_update.id)
+                .values(stock=Item.stock - quantity_to_deduct)
+            )
 
         await db.commit()
         await db.refresh(order)
@@ -1648,24 +1654,15 @@ async def product_order_payment_callback(request: Request, db: AsyncSession):
             wallet_id=customer_wallet.id,
             amount=order.total_price,
             transaction_type=TransactionType.USER_TO_USER,
-            transaction_direction=TransactionDirection.CREDIT,
+            transaction_direction=TransactionDirection.DEBIT,
             payment_status=PaymentStatus.PAID,
             payment_method=PaymentMethod.CARD,
             from_user=customer.full_name or customer.business_name,
             to_user=vendor.full_name or vendor.business_name,
         )
-        vendor_tranx = Transaction(
-            wallet_id=vendor_wallet.id,
-            amount=vendor.user_id,
-            transaction_type=TransactionType.USER_TO_USER,
-            transaction_direction=TransactionDirection.CREDIT,
-            payment_status=PaymentStatus.PAID,
-            payment_method=PaymentMethod.CARD,
-            from_user=customer.full_name or customer.business_name,
-            to_user=vendor.full_name or vendor.business_name,
-        )
+        # The vendor's transaction will be created when funds are released from escrow.
 
-        db.add_all(customer_tranx, vendor_tranx)
+        db.add(customer_tranx)
         await db.commit()
         await db.refresh(order)
 
@@ -1675,7 +1672,6 @@ async def product_order_payment_callback(request: Request, db: AsyncSession):
                 "request": request,
                 "payment_status": order.order_payment_status,
                 "amount": str(order.total_price),
-                # "tx_ref": tx_ref,
                 "date": datetime.now().strftime("%b %d, %Y"),
                 "transaction_id": transx_id,
             },
@@ -2112,7 +2108,7 @@ async def pay_with_wallet(
     # Move funds to escrow
     customer_wallet.balance -= charged_amount
     customer_wallet.escrow_balance += charged_amount
-    vendor_wallet.escrow_balance += total_price
+    vendor_wallet.escrow_balance += order.amount_due_vendor
 
     # Buyer transaction ()
     transaction_values.append(
@@ -2132,7 +2128,7 @@ async def pay_with_wallet(
     transaction_values.append(
         {
             "wallet_id": vendor_wallet.id,
-            "amount": total_price,
+            "amount": order.amount_due_vendor,
             "transaction_type": TransactionType.USER_TO_USER,
             "transaction_direction": TransactionDirection.CREDIT,
             "payment_status": PaymentStatus.PAID,
