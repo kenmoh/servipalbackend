@@ -54,15 +54,9 @@ class OrderStatus(str, Enum):
     VENDOR_RECEIVED_LAUNDRY_ITEM: str = "laundry_received"  # Vendor ops
 
 
-class ItemStatus(str, Enum):
-    WASHING: str = "washing"
-    WASHED: str = "washed"
-    COOKING: str = "cooking"
-    SERVED: str = "served"
 
-
-class ItemStatusResponse(BaseModel):
-    item_status: ItemStatus
+class ProdductOrderStatus(BaseModel):
+    order_status: OrderStatus
 
 
 class TransactionStatus(str, Enum):
