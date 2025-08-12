@@ -184,6 +184,39 @@ async def get_products(db: AsyncSession) -> list[ProductResponse]:
     return product_responses
 
 
+
+async def get_products_by_category(db: AsyncSession, category_id: UUID) -> list[ProductResponse]:
+    cache_key = f"all_products_by_category:{category_id}"
+
+    cached_products = redis_client.get(cache_key)
+    if cached_products:
+        return [ProductResponse(**product) for product in json.loads(cached_products)]
+
+    stmt = (
+        select(Item)
+        .where(Item.item_type == ItemType.PRODUCT)
+        .where(Item.category_id == category_id)
+        .options(selectinload(Item.images))
+        .order_by(Item.created_at.desc())
+    )
+    result = await db.execute(stmt)
+    products = result.scalars().all()
+
+    product_responses = [
+        convert_item_to_product_response(product) for product in products
+    ]
+
+    if product_responses:
+        redis_client.setex(
+            cache_key,
+            settings.REDIS_EX,
+            json.dumps(
+                [product.model_dump() for product in product_responses], default=str
+            ),
+        )
+    return product_responses
+
+
 async def get_user_products(db: AsyncSession, user_id: UUID) -> list[ProductResponse]:
     cache_key = f"products:{user_id}"
 
