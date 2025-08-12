@@ -1578,7 +1578,8 @@ async def product_order_payment_callback(request: Request, db: AsyncSession):
     # Fetch the order
     order_result = await db.execute(
         select(Order)
-        .where(Order.id == UUID(tx_ref), Order.order_type == OrderType.PRODUCT)
+        .where(Order.id == UUID(tx_ref))
+        .where(Order.order_type == OrderType.PRODUCT)
         .options(
             selectinload(Order.owner).selectinload(User.profile),
             selectinload(Order.vendor).selectinload(User.profile),

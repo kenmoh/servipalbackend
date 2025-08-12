@@ -228,7 +228,7 @@ async def buy_product(
 
         # Generate payment link
         payment_link = await get_product_payment_link(
-            id=product_id, current_user=buyer, amount=total_cost
+            id=order.id, current_user=buyer, amount=total_cost
         )
 
         # Store link with the order
@@ -250,7 +250,8 @@ async def buy_product(
             )
 
 
-        redis_client.delete('marketplace_items')
+
+        redis_client.delete(cache_key = f"marketplace_user_orders:{buyer.id}")
 
         return format_order_response(order)
     except Exception:
