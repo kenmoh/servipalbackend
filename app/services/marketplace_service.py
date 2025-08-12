@@ -251,7 +251,7 @@ async def buy_product(
 
 
 
-        redis_client.delete(cache_key = f"marketplace_user_orders:{buyer.id}")
+        redis_client.delete(f"marketplace_user_orders:{buyer.id}")
 
         return format_order_response(order)
     except Exception:
