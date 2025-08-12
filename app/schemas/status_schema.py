@@ -99,6 +99,7 @@ class TransactionType(str, Enum):
     FUND_WALLET: str = "fund-wallet"
     PAY_WITH_WALLET: str = "pay-with-wallet"
     USER_TO_USER = "user-to-user"
+    USER_TO_SELF = 'self'
     WITHDRAWAL = "withdrawal"
     REFUND = "refund"
 

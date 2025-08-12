@@ -577,7 +577,7 @@ async def top_up_wallet(
             payment_status=PaymentStatus.PENDING,
             from_user=current_user.profile.full_name
             or current_user.profile.business_name,
-            _user=current_user.profile.full_name or current_user.profile.business_name,
+            to_user='Self',
             created_at=datetime.now(),
             updated_at=datetime.now(),
         )
@@ -1362,6 +1362,10 @@ async def order_payment_callback(request: Request, db: AsyncSession):
     order.order_payment_status = new_status
 
     customer = await get_user_profile(order.owner_id, db)
+    dispatch_profile = await get_user_profile(order.delivery.dispatch_id, db)
+    vendor_profile = await get_user_profile(order.vendor_id, db)
+
+
 
     # Only move funds and create transactions if payment is successful
     if new_status == PaymentStatus.PAID:
@@ -1395,12 +1399,12 @@ async def order_payment_callback(request: Request, db: AsyncSession):
                 wallet_id=customer_wallet.id,
                 amount=delivery_fee,
                 transaction_type=TransactionType.USER_TO_USER,
-                transaction_direction=TransactionDirection.CREDIT,
+                transaction_direction=TransactionDirection.DEBIT,
                 payment_status=PaymentStatus.PAID,
                 created_at=current_time,
                 payment_method=PaymentMethod.CARD,
                 from_user=customer.full_name or customer.business_name,
-                to_user=customer.full_name or customer.business_name,
+                to_user=dispatch_profile.full_name or dispatch_profile.business_name,
                 updated_at=current_time,
             )
 
@@ -1441,8 +1445,6 @@ async def order_payment_callback(request: Request, db: AsyncSession):
 
         # --- FOOD/LAUNDRY ORDER ---
         if order.order_type in [OrderType.FOOD, OrderType.LAUNDRY]:
-            vendor = await get_user_profile(order.vendor_id, db)
-
             total_price = order.total_price
             delivery_fee = 0
             if order.require_delivery == RequireDeliverySchema.DELIVERY:
@@ -1486,7 +1488,7 @@ async def order_payment_callback(request: Request, db: AsyncSession):
                 created_at=current_time,
                 payment_method=PaymentMethod.CARD,
                 from_user=customer.full_name or customer.business_name,
-                to_user=vendor.full_name or vendor.business_name,
+                to_user=vendor_profile.full_name or vendor_profile.business_name,
                 updated_at=current_time,
             )
 
