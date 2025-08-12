@@ -99,24 +99,24 @@ async def get_product_by_id(
     return product
 
 
+# @router.get(
+#     "",
+#     response_model=List[ProductResponse],
+#     status_code=status.HTTP_200_OK,
+#     summary="List products",
+#     description="Retrieves a list of products",
+# )
+# async def read_products(
+#     db: AsyncSession = Depends(get_db),
+# ):
+#     """
+#     Endpoint to retrieve a list of products.
+#     """
+#     return await product_service.get_products(db=db)
+
+
 @router.get(
     "",
-    response_model=List[ProductResponse],
-    status_code=status.HTTP_200_OK,
-    summary="List products",
-    description="Retrieves a list of products",
-)
-async def read_products(
-    db: AsyncSession = Depends(get_db),
-):
-    """
-    Endpoint to retrieve a list of products.
-    """
-    return await product_service.get_products(db=db)
-
-
-@router.get(
-    "/{category_id}",
     response_model=List[ProductResponse],
     status_code=status.HTTP_200_OK,
     summary="List products",
