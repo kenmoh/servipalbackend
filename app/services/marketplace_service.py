@@ -524,10 +524,11 @@ async def owner_mark_item_rejected(
                     message=f"Your item with order # {order.order_number} has been rejected.",
                     navigate_to="/delivery/orders",
                 )
-
-        return {"order_status": order.order_status}
         redis_client.delete(f"marketplace_user_orders:{current_user.id}")
         redis_client.delete(f"marketplace_order_details:{order_id}")
+
+        return {"order_status": order.order_status}
+        
 
     except Exception:
         raise HTTPException(
@@ -589,6 +590,9 @@ async def vendor_mark_rejected_item_received(
                     message=f"Your rejected item with order #{order.order_number} has been received by the vendour and the sum of ₦{order.total_price} has been released t your wallet.",
                     navigate_to="/delivery/orders",
                 )
+
+        redis_client.delete(f"marketplace_user_orders:{current_user.id}")
+        redis_client.delete(f"marketplace_order_details:{order_id}")
 
         return {"order_status": order.order_status}
 
