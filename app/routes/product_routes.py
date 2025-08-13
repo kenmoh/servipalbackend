@@ -123,7 +123,7 @@ async def get_product_by_id(
     description="Retrieves a list of products by category",
 )
 async def read_products(
-    category_id: UUID,
+    category_id: UUID = None,
     db: AsyncSession = Depends(get_db),
 ):
     """

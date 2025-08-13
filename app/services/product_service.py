@@ -185,7 +185,7 @@ async def get_products(db: AsyncSession) -> list[ProductResponse]:
 
 
 
-async def get_products_by_category(db: AsyncSession, category_id: UUID) -> list[ProductResponse]:
+async def get_products_by_category(db: AsyncSession, category_id: UUID = None) -> list[ProductResponse]:
     # Check if category exists
     category = await db.get(Category, category_id)
     
