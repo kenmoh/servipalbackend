@@ -6,7 +6,7 @@ from app.database.database import get_db
 from app.auth.auth import get_current_user
 from app.models.models import User
 from app.schemas.delivery_schemas import DeliveryResponse
-from app.schemas.marketplace_schemas import ProductBuyRequest, ProductOrderResponse
+from app.schemas.marketplace_schemas import ProductBuyRequest, ProductOrderResponse, ProdductOrderStatus
 from app.schemas.status_schema import OrderStatus
 from app.services import marketplace_service
 from app.schemas.item_schemas import ItemResponse
@@ -98,7 +98,7 @@ async def buy_listed_product(
 
 @router.put(
     "/{order_id}/item-delivered",
-    response_model=OrderStatus,
+    response_model=ProdductOrderStatus,
     status_code=status.HTTP_202_ACCEPTED,
     summary="Update order status",
 )
@@ -114,7 +114,7 @@ async def vendor_mark_item_delivered(
 
 @router.put(
     "/{order_id}/item-received",
-    response_model=OrderStatus,
+    response_model=ProdductOrderStatus,
     status_code=status.HTTP_202_ACCEPTED,
     summary="Update order status",
 )
@@ -130,7 +130,7 @@ async def owner_mark_item_received(
 
 @router.put(
     "/{order_id}/item-rejected",
-    response_model=OrderStatus,
+    response_model=ProdductOrderStatus,
     status_code=status.HTTP_202_ACCEPTED,
     summary="Update order status",
 )
@@ -146,7 +146,7 @@ async def owner_mark_item_rejected(
 
 @router.put(
     "/{order_id}/vendor-received-rejected-item",
-    response_model=OrderStatus,
+    response_model=ProdductOrderStatus,
     status_code=status.HTTP_202_ACCEPTED,
     summary="Update order status",
 )

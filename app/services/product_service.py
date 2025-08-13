@@ -60,6 +60,13 @@ async def create_product(
             status_code=status.HTTP_403_FORBIDDEN,
             detail=f"Store name is required. Please update your profile",
         )
+    item_price = product_data.price
+    if item_price > 450_000:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Item price MUST be less than or equal to NGN 450",
+        )
+
     try:
         # Create product first
         new_product = Item(
