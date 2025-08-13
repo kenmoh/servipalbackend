@@ -297,8 +297,8 @@ async def vendor_mark_item_delivered(
                     message="Your item has been marked as delivered. Ensure it is what you ordered before marking as received.",
                     navigate_to="/delivery/orders",
                 )
-
-            return {"order_status": order.order_status}
+        redis_client.delete(f"marketplace_order_details:{order_id}")
+        return {"order_status": order.order_status}
 
     except Exception:
         raise HTTPException(
@@ -382,8 +382,8 @@ async def owner_mark_item_received(
                     message=f"Transaction complete. \n The sum of ₦{order.amount_due_vendor} has released to your wallet",
                     navigate_to="/delivery/orders",
                 )
-
-            return {"order_status": order.order_status}
+        redis_client.delete(f"marketplace_order_details:{order_id}")
+        return {"order_status": order.order_status}
 
     except Exception:
         raise HTTPException(
@@ -521,7 +521,7 @@ async def owner_mark_item_rejected(
                     navigate_to="/delivery/orders",
                 )
 
-            return {"order_status": order.order_status}
+        return {"order_status": order.order_status}
 
     except Exception:
         raise HTTPException(
@@ -588,7 +588,7 @@ async def vendor_mark_rejected_item_received(
                     navigate_to="/delivery/orders",
                 )
 
-            return {"order_status": order.order_status}
+        return {"order_status": order.order_status}
 
     except Exception:
         raise HTTPException(
