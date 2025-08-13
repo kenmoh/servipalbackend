@@ -563,7 +563,7 @@ async def vendor_mark_rejected_item_received(
 
     try:
         if order.order_status == OrderStatus.REJECTED:
-            order.order_status = OrderStatus.REJECTED_REJECTED_PRODUCT
+            order.order_status = OrderStatus.RECEIVED_REJECTED_PRODUCT
             await db.commit()
             await db.refresh(order)
 
