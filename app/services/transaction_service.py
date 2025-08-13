@@ -1580,11 +1580,10 @@ async def product_order_payment_callback(request: Request, db: AsyncSession):
         select(Order)
         .where(Order.id == UUID(tx_ref))
         .where(Order.order_type == OrderType.PRODUCT)
-        # .options(
-        #     selectinload(Order.owner).selectinload(User.profile),
-        #     selectinload(Order.vendor).selectinload(User.profile),
-        #     selectinload(Order.delivery),
-        # )
+        .options(
+                selectinload(Order.order_items)
+                .selectinload(OrderItem.item)
+            )
     )
     order = order_result.scalar_one_or_none()
     if not order:
