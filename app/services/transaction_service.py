@@ -1664,6 +1664,8 @@ async def product_order_payment_callback(request: Request, db: AsyncSession):
 
         redis_client.delete(f"marketplace_user_orders:{order.owner_id}")
         redis_client.delete(f"marketplace_user_orders:{order.vendor_id}")
+        redis_client.delete(f"marketplace_order_details:{order.id}")
+        
 
         return templates.TemplateResponse(
             "payment-status.html",
