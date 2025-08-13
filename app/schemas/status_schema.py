@@ -55,7 +55,7 @@ class OrderStatus(str, Enum):
 
 
 
-class ProdductOrderStatus(BaseModel):
+class ProdductOrderStatusResponse(BaseModel):
     order_status: OrderStatus
 
 

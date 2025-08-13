@@ -25,7 +25,7 @@ from app.schemas.order_schema import OrderResponseSchema, OrderType
 from app.schemas.status_schema import (
     OrderStatus,
     PaymentStatus,
-    ProdductOrderStatus,
+    ProdductOrderStatusResponse,
     RequireDeliverySchema,
     TransactionDirection,
     TransactionType,
@@ -260,7 +260,7 @@ async def buy_product(
 
 async def vendor_mark_item_delivered(
     order_id: UUID, current_user: User, db: AsyncSession
-) -> ProdductOrderStatus:
+) -> ProdductOrderStatusResponse:
     # order_result = await db.execute(select(Order).where(Order.id == order_id))
 
     order_result = await db.execute(
@@ -308,7 +308,7 @@ async def vendor_mark_item_delivered(
 
 async def owner_mark_item_received(
     order_id: UUID, current_user: User, db: AsyncSession
-) -> ProdductOrderStatus:
+) -> ProdductOrderStatusResponse:
     # order_result = await db.execute(select(Order).where(Order.id == order_id))
 
     order_result = await db.execute(
@@ -483,7 +483,7 @@ async def get_product_order_details(db: AsyncSession, order_id: UUID) -> Product
 
 async def owner_mark_item_rejected(
     order_id: UUID, current_user: User, db: AsyncSession
-) -> ProdductOrderStatus:
+) -> ProdductOrderStatusResponse:
     # order_result = await db.execute(select(Order).where(Order.id == order_id))
 
     order_result = await db.execute(
@@ -531,7 +531,7 @@ async def owner_mark_item_rejected(
 
 async def vendor_mark_rejected_item_received(
     order_id: UUID, current_user: User, db: AsyncSession
-) -> ProdductOrderStatus:
+) -> ProdductOrderStatusResponse:
     # order_result = await db.execute(select(Order).where(Order.id == order_id))
     order_result = await db.execute(
         select(Order)
