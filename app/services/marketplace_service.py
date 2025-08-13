@@ -268,7 +268,7 @@ async def vendor_mark_item_delivered(
     order_result = await db.execute(
         select(Order)
         .where(Order.id == order_id)
-        .options(selectinload(Order.owner), selectinload(Order.vendor))
+        # .options(selectinload(Order.owner), selectinload(Order.vendor))
         .with_for_update()
     )
 
@@ -316,8 +316,8 @@ async def owner_mark_item_received(
 
     order_result = await db.execute(
         select(Order)
-        .where(Order.id == order_id)
-        .options(selectinload(Order.owner), selectinload(Order.vendor))
+        .where(Order.id == order_id, Order.owner_id == current_user.id)
+        .options(selectinload(Order.OrderItem))
         .with_for_update()
     )
 
@@ -359,6 +359,13 @@ async def owner_mark_item_received(
                 .where(Wallet.id == order.owner_id)
                 .values(escrow_balance=Wallet.escrow_balance - order.total_price)
             )
+
+            item_id = order.order_items[0].item_id
+            item_quantity = order.order_items[0].quantity
+
+            await db.execute(
+                update(Item).where(Item.id==item_id, Item.user_id==order.vendor_id).values(total_sold=Item.total_sold + item_quantity)
+                )
 
             # Create the transaction for the vendor now that funds are released.
             # The buyer's debit transaction was already created at the time of payment.
@@ -577,7 +584,7 @@ async def vendor_mark_rejected_item_received(
             await db.execute(
                 update(Wallet)
                 .where(Wallet.id == order.owner_id)
-                .values(balance=owner_wallet.balance + order.total_price)
+                .values(balance=owner_wallet.balance + order.total_price, escrow_balance=owner_wallet.balance - order.total_price)
             )
             await db.commit()
 
