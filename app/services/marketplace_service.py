@@ -252,6 +252,8 @@ async def buy_product(
 
 
         redis_client.delete(f"marketplace_user_orders:{buyer.id}")
+        
+
 
         return format_order_response(order)
     except Exception:
@@ -298,6 +300,7 @@ async def vendor_mark_item_delivered(
                     navigate_to="/delivery/orders",
                 )
         redis_client.delete(f"marketplace_order_details:{order_id}")
+        redis_client.delete(f"marketplace_user_orders:{current_user.id}")
         return {"order_status": order.order_status}
 
     except Exception:
@@ -383,6 +386,7 @@ async def owner_mark_item_received(
                     navigate_to="/delivery/orders",
                 )
         redis_client.delete(f"marketplace_order_details:{order_id}")
+        redis_client.delete(f"marketplace_user_orders:{current_user.id}")
         return {"order_status": order.order_status}
 
     except Exception:
@@ -522,6 +526,8 @@ async def owner_mark_item_rejected(
                 )
 
         return {"order_status": order.order_status}
+        redis_client.delete(f"marketplace_user_orders:{current_user.id}")
+        redis_client.delete(f"marketplace_order_details:{order_id}")
 
     except Exception:
         raise HTTPException(
