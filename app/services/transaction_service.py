@@ -1647,7 +1647,7 @@ async def product_order_payment_callback(request: Request, db: AsyncSession):
         await db.refresh(order)
 
         customer_tranx = Transaction(
-            wallet_id=customer_wallet.id,
+            wallet_id=order.owner_id,
             amount=order.total_price,
             transaction_type=TransactionType.USER_TO_USER,
             transaction_direction=TransactionDirection.DEBIT,
