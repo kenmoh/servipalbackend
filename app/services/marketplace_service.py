@@ -325,9 +325,9 @@ async def owner_mark_item_received(
             status_code=status.HTTP_404_NOT_FOUND, detail="Order not found"
         )
 
-    vendor_wallet = fetch_wallet(db=db, user_id=order.vendor_id)
-    owner_wallet = fetch_wallet(db=db, user_id=order.owner_id)
-    vendor_profile = get_user_profile(order.vendor_id, db=db)
+    # vendor_wallet = await fetch_wallet(db=db, user_id=order.vendor_id)
+    # owner_wallet = await fetch_wallet(db=db, user_id=order.owner_id)
+    vendor_profile = await get_user_profile(order.vendor_id, db=db)
 
     if current_user.id != order.owner_id:
         raise HTTPException(
@@ -563,18 +563,14 @@ async def vendor_mark_rejected_item_received(
             await db.execute(
                 update(Wallet)
                 .where(Wallet.id == order.vendor_id)
-                .values(
-                    {
-                        "balance": max(vendor_wallet.balance -max( order.amount_due_vendor, 0)),
-                    }
-                )
+                .values(balance=vendor_wallet.balance - order.amount_due_vendor)
             )
             await db.commit()
 
             await db.execute(
                 update(Wallet)
                 .where(Wallet.id == order.owner_id)
-                .values({"balance": max(owner_wallet.balance + order.total_price, 0)})
+                .values(balance=owner_wallet.balance + order.total_price)
             )
             await db.commit()
 
