@@ -252,7 +252,7 @@ async def buy_product(
 
 
         redis_client.delete(f"marketplace_user_orders:{buyer.id}")
-        
+
 
 
         return format_order_response(order)
@@ -512,7 +512,7 @@ async def owner_mark_item_rejected(
     try:
         if order.order_status == OrderStatus.DELIVERED:
             order.order_status = OrderStatus.REJECTED
-            await db.commit
+            await db.commit()
             await db.refresh(order)
 
             token = await get_user_notification_token(db=db, user_id=order.vendor_id)
@@ -563,7 +563,7 @@ async def vendor_mark_rejected_item_received(
     try:
         if order.order_status == OrderStatus.REJECTED:
             order.order_status = OrderStatus.REJECTED_REJECTED_PRODUCT
-            await db.commit
+            await db.commit()
             await db.refresh(order)
 
             await db.execute(
