@@ -553,8 +553,8 @@ async def vendor_mark_rejected_item_received(
             status_code=status.HTTP_404_NOT_FOUND, detail="Order not found"
         )
 
-    vendor_wallet = fetch_wallet(db=db, user_id=order.vendor_id)
-    owner_wallet = fetch_wallet(db=db, user_id=order.owner_id)
+    vendor_wallet = await fetch_wallet(db=db, user_id=order.vendor_id)
+    owner_wallet = await fetch_wallet(db=db, user_id=order.owner_id)
 
     if current_user.id != order.vendor_id:
         raise HTTPException(
