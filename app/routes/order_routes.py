@@ -3,10 +3,11 @@ from uuid import UUID
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, status, HTTPException, UploadFile, File, Form
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.auth import get_db, get_current_user
-from app.models.models import User
+from app.models.models import Order, User
 from app.schemas.delivery_schemas import DeliveryResponse, PaginatedDeliveryResponse
 
 from app.schemas.order_schema import (
@@ -14,9 +15,10 @@ from app.schemas.order_schema import (
     PackageCreate,
     DeliveryStatusUpdateSchema,
 )
-from app.schemas.schemas import ReviewSchema
+from app.schemas.schemas import PaymentLinkSchema, ReviewSchema
 from app.services import order_service
 from app.utils.limiter import limiter
+from app.utils.utils import get_payment_link
 
 router = APIRouter(prefix="/api/orders", tags=["Orders"])
 
@@ -286,7 +288,7 @@ async def add_review(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
 
-@router.post("/{order_id}/cancel", status_code=status.HTTP_202_ACCEPTED)
+@router.put("/{order_id}/cancel", status_code=status.HTTP_202_ACCEPTED)
 async def cancel_order(
     order_id: UUID,
     reason: str = None,
@@ -317,5 +319,38 @@ async def reaccept_order(
         return await order_service.reaccept_order(
             db=db, order_id=order_id, current_user=current_user
         )
+    except Exception as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+
+
+
+@router.put(
+    "/{order_id}/generate-new-payment-link",
+    status_code=status.HTTP_202_ACCEPTED,
+)
+async def generate_new_payment_link(
+    order_id: UUID,
+    db: AsyncSession = Depends(get_db),
+   
+) -> PaymentLinkSchema:
+    """
+   Generate a new payment link for an order.
+    """
+    order = await db.get(Order, order_id)
+    if not order:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Order not found")
+    
+    try:
+
+
+        order_payment_link = await get_payment_link(id=order_id, amount=order.grand_total, db=db)
+
+        order.payment_link = order_payment_link
+        await db.commit()
+
+        return PaymentLinkSchema(payment_link=order_payment_link)
+
+
+
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))

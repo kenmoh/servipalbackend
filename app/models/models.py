@@ -433,6 +433,7 @@ class Order(Base):
     vendor_id: Mapped[UUID] = mapped_column(ForeignKey("users.id"))
     order_type: Mapped[OrderType] = mapped_column(default=OrderType.PACKAGE)
     total_price: Mapped[Decimal] = mapped_column(default=0.00)
+    grand_total: Mapped[Decimal] = mapped_column(default=0.00, nullable=True)
     amount_due_vendor: Mapped[Decimal] = mapped_column(nullable=False)
     payment_link: Mapped[str] = mapped_column(nullable=True)
     additional_info: Mapped[str] = mapped_column(nullable=True)

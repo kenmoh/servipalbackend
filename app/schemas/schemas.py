@@ -44,3 +44,7 @@ class DispatchRiderSchema(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class PaymentLinkSchema(BaseModel):
+    payment_link: str

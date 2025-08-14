@@ -1,18 +1,19 @@
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Request, status, Query
+from fastapi import APIRouter, Depends, HTTPException, Request, status, Query
 from fastapi.responses import HTMLResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.auth import get_current_user
 from app.database.database import get_db
-from app.models.models import User
+from app.models.models import Transaction, User, Wallet
 from app.schemas.marketplace_schemas import (
     TopUpRequestSchema,
     TransferDetailResponseSchema,
     WithdrawalShema,
     TopUpResponseSchema,
 )
+from app.schemas.schemas import PaymentLinkSchema
 from app.services import transaction_service
 from app.schemas.transaction_schema import (
     TransactionSchema,
@@ -20,6 +21,7 @@ from app.schemas.transaction_schema import (
     TransactionResponseSchema,
 )
 from app.schemas.status_schema import TransactionType, PaymentStatus, PaymentMethod
+from app.utils.utils import get_fund_wallet_payment_link
 
 
 router = APIRouter(prefix="/api/payment", tags=["Payments/Transations"])
@@ -228,3 +230,35 @@ async def bank_transfer_callback(
     return await transaction_service.bank_payment_transfer_callback(
         request=request, db=db
     )
+
+
+@router.put(
+    "/{transaction_id}/generate-new-payment-link",
+    status_code=status.HTTP_202_ACCEPTED,
+)
+async def generate_new_payment_link(
+    transaction_id: UUID,
+    db: AsyncSession = Depends(get_db),
+   
+) -> PaymentLinkSchema:
+    """
+   Generate a new payment link for an order.
+    """
+    transaction = await db.get(Transaction, transaction_id)
+    if not transaction:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Order not found")
+    
+    try:
+
+
+        transaction_payment_link = await get_fund_wallet_payment_link(id=transaction_id, amount=transaction.amount, db=db)
+
+        transaction.payment_link = transaction_payment_link
+        await db.commit()
+
+        return PaymentLinkSchema(payment_link=transaction_payment_link)
+
+
+
+    except Exception as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))

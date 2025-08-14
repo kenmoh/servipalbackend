@@ -205,6 +205,7 @@ async def buy_product(
             vendor_id=product.user_id,
             order_type=OrderType.PRODUCT,
             total_price=total_cost,
+            grand_total=total_cost,
             order_status=OrderStatus.PENDING,
             amount_due_vendor=amount_due_vendor,
             order_payment_status=PaymentStatus.PENDING,

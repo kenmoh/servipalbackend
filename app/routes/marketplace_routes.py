@@ -1,16 +1,18 @@
-from fastapi import APIRouter, Depends, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from uuid import UUID
 
 from app.database.database import get_db
 from app.auth.auth import get_current_user
-from app.models.models import User
+from app.models.models import Order, User
 from app.schemas.delivery_schemas import DeliveryResponse
 from app.schemas.marketplace_schemas import ProductBuyRequest, ProductOrderResponse
+from app.schemas.schemas import PaymentLinkSchema
 from app.schemas.status_schema import ProdductOrderStatusResponse
 from app.services import marketplace_service
 from app.schemas.item_schemas import ItemResponse
 from app.utils.limiter import limiter
+from app.utils.utils import get_product_payment_link
 
 router = APIRouter(prefix="/api/marketplace", tags=["Marketplace"])
 
@@ -158,3 +160,36 @@ async def vendor_mark_rejected_item_received(
     return await marketplace_service.vendor_mark_rejected_item_received(
         order_id=order_id, current_user=current_user, db=db
     )
+
+
+
+@router.put(
+    "/{order_id}/generate-new-payment-link",
+    status_code=status.HTTP_202_ACCEPTED,
+)
+async def generate_new_payment_link(
+    order_id: UUID,
+    db: AsyncSession = Depends(get_db),
+   
+) -> PaymentLinkSchema:
+    """
+   Generate a new payment link for an order.
+    """
+    order = await db.get(Order, order_id)
+    if not order:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Order not found")
+    
+    try:
+
+
+        order_payment_link = await get_product_payment_link(id=order_id, amount=order.grand_total, db=db)
+
+        order.payment_link = order_payment_link
+        await db.commit()
+
+        return PaymentLinkSchema(payment_link=order_payment_link)
+
+
+
+    except Exception as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))

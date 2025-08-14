@@ -447,7 +447,7 @@ async def create_package_order(
         await db.execute(
             update(Order)
             .where(Order.id == delivery_data.order_id)
-            .values({"payment_link": payment_link, "total_price": total_amount_due})
+            .values({"payment_link": payment_link, "total_price": total_amount_due, "grand_total": total_amount_due})
         )
 
         await db.commit()
@@ -673,7 +673,7 @@ async def order_food_or_request_laundy_service(
         await db.execute(
             update(Order)
             .where(Order.id == order_id)
-            .values({"payment_link": payment_link})
+            .values({"payment_link": payment_link, "grand_total": final_amount})
         )
 
         await db.commit()
@@ -1132,67 +1132,7 @@ async def vendor_mark_order_delivered(
 
                 return DeliveryStatusUpdateSchema(order_status=order.order_status)
 
-        # if order.owner_id == current_user.id:
-        #     if order.order_status == OrderStatus.RECEIVED:
-        #         raise HTTPException(
-        #             status_code=status.HTTP_400_BAD_REQUEST,
-        #             detail="You already mark this order as received.",
-        #         )
-        #     if order.order_status != OrderStatus.DELIVERED:
-        #         raise HTTPException(
-        #             status_code=status.HTTP_403_FORBIDDEN,
-        #             detail="Order is not yet delivered.",
-        #         )
-        #     await db.execute(
-        #         update(Order)
-        #         .where(Order.id == order_id)
-        #         .values({"order_status": OrderStatus.RECEIVED})
-        #         .returning(Order.order_status)
-        #     )
-
-        #     vendor_amount = order.amount_due_vendor
-
-        #     new_vendor_escrow = max(vendor_wallet.escrow_balance - vendor_amount, 0)
-        #     await db.execute(
-        #         update(Wallet)
-        #         .where(Wallet.id == order.vendor_id)
-        #         .values(
-        #             {
-        #                 "balance": vendor_wallet.balance + vendor_amount,
-        #                 "escrow_balance": new_vendor_escrow,
-        #             }
-        #         )
-        #     )
-
-        #     new_owner_escrow = max(vendor_wallet.escrow_balance - order.total_price, 0)
-        #     await db.execute(
-        #         update(Wallet)
-        #         .where(Wallet.id == order.owner_id)
-        #         .values({"escrow_balance": new_owner_escrow})
-        #     )
-        #     await db.commit()
-        #     await db.refresh(order)
-
-        #     token = await get_user_notification_token(db=db, user_id=order.vendor_id)
-
-        #     if token:
-        #         await send_push_notification(
-        #             tokens=[token],
-        #             title="Order Completed",
-        #             message=f"Order Completed! The  sum of ₦{vendor_amount} has been credited to your wallet.",
-        #             navigate_to="/(app)/delivery/orders",
-        #         )
-
-        #     redis_client.delete(f"delivery:{order_id}")
-        #     redis_client.delete(f"{ALL_DELIVERY}")
-        #     redis_client.delete("paid_pending_deliveries")
-        #     redis_client.delete(f"user_related_orders:{current_user.id}")
-
-        #     await ws_service.broadcast_order_status_update(
-        #         order_id=order.id, order_status=order.order_status
-        #     )
-
-        # return DeliveryStatusUpdateSchema(order_status=order.order_status)
+        
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,

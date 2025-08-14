@@ -116,6 +116,7 @@ class OrderResponseSchema(BaseModel):
     vendor_id: UUID
     order_type: str
     total_price: Decimal
+    grand_total: Decimal | None = None
     order_payment_status: str
     business_name: str | None = None
     require_delivery: str
