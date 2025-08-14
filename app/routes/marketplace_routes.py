@@ -13,6 +13,7 @@ from app.services import marketplace_service
 from app.schemas.item_schemas import ItemResponse
 from app.utils.limiter import limiter
 from app.utils.utils import get_product_payment_link
+from app.config.config import redis_client
 
 router = APIRouter(prefix="/api/marketplace", tags=["Marketplace"])
 
@@ -186,6 +187,8 @@ async def generate_new_payment_link(
 
         order.payment_link = order_payment_link
         await db.commit()
+
+        redis_client.delete(f"marketplace_order_details:{order_id}")
 
         return PaymentLinkSchema(payment_link=order_payment_link)
 

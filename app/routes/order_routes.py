@@ -16,9 +16,11 @@ from app.schemas.order_schema import (
     DeliveryStatusUpdateSchema,
 )
 from app.schemas.schemas import PaymentLinkSchema, ReviewSchema
+from app.schemas.status_schema import OrderType
 from app.services import order_service
 from app.utils.limiter import limiter
-from app.utils.utils import get_payment_link
+from app.utils.utils import get_payment_link, get_product_payment_link
+from app.config.config import redis_client
 
 router = APIRouter(prefix="/api/orders", tags=["Orders"])
 
@@ -330,6 +332,7 @@ async def reaccept_order(
 )
 async def generate_new_payment_link(
     order_id: UUID,
+    current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
    
 ) -> PaymentLinkSchema:
@@ -340,17 +343,26 @@ async def generate_new_payment_link(
     if not order:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Order not found")
     
+    
+
     try:
+        if order.order_type in [ OrderType.FOOD, OrderType.LAUNDRY, OrderType.PACKAGE]:
+            order_payment_link = await get_payment_link(id=order_id, amount=order.grand_total, current_user=current_user)
 
+            order.payment_link = order_payment_link
+            await db.commit()
 
-        order_payment_link = await get_payment_link(id=order_id, amount=order.grand_total, db=db)
+            redis_client.delete(f"order_details:{order_id}")
+            return PaymentLinkSchema(payment_link=order_payment_link)
+        
+        if order.order_type == OrderType.PRODUCT:
+            order_payment_link = await get_product_payment_link(id=order_id, amount=order.grand_total, current_user=current_user)
 
-        order.payment_link = order_payment_link
-        await db.commit()
+            order.payment_link = order_payment_link
+            await db.commit()
 
-        return PaymentLinkSchema(payment_link=order_payment_link)
-
-
+            redis_client.delete(f"marketplace_order_details:{order_id}")
+            return PaymentLinkSchema(payment_link=order_payment_link)
 
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
