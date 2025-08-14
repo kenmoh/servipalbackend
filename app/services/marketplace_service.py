@@ -324,7 +324,7 @@ async def owner_mark_item_received(
     order_result = await db.execute(
         select(Order)
         .where(Order.id == order_id, Order.owner_id == current_user.id)
-        .options(selectinload(Order.OrderItem))
+        .options(selectinload(Order.order_items))
         .with_for_update()
     )
 
