@@ -239,26 +239,25 @@ async def bank_transfer_callback(
 async def generate_new_payment_link(
     transaction_id: UUID,
     db: AsyncSession = Depends(get_db),
-   
 ) -> PaymentLinkSchema:
     """
-   Generate a new payment link for an order.
+    Generate a new payment link for an order.
     """
     transaction = await db.get(Transaction, transaction_id)
     if not transaction:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Order not found")
-    
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Order not found"
+        )
+
     try:
-
-
-        transaction_payment_link = await get_fund_wallet_payment_link(id=transaction_id, amount=transaction.amount, db=db)
+        transaction_payment_link = await get_fund_wallet_payment_link(
+            id=transaction_id, amount=transaction.amount, db=db
+        )
 
         transaction.payment_link = transaction_payment_link
         await db.commit()
 
         return PaymentLinkSchema(payment_link=transaction_payment_link)
-
-
 
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))

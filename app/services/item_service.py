@@ -175,7 +175,6 @@ async def create_menu_item(
         )
 
 
-
 async def get_restaurant_menu(
     db: AsyncSession, vendor_id: UUID, food_group: FoodGroup = FoodGroup.MAIN_COURSE
 ) -> list[MenuResponseSchema]:

@@ -80,8 +80,8 @@ class Settings(BaseSettings):
     TEST_BASE_URL: str = "http://test"
 
     # Finger Print
-    FINGER_PRINT:str = os.getenv('FINGER_PRINT')
-    PACKAGE_NAME: str =os.getenv('PACKAGE_NAME')
+    FINGER_PRINT: str = os.getenv("FINGER_PRINT")
+    PACKAGE_NAME: str = os.getenv("PACKAGE_NAME")
 
     # Stream Chat
     STREAM_API_KEY: str = os.getenv("STREAM_API_KEY")

@@ -54,7 +54,6 @@ class OrderStatus(str, Enum):
     VENDOR_RECEIVED_LAUNDRY_ITEM: str = "laundry_received"  # Vendor ops
 
 
-
 class ProdductOrderStatusResponse(BaseModel):
     order_status: OrderStatus
 
@@ -93,7 +92,7 @@ class TransactionType(str, Enum):
     FUND_WALLET: str = "fund-wallet"
     PAY_WITH_WALLET: str = "pay-with-wallet"
     USER_TO_USER = "user-to-user"
-    USER_TO_SELF = 'self'
+    USER_TO_SELF = "self"
     WITHDRAWAL = "withdrawal"
     REFUND = "refund"
 

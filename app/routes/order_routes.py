@@ -326,7 +326,6 @@ async def reaccept_order(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
 
-
 @router.put(
     "/{order_id}/generate-new-payment-link",
     status_code=status.HTTP_202_ACCEPTED,
@@ -335,50 +334,78 @@ async def generate_new_payment_link(
     order_id: UUID,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
-   
 ) -> PaymentLinkSchema:
     """
-   Generate a new payment link for an order.
+    Generate a new payment link for an order.
     """
     order = await db.get(Order, order_id)
     if not order:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Order not found")
-    
-    
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Order not found"
+        )
 
     try:
-        if order.order_type in [ OrderType.FOOD, OrderType.LAUNDRY, OrderType.PACKAGE] and order.order_payment_status != PaymentStatus.PAID:
-            order_payment_link = await get_payment_link(id=order_id, amount=order.grand_total, current_user=current_user)
+        if (
+            order.order_type in [OrderType.FOOD, OrderType.LAUNDRY, OrderType.PACKAGE]
+            and order.order_payment_status != PaymentStatus.PAID
+        ):
+            tx_ref = uuid.uuid1()
 
-            
-            await db.execute(update(Order).where(Order.id == order_id).values(payment_link=order_payment_link))
-            await db.commit()
+            try:
+                # Get payment link from Flutterwave
+                order_payment_link = await get_payment_link(
+                    id=tx_ref, amount=order.grand_total, current_user=current_user
+                )
 
-            redis_client.delete(f"order_details:{order_id}")
+                await db.execute(
+                    update(Order)
+                    .where(Order.id == order_id)
+                    .values(payment_link=order_payment_link, tx_ref=tx_ref)
+                )
+                await db.commit()
 
-            return PaymentLinkSchema(payment_link=order_payment_link)
-        
-        if order.order_type == OrderType.PRODUCT and order.order_payment_status != PaymentStatus.PAID:
+                redis_client.delete(f"order_details:{order_id}")
+
+                return PaymentLinkSchema(payment_link=order_payment_link)
+
+            except Exception as payment_error:
+                # Ensure we rollback any uncommitted changes
+                await db.rollback()
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail=f"Failed to generate payment link: {str(payment_error)}",
+                )
+
+        if (
+            order.order_type == OrderType.PRODUCT
+            and order.order_payment_status != PaymentStatus.PAID
+        ):
             tx_ref = uuid.uuid1()
             try:
                 # Get payment link from Flutterwave
-                order_payment_link = await get_product_payment_link(id=tx_ref, amount=order.grand_total, current_user=current_user)
-                
+                order_payment_link = await get_product_payment_link(
+                    id=tx_ref, amount=order.grand_total, current_user=current_user
+                )
+
                 # Update the database with the new payment link and tx_ref
-                await db.execute(update(Order).where(Order.id == order_id).values(payment_link=order_payment_link, tx_ref=tx_ref))
+                await db.execute(
+                    update(Order)
+                    .where(Order.id == order_id)
+                    .values(payment_link=order_payment_link, tx_ref=tx_ref)
+                )
                 await db.commit()
-                
+
                 # Clear Redis cache
                 redis_client.delete(f"marketplace_order_details:{order_id}")
-                
+
                 return PaymentLinkSchema(payment_link=order_payment_link)
             except Exception as payment_error:
                 # Ensure we rollback any uncommitted changes
                 await db.rollback()
-                print(f"Payment link generation error: {str(payment_error)}")
+
                 raise HTTPException(
-                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, 
-                    detail=f"Failed to process payment: {str(payment_error)}"
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail=f"Failed to generate payment link: {str(payment_error)}",
                 )
 
     except Exception as e:

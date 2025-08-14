@@ -20,7 +20,12 @@ from app.models.models import (
     Wallet,
 )
 from app.schemas.delivery_schemas import DeliveryResponse
-from app.schemas.marketplace_schemas import ItemImageResponse, ProductBuyRequest, ProductOrderItemResponse, ProductOrderResponse
+from app.schemas.marketplace_schemas import (
+    ItemImageResponse,
+    ProductBuyRequest,
+    ProductOrderItemResponse,
+    ProductOrderResponse,
+)
 from app.schemas.item_schemas import ItemType, ItemResponse
 from app.schemas.order_schema import OrderResponseSchema, OrderType
 from app.schemas.status_schema import (
@@ -223,7 +228,6 @@ async def buy_product(
             quantity=buy_request.quantity,
             colors=buy_request.colors,
             sizes=buy_request.sizes,
-            
         )
         db.add(order_item)
         await db.flush()
@@ -241,8 +245,6 @@ async def buy_product(
         await db.commit()
         await db.refresh(order)
 
-        
-
         token = await get_user_notification_token(db=db, user_id=order.vendor_id)
 
         if token:
@@ -253,15 +255,13 @@ async def buy_product(
                 navigate_to="/delivery/orders",
             )
 
-
-
         redis_client.delete(f"marketplace_user_orders:{buyer.id}")
-
-
 
         return format_order_response(order)
     except Exception:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Unable to buy item")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Unable to buy item"
+        )
 
 
 async def vendor_mark_item_delivered(
@@ -289,7 +289,10 @@ async def vendor_mark_item_delivered(
         )
 
     try:
-        if order.order_status == OrderStatus.PENDING and order.order_type == OrderType.PRODUCT:
+        if (
+            order.order_status == OrderStatus.PENDING
+            and order.order_type == OrderType.PRODUCT
+        ):
             order.order_status = OrderStatus.DELIVERED
             await db.commit()
             await db.refresh(order)
@@ -342,7 +345,10 @@ async def owner_mark_item_received(
         )
 
     try:
-        if order.order_status == OrderStatus.DELIVERED and order.order_type == OrderType.PRODUCT:
+        if (
+            order.order_status == OrderStatus.DELIVERED
+            and order.order_type == OrderType.PRODUCT
+        ):
             order.order_status = OrderStatus.RECEIVED
             await db.commit()
             await db.refresh(order)
@@ -368,8 +374,10 @@ async def owner_mark_item_received(
             item_quantity = order.order_items[0].quantity
 
             await db.execute(
-                update(Item).where(Item.id==item_id, Item.user_id==order.vendor_id).values(total_sold=Item.total_sold + item_quantity)
-                )
+                update(Item)
+                .where(Item.id == item_id, Item.user_id == order.vendor_id)
+                .values(total_sold=Item.total_sold + item_quantity)
+            )
 
             # Create the transaction for the vendor now that funds are released.
             # The buyer's debit transaction was already created at the time of payment.
@@ -406,7 +414,9 @@ async def owner_mark_item_received(
         )
 
 
-async def get_user_orders(db: AsyncSession, user_id: UUID) -> list[ProductOrderResponse]:
+async def get_user_orders(
+    db: AsyncSession, user_id: UUID
+) -> list[ProductOrderResponse]:
     """
     Get all orders with their deliveries (if any) with caching
     """
@@ -421,12 +431,7 @@ async def get_user_orders(db: AsyncSession, user_id: UUID) -> list[ProductOrderR
     stmt = (
         select(Order)
         .where(Order.order_type == OrderType.PRODUCT)
-        .where(
-            or_(
-                Order.owner_id == user_id,
-                Order.vendor_id == user_id  
-            )
-        )
+        .where(or_(Order.owner_id == user_id, Order.vendor_id == user_id))
         .order_by(Order.updated_at.desc())
         .options(
             selectinload(Order.order_items).options(
@@ -439,9 +444,7 @@ async def get_user_orders(db: AsyncSession, user_id: UUID) -> list[ProductOrderR
     orders = result.unique().scalars().all()
 
     # Format responses - delivery will be None for orders without delivery
-    products_order_response = [
-        format_order_response(order) for order in orders
-    ]
+    products_order_response = [format_order_response(order) for order in orders]
 
     # Cache the formatted responses with error handling
 
@@ -454,8 +457,9 @@ async def get_user_orders(db: AsyncSession, user_id: UUID) -> list[ProductOrderR
     return products_order_response
 
 
-
-async def get_product_order_details(db: AsyncSession, order_id: UUID) -> ProductOrderResponse:
+async def get_product_order_details(
+    db: AsyncSession, order_id: UUID
+) -> ProductOrderResponse:
     """
     Get all orders with their deliveries (if any) with caching
     """
@@ -483,7 +487,6 @@ async def get_product_order_details(db: AsyncSession, order_id: UUID) -> Product
 
     # Format responses - delivery will be None for orders without delivery
     products_order_response = format_order_response(order)
-    
 
     # Cache the formatted responses with error handling
 
@@ -539,7 +542,6 @@ async def owner_mark_item_rejected(
         redis_client.delete(f"marketplace_order_details:{order_id}")
 
         return {"order_status": order.order_status}
-        
 
     except Exception:
         raise HTTPException(
@@ -588,7 +590,10 @@ async def vendor_mark_rejected_item_received(
             await db.execute(
                 update(Wallet)
                 .where(Wallet.id == order.owner_id)
-                .values(balance=owner_wallet.balance + order.total_price, escrow_balance=owner_wallet.balance - order.total_price)
+                .values(
+                    balance=owner_wallet.balance + order.total_price,
+                    escrow_balance=owner_wallet.balance - order.total_price,
+                )
             )
             await db.commit()
 
@@ -613,8 +618,6 @@ async def vendor_mark_rejected_item_received(
         )
 
 
-
-
 def format_order_response(order) -> ProductOrderResponse:
     """
     Factory function to create OrderResponse from SQLAlchemy Order model
@@ -622,20 +625,21 @@ def format_order_response(order) -> ProductOrderResponse:
     order_items = []
     for order_item in order.order_items:
         item = order_item.item
-        order_items.append(ProductOrderItemResponse(
-            item_id=item.id,
-            user_id=item.user_id,  # vendor's user_id
-            name=item.name,
-            price=item.price,
-            images=[ItemImageResponse(
-                id=img.id,
-                item_id=img.item_id,
-                url=img.url
-            ) for img in item.images],
-            description=item.description,
-            quantity=order_item.quantity
-        ))
-    
+        order_items.append(
+            ProductOrderItemResponse(
+                item_id=item.id,
+                user_id=item.user_id,  # vendor's user_id
+                name=item.name,
+                price=item.price,
+                images=[
+                    ItemImageResponse(id=img.id, item_id=img.item_id, url=img.url)
+                    for img in item.images
+                ],
+                description=item.description,
+                quantity=order_item.quantity,
+            )
+        )
+
     return ProductOrderResponse(
         id=order.id,
         user_id=order.owner_id,
@@ -650,7 +654,7 @@ def format_order_response(order) -> ProductOrderResponse:
         amount_due_vendor=order.amount_due_vendor,
         payment_link=order.payment_link,
         created_at=order.created_at,
-        order_items=order_items
+        order_items=order_items,
     )
 
 

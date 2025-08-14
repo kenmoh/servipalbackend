@@ -3,6 +3,7 @@ from datetime import datetime
 from decimal import Decimal
 from uuid import UUID
 import logging
+import uuid
 from fastapi import BackgroundTasks, HTTPException, Request, status
 import httpx
 from pydantic import UUID1
@@ -568,7 +569,7 @@ async def top_up_wallet(
             payment_status=PaymentStatus.PENDING,
             from_user=current_user.profile.full_name
             or current_user.profile.business_name,
-            to_user='Self',
+            to_user="Self",
             created_at=datetime.now(),
             updated_at=datetime.now(),
         )
@@ -579,7 +580,7 @@ async def top_up_wallet(
 
         # Generate payment link
         payment_link = await get_fund_wallet_payment_link(
-            id=transaction.id, amount=transaction.amount, current_user=current_user
+            id=uuid.uuid1, amount=transaction.amount, current_user=current_user
         )
 
         # Update transaction with payment link
@@ -1150,7 +1151,7 @@ async def fund_wallet_callback(request: Request, db: AsyncSession):
     transx_id = request.query_params["transaction_id"]
 
     # First get the transaction
-    stmt = select(Transaction).where(Transaction.id == UUID(tx_ref))
+    stmt = select(Transaction).where(Transaction.tx_ref == UUID1(tx_ref))
     result = await db.execute(stmt)
     transaction = result.scalar_one_or_none()
 
@@ -1342,8 +1343,10 @@ async def order_payment_callback(request: Request, db: AsyncSession):
     # Fetch the order
     order_result = await db.execute(
         select(Order)
-        .where(Order.id == UUID(tx_ref))
-        .where(Order.order_type.in_([OrderType.PACKAGE, OrderType.FOOD, OrderType.LAUNDRY]))
+        .where(Order.tx_ref == UUID1(tx_ref))
+        .where(
+            Order.order_type.in_([OrderType.PACKAGE, OrderType.FOOD, OrderType.LAUNDRY])
+        )
         .options(
             selectinload(Order.owner).selectinload(User.profile),
             selectinload(Order.vendor).selectinload(User.profile),
@@ -1360,8 +1363,6 @@ async def order_payment_callback(request: Request, db: AsyncSession):
     customer = await get_user_profile(order.owner_id, db)
     dispatch_profile = await get_user_profile(order.delivery.dispatch_id, db)
     vendor_profile = await get_user_profile(order.vendor_id, db)
-
-
 
     # Only move funds and create transactions if payment is successful
     if new_status == PaymentStatus.PAID:
@@ -1581,10 +1582,7 @@ async def product_order_payment_callback(request: Request, db: AsyncSession):
         select(Order)
         .where(Order.tx_ref == UUID1(tx_ref))
         .where(Order.order_type == OrderType.PRODUCT)
-        .options(
-                selectinload(Order.order_items)
-                .selectinload(OrderItem.item)
-            )
+        .options(selectinload(Order.order_items).selectinload(OrderItem.item))
     )
     order = order_result.scalar_one_or_none()
     if not order:
@@ -1598,36 +1596,19 @@ async def product_order_payment_callback(request: Request, db: AsyncSession):
 
     # Only move funds and create transactions if payment is successful
     if new_status == PaymentStatus.PAID:
-        # Fetch customer wallet
-        # customer_wallet_result = await db.execute(
-        #     select(Wallet).where(Wallet.id == order.owner_id)
-        # )
-        # vendor_wallet_result = await db.execute(
-        #     select(Wallet).where(Wallet.id == order.vendor_id)
-        # )
-        # customer_wallet = customer_wallet_result.scalar_one_or_none()
-        # vendor_wallet = vendor_wallet_result.scalar_one_or_none()
-
-        # if not customer_wallet or not vendor_wallet:
-        #     raise HTTPException(
-        #         status_code=status.HTTP_404_NOT_FOUND,
-        #         detail="Wallet not found for customer or vendor.",
-        #     )
-
-
-
-        # customer_wallet.escrow_balance += order.total_price
-        # vendor_wallet.escrow_balance += order.amount_due_vendor
-
         # Update customer escrow balance
-        await db.execute(update(Wallet).where(Wallet.id == order.owner_id)
+        await db.execute(
+            update(Wallet)
+            .where(Wallet.id == order.owner_id)
             .values(escrow_balance=Wallet.escrow_balance + order.total_price)
-            )
+        )
 
         # Update vendor escrow balance
-        await db.execute(update(Wallet).where(Wallet.id == order.vendor_id)
+        await db.execute(
+            update(Wallet)
+            .where(Wallet.id == order.vendor_id)
             .values(escrow_balance=Wallet.escrow_balance + order.amount_due_vendor)
-            )
+        )
 
         if order.order_items:
             # Access the OrderItem and its related Item
@@ -1656,7 +1637,7 @@ async def product_order_payment_callback(request: Request, db: AsyncSession):
             from_user=customer.full_name or customer.business_name,
             to_user=vendor.full_name or vendor.business_name,
         )
-        
+
         # The vendor's transaction will be created when funds are released from escrow.
 
         db.add(customer_tranx)
@@ -1666,7 +1647,6 @@ async def product_order_payment_callback(request: Request, db: AsyncSession):
         redis_client.delete(f"marketplace_user_orders:{order.owner_id}")
         redis_client.delete(f"marketplace_user_orders:{order.vendor_id}")
         redis_client.delete(f"marketplace_order_details:{order.id}")
-        
 
         return templates.TemplateResponse(
             "payment-status.html",

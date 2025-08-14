@@ -18,7 +18,6 @@ from app.config.config import redis_client
 router = APIRouter(prefix="/api/marketplace", tags=["Marketplace"])
 
 
-
 @router.get(
     "",
     response_model=list[ItemResponse],
@@ -42,6 +41,7 @@ async def get_product_order_details(
     db: AsyncSession = Depends(get_db),
 ):
     return await marketplace_service.get_product_order_details(db=db, order_id=order_id)
+
 
 @router.get(
     "/{user_id}/user-orders",
@@ -163,7 +163,6 @@ async def vendor_mark_rejected_item_received(
     )
 
 
-
 @router.put(
     "/{order_id}/generate-new-payment-link",
     status_code=status.HTTP_202_ACCEPTED,
@@ -171,19 +170,20 @@ async def vendor_mark_rejected_item_received(
 async def generate_new_payment_link(
     order_id: UUID,
     db: AsyncSession = Depends(get_db),
-   
 ) -> PaymentLinkSchema:
     """
-   Generate a new payment link for an order.
+    Generate a new payment link for an order.
     """
     order = await db.get(Order, order_id)
     if not order:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Order not found")
-    
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Order not found"
+        )
+
     try:
-
-
-        order_payment_link = await get_product_payment_link(id=order_id, amount=order.grand_total, db=db)
+        order_payment_link = await get_product_payment_link(
+            id=order_id, amount=order.grand_total, db=db
+        )
 
         order.payment_link = order_payment_link
         await db.commit()
@@ -191,8 +191,6 @@ async def generate_new_payment_link(
         redis_client.delete(f"marketplace_order_details:{order_id}")
 
         return PaymentLinkSchema(payment_link=order_payment_link)
-
-
 
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))

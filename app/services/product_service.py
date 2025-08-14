@@ -112,9 +112,7 @@ async def create_product(
         )
 
 
-async def get_product_by_id(
-    db: AsyncSession, product_id: UUID
-) -> ProductResponse:
+async def get_product_by_id(db: AsyncSession, product_id: UUID) -> ProductResponse:
     """
     Retrieves a single product by its ID, including seller and category info.
     Uses Redis caching to improve performance.
@@ -191,15 +189,16 @@ async def get_products(db: AsyncSession) -> list[ProductResponse]:
     return product_responses
 
 
-
-async def get_products_by_category(db: AsyncSession, category_id: UUID = None) -> list[ProductResponse]:
+async def get_products_by_category(
+    db: AsyncSession, category_id: UUID = None
+) -> list[ProductResponse]:
     # Check if category exists
     category = await db.get(Category, category_id)
-    
+
     # If category doesn't exist, return all products
     if not category:
         return await get_products(db)
-    
+
     cache_key = f"all_products_by_category:{category_id}"
 
     cached_products = redis_client.get(cache_key)

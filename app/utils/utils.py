@@ -114,7 +114,6 @@ async def get_product_payment_link(id: UUID, amount: Decimal, current_user: User
             response_data = response.json()
             return response_data["data"]["link"]
 
-    
     except httpx.HTTPStatusError as e:
         raise HTTPException(status_code=502, detail=f"Payment gateway error: {str(e)}")
     except Exception as e:

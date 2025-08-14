@@ -124,7 +124,9 @@ async def get_user_orders(db: AsyncSession, user_id: UUID) -> list[DeliveryRespo
     stmt = (
         select(Order)
         .where(or_(Order.owner_id == user_id, Order.vendor_id == user_id))
-        .where(Order.order_type.in_([OrderType.FOOD, OrderType.LAUNDRY, OrderType.PACKAGE]))
+        .where(
+            Order.order_type.in_([OrderType.FOOD, OrderType.LAUNDRY, OrderType.PACKAGE])
+        )
         .order_by(Order.updated_at.desc())
         .options(
             selectinload(Order.order_items).options(
@@ -180,7 +182,9 @@ async def get_all_orders(
             joinedload(Order.vendor).joinedload(User.profile),
         )
         .where(Order.require_delivery == RequireDeliverySchema.PICKUP)
-        .where(Order.order_type.in_([OrderType.FOOD, OrderType.LAUNDRY, OrderType.PACKAGE]))
+        .where(
+            Order.order_type.in_([OrderType.FOOD, OrderType.LAUNDRY, OrderType.PACKAGE])
+        )
         .order_by(Order.created_at.desc())
     )
 
@@ -239,7 +243,9 @@ async def get_all_require_delivery_orders(
             joinedload(Order.vendor).joinedload(User.profile),
         )
         .where(Order.require_delivery == RequireDeliverySchema.DELIVERY)
-        .where(Order.order_type.in_([OrderType.FOOD, OrderType.LAUNDRY, OrderType.PACKAGE]))
+        .where(
+            Order.order_type.in_([OrderType.FOOD, OrderType.LAUNDRY, OrderType.PACKAGE])
+        )
         .order_by(Order.created_at.desc())
     )
 
@@ -281,7 +287,9 @@ async def get_all_pickup_delivery_orders(
         select(func.count())
         .select_from(Order)
         .where(Order.require_delivery == RequireDeliverySchema.DELIVERY)
-        .where(Order.order_type.in_([OrderType.FOOD, OrderType.LAUNDRY, OrderType.PACKAGE]))
+        .where(
+            Order.order_type.in_([OrderType.FOOD, OrderType.LAUNDRY, OrderType.PACKAGE])
+        )
     )
     total_result = await db.execute(total_stmt)
     total = total_result.scalar_one()
@@ -299,7 +307,9 @@ async def get_all_pickup_delivery_orders(
             joinedload(Order.vendor).joinedload(User.profile),
         )
         .where(Order.require_delivery == RequireDeliverySchema.PICKUP)
-        .where(Order.order_type.in_([OrderType.FOOD, OrderType.LAUNDRY, OrderType.PACKAGE]))
+        .where(
+            Order.order_type.in_([OrderType.FOOD, OrderType.LAUNDRY, OrderType.PACKAGE])
+        )
         .order_by(Order.created_at.desc())
     )
 
@@ -447,7 +457,13 @@ async def create_package_order(
         await db.execute(
             update(Order)
             .where(Order.id == delivery_data.order_id)
-            .values({"payment_link": payment_link, "total_price": total_amount_due, "grand_total": total_amount_due})
+            .values(
+                {
+                    "payment_link": payment_link,
+                    "total_price": total_amount_due,
+                    "grand_total": total_amount_due,
+                }
+            )
         )
 
         await db.commit()
@@ -1132,7 +1148,6 @@ async def vendor_mark_order_delivered(
 
                 return DeliveryStatusUpdateSchema(order_status=order.order_status)
 
-        
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -1351,14 +1366,12 @@ async def sender_confirm_delivery_or_order_received(
 
     # Calculate amounts to release/remove from escrow
     # dispatch_amount = max(order.delivery.amount_due_dispatch, 0) if not is_laundry_delivey_service else 0
-    vendor_amount = max(order.delivery.order.amount_due_vendor, 0)    
-    total_amount = max(order.delivery.delivery_fee, 0) + max(order.total_price, 0) 
+    vendor_amount = max(order.delivery.order.amount_due_vendor, 0)
+    total_amount = max(order.delivery.delivery_fee, 0) + max(order.total_price, 0)
 
     dispatch_profile = await get_user_profile(order.delivery.dispatch_id, db=db)
     vendor_profile = await get_user_profile(order.delivery.vendor_id, db=db)
-    sender = (
-        current_user.profile.full_name or current_user.profile.business_name
-    )
+    sender = current_user.profile.full_name or current_user.profile.business_name
 
     try:
         order.order_status = OrderStatus.RECEIVED
@@ -1370,27 +1383,39 @@ async def sender_confirm_delivery_or_order_received(
             and order.require_delivery == RequireDeliverySchema.DELIVERY
         ):
             # Update dispatch wallet
-            await db.execute(update(Wallet).where(Wallet.id == order.delivery.dispatch_id).values(
-                balance=Wallet.balance + order.delivery.amount_due_dispatch,
-                escrow_balance=Wallet.escrow_balance - order.delivery.amount_due_dispatch
-            ))
+            await db.execute(
+                update(Wallet)
+                .where(Wallet.id == order.delivery.dispatch_id)
+                .values(
+                    balance=Wallet.balance + order.delivery.amount_due_dispatch,
+                    escrow_balance=Wallet.escrow_balance
+                    - order.delivery.amount_due_dispatch,
+                )
+            )
 
             # Update sender wallet
-            await db.execute(update(Wallet).where(Wallet.id == order.delivery.sender_id).values(
-                escrow_balance=Wallet.escrow_balance - order.delivery.delivery_fee
-            ))
+            await db.execute(
+                update(Wallet)
+                .where(Wallet.id == order.delivery.sender_id)
+                .values(
+                    escrow_balance=Wallet.escrow_balance - order.delivery.delivery_fee
+                )
+            )
 
             order.delivery.delivery_status = DeliveryStatus.RECEIVED
             await db.commit()
             await db.refresh(order)
 
             # create transaction for dispatch
-            await create_wallet_transaction(db, order.delivery.dispatch_id, order.delivery.amount_due_dispatch,
-                                            transaction_direction=TransactionDirection.CREDIT,
-                                            transaction_type=TransactionType.USER_TO_USER,
-                                            from_user=sender,
-                                            to_user=dispatch_profile.full_name or dispatch_profile.business_name)
-
+            await create_wallet_transaction(
+                db,
+                order.delivery.dispatch_id,
+                order.delivery.amount_due_dispatch,
+                transaction_direction=TransactionDirection.CREDIT,
+                transaction_type=TransactionType.USER_TO_USER,
+                from_user=sender,
+                to_user=dispatch_profile.full_name or dispatch_profile.business_name,
+            )
 
             await ws_service.broadcast_delivery_status_update(
                 delivery_id=order.delivery.id, new_status=order.delivery.delivery_status
@@ -1401,20 +1426,30 @@ async def sender_confirm_delivery_or_order_received(
             and order.delivery.delivery_type
             in [DeliveryType.FOOD, DeliveryType.LAUNDRY]
         ):
-
             # Atomically update dispatch, vendor, and sender wallets
-            await db.execute(update(Wallet).where(Wallet.id == order.delivery.dispatch_id).values(
-                balance=Wallet.balance + order.delivery.amount_due_dispatch,
-                escrow_balance=Wallet.escrow_balance - order.delivery.amount_due_dispatch
-            ))
-            await db.execute(update(Wallet).where(Wallet.id == order.vendor_id).values(
-                balance=Wallet.balance + order.amount_due_vendor,
-                escrow_balance=Wallet.escrow_balance - order.amount_due_vendor
-            ))
+            await db.execute(
+                update(Wallet)
+                .where(Wallet.id == order.delivery.dispatch_id)
+                .values(
+                    balance=Wallet.balance + order.delivery.amount_due_dispatch,
+                    escrow_balance=Wallet.escrow_balance
+                    - order.delivery.amount_due_dispatch,
+                )
+            )
+            await db.execute(
+                update(Wallet)
+                .where(Wallet.id == order.vendor_id)
+                .values(
+                    balance=Wallet.balance + order.amount_due_vendor,
+                    escrow_balance=Wallet.escrow_balance - order.amount_due_vendor,
+                )
+            )
             total_spent = order.total_price + order.delivery.delivery_fee
-            await db.execute(update(Wallet).where(Wallet.id == order.owner_id).values(
-                escrow_balance=Wallet.escrow_balance - total_spent
-            ))
+            await db.execute(
+                update(Wallet)
+                .where(Wallet.id == order.owner_id)
+                .values(escrow_balance=Wallet.escrow_balance - total_spent)
+            )
 
             order.order_status = OrderStatus.RECEIVED
 
@@ -1422,9 +1457,15 @@ async def sender_confirm_delivery_or_order_received(
             await db.refresh(order)
 
             # Create credit transactions for dispatch and vendor
-            await create_wallet_transaction(db, order.delivery.dispatch_id, order.delivery.amount_due_dispatch,
-                                            transaction_direction=TransactionDirection.CREDIT, transaction_type=TransactionType.USER_TO_USER,
-                                            from_user=sender, to_user=dispatch_profile.full_name or dispatch_profile.business_name)
+            await create_wallet_transaction(
+                db,
+                order.delivery.dispatch_id,
+                order.delivery.amount_due_dispatch,
+                transaction_direction=TransactionDirection.CREDIT,
+                transaction_type=TransactionType.USER_TO_USER,
+                from_user=sender,
+                to_user=dispatch_profile.full_name or dispatch_profile.business_name,
+            )
 
             # create vendor transaction
             await create_wallet_transaction(
@@ -1451,13 +1492,19 @@ async def sender_confirm_delivery_or_order_received(
             and order.order_type in [OrderType.FOOD, OrderType.LAUNDRY]
         ):
             # Atomically update vendor and sender wallets
-            await db.execute(update(Wallet).where(Wallet.id == order.vendor_id).values(
-                balance=Wallet.balance + order.amount_due_vendor,
-                escrow_balance=Wallet.escrow_balance - order.amount_due_vendor
-            ))
-            await db.execute(update(Wallet).where(Wallet.id == order.owner_id).values(
-                escrow_balance=Wallet.escrow_balance - order.total_price
-            ))
+            await db.execute(
+                update(Wallet)
+                .where(Wallet.id == order.vendor_id)
+                .values(
+                    balance=Wallet.balance + order.amount_due_vendor,
+                    escrow_balance=Wallet.escrow_balance - order.amount_due_vendor,
+                )
+            )
+            await db.execute(
+                update(Wallet)
+                .where(Wallet.id == order.owner_id)
+                .values(escrow_balance=Wallet.escrow_balance - order.total_price)
+            )
 
             order.delivery.order.order_status = OrderStatus.RECEIVED
 
@@ -1555,20 +1602,28 @@ async def vendor_mark_laundry_item_received(
     profile = get_user_profile(delivery.sender_id, db=db)
     dispatch_profile = get_user_profile(delivery.dispatch_id, db=db)
 
-    if current_user.user_type in [UserType.LAUNDRY_VENDOR, UserType.RESTAURANT_VENDOR] and current_user.id == delivery.order.vendor_id:
-
+    if (
+        current_user.user_type in [UserType.LAUNDRY_VENDOR, UserType.RESTAURANT_VENDOR]
+        and current_user.id == delivery.order.vendor_id
+    ):
         try:
             delivery.delivery_status = DeliveryStatus.VENDOR_RECEIVED_LAUNDRY_ITEM
-            
+
             # Atomically update dispatch and sender wallets
-            await db.execute(update(Wallet).where(Wallet.id == delivery.dispatch_id).values(
-                balance=Wallet.balance + delivery.amount_due_dispatch,
-                escrow_balance=Wallet.escrow_balance - delivery.amount_due_dispatch
-            ))
-            await db.execute(update(Wallet).where(Wallet.id == delivery.sender_id).values(
-                escrow_balance=Wallet.escrow_balance - delivery.delivery_fee
-            ))
-            
+            await db.execute(
+                update(Wallet)
+                .where(Wallet.id == delivery.dispatch_id)
+                .values(
+                    balance=Wallet.balance + delivery.amount_due_dispatch,
+                    escrow_balance=Wallet.escrow_balance - delivery.amount_due_dispatch,
+                )
+            )
+            await db.execute(
+                update(Wallet)
+                .where(Wallet.id == delivery.sender_id)
+                .values(escrow_balance=Wallet.escrow_balance - delivery.delivery_fee)
+            )
+
             delivery.order.order_status = OrderStatus.VENDOR_RECEIVED_LAUNDRY_ITEM
 
             await db.commit()
@@ -1581,7 +1636,9 @@ async def vendor_mark_laundry_item_received(
                 delivery.amount_due_dispatch,
                 TransactionDirection.CREDIT,
                 transaction_direction=TransactionType.USER_TO_USER,
-                from_user=profile.full_name if profile.full_name else profile.business_name,
+                from_user=profile.full_name
+                if profile.full_name
+                else profile.business_name,
                 to_user=dispatch_profile.full_name
                 if dispatch_profile.full_name
                 else dispatch_profile.business_name,
@@ -1619,7 +1676,10 @@ async def vendor_mark_laundry_item_received(
                 delivery_id=delivery.id, delivery_status=delivery.delivery_status
             )
 
-            return DeliveryStatusUpdateSchema(delivery_status=delivery.delivery_status, order_status=delivery.order.order_status)
+            return DeliveryStatusUpdateSchema(
+                delivery_status=delivery.delivery_status,
+                order_status=delivery.order.order_status,
+            )
 
         except Exception as e:
             await db.rollback()
@@ -1686,7 +1746,10 @@ async def rider_mark_delivered(
         delivery_id=delivery.id, new_status=delivery.order.order_status
     )
 
-    return DeliveryStatusUpdateSchema(delivery_status=delivery.delivery_status, order_status=delivery.order.order_status)
+    return DeliveryStatusUpdateSchema(
+        delivery_status=delivery.delivery_status,
+        order_status=delivery.order.order_status,
+    )
 
 
 # <<<--- admin_modify_delivery_status --->>>
@@ -2256,7 +2319,9 @@ async def get_user_related_orders(
                 Delivery.rider_id == user_id,
             )
         )
-        .where(Order.order_type.in_([OrderType.FOOD,OrderType.PACKAGE, OrderType.LAUNDRY]))
+        .where(
+            Order.order_type.in_([OrderType.FOOD, OrderType.PACKAGE, OrderType.LAUNDRY])
+        )
         .order_by(Order.updated_at.desc())
     )
     result = await db.execute(stmt)

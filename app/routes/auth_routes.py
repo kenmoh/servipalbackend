@@ -40,7 +40,6 @@ from app.utils.limiter import limiter
 from app.templating import templates
 
 
-
 router = APIRouter(prefix="/api/auth", tags=["Authentication"])
 
 
@@ -104,10 +103,10 @@ async def login_admin_user(
         response.set_cookie(
             key="access_token",
             value=token.access_token,
-            httponly=True,  
-            secure=True,  
-            samesite="lax", 
-            max_age=3600,  
+            httponly=True,
+            secure=True,
+            samesite="lax",
+            max_age=3600,
         )
 
         if user:
@@ -262,25 +261,18 @@ async def password_recovery(
 async def handle_reset_password_link(
     request: Request,
     token: str = Query(...),
-    
 ):
     """
     Handle password reset link from email
     """
-     
+
     return templates.TemplateResponse(
-        'password-reset-form.html',
+        "password-reset-form.html",
         {
-            'request': request,
-            'token': token,
-            
-        }
-
+            "request": request,
+            "token": token,
+        },
     )
-    
- 
-
-    
 
 
 @router.post("/reset-password", status_code=status.HTTP_200_OK)

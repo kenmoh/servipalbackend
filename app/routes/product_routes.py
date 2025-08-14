@@ -89,9 +89,7 @@ async def get_product_by_id(
     """
     Endpoint to retrieve a product by its unique ID. Publicly accessible.
     """
-    product = await product_service.get_product_by_id(
-        db=db, product_id=product_id
-    )
+    product = await product_service.get_product_by_id(db=db, product_id=product_id)
     if product is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Product not found"
@@ -127,10 +125,11 @@ async def read_products(
     db: AsyncSession = Depends(get_db),
 ):
     """
-    Endpoint to retrieve a list of products. 
+    Endpoint to retrieve a list of products.
     """
-    return await product_service.get_products_by_category(db=db, category_id=category_id)
-
+    return await product_service.get_products_by_category(
+        db=db, category_id=category_id
+    )
 
 
 @router.get(

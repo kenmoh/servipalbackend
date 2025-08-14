@@ -467,7 +467,6 @@ async def create_new_staff(
             )
 
 
-
 async def update_staff(
     staff_id: UUID,
     data: UpdateStaffSchema,
@@ -616,7 +615,6 @@ async def delete_rider(current_user: User, db: AsyncSession, rider_id: UUID) -> 
     return None
 
 
-
 async def recover_password(email: str, db: AsyncSession) -> dict:
     """
     Initiates password recovery process by sending reset token via email
@@ -635,31 +633,31 @@ async def recover_password(email: str, db: AsyncSession) -> dict:
             status_code=status.HTTP_404_NOT_FOUND,
             detail="No account found with this email",
         )
-    
+
     # Generate reset token
     reset_token = secrets.token_urlsafe(32)
     token_expires = datetime.now() + timedelta(hours=24)
-    
+
     # Save reset token to user record
     user.reset_token = reset_token
     user.reset_token_expires = token_expires
     await db.commit()
 
-    template_body={
+    template_body = {
         "reset_url": f"https://api.servi-pal.com/api/auth/reset-password?token={reset_token}",
         "custom_url": f"servipal://reset-password?token={reset_token}",
         "reset_token": reset_token,
         "user": user.email,
         "expires_in": "24 hours",
     }
-    
+
     # Send reset email
     message = MessageSchema(
         subject="Password Reset Request",
         recipients=[email],
         # template_body={
-        #     "url": settings.FRONTEND_URL, 
-        #     "reset_token": reset_token, 
+        #     "url": settings.FRONTEND_URL,
+        #     "reset_token": reset_token,
         #     "user": user.email,
         #     "expires_in": "24 hours",
         # },
@@ -667,13 +665,10 @@ async def recover_password(email: str, db: AsyncSession) -> dict:
         subtype="html",
     )
 
-
-    
     fm = FastMail(email_conf)
     await fm.send_message(message, template_name="reset_password.html")
-    
-    return {"message": "Password reset instructions sent to your email"}
 
+    return {"message": "Password reset instructions sent to your email"}
 
 
 async def change_password(
@@ -762,18 +757,18 @@ async def logout_user(db: AsyncSession, current_user: User) -> bool:
         return True
 
 
-async def reset_password(request:Request,reset_data: PasswordResetConfirm, db: AsyncSession) -> dict:
+async def reset_password(
+    request: Request, reset_data: PasswordResetConfirm, db: AsyncSession
+) -> dict:
     import re
-    """Reset password using reset token"""
 
+    """Reset password using reset token"""
 
     user_agent = request.headers.get("user-agent", "")
     ua = parse(user_agent)
 
     devices = [ua.is_mobile, ua.is_tablet]
-    is_browser  = ua.browser
-
-
+    is_browser = ua.browser
 
     # Validate password first
     validate_password(reset_data.new_password)
@@ -792,18 +787,27 @@ async def reset_password(request:Request,reset_data: PasswordResetConfirm, db: A
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Invalid or expired reset token",
         )
-    
+
     if user.user_type in [UserType.MODERATOR, UserType.ADMIN, UserType.SUPER_ADMIN]:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Permission denied")
-    
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail="Permission denied"
+        )
+
     if reset_data.new_password != reset_data.confirm_new_password:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Passwords do not match")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Passwords do not match"
+        )
 
     if len(reset_data.password or reset_data.confirm_new_password) < 8:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Password too weak! Length must be at least 8 character long.")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Password too weak! Length must be at least 8 character long.",
+        )
 
     if reset_data.token != user.reset_token:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid or expired token")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid or expired token"
+        )
 
     try:
         # Update password
@@ -814,7 +818,6 @@ async def reset_password(request:Request,reset_data: PasswordResetConfirm, db: A
         user.updated_at = datetime.now()
 
         await db.commit()
-
 
         audit = AuditLog(
             actor_id=user.id,
@@ -836,13 +839,12 @@ async def reset_password(request:Request,reset_data: PasswordResetConfirm, db: A
 
         if is_browser:
             return templates.TemplateResponse(
-                'password-reset-status.html',
+                "password-reset-status.html",
                 {
-                    'request': request,
-                    'status': 'success',
-                    'message': 'Password reset successful'
-                }
-
+                    "request": request,
+                    "status": "success",
+                    "message": "Password reset successful",
+                },
             )
         return {"message": "Password reset successful"}
 
