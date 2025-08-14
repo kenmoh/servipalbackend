@@ -355,17 +355,31 @@ async def generate_new_payment_link(
             await db.commit()
 
             redis_client.delete(f"order_details:{order_id}")
+
             return PaymentLinkSchema(payment_link=order_payment_link)
         
         if order.order_type == OrderType.PRODUCT and order.order_payment_status != PaymentStatus.PAID:
             tx_ref = uuid.uuid1()
-            order_payment_link = await get_product_payment_link(id=tx_ref, amount=order.grand_total, current_user=current_user)
-
-            await db.execute(update(Order).where(Order.id == order_id).values(payment_link=order_payment_link, tx_ref=tx_ref))
-            await db.commit()
-
-            redis_client.delete(f"marketplace_order_details:{order_id}")
-            return PaymentLinkSchema(payment_link=order_payment_link)
+            try:
+                # Get payment link from Flutterwave
+                order_payment_link = await get_product_payment_link(id=tx_ref, amount=order.grand_total, current_user=current_user)
+                
+                # Update the database with the new payment link and tx_ref
+                await db.execute(update(Order).where(Order.id == order_id).values(payment_link=order_payment_link, tx_ref=tx_ref))
+                await db.commit()
+                
+                # Clear Redis cache
+                redis_client.delete(f"marketplace_order_details:{order_id}")
+                
+                return PaymentLinkSchema(payment_link=order_payment_link)
+            except Exception as payment_error:
+                # Ensure we rollback any uncommitted changes
+                await db.rollback()
+                print(f"Payment link generation error: {str(payment_error)}")
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, 
+                    detail=f"Failed to process payment: {str(payment_error)}"
+                )
 
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
