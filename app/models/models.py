@@ -1,7 +1,8 @@
 from typing import Optional
+from pydantic import UUID1
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 import random
-from uuid import UUID, uuid4
+from uuid import UUID, uuid1, uuid4
 import uuid
 from datetime import datetime, time
 from decimal import Decimal
@@ -295,6 +296,7 @@ class Transaction(Base):
     __tablename__ = "transactions"
 
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    tx_ref: Mapped[UUID1] = mapped_column(default=uuid1, nullable=True)
     wallet_id: Mapped[UUID] = mapped_column(ForeignKey("wallets.id"))
     to_wallet_id: Mapped[UUID] = mapped_column(ForeignKey("users.id"), nullable=True)
     amount: Mapped[Decimal] = mapped_column(default=0.00)
@@ -423,6 +425,7 @@ class Order(Base):
     __tablename__ = "orders"
 
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    tx_ref: Mapped[UUID1] = mapped_column(default=uuid1, nullable=True)
     order_number: Mapped[int] = mapped_column(
         Integer,
         Sequence("order_number_seq", start=1000, increment=1),

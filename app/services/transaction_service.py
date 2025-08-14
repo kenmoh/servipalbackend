@@ -5,6 +5,7 @@ from uuid import UUID
 import logging
 from fastapi import BackgroundTasks, HTTPException, Request, status
 import httpx
+from pydantic import UUID1
 from sqlalchemy import insert, select, update, and_, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -1578,7 +1579,7 @@ async def product_order_payment_callback(request: Request, db: AsyncSession):
     # Fetch the order
     order_result = await db.execute(
         select(Order)
-        .where(Order.id == UUID(tx_ref))
+        .where(Order.tx_ref == UUID1(tx_ref))
         .where(Order.order_type == OrderType.PRODUCT)
         .options(
                 selectinload(Order.order_items)

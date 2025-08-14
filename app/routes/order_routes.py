@@ -1,3 +1,4 @@
+import uuid
 from fastapi import Form, File, Request, UploadFile, HTTPException
 from uuid import UUID
 from decimal import Decimal
@@ -357,9 +358,10 @@ async def generate_new_payment_link(
             return PaymentLinkSchema(payment_link=order_payment_link)
         
         if order.order_type == OrderType.PRODUCT and order.order_payment_status != PaymentStatus.PAID:
-            order_payment_link = await get_product_payment_link(id=order_id, amount=order.grand_total, current_user=current_user)
+            tx_ref = uuid.uuid1()
+            order_payment_link = await get_product_payment_link(id=tx_ref, amount=order.grand_total, current_user=current_user)
 
-            await db.execute(update(Order).where(Order.id == order_id).values(payment_link=order_payment_link))
+            await db.execute(update(Order).where(Order.id == order_id).values(payment_link=order_payment_link, tx_ref=tx_ref))
             await db.commit()
 
             redis_client.delete(f"marketplace_order_details:{order_id}")

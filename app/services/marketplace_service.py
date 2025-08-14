@@ -2,6 +2,7 @@ from datetime import timedelta
 from typing import Optional
 import json
 from uuid import UUID
+import uuid
 
 
 from fastapi import HTTPException, status
@@ -228,12 +229,14 @@ async def buy_product(
         await db.flush()
 
         # Generate payment link
+        tx_ref = uuid.uuid1()
         payment_link = await get_product_payment_link(
-            id=order.id, current_user=buyer, amount=total_cost
+            id=tx_ref, current_user=buyer, amount=total_cost
         )
 
         # Store link with the order
         order.payment_link = payment_link
+        order.tx_ref = tx_ref
 
         await db.commit()
         await db.refresh(order)
