@@ -3,7 +3,7 @@ from uuid import UUID
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, status, HTTPException, UploadFile, File, Form
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.auth import get_db, get_current_user
@@ -16,7 +16,7 @@ from app.schemas.order_schema import (
     DeliveryStatusUpdateSchema,
 )
 from app.schemas.schemas import PaymentLinkSchema, ReviewSchema
-from app.schemas.status_schema import OrderType
+from app.schemas.status_schema import OrderType, PaymentStatus
 from app.services import order_service
 from app.utils.limiter import limiter
 from app.utils.utils import get_payment_link, get_product_payment_link
@@ -346,19 +346,20 @@ async def generate_new_payment_link(
     
 
     try:
-        if order.order_type in [ OrderType.FOOD, OrderType.LAUNDRY, OrderType.PACKAGE]:
+        if order.order_type in [ OrderType.FOOD, OrderType.LAUNDRY, OrderType.PACKAGE] and order.order_payment_status != PaymentStatus.PAID:
             order_payment_link = await get_payment_link(id=order_id, amount=order.grand_total, current_user=current_user)
 
-            order.payment_link = order_payment_link
+            
+            await db.execute(update(Order).where(Order.id == order_id).values(payment_link=order_payment_link))
             await db.commit()
 
             redis_client.delete(f"order_details:{order_id}")
             return PaymentLinkSchema(payment_link=order_payment_link)
         
-        if order.order_type == OrderType.PRODUCT:
+        if order.order_type == OrderType.PRODUCT and order.order_payment_status != PaymentStatus.PAID:
             order_payment_link = await get_product_payment_link(id=order_id, amount=order.grand_total, current_user=current_user)
 
-            order.payment_link = order_payment_link
+            await db.execute(update(Order).where(Order.id == order_id).values(payment_link=order_payment_link))
             await db.commit()
 
             redis_client.delete(f"marketplace_order_details:{order_id}")
