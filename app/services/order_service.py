@@ -1205,7 +1205,7 @@ async def rider_accept_delivery_order(
                 "rider_phone_number": current_user.profile.phone_number,
             }
         )
-        # .returning(Delivery.delivery_status)
+        .returning(Delivery.delivery_status)
     )
 
     await db.commit()
@@ -1291,7 +1291,9 @@ async def rider_accept_delivery_order(
         delivery_id=order.delivery.id, delivery_status=order.delivery.delivery_status
     )
 
-    DeliveryStatusUpdateSchema(delivery_status=order.delivery.delivery_status)
+    return DeliveryStatusUpdateSchema(
+        delivery_status=order.delivery.delivery_status
+    )
 
 
 async def sender_confirm_delivery_or_order_received(
