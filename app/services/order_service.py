@@ -1579,7 +1579,7 @@ async def vendor_mark_laundry_item_received(
         try:
             delivery.delivery_status = DeliveryStatus.VENDOR_RECEIVED_LAUNDRY_ITEM
 
-            # Atomically update dispatch and sender wallets
+            # Update dispatch and sender wallets
             await db.execute(
                 update(Wallet)
                 .where(Wallet.id == delivery.dispatch_id)
