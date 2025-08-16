@@ -149,7 +149,7 @@ async def get_delivery_by_order_id(
     "/{order_id}/sender-confirm-delivery-or-order-received",
     status_code=status.HTTP_202_ACCEPTED,
 )
-async def sender_confirm_delivery_received(
+async def sender_confirm_delivery_or_order_received(
     order_id: UUID,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),

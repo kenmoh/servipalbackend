@@ -1804,91 +1804,6 @@ async def admin_modify_delivery_status(
             detail=f"Failed to update delivery status: {e}",
         )
 
-
-# <<<<< ---------- ITEM REVIEWS ---------- >>>>>
-async def create_review(
-    db: AsyncSession, current_user: User, order_id: UUID, data: ReviewSchema
-) -> Review:
-    """
-    Create a review for an item by a user.
-
-    Args:
-        db: The database session.
-        current_user: The UUID of the reviewer.
-        item_id: The UUID of the item.
-        rating: The rating (1-5).
-        comment: Optional review comment.
-
-    Returns:
-        The created Review object.
-
-    Raises:
-        HTTPException: If the user or item is not found, or if the rating is invalid.
-    """
-
-    order_item_ids = []
-
-    user = await db.get(User, current_user.id)
-    result = await db.execute(
-        select(Order).join(Order.order_items).where(Order.id == order_id)
-    )
-
-    order = result.scalar_one_or_none()
-
-    for item in order.order_items:
-        order_item_ids.append(item.item_id, item.user_id)
-
-    for user_id in order_item_ids:
-        if current_user.id == user_id:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="You cannot review your own item",
-            )
-
-    if not user:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="User not found"
-        )
-
-    if not order:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Order not found"
-        )
-
-    # Validate rating
-    if not 1 <= data.rating <= 5:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Rating must be between 1 and 5",
-        )
-
-    try:
-        for item_id in order_item_ids:
-            review = Review(
-                user_id=current_user.id,
-                item_id=item_id,
-                rating=data.rating,
-                comment=data.comment,
-            )
-        db.add(review)
-        await db.commit()
-        await db.refresh(review)
-
-        return review
-
-    except IntegrityError as e:
-        await db.rollback()
-        if "uq_user_item_review" in str(e):
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="You have already reviewed this item",
-            )
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to create review: {str(e)}",
-        )
-
-
 # <<< ----- UTILITY FUNCTIONS FOR ORDERS/DELIVERY ----- >>>
 
 
@@ -1955,8 +1870,6 @@ async def create_wallet_transaction(
     wallet_id: UUID,
     amount: Decimal,
     transaction_type: TransactionType,
-    transaction_direction: TransactionDirection,
-    payment_by: str = None,
     to_user: str = None,
     from_user: str = None,
 ) -> Transaction:
