@@ -15,7 +15,6 @@ from app.schemas.review_schema import (
 from app.services import review_service
 
 router = APIRouter(prefix="/api/reviews", tags=["Reviews"])
-report = APIRouter(prefix="/api/reports", tags=["Reports"])
 
 
 @router.post(
@@ -34,19 +33,6 @@ async def create_new_review(
         db=db, current_user=current_user, data=data
     )
 
-
-@report.post("", status_code=status.HTTP_201_CREATED, operation_id="report")
-async def create_report(
-    report_data: ReportCreate,
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-) -> ReportResponseSchema:
-    """
-    Endpoint to create a new review
-    """
-    return await review_service.create_report(
-        db=db, current_user=current_user, report_data=report_data
-    )
 
 
 @router.get(

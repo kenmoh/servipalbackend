@@ -1191,7 +1191,7 @@ async def rider_accept_delivery_order(
     if current_user.rider_is_suspended_for_order_cancel:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="You have been blocked for too many cancelled order.Wait until your account is reset",
+            detail="You have been blocked for too many cancelled order. Wait until your account is reset",
         )
 
     await db.execute(
@@ -1205,19 +1205,18 @@ async def rider_accept_delivery_order(
                 "rider_phone_number": current_user.profile.phone_number,
             }
         )
-        .returning(Delivery.delivery_status)
+        # .returning(Delivery.delivery_status)
     )
+
+    await db.commit()
 
     # Get wallets
     dispatch_wallet = await fetch_wallet(db, order.delivery.dispatch_id)
     vendor_wallet = await fetch_wallet(db, order.vendor_id)
-    sender_wallet = await fetch_wallet(db, order.owner)
-
+  
     # Amount to move to escrow
     dispatch_amount = max(order.delivery.amount_due_dispatch, 0)
     vendor_amount = max(order.amount_due_vendor, 0)
-    total_amount = max(order.total_price, 0) + max(order.delivery.delivery_fee, 0)
-    delivery_fee = max(order.delivery.delivery_fee, 0)
 
     # Move dispatch funds to escrow (escrow increases)
     if order.delivery.delivery_type == DeliveryType.PACKAGE:
@@ -1234,25 +1233,7 @@ async def rider_accept_delivery_order(
             )
         )
 
-        # Move funds from sender wallet to escrow
-        await db.execute(
-            update(Wallet)
-            .where(Wallet.id == order.owner_id)
-            .values(
-                {
-                    "balance": max(
-                        sender_wallet.balance - order.delivery.delivery_fee, 0
-                    ),
-                    "escrow_balance": max(
-                        sender_wallet.escrow_balance + delivery_fee, 0
-                    ),
-                }
-            )
-        )
-        order.delivery.order.order_status = OrderStatus.ACCEPTED
-        await db.commit()
-        await db.refresh(order.delivery)
-
+      
     if (
         order.delivery.delivery_type in [DeliveryType.FOOD, DeliveryType.LAUNDRY]
         and order.require_delivery == RequireDeliverySchema.DELIVERY
@@ -1276,19 +1257,6 @@ async def rider_accept_delivery_order(
             .where(Wallet.id == order.delivery.vendor_id)
             .values(
                 {"escrow_balance": max(vendor_wallet.escrow_balance + vendor_amount, 0)}
-            )
-        )
-        # Update sender escrow
-        await db.execute(
-            update(Wallet)
-            .where(Wallet.id == order.owner_id)
-            .values(
-                {
-                    "balance": max(sender_wallet.balance - total_amount, 0),
-                    "escrow_balance": max(
-                        sender_wallet.escrow_balance + total_amount, 0
-                    ),
-                }
             )
         )
 
@@ -1426,7 +1394,7 @@ async def sender_confirm_delivery_or_order_received(
             and order.delivery.delivery_type
             in [DeliveryType.FOOD, DeliveryType.LAUNDRY]
         ):
-            # Atomically update dispatch, vendor, and sender wallets
+            # Update dispatch, vendor, and sender wallets
             await db.execute(
                 update(Wallet)
                 .where(Wallet.id == order.delivery.dispatch_id)

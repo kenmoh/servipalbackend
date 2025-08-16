@@ -1348,8 +1348,8 @@ async def order_payment_callback(request: Request, db: AsyncSession):
             Order.order_type.in_([OrderType.PACKAGE, OrderType.FOOD, OrderType.LAUNDRY])
         )
         .options(
-            selectinload(Order.owner).selectinload(User.profile),
-            selectinload(Order.vendor).selectinload(User.profile),
+            # selectinload(Order.owner).selectinload(User.profile),
+            # selectinload(Order.vendor).selectinload(User.profile),
             selectinload(Order.delivery),
         )
     )
@@ -1455,7 +1455,7 @@ async def order_payment_callback(request: Request, db: AsyncSession):
 
             charged_amount = (
                 total_price + delivery_fee
-                if order.require_delivery == RequireDeliverySchema.DELIVERY
+                if( order.require_delivery == RequireDeliverySchema.DELIVERY and order.order_type!=OrderType.PACKAGE)
                 else total_price
             )
 
