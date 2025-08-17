@@ -765,12 +765,12 @@ async def order_food_or_request_laundy_service(
 
 async def _cancel_delivery_and_order(
     db: AsyncSession, order_id: UUID
-) -> DeliveryResponse:
+) -> DeliveryStatusUpdateSchema:
     """
     Helper to set delivery and order status to cancelled and log the audit.
     Args:
         db: Database session
-        delivery: Delivery object
+        order: Order object
         delivery_status
         order_status: New order status
 
@@ -809,6 +809,8 @@ async def _cancel_delivery_and_order(
             await db.commit()
             await db.refresh(order)
 
+            return DeliveryStatusUpdateSchema(order_status=order.order.order_status, delivery_status=order.delivery.delivery_status)
+
         elif (
             order.require_delivery == RequireDeliverySchema.PICKUP
             and order.order_status
@@ -825,7 +827,8 @@ async def _cancel_delivery_and_order(
             await db.commit()
             await db.refresh(order)
 
-        return format_delivery_response(order, order.delivery)
+            return DeliveryStatusUpdateSchema(order_status=order.order.order_status)
+
 
     except Exception as e:
         await db.rollback()
@@ -929,15 +932,15 @@ async def cancel_order_or_delivery(
     ]:
         total_amount = max(order.delivery.delivery_fee, 0) + max(
             order.order.total_price, 0
-        )
-        # UPDATE USER WALLET
+        ) if order.order_type in [OrderType.FOOD,OrderType.LAUNDRY, OrderType.PRODUCT] esle max(order.delivery.delivery_fee, 0)
+        
+        # UPDATE SENDER WALLET
         new_escrow = max(wallet.escrow_balance - total_amount, 0)
         new_balance = max(wallet.balance + total_amount, 0)
-        # new_balance = wallet.balance + order.order.total_price
 
         await db.execute(
             update(Wallet)
-            .where(Wallet.id == current_user.sender_id)
+            .where(Wallet.id == current_user.id)
             .values(
                 {
                     "balance": new_balance,
