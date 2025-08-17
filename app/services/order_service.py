@@ -1264,7 +1264,16 @@ async def rider_accept_delivery_order(
         await db.commit()
         await db.refresh(order.delivery)
 
-    token = await get_user_notification_token(db=db, user_id=order.elivery.rider_id)
+       # redis_client.delete(f"delivery:{delivery_id}")
+    redis_client.delete(f"{ALL_DELIVERY}")
+    redis_client.delete("paid_pending_deliveries")
+    redis_client.delete(f"user_related_orders:{current_user.id}")
+
+    await ws_service.broadcast_delivery_status_update(
+        delivery_id=order.delivery.id, delivery_status=order.delivery.delivery_status
+    )
+
+    token = await get_user_notification_token(db=db, user_id=order.delivery.rider_id)
     sender_token = await get_user_notification_token(db=db, user_id=order.owner_id)
 
     if token:
@@ -1282,14 +1291,6 @@ async def rider_accept_delivery_order(
             navigate_to="/(app)/delivery/orders",
         )
 
-    # redis_client.delete(f"delivery:{delivery_id}")
-    redis_client.delete(f"{ALL_DELIVERY}")
-    redis_client.delete("paid_pending_deliveries")
-    redis_client.delete(f"user_related_orders:{current_user.id}")
-
-    await ws_service.broadcast_delivery_status_update(
-        delivery_id=order.delivery.id, delivery_status=order.delivery.delivery_status
-    )
 
     return DeliveryStatusUpdateSchema(
         delivery_status=order.delivery.delivery_status
