@@ -1378,9 +1378,9 @@ async def sender_confirm_delivery_or_order_received(
 
             # create transaction for dispatch
             await create_wallet_transaction(
-                db,
-                order.delivery.dispatch_id,
-                order.delivery.amount_due_dispatch,
+                db=db,
+                wallet_id=order.delivery.dispatch_id,
+                amount=order.delivery.amount_due_dispatch,
                 transaction_direction=TransactionDirection.CREDIT,
                 transaction_type=TransactionType.USER_TO_USER,
                 from_user=sender,
@@ -1428,9 +1428,9 @@ async def sender_confirm_delivery_or_order_received(
 
             # Create credit transactions for dispatch and vendor
             await create_wallet_transaction(
-                db,
-                order.delivery.dispatch_id,
-                order.delivery.amount_due_dispatch,
+                db=db,
+                wallet_id=order.delivery.dispatch_id,
+                amount=order.delivery.amount_due_dispatch,
                 transaction_direction=TransactionDirection.CREDIT,
                 transaction_type=TransactionType.USER_TO_USER,
                 from_user=sender,
@@ -1439,9 +1439,9 @@ async def sender_confirm_delivery_or_order_received(
 
             # create vendor transaction
             await create_wallet_transaction(
-                db,
-                vendor_wallet.id,
-                vendor_amount,
+                db=db,
+                wallet_id=vendor_wallet.id,
+                amount=vendor_amount,
                 transaction_direction=TransactionDirection.CREDIT,
                 transaction_type=TransactionType.USER_TO_USER,
                 from_user=sender,
@@ -1483,9 +1483,9 @@ async def sender_confirm_delivery_or_order_received(
 
             # create vendor transaction
             await create_wallet_transaction(
-                db,
-                vendor_wallet.id,
-                vendor_amount,
+                db=db,
+                wallet_id=vendor_wallet.id,
+                amount=vendor_amount,
                 transaction_direction=TransactionDirection.CREDIT,
                 transaction_type=TransactionType.USER_TO_USER,
                 from_user=sender,
@@ -1535,66 +1535,66 @@ async def sender_confirm_delivery_or_order_received(
 
 
 async def vendor_mark_laundry_item_received(
-    db: AsyncSession, delivery_id: UUID, current_user: User
+    db: AsyncSession, order_id: UUID, current_user: User
 ) -> DeliveryStatusUpdateSchema:
     result = await db.execute(
-        select(Delivery)
-        .where(Delivery.id == delivery_id)
-        .options(selectinload(Delivery.order))
+        select(Order)
+        .where(Order.id == order_id)
+        .options(selectinload(Order.delivery))
     )
-    delivery = result.scalar_one_or_none()
+    order = result.scalar_one_or_none()
 
-    if not delivery:
+    if not order:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Delivery not found."
+            status_code=status.HTTP_404_NOT_FOUND, detail="Order not found."
         )
 
     if (
         current_user.user_type in [UserType.LAUNDRY_VENDOR, UserType.RESTAURANT_VENDOR]
-        and current_user.id != delivery.order.vendor_id
+        and current_user.id != order.order.vendor_id
     ):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN, detail="Unauthorized."
         )
 
-    if delivery.delivery_status != DeliveryStatus.DELIVERED:
-        raise HTTPException(status_code=400, detail="Delivery is not yet completed.")
+    if order.delivery.delivery_status != OrderStatus.DELIVERED:
+        raise HTTPException(status_code=400, detail="Order is not yet completed.")
 
-    profile = get_user_profile(delivery.sender_id, db=db)
-    dispatch_profile = get_user_profile(delivery.dispatch_id, db=db)
+    profile = get_user_profile(order.delivery.sender_id, db=db)
+    dispatch_profile = get_user_profile(order.delivery.dispatch_id, db=db)
 
     if (
         current_user.user_type in [UserType.LAUNDRY_VENDOR, UserType.RESTAURANT_VENDOR]
-        and current_user.id == delivery.order.vendor_id
+        and current_user.id == order.delivery.order.vendor_id
     ):
         try:
-            delivery.delivery_status = DeliveryStatus.VENDOR_RECEIVED_LAUNDRY_ITEM
+            order.delivery.delivery_status = DeliveryStatus.VENDOR_RECEIVED_LAUNDRY_ITEM
 
             # Update dispatch and sender wallets
             await db.execute(
                 update(Wallet)
-                .where(Wallet.id == delivery.dispatch_id)
+                .where(Wallet.id == order.delivery.dispatch_id)
                 .values(
-                    balance=Wallet.balance + delivery.amount_due_dispatch,
-                    escrow_balance=Wallet.escrow_balance - delivery.amount_due_dispatch,
+                    balance=Wallet.balance + order.delivery.amount_due_dispatch,
+                    escrow_balance=Wallet.escrow_balance - order.delivery.amount_due_dispatch,
                 )
             )
             await db.execute(
                 update(Wallet)
-                .where(Wallet.id == delivery.sender_id)
-                .values(escrow_balance=Wallet.escrow_balance - delivery.delivery_fee)
+                .where(Wallet.id == order.delivery.sender_id)
+                .values(escrow_balance=Wallet.escrow_balance - order.delivery.delivery_fee)
             )
 
-            delivery.order.order_status = OrderStatus.VENDOR_RECEIVED_LAUNDRY_ITEM
+            order.order_status = OrderStatus.VENDOR_RECEIVED_LAUNDRY_ITEM
 
             await db.commit()
-            await db.refresh(delivery)
+            await db.refresh(order)
 
             # Create credit transaction for dispatch
             await create_wallet_transaction(
                 db,
-                delivery.dispatch_id,
-                delivery.amount_due_dispatch,
+                order.delivery.dispatch_id,
+                order.delivery.amount_due_dispatch,
                 TransactionDirection.CREDIT,
                 transaction_direction=TransactionType.USER_TO_USER,
                 from_user=profile.full_name
@@ -1606,9 +1606,9 @@ async def vendor_mark_laundry_item_received(
             )
 
             # redis_client.delete(f"{ALL_DELIVERY}")
-            token = await get_user_notification_token(db=db, user_id=delivery.sender_id)
+            token = await get_user_notification_token(db=db, user_id=order.delivery.sender_id)
             rider_token = await get_user_notification_token(
-                db=db, user_id=delivery.rider_id
+                db=db, user_id=order.delivery.rider_id
             )
 
             # Send notification to rider
@@ -1624,7 +1624,7 @@ async def vendor_mark_laundry_item_received(
                 await send_push_notification(
                     tokens=[rider_token],
                     title="Payment Received",
-                    message=f"Congratulations! Order complete. Your wallet has been credited with ₦ {delivery.amount_due_dispatch}",
+                    message=f"Congratulations! Order complete. Your wallet has been credited with ₦ {order.delivery.amount_due_dispatch}",
                     navigate_to="/(app)/delivery",
                 )
 
@@ -1634,12 +1634,12 @@ async def vendor_mark_laundry_item_received(
             redis_client.delete(f"user_related_orders:{current_user.id}")
 
             await ws_service.broadcast_delivery_status_update(
-                delivery_id=delivery.id, delivery_status=delivery.delivery_status
+                delivery_id=order.delivery.id, delivery_status=order.delivery.delivery_status
             )
 
             return DeliveryStatusUpdateSchema(
-                delivery_status=delivery.delivery_status,
-                order_status=delivery.order.order_status,
+                delivery_status=order.delivery.delivery_status,
+                order_status=order.order_status,
             )
 
         except Exception as e:
@@ -1861,6 +1861,7 @@ async def create_wallet_transaction(
     wallet_id: UUID,
     amount: Decimal,
     transaction_type: TransactionType,
+    transaction_direction: TransactionDirection,
     to_user: str = None,
     from_user: str = None,
 ) -> Transaction:
@@ -1871,7 +1872,7 @@ async def create_wallet_transaction(
         amount=amount,
         payment_status=PaymentStatus.PAID,
         transaction_type=transaction_type,
-        transaction_direction=TransactionDirection,
+        transaction_direction=transaction_direction,
         to_user=to_user,
         from_user=from_user,
     )
