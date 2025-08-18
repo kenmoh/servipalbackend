@@ -1320,7 +1320,7 @@ async def sender_confirm_delivery_or_order_received(
             detail="You are not allowed to perform this action.",
         )
 
-    if order.delivery_status != DeliveryStatus.DELIVERED:
+    if order.delivery.delivery_status != DeliveryStatus.DELIVERED:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Order is not yet completed.",
@@ -2177,7 +2177,7 @@ async def get_user_related_orders(
 
     stmt = (
         select(Order)
-        .join(Delivery, isouter=True)
+        .outerjoin(Delivery)  # Using outerjoin to ensure we get orders even without deliveries
         .options(
             selectinload(Order.order_items).options(
                 joinedload(OrderItem.item).options(selectinload(Item.images))
@@ -2189,8 +2189,8 @@ async def get_user_related_orders(
             or_(
                 Order.owner_id == user_id,
                 Order.vendor_id == user_id,
-                Delivery.dispatch_id == user_id,
-                Delivery.rider_id == user_id,
+                and_(Delivery.id != None, Delivery.dispatch_id == user_id),
+                and_(Delivery.id != None, Delivery.rider_id == user_id),
             )
         )
         .where(
