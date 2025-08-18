@@ -1,7 +1,9 @@
+aio-pika==9.5.7
 aiodns==3.5.0
 aiofile==3.9.0
 aiohappyeyeballs==2.6.1
 aiohttp==3.12.14
+aiormq==6.9.0
 aiosignal==1.4.0
 aiosmtplib==3.0.2
 alembic==1.16.4
@@ -67,6 +69,7 @@ opentelemetry-sdk==1.35.0
 opentelemetry-semantic-conventions==0.56b0
 opentelemetry-util-http==0.56b0
 packaging==25.0
+pamqp==3.3.0
 passlib==1.7.4
 pluggy==1.6.0
 propcache==0.3.2
