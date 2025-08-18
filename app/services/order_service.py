@@ -1307,40 +1307,60 @@ async def sender_confirm_delivery_or_order_received(
 
     if not order:
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail="Order not found."
+            status_code=status.HTTP_404_NOT_FOUND, detail="Order not found."
         )
 
-    if (
-        current_user.user_type
-        not in [UserType.CUSTOMER, UserType.LAUNDRY_VENDOR, UserType.RESTAURANT_VENDOR]
-        and order.sender_id != current_user.id
-    ):
+    if order.owner_id != current_user.id:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="You are not allowed to perform this action.",
         )
 
+    # Handle pickup orders (no delivery)
+    if order.require_delivery == RequireDeliverySchema.PICKUP:
+        if order.order_status != OrderStatus.DELIVERED:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Order is not yet delivered.",
+            )
+
+        if order.order_status == OrderStatus.RECEIVED:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="You have already marked this order as received.",
+            )
+
+        vendor_wallet = await fetch_wallet(db, order.vendor_id)
+        vendor_profile = await get_user_profile(order.vendor_id, db=db)
+        sender = current_user.profile.full_name or current_user.profile.business_name
+        vendor_amount = max(order.amount_due_vendor, 0)
+        return await handle_pickup_order_received(db, order, vendor_wallet, vendor_profile, sender, vendor_amount)
+
+    # Handle delivery orders
+    if not order.delivery:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No delivery found for this order.",
+        )
+
     if order.delivery.delivery_status != DeliveryStatus.DELIVERED:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Order is not yet completed.",
+            detail="Delivery is not yet completed.",
         )
 
     if order.delivery.delivery_status == DeliveryStatus.RECEIVED:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="You already mark this order as received.",
+            detail="You have already marked this delivery as received.",
         )
 
-    vendor_wallet = await fetch_wallet(db, order.delivery.vendor_id)
+    vendor_wallet = await fetch_wallet(db, order.vendor_id)
+    vendor_amount = max(order.amount_due_vendor, 0)
 
-    # Calculate amounts to release/remove from escrow
-    # dispatch_amount = max(order.delivery.amount_due_dispatch, 0) if not is_laundry_delivey_service else 0
-    vendor_amount = max(order.delivery.order.amount_due_vendor, 0)
-    total_amount = max(order.delivery.delivery_fee, 0) + max(order.total_price, 0)
-
+    
     dispatch_profile = await get_user_profile(order.delivery.dispatch_id, db=db)
-    vendor_profile = await get_user_profile(order.delivery.vendor_id, db=db)
+    vendor_profile = await get_user_profile(order.vendor_id, db=db)
     sender = current_user.profile.full_name or current_user.profile.business_name
 
     try:
@@ -1537,6 +1557,11 @@ async def sender_confirm_delivery_or_order_received(
 async def vendor_mark_laundry_item_received(
     db: AsyncSession, order_id: UUID, current_user: User
 ) -> DeliveryStatusUpdateSchema:
+    """
+    Allow a laundry vendor to mark a laundry item as received.
+    This function handles the transition and wallet updates when a laundry vendor receives items.
+    """
+    # Fetch order with delivery info
     result = await db.execute(
         select(Order)
         .where(Order.id == order_id)
@@ -1549,102 +1574,136 @@ async def vendor_mark_laundry_item_received(
             status_code=status.HTTP_404_NOT_FOUND, detail="Order not found."
         )
 
-    if (
-        current_user.user_type in [UserType.LAUNDRY_VENDOR, UserType.RESTAURANT_VENDOR]
-        and current_user.id != order.order.vendor_id
-    ):
+    if not order.delivery:
         raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN, detail="Unauthorized."
+            status_code=status.HTTP_400_BAD_REQUEST, 
+            detail="This order does not have an associated delivery."
         )
 
-    if order.delivery.delivery_status != OrderStatus.DELIVERED:
-        raise HTTPException(status_code=400, detail="Order is not yet completed.")
+    # Verify user is authorized
+    if current_user.id != order.vendor_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, 
+            detail="You are not authorized to mark this order as received."
+        )
 
-    profile = get_user_profile(order.delivery.sender_id, db=db)
-    dispatch_profile = get_user_profile(order.delivery.dispatch_id, db=db)
+    if current_user.user_type not in [UserType.LAUNDRY_VENDOR, UserType.RESTAURANT_VENDOR]:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only vendors can mark laundry items as received."
+        )
 
-    if (
-        current_user.user_type in [UserType.LAUNDRY_VENDOR, UserType.RESTAURANT_VENDOR]
-        and current_user.id == order.delivery.order.vendor_id
-    ):
-        try:
-            order.delivery.delivery_status = DeliveryStatus.VENDOR_RECEIVED_LAUNDRY_ITEM
+    # Check delivery status
+    if order.delivery.delivery_status != DeliveryStatus.DELIVERED:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Order must be delivered before it can be marked as received."
+        )
 
-            # Update dispatch and sender wallets
-            await db.execute(
-                update(Wallet)
-                .where(Wallet.id == order.delivery.dispatch_id)
-                .values(
-                    balance=Wallet.balance + order.delivery.amount_due_dispatch,
-                    escrow_balance=Wallet.escrow_balance - order.delivery.amount_due_dispatch,
-                )
+    if order.delivery.delivery_status == DeliveryStatus.VENDOR_RECEIVED_LAUNDRY_ITEM:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="This order has already been marked as received."
+        )
+
+    try:
+        # Fetch profiles for transaction records
+        sender_profile = await get_user_profile(order.delivery.sender_id, db=db)
+        dispatch_profile = await get_user_profile(order.delivery.dispatch_id, db=db)
+
+        # Update delivery and order status
+        await db.execute(
+            update(Delivery)
+            .where(Delivery.id == order.delivery.id)
+            .values(delivery_status=DeliveryStatus.VENDOR_RECEIVED_LAUNDRY_ITEM)
+        )
+        
+        await db.execute(
+            update(Order)
+            .where(Order.id == order_id)
+            .values(order_status=OrderStatus.VENDOR_RECEIVED_LAUNDRY_ITEM)
+        )
+
+        # Update dispatch wallet
+        await db.execute(
+            update(Wallet)
+            .where(Wallet.id == order.delivery.dispatch_id)
+            .values(
+                balance=Wallet.balance + order.delivery.amount_due_dispatch,
+                escrow_balance=Wallet.escrow_balance - order.delivery.amount_due_dispatch,
             )
-            await db.execute(
-                update(Wallet)
-                .where(Wallet.id == order.delivery.sender_id)
-                .values(escrow_balance=Wallet.escrow_balance - order.delivery.delivery_fee)
+        )
+
+        # Update sender's escrow
+        await db.execute(
+            update(Wallet)
+            .where(Wallet.id == order.delivery.sender_id)
+            .values(escrow_balance=Wallet.escrow_balance - order.delivery.delivery_fee)
+        )
+
+        # Create transaction record for dispatch payment
+        await create_wallet_transaction(
+            db=db,
+            wallet_id=order.delivery.dispatch_id,
+            amount=order.delivery.amount_due_dispatch,
+            transaction_type=TransactionType.USER_TO_USER,
+            transaction_direction=TransactionDirection.CREDIT,
+            from_user=sender_profile.full_name if sender_profile.full_name else sender_profile.business_name,
+            to_user=dispatch_profile.full_name if dispatch_profile.full_name else dispatch_profile.business_name,
+        )
+
+        await db.commit()
+        await db.refresh(order)
+
+        # Send notifications
+        sender_token = await get_user_notification_token(db=db, user_id=order.delivery.sender_id)
+        rider_token = await get_user_notification_token(db=db, user_id=order.delivery.rider_id)
+
+        if sender_token:
+            await send_push_notification(
+                tokens=[sender_token],
+                title="Laundry Items Received",
+                message="Your laundry items have been received by the vendor",
+                navigate_to="/(app)/delivery/orders",
             )
 
-            order.order_status = OrderStatus.VENDOR_RECEIVED_LAUNDRY_ITEM
-
-            await db.commit()
-            await db.refresh(order)
-
-            # Create credit transaction for dispatch
-            await create_wallet_transaction(
-                db,
-                order.delivery.dispatch_id,
-                order.delivery.amount_due_dispatch,
-                TransactionDirection.CREDIT,
-                transaction_direction=TransactionType.USER_TO_USER,
-                from_user=profile.full_name
-                if profile.full_name
-                else profile.business_name,
-                to_user=dispatch_profile.full_name
-                if dispatch_profile.full_name
-                else dispatch_profile.business_name,
+        if rider_token:
+            await send_push_notification(
+                tokens=[rider_token],
+                title="Payment Completed",
+                message=f"Delivery completed. ₦{order.delivery.amount_due_dispatch} has been credited to your wallet",
+                navigate_to="/(app)/delivery/orders",
             )
 
-            # redis_client.delete(f"{ALL_DELIVERY}")
-            token = await get_user_notification_token(db=db, user_id=order.delivery.sender_id)
-            rider_token = await get_user_notification_token(
-                db=db, user_id=order.delivery.rider_id
-            )
+        # Clear caches
+        redis_client.delete(f"{ALL_DELIVERY}")
+        redis_client.delete("paid_pending_deliveries")
+        redis_client.delete(f"user_related_orders:{current_user.id}")
+        redis_client.delete(f"user_related_orders:{order.delivery.sender_id}")
+        redis_client.delete(f"user_related_orders:{order.delivery.rider_id}")
 
-            # Send notification to rider
-            if token:
-                await send_push_notification(
-                    tokens=[token],
-                    title="Order Completed",
-                    message="Your laundry item has been received by the vendor",
-                    navigate_to="/(app)/delivery",
-                )
+        # Broadcast updates
+        await ws_service.broadcast_delivery_status_update(
+            delivery_id=order.delivery.id,
+            delivery_status=DeliveryStatus.VENDOR_RECEIVED_LAUNDRY_ITEM
+        )
+        
+        await ws_service.broadcast_order_status_update(
+            delivery_id=order.id,
+            new_status=OrderStatus.VENDOR_RECEIVED_LAUNDRY_ITEM
+        )
 
-            if rider_token:
-                await send_push_notification(
-                    tokens=[rider_token],
-                    title="Payment Received",
-                    message=f"Congratulations! Order complete. Your wallet has been credited with ₦ {order.delivery.amount_due_dispatch}",
-                    navigate_to="/(app)/delivery",
-                )
+        return DeliveryStatusUpdateSchema(
+            delivery_status=DeliveryStatus.VENDOR_RECEIVED_LAUNDRY_ITEM,
+            order_status=OrderStatus.VENDOR_RECEIVED_LAUNDRY_ITEM,
+        )
 
-            # redis_client.delete(f"delivery:{delivery_id}")
-            redis_client.delete(f"{ALL_DELIVERY}")
-            redis_client.delete("paid_pending_deliveries")
-            redis_client.delete(f"user_related_orders:{current_user.id}")
-
-            await ws_service.broadcast_delivery_status_update(
-                delivery_id=order.delivery.id, delivery_status=order.delivery.delivery_status
-            )
-
-            return DeliveryStatusUpdateSchema(
-                delivery_status=order.delivery.delivery_status,
-                order_status=order.order_status,
-            )
-
-        except Exception as e:
-            await db.rollback()
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    except Exception as e:
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to process laundry item receipt: {str(e)}"
+        )
 
 
 async def rider_mark_delivered(
@@ -1796,6 +1855,78 @@ async def admin_modify_delivery_status(
         )
 
 # <<< ----- UTILITY FUNCTIONS FOR ORDERS/DELIVERY ----- >>>
+
+async def handle_pickup_order_received(
+    db: AsyncSession,
+    order: Order,
+    vendor_wallet: Wallet,
+    vendor_profile: Profile,
+    sender: str,
+    vendor_amount: Decimal,
+) -> DeliveryStatusUpdateSchema:
+    """Helper function to handle pickup order received confirmation"""
+    try:
+        # Update order status
+        order.order_status = OrderStatus.RECEIVED
+        
+        # Update vendor wallet
+        await db.execute(
+            update(Wallet)
+            .where(Wallet.id == order.vendor_id)
+            .values(
+                balance=Wallet.balance + vendor_amount,
+                escrow_balance=Wallet.escrow_balance - vendor_amount,
+            )
+        )
+        
+        # Update owner's escrow
+        await db.execute(
+            update(Wallet)
+            .where(Wallet.id == order.owner_id)
+            .values(escrow_balance=Wallet.escrow_balance - order.total_price)
+        )
+
+        await db.commit()
+        await db.refresh(order)
+
+        # Create vendor transaction
+        await create_wallet_transaction(
+            db=db,
+            wallet_id=vendor_wallet.id,
+            amount=vendor_amount,
+            transaction_direction=TransactionDirection.CREDIT,
+            transaction_type=TransactionType.USER_TO_USER,
+            from_user=sender,
+            to_user=vendor_profile.full_name if vendor_profile.full_name else vendor_profile.business_name,
+        )
+
+        # Send notification to vendor
+        vendor_token = await get_user_notification_token(db=db, user_id=order.vendor_id)
+        if vendor_token:
+            await send_push_notification(
+                tokens=[vendor_token],
+                title="Order completed",
+                message=f"Congratulations! Order completed. ₦{vendor_amount} has been credited to your wallet",
+                navigate_to="/(app)/delivery/orders",
+            )
+
+        # Clear cache
+        redis_client.delete(f"{ALL_DELIVERY}")
+        redis_client.delete("paid_pending_deliveries")
+        redis_client.delete(f"user_related_orders:{order.owner_id}")
+        redis_client.delete(f"user_related_orders:{order.vendor_id}")
+
+        # Broadcast status update
+        await ws_service.broadcast_order_status_update(
+            delivery_id=order.id,
+            new_status=order.order_status
+        )
+
+        return DeliveryStatusUpdateSchema(order_status=order.order_status)
+        
+    except Exception as e:
+        await db.rollback()
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
 
 async def get_charges(db: AsyncSession):
