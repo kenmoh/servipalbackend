@@ -932,7 +932,7 @@ async def cancel_order_or_delivery(
     ]:
         total_amount = max(order.delivery.delivery_fee, 0) + max(
             order.order.total_price, 0
-        ) if order.order_type in [OrderType.FOOD,OrderType.LAUNDRY, OrderType.PRODUCT] esle max(order.delivery.delivery_fee, 0)
+        ) if order.order_type in [OrderType.FOOD,OrderType.LAUNDRY, OrderType.PRODUCT] else max(order.delivery.delivery_fee, 0)
         
         # UPDATE SENDER WALLET
         new_escrow = max(wallet.escrow_balance - total_amount, 0)
