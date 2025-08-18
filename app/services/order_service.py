@@ -1185,7 +1185,7 @@ async def rider_accept_delivery_order(
             detail="Only a rider can pickup orders. Register a rider",
         )
 
-    if not current_user.profile.profile_image.profile_image_url:
+    if current_user.profile.profile_image.profile_image_url is None:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Profile image is missing. Please update your profile",
@@ -1273,7 +1273,11 @@ async def rider_accept_delivery_order(
     redis_client.delete(f"user_related_orders:{current_user.id}")
 
     await ws_service.broadcast_delivery_status_update(
-        delivery_id=order.delivery.id, delivery_status=order.delivery.delivery_status
+        delivery_id=order.delivery.id, new_status=order.delivery.delivery_status
+    )
+
+    await ws_service.broadcast_order_status_update(
+        delivery_id=order.order.id, new_status=order.order.order_status
     )
 
     token = await get_user_notification_token(db=db, user_id=order.delivery.rider_id)
