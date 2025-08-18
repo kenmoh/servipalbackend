@@ -1277,19 +1277,11 @@ async def rider_accept_delivery_order(
     )
 
     await ws_service.broadcast_order_status_update(
-        delivery_id=order.order.id, new_status=order.order.order_status
+        delivery_id=order.id, new_status=order.order_status
     )
 
-    token = await get_user_notification_token(db=db, user_id=order.delivery.rider_id)
     sender_token = await get_user_notification_token(db=db, user_id=order.owner_id)
 
-    if token:
-        await send_push_notification(
-            tokens=[token],
-            title="Order Assigned",
-            message="This order has been assigned to you. Drive safely",
-            navigate_to="/(app)/delivery/orders",
-        )
     if sender_token:
         await send_push_notification(
             tokens=[sender_token],
@@ -1510,9 +1502,7 @@ async def sender_confirm_delivery_or_order_received(
             db=db, user_id=order.delivery.rider_id
         )
         vendor_token = await get_user_notification_token(db=db, user_id=order.vendor_id)
-        sender_token = await get_user_notification_token(
-            db=db, user_id=order.delivery.sender_id
-        )
+       
         if rider_token:
             await send_push_notification(
                 tokens=[rider_token],
@@ -1528,13 +1518,6 @@ async def sender_confirm_delivery_or_order_received(
                 navigate_to="/(app)/delivery/orders",
             )
 
-        if sender_token:
-            await send_push_notification(
-                tokens=[sender_token],
-                title="Order completed",
-                message=f"Congratulations! Order completed. ₦{total_amount} has been debited from your escrow balance",
-                navigate_to="/(app)/delivery/orders",
-            )
 
         # redis_client.delete(f"delivery:{delivery_id}")
         redis_client.delete(f"{ALL_DELIVERY}")
