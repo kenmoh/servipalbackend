@@ -21,6 +21,7 @@ from app.models.models import (
     Profile,
 )
 from app.services import ws_service
+from app.services.wallet_service import wallet_service
 
 import json
 from decimal import Decimal
@@ -1214,54 +1215,85 @@ async def rider_accept_delivery_order(
     await db.commit()
 
     # Get wallets
-    dispatch_wallet = await fetch_wallet(db, order.delivery.dispatch_id)
-    vendor_wallet = await fetch_wallet(db, order.vendor_id)
-  
+    dispatch_profile = await get_user_profile(order.delivery.dispatch_id, db=db)
+    vendor_profile = await get_user_profile(order.vendor_id, db=db)
+    sender_profile = await get_user_profile(order.owner_id, db=db)
+
     # Amount to move to escrow
     dispatch_amount = max(order.delivery.amount_due_dispatch, 0)
     vendor_amount = max(order.amount_due_vendor, 0)
 
     # Move dispatch funds to escrow (escrow increases)
     if order.delivery.delivery_type == DeliveryType.PACKAGE:
-        # Move funds to escrow for dispatch
-        await db.execute(
-            update(Wallet)
-            .where(Wallet.id == order.delivery.dispatch_id)
-            .values(
-                {
-                    "escrow_balance": max(
-                        dispatch_wallet.escrow_balance + dispatch_amount, 0
-                    )
-                }
-            )
+        # New: Using RabbitMQ
+        await wallet_service.publish_wallet_update(
+            wallet_id=str(order.delivery.dispatch_id),
+            balance_change=str(0),
+            escrow_change=str(dispatch_amount),
+            transaction_type=TransactionType.USER_TO_USER,
+            transaction_direction=TransactionDirection.CREDIT,
+            from_user=sender_profile.full_name or sender_profile.business_name,
+            to_user=dispatch_profile.full_name or dispatch_profile.business_name
         )
+
+        # Original: Direct DB operations (commented for testing)
+        # await db.execute(
+        #     update(Wallet)
+        #     .where(Wallet.id == order.delivery.dispatch_id)
+        #     .values(
+        #         {
+        #             "escrow_balance": max(
+        #                 dispatch_wallet.escrow_balance + dispatch_amount, 0
+        #             )
+        #         }
+        #     )
+        # )
 
       
     if (
         order.delivery.delivery_type in [DeliveryType.FOOD, DeliveryType.LAUNDRY]
         and order.require_delivery == RequireDeliverySchema.DELIVERY
     ):
-        # Update dispatch escrow balance
-        await db.execute(
-            update(Wallet)
-            .where(Wallet.id == order.delivery.dispatch_id)
-            .values(
-                {
-                    "escrow_balance": max(
-                        dispatch_wallet.escrow_balance + dispatch_amount, 0
-                    )
-                }
-            )
+        # New: Update escrow using RabbitMQ
+        await wallet_service.publish_wallet_update(
+            wallet_id=str(order.delivery.dispatch_id),
+            balance_change=str(0),
+            escrow_change=str(dispatch_amount),
+            transaction_type=TransactionType.USER_TO_USER,
+            transaction_direction=TransactionDirection.CREDIT,
+            from_user=sender_profile.full_name or sender_profile.business_name,
+            to_user=dispatch_profile.full_name or dispatch_profile.business_name
         )
 
-        # Update vendor escrow
-        await db.execute(
-            update(Wallet)
-            .where(Wallet.id == order.delivery.vendor_id)
-            .values(
-                {"escrow_balance": max(vendor_wallet.escrow_balance + vendor_amount, 0)}
-            )
+        await wallet_service.publish_wallet_update(
+            wallet_id=str(order.delivery.vendor_id),
+            balance_change=str(0),
+            escrow_change=str(vendor_amount),
+            transaction_type=TransactionType.USER_TO_USER,
+            transaction_direction=TransactionDirection.CREDIT,
+            from_user=sender_profile.full_name or sender_profile.business_name,
+            to_user=vendor_profile.full_name or vendor_profile.business_name
         )
+
+        # Original: Direct DB operations (commented for testing)
+        # await db.execute(
+        #     update(Wallet)
+        #     .where(Wallet.id == order.delivery.dispatch_id)
+        #     .values(
+        #         {
+        #             "escrow_balance": max(
+        #                 dispatch_wallet.escrow_balance + dispatch_amount, 0
+        #             )
+        #         }
+        #     )
+        # )
+        # await db.execute(
+        #     update(Wallet)
+        #     .where(Wallet.id == order.delivery.vendor_id)
+        #     .values(
+        #         {"escrow_balance": max(vendor_wallet.escrow_balance + vendor_amount, 0)}
+        #     )
+        # )
 
         order.delivery.order.order_status = OrderStatus.ACCEPTED
         await db.commit()
@@ -1277,7 +1309,7 @@ async def rider_accept_delivery_order(
     )
 
     await ws_service.broadcast_order_status_update(
-        delivery_id=order.id, new_status=order.order_status
+        order_id=order.id, new_status=order.order_status
     )
 
     sender_token = await get_user_notification_token(db=db, user_id=order.owner_id)
@@ -1304,6 +1336,8 @@ async def sender_confirm_delivery_or_order_received(
     )
 
     order = result.scalar_one_or_none()
+
+    print('================================',order.owner_id, current_user.id, '============================')
 
     if not order:
         raise HTTPException(
@@ -1372,40 +1406,60 @@ async def sender_confirm_delivery_or_order_received(
             order.delivery.delivery_type == DeliveryType.PACKAGE
             and order.require_delivery == RequireDeliverySchema.DELIVERY
         ):
-            # Update dispatch wallet
-            await db.execute(
-                update(Wallet)
-                .where(Wallet.id == order.delivery.dispatch_id)
-                .values(
-                    balance=Wallet.balance + order.delivery.amount_due_dispatch,
-                    escrow_balance=Wallet.escrow_balance
-                    - order.delivery.amount_due_dispatch,
-                )
+            # New: Update dispatch wallet using RabbitMQ
+            await wallet_service.publish_wallet_update(
+                wallet_id=str(order.delivery.dispatch_id),
+                balance_change=str(order.delivery.amount_due_dispatch),
+                escrow_change=str(-order.delivery.amount_due_dispatch),
+                transaction_type=TransactionType.USER_TO_USER,
+                transaction_direction=TransactionDirection.CREDIT,
+                from_user=sender,
+                to_user=dispatch_profile.full_name or dispatch_profile.business_name
             )
 
-            # Update sender wallet
-            await db.execute(
-                update(Wallet)
-                .where(Wallet.id == order.delivery.sender_id)
-                .values(
-                    escrow_balance=Wallet.escrow_balance - order.delivery.delivery_fee
-                )
+            # New: Update sender wallet using RabbitMQ
+            await wallet_service.publish_wallet_update(
+                wallet_id=str(order.delivery.sender_id),
+                balance_change=str(0),
+                escrow_change=str(-order.delivery.delivery_fee),
+                transaction_type=TransactionType.USER_TO_USER,
+                transaction_direction=TransactionDirection.DEBIT,
+                from_user=sender,
+                to_user=dispatch_profile.full_name or dispatch_profile.business_name
             )
+
+            # Original: Direct DB operations (commented for testing)
+            # await db.execute(
+            #     update(Wallet)
+            #     .where(Wallet.id == order.delivery.dispatch_id)
+            #     .values(
+            #         balance=Wallet.balance + order.delivery.amount_due_dispatch,
+            #         escrow_balance=Wallet.escrow_balance
+            #         - order.delivery.amount_due_dispatch,
+            #     )
+            # )
+            # await db.execute(
+            #     update(Wallet)
+            #     .where(Wallet.id == order.delivery.sender_id)
+            #     .values(
+            #         escrow_balance=Wallet.escrow_balance - order.delivery.delivery_fee
+            #     )
+            # )
 
             order.delivery.delivery_status = DeliveryStatus.RECEIVED
             await db.commit()
             await db.refresh(order)
 
             # create transaction for dispatch
-            await create_wallet_transaction(
-                db=db,
-                wallet_id=order.delivery.dispatch_id,
-                amount=order.delivery.amount_due_dispatch,
-                transaction_direction=TransactionDirection.CREDIT,
-                transaction_type=TransactionType.USER_TO_USER,
-                from_user=sender,
-                to_user=dispatch_profile.full_name or dispatch_profile.business_name,
-            )
+            # await create_wallet_transaction(
+            #     db=db,
+            #     wallet_id=order.delivery.dispatch_id,
+            #     amount=order.delivery.amount_due_dispatch,
+            #     transaction_direction=TransactionDirection.CREDIT,
+            #     transaction_type=TransactionType.USER_TO_USER,
+            #     from_user=sender,
+            #     to_user=dispatch_profile.full_name or dispatch_profile.business_name,
+            # )
 
             await ws_service.broadcast_delivery_status_update(
                 delivery_id=order.delivery.id, new_status=order.delivery.delivery_status
@@ -1416,30 +1470,62 @@ async def sender_confirm_delivery_or_order_received(
             and order.delivery.delivery_type
             in [DeliveryType.FOOD, DeliveryType.LAUNDRY]
         ):
-            # Update dispatch, vendor, and sender wallets
-            await db.execute(
-                update(Wallet)
-                .where(Wallet.id == order.delivery.dispatch_id)
-                .values(
-                    balance=Wallet.balance + order.delivery.amount_due_dispatch,
-                    escrow_balance=Wallet.escrow_balance
-                    - order.delivery.amount_due_dispatch,
-                )
+            # New: Update wallets using RabbitMQ
+            await wallet_service.publish_wallet_update(
+                wallet_id=order.delivery.dispatch_id,
+                balance_change=order.delivery.amount_due_dispatch,
+                escrow_change=-order.delivery.amount_due_dispatch,
+                transaction_type=TransactionType.USER_TO_USER,
+                transaction_direction=TransactionDirection.CREDIT,
+                from_user=sender,
+                to_user=dispatch_profile.full_name or dispatch_profile.business_name
             )
-            await db.execute(
-                update(Wallet)
-                .where(Wallet.id == order.vendor_id)
-                .values(
-                    balance=Wallet.balance + order.amount_due_vendor,
-                    escrow_balance=Wallet.escrow_balance - order.amount_due_vendor,
-                )
+            
+            await wallet_service.publish_wallet_update(
+                wallet_id=order.vendor_id,
+                balance_change=order.amount_due_vendor,
+                escrow_change=-order.amount_due_vendor,
+                transaction_type=TransactionType.USER_TO_USER,
+                transaction_direction=TransactionDirection.CREDIT,
+                from_user=sender,
+                to_user=vendor_profile.full_name or vendor_profile.business_name
             )
+            
             total_spent = order.total_price + order.delivery.delivery_fee
-            await db.execute(
-                update(Wallet)
-                .where(Wallet.id == order.owner_id)
-                .values(escrow_balance=Wallet.escrow_balance - total_spent)
+            await wallet_service.publish_wallet_update(
+                wallet_id=order.owner_id,
+                balance_change=0,
+                escrow_change=-total_spent,
+                transaction_type=TransactionType.USER_TO_USER,
+                transaction_direction=TransactionDirection.DEBIT,
+                from_user=sender,
+                to_user=vendor_profile.full_name or vendor_profile.business_name
             )
+
+            # Original: Direct DB operations (commented for testing)
+            # await db.execute(
+            #     update(Wallet)
+            #     .where(Wallet.id == order.delivery.dispatch_id)
+            #     .values(
+            #         balance=Wallet.balance + order.delivery.amount_due_dispatch,
+            #         escrow_balance=Wallet.escrow_balance
+            #         - order.delivery.amount_due_dispatch,
+            #     )
+            # )
+            # await db.execute(
+            #     update(Wallet)
+            #     .where(Wallet.id == order.vendor_id)
+            #     .values(
+            #         balance=Wallet.balance + order.amount_due_vendor,
+            #         escrow_balance=Wallet.escrow_balance - order.amount_due_vendor,
+            #     )
+            # )
+            # total_spent = order.total_price + order.delivery.delivery_fee
+            # await db.execute(
+            #     update(Wallet)
+            #     .where(Wallet.id == order.owner_id)
+            #     .values(escrow_balance=Wallet.escrow_balance - total_spent)
+            # )
 
             order.order_status = OrderStatus.RECEIVED
 
@@ -1447,54 +1533,75 @@ async def sender_confirm_delivery_or_order_received(
             await db.refresh(order)
 
             # Create credit transactions for dispatch and vendor
-            await create_wallet_transaction(
-                db=db,
-                wallet_id=order.delivery.dispatch_id,
-                amount=order.delivery.amount_due_dispatch,
-                transaction_direction=TransactionDirection.CREDIT,
-                transaction_type=TransactionType.USER_TO_USER,
-                from_user=sender,
-                to_user=dispatch_profile.full_name or dispatch_profile.business_name,
-            )
+            # await create_wallet_transaction(
+            #     db=db,
+            #     wallet_id=order.delivery.dispatch_id,
+            #     amount=order.delivery.amount_due_dispatch,
+            #     transaction_direction=TransactionDirection.CREDIT,
+            #     transaction_type=TransactionType.USER_TO_USER,
+            #     from_user=sender,
+            #     to_user=dispatch_profile.full_name or dispatch_profile.business_name,
+            # )
 
-            # create vendor transaction
-            await create_wallet_transaction(
-                db=db,
-                wallet_id=vendor_wallet.id,
-                amount=vendor_amount,
-                transaction_direction=TransactionDirection.CREDIT,
-                transaction_type=TransactionType.USER_TO_USER,
-                from_user=sender,
-                to_user=vendor_profile.full_name
-                if vendor_profile.full_name
-                else vendor_profile.business_name,
-            )
+            # # create vendor transaction
+            # await create_wallet_transaction(
+            #     db=db,
+            #     wallet_id=vendor_wallet.id,
+            #     amount=vendor_amount,
+            #     transaction_direction=TransactionDirection.CREDIT,
+            #     transaction_type=TransactionType.USER_TO_USER,
+            #     from_user=sender,
+            #     to_user=vendor_profile.full_name
+            #     if vendor_profile.full_name
+            #     else vendor_profile.business_name,
+            # )
 
             await ws_service.broadcast_delivery_status_update(
                 delivery_id=order.delivery.id, new_status=order.delivery.delivery_status
             )
             await ws_service.broadcast_order_status_update(
-                delivery_id=order.id, new_status=order.order_status
+                order_id=order.id, new_status=order.order_status
             )
 
         if (
             order.require_delivery == RequireDeliverySchema.PICKUP
             and order.order_type in [OrderType.FOOD, OrderType.LAUNDRY]
         ):
-            # Atomically update vendor and sender wallets
-            await db.execute(
-                update(Wallet)
-                .where(Wallet.id == order.vendor_id)
-                .values(
-                    balance=Wallet.balance + order.amount_due_vendor,
-                    escrow_balance=Wallet.escrow_balance - order.amount_due_vendor,
-                )
+            # New: Update wallets using RabbitMQ
+            await wallet_service.publish_wallet_update(
+                wallet_id=order.vendor_id,
+                balance_change=order.amount_due_vendor,
+                escrow_change=-order.amount_due_vendor,
+                transaction_type=TransactionType.USER_TO_USER,
+                transaction_direction=TransactionDirection.CREDIT,
+                from_user=sender,
+                to_user=vendor_profile.full_name or vendor_profile.business_name
             )
-            await db.execute(
-                update(Wallet)
-                .where(Wallet.id == order.owner_id)
-                .values(escrow_balance=Wallet.escrow_balance - order.total_price)
+            
+            await wallet_service.publish_wallet_update(
+                wallet_id=order.owner_id,
+                balance_change=0,
+                escrow_change=-order.total_price,
+                transaction_type=TransactionType.USER_TO_USER,
+                transaction_direction=TransactionDirection.DEBIT,
+                from_user=sender,
+                to_user=vendor_profile.full_name or vendor_profile.business_name
             )
+
+            # Original: Direct DB operations (commented for testing)
+            # await db.execute(
+            #     update(Wallet)
+            #     .where(Wallet.id == order.vendor_id)
+            #     .values(
+            #         balance=Wallet.balance + order.amount_due_vendor,
+            #         escrow_balance=Wallet.escrow_balance - order.amount_due_vendor,
+            #     )
+            # )
+            # await db.execute(
+            #     update(Wallet)
+            #     .where(Wallet.id == order.owner_id)
+            #     .values(escrow_balance=Wallet.escrow_balance - order.total_price)
+            # )
 
             order.delivery.order.order_status = OrderStatus.RECEIVED
 
@@ -1502,20 +1609,20 @@ async def sender_confirm_delivery_or_order_received(
             await db.refresh(order)
 
             # create vendor transaction
-            await create_wallet_transaction(
-                db=db,
-                wallet_id=vendor_wallet.id,
-                amount=vendor_amount,
-                transaction_direction=TransactionDirection.CREDIT,
-                transaction_type=TransactionType.USER_TO_USER,
-                from_user=sender,
-                to_user=vendor_profile.full_name
-                if vendor_profile.full_name
-                else vendor_profile.business_name,
-            )
+            # await create_wallet_transaction(
+            #     db=db,
+            #     wallet_id=vendor_wallet.id,
+            #     amount=vendor_amount,
+            #     transaction_direction=TransactionDirection.CREDIT,
+            #     transaction_type=TransactionType.USER_TO_USER,
+            #     from_user=sender,
+            #     to_user=vendor_profile.full_name
+            #     if vendor_profile.full_name
+            #     else vendor_profile.business_name,
+            # )
 
             await ws_service.broadcast_order_status_update(
-                delivery_id=order.id, new_status=order.order_status
+                order_id=order.id, new_status=order.order_status
             )
 
         rider_token = await get_user_notification_token(
@@ -1624,33 +1731,36 @@ async def vendor_mark_laundry_item_received(
             .values(order_status=OrderStatus.VENDOR_RECEIVED_LAUNDRY_ITEM)
         )
 
-        # Update dispatch wallet
-        await db.execute(
-            update(Wallet)
-            .where(Wallet.id == order.delivery.dispatch_id)
-            .values(
-                balance=Wallet.balance + order.delivery.amount_due_dispatch,
-                escrow_balance=Wallet.escrow_balance - order.delivery.amount_due_dispatch,
+        try:
+            # Update dispatch wallet safely
+            await safe_wallet_update(
+                db=db,
+                wallet_id=order.delivery.dispatch_id,
+                balance_change=order.delivery.amount_due_dispatch,  # Increase balance
+                escrow_change=-order.delivery.amount_due_dispatch,  # Decrease escrow
             )
-        )
 
-        # Update sender's escrow
-        await db.execute(
-            update(Wallet)
-            .where(Wallet.id == order.delivery.sender_id)
-            .values(escrow_balance=Wallet.escrow_balance - order.delivery.delivery_fee)
-        )
+            # Update sender's escrow safely
+            await safe_wallet_update(
+                db=db,
+                wallet_id=order.delivery.sender_id,
+                escrow_change=-order.delivery.delivery_fee,  # Decrease escrow
+            )
 
-        # Create transaction record for dispatch payment
-        await create_wallet_transaction(
-            db=db,
-            wallet_id=order.delivery.dispatch_id,
-            amount=order.delivery.amount_due_dispatch,
-            transaction_type=TransactionType.USER_TO_USER,
-            transaction_direction=TransactionDirection.CREDIT,
-            from_user=sender_profile.full_name if sender_profile.full_name else sender_profile.business_name,
-            to_user=dispatch_profile.full_name if dispatch_profile.full_name else dispatch_profile.business_name,
-        )
+            # Queue transaction record for async processing
+            await queue_wallet_transaction(
+                db=db,
+                wallet_id=order.delivery.dispatch_id,
+                amount=order.delivery.amount_due_dispatch,
+                transaction_type=TransactionType.USER_TO_USER,
+                transaction_direction=TransactionDirection.CREDIT,
+                from_user=sender_profile.full_name if sender_profile.full_name else sender_profile.business_name,
+                to_user=dispatch_profile.full_name if dispatch_profile.full_name else dispatch_profile.business_name,
+            )
+        except WalletUpdateError as e:
+            # Log the error but don't fail the whole operation
+            logger_config.error(f"Wallet update failed: {str(e)}")
+            # Consider sending an alert to admin
 
         await db.commit()
         await db.refresh(order)
@@ -2013,41 +2123,150 @@ async def create_wallet_transaction(
     return transx
 
 
-async def update_wallet_balance_and_escrow(
-    db: AsyncSession, wallet_id: UUID, new_balance: Decimal, new_escrow_balance: Decimal
-) -> None:
-    """Updates both wallet balance and escrow balance."""
+class WalletUpdateError(Exception):
+    """Custom exception for wallet update errors"""
+    pass
+
+
+async def safe_wallet_update(
+    db: AsyncSession,
+    wallet_id: UUID,
+    balance_change: Decimal = Decimal("0"),
+    escrow_change: Decimal = Decimal("0"),
+    allow_negative: bool = False,
+) -> tuple[Decimal, Decimal]:
+    """
+    Safely update wallet balances ensuring they never go negative unless explicitly allowed.
+    
+    Args:
+        db: Database session
+        wallet_id: Wallet ID to update
+        balance_change: Amount to change balance by (positive for increase, negative for decrease)
+        escrow_change: Amount to change escrow by (positive for increase, negative for decrease)
+        allow_negative: Whether to allow negative balances (default False)
+        
+    Returns:
+        tuple[Decimal, Decimal]: New balance and new escrow balance
+        
+    Raises:
+        WalletUpdateError: If update would result in negative balance/escrow and not allowed
+    """
+    # Fetch current wallet state
+    result = await db.execute(select(Wallet).where(Wallet.id == wallet_id))
+    wallet = result.scalar_one_or_none()
+    
+    if not wallet:
+        raise WalletUpdateError(f"Wallet {wallet_id} not found")
+        
+    # Calculate new values
+    new_balance = wallet.balance + balance_change
+    new_escrow = wallet.escrow_balance + escrow_change
+    
+    # Check for negative values if not allowed
+    if not allow_negative:
+        if new_balance < 0:
+            raise WalletUpdateError(
+                f"Insufficient balance: {wallet.balance} available, {abs(balance_change)} needed"
+            )
+        if new_escrow < 0:
+            raise WalletUpdateError(
+                f"Insufficient escrow: {wallet.escrow_balance} available, {abs(escrow_change)} needed"
+            )
+    
+    # Ensure we never go below zero even if negative is allowed
+    new_balance = max(new_balance, Decimal("0"))
+    new_escrow = max(new_escrow, Decimal("0"))
+    
+    # Update wallet
     await db.execute(
         update(Wallet)
         .where(Wallet.id == wallet_id)
-        .values(balance=new_balance, escrow_balance=new_escrow_balance)
+        .values(
+            balance=new_balance,
+            escrow_balance=new_escrow,
+        )
     )
+    
+    return new_balance, new_escrow
 
 
-async def update_wallet_balance(
-    db: AsyncSession, wallet_id: UUID, new_balance: Decimal, escrow_balance: Decimal = 0
+async def create_wallet_transaction_message(
+    wallet_id: UUID,
+    amount: Decimal,
+    transaction_type: TransactionType,
+    transaction_direction: TransactionDirection,
+    to_user: str = None,
+    from_user: str = None,
+) -> dict:
+    """
+    Create a message for the transaction queue.
+    This will be processed asynchronously by a worker.
+    """
+    return {
+        "wallet_id": str(wallet_id),
+        "amount": str(amount),
+        "transaction_type": transaction_type.value,
+        "transaction_direction": transaction_direction.value,
+        "to_user": to_user,
+        "from_user": from_user,
+        "created_at": datetime.now().isoformat(),
+    }
+
+
+async def queue_wallet_transaction(
+    db: AsyncSession,
+    wallet_id: UUID,
+    amount: Decimal,
+    transaction_type: TransactionType,
+    transaction_direction: TransactionDirection,
+    to_user: str = None,
+    from_user: str = None,
 ) -> None:
-    """Updates a wallet's balance."""
-    # Only update balance; do not touch escrow_balance here unless explicitly intended
-    await db.execute(
-        update(Wallet).where(Wallet.id == wallet_id).values(balance=new_balance)
-    )
-
-
-async def update_wallet_escrow_balance(
-    db: AsyncSession, wallet_id: UUID, new_escrow_balance: Decimal
-) -> None:
-    """Updates a wallet's escrow balance."""
-    # Prevent escrow from going negative
-    safe_escrow = new_escrow_balance if new_escrow_balance >= 0 else 0
-    stmt = (
-        update(Wallet)
-        .where(Wallet.id == wallet_id)
-        .values(escrow_balance=safe_escrow)
-        .execution_options(synchronize_session="fetch")
-    )
-    await db.execute(stmt)
-    await db.commit()
+    """
+    Queue a wallet transaction to be processed asynchronously using RabbitMQ.
+    This ensures reliable transaction processing even if the worker process is down.
+    """
+    try:
+        message = await create_wallet_transaction_message(
+            wallet_id=wallet_id,
+            amount=amount,
+            transaction_type=transaction_type,
+            transaction_direction=transaction_direction,
+            to_user=to_user,
+            from_user=from_user,
+        )
+        
+        try:
+            # Publish message to RabbitMQ queue
+            from app.queue.rabbitmq import publish_transaction
+            await publish_transaction(message)
+            logger_config.info(f"Successfully queued transaction for wallet {wallet_id}")
+        except Exception as e:
+            logger_config.error(f"Failed to publish transaction to queue: {str(e)}")
+            # Fallback: Create transaction directly in case of queue failure
+            transaction = Transaction(
+                wallet_id=wallet_id,
+                amount=amount,
+                transaction_type=transaction_type,
+                transaction_direction=transaction_direction,
+                payment_status=PaymentStatus.PAID,
+                to_user=to_user,
+                from_user=from_user,
+            )
+            
+            try:
+                db.add(transaction)
+                await db.flush()
+                logger_config.info("Used fallback direct transaction creation")
+            except Exception as direct_error:
+                logger_config.error(f"Fallback also failed - both queue and direct creation failed: {str(direct_error)}")
+                # At this point both primary and fallback methods failed
+                # Consider notifying admin or adding to a retry queue
+                pass
+            
+    except Exception as e:
+        logger_config.error(f"Failed to create transaction message: {str(e)}")
+        # Log error but don't break flow - operations should continue even if transaction logging fails
 
 
 async def update_delivery_status_in_db(

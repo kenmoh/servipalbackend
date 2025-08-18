@@ -18,6 +18,9 @@ class Settings(BaseSettings):
     APP_NAME: str = "ServiPal"
     DEBUG: bool = os.getenv("DEBUG", False) == True
     ENVIRONMENT: str = os.getenv("ENVIRONMENT")
+    
+    # RabbitMQ settings
+    RABBITMQ_URL: str = os.getenv("RABBITMQ_URL")
 
     # Database settings
     DATABASE_URL: str = os.getenv("DATABASE_URL")

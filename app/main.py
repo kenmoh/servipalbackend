@@ -1,6 +1,7 @@
 import os
 from app.config.config import settings
 from app.utils import limiter
+from app.services.wallet_service import start_wallet_consumer, stop_wallet_consumer
 
 # Set the timezone for the application process. This is crucial for libraries
 os.environ["TZ"] = settings.TZ
@@ -153,15 +154,21 @@ async def lifespan(application: FastAPI):
         redis_client.ping()
         logger.info("Redis connection successful")
 
+        # Start wallet service consumer
+        logger.info("Starting wallet service consumer...")
+        await start_wallet_consumer()
+        logger.info("Wallet service consumer started")
+
         # Log scheduler status
         logger.info(f"Scheduler running: {scheduler.running}")
         logger.info(f"Scheduled jobs: {scheduler.get_jobs()}")
 
         yield
 
-        logger.info("Shutting down scheduler...")
+        logger.info("Shutting down services...")
+        await stop_wallet_consumer()
         scheduler.shutdown()
-        logger.info("Scheduler shutdown complete")
+        logger.info("Services shutdown complete")
 
     finally:
         logger.info("Cleaning up resources...")
@@ -221,12 +228,6 @@ def custom_redoc_html():
 @app.get("/favicon.ico", include_in_schema=False)
 def favicon():
     return RedirectResponse(url=FAVICON_URL)
-
-
-# Option 2: If you have a local favicon file, use this instead:
-# @app.get("/favicon.ico", include_in_schema=False)
-# def favicon():
-#     return FileResponse(path="path/to/your/favicon.ico", media_type="image/x-icon")
 
 
 # Your API routes go here
