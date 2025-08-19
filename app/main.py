@@ -1,7 +1,9 @@
 import os
 from app.config.config import settings
 from app.utils import limiter
-from app.services.wallet_service import start_wallet_consumer, stop_wallet_consumer
+from app.queue.wallet_queue import start_wallet_consumer, stop_wallet_consumer
+from app.queue.notification_queue import start_notification_consumer, stop_notification_consumer
+from app.queue.order_status_queue import start_order_status_consumer, stop_order_status_consumer
 
 # Set the timezone for the application process. This is crucial for libraries
 os.environ["TZ"] = settings.TZ
@@ -154,10 +156,12 @@ async def lifespan(application: FastAPI):
         redis_client.ping()
         logger.info("Redis connection successful")
 
-        # Start wallet service consumer
-        logger.info("Starting wallet service consumer...")
+        # Start all queue consumers
+        logger.info("Starting service consumers...")
         await start_wallet_consumer()
-        logger.info("Wallet service consumer started")
+        await start_notification_consumer()
+        await start_order_status_consumer()
+        logger.info("All service consumers started")
 
         # Log scheduler status
         logger.info(f"Scheduler running: {scheduler.running}")
@@ -167,6 +171,8 @@ async def lifespan(application: FastAPI):
 
         logger.info("Shutting down services...")
         await stop_wallet_consumer()
+        await stop_notification_consumer()
+        await stop_order_status_consumer()
         scheduler.shutdown()
         logger.info("Services shutdown complete")
 

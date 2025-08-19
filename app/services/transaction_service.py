@@ -23,6 +23,9 @@ from app.models.models import (
     Transaction,
     OrderItem,
 )
+from app.queue.notification_queue import notification_queue
+from app.queue.order_status_queue import order_status_queue
+from app.queue.wallet_queue import wallet_service
 from app.schemas.transaction_schema import (
     TransactionSchema,
     TransactionFilterSchema,
@@ -1371,13 +1374,6 @@ async def order_payment_callback(request: Request, db: AsyncSession):
             select(Wallet).where(Wallet.id == order.owner_id)
         )
         customer_wallet = customer_wallet_result.scalar_one_or_none()
-        if not customer_wallet:
-            # Create wallet if it does not exist
-            customer_wallet = Wallet(id=order.owner_id, balance=0, escrow_balance=0)
-            db.add(customer_wallet)
-            await db.flush()
-
-        current_time = datetime.now()
 
         # --- PACKAGE ORDER ---
         if order.order_type == OrderType.PACKAGE:
@@ -1389,39 +1385,62 @@ async def order_payment_callback(request: Request, db: AsyncSession):
                 )
             delivery_fee = order.delivery.delivery_fee
 
-            # Update customer wallet
-            customer_wallet.escrow_balance += delivery_fee
-
-            transaction = Transaction(
-                wallet_id=customer_wallet.id,
-                amount=delivery_fee,
+            # Queue wallet operations for package delivery
+            await wallet_service.publish_wallet_update(
+                wallet_id=str(order.owner_id),
+                escrow_change=str(delivery_fee),
+                balance_change=str(0),
                 transaction_type=TransactionType.USER_TO_USER,
                 transaction_direction=TransactionDirection.DEBIT,
-                payment_status=PaymentStatus.PAID,
-                created_at=current_time,
-                payment_method=PaymentMethod.CARD,
                 from_user=customer.full_name or customer.business_name,
                 to_user=dispatch_profile.full_name or dispatch_profile.business_name,
-                updated_at=current_time,
+                metadata={
+                    "order_id": str(order.id),
+                    "operation": "package_delivery_payment"
+                }
             )
 
-            db.add(transaction)
+            # Original direct DB operations (commented out)
+            # # Update customer wallet
+            # customer_wallet.escrow_balance += delivery_fee
 
-            # Commit changes
-            await db.commit()
-            await db.refresh(order)
-            await db.refresh(customer_wallet)
+            # transaction = Transaction(
+            #     wallet_id=customer_wallet.id,
+            #     amount=delivery_fee,
+            #     transaction_type=TransactionType.USER_TO_USER,
+            #     transaction_direction=TransactionDirection.DEBIT,
+            #     payment_status=PaymentStatus.PAID,
+            #     created_at=current_time,
+            #     payment_method=PaymentMethod.CARD,
+            #     from_user=customer.full_name or customer.business_name,
+            #     to_user=dispatch_profile.full_name or dispatch_profile.business_name,
+            #     updated_at=current_time,
+            # )
+
+            # db.add(transaction)
+
+            # # Commit changes
+            # await db.commit()
+            # await db.refresh(order)
+            # await db.refresh(customer_wallet)
 
             # Notify customer
             customer_token = await get_user_notification_token(
                 db=db, user_id=customer_wallet.id
             )
             if customer_token:
-                await send_push_notification(
+                # Queue notification instead of direct send
+                await notification_queue.publish_notification(
                     tokens=[customer_token],
                     title="Payment Successful",
                     message=f"Your payment of ₦{delivery_fee} for delivery was successful.",
                 )
+                # Original direct notification (commented out)
+                # await send_push_notification(
+                #     tokens=[customer_token],
+                #     title="Payment Successful",
+                #     message=f"Your payment of ₦{delivery_fee} for delivery was successful.",
+                # )
             # Clear caches
             redis_client.delete(f"user_related_orders:{customer.user_id}")
             redis_client.delete(f"user_orders:{order.owner_id}")
@@ -1459,44 +1478,76 @@ async def order_payment_callback(request: Request, db: AsyncSession):
                 else total_price
             )
 
-            # Fetch or create vendor wallet
-            vendor_wallet_result = await db.execute(
-                select(Wallet).where(Wallet.id == order.vendor_id)
-            )
-            vendor_wallet = vendor_wallet_result.scalar_one_or_none()
-            if not vendor_wallet:
-                vendor_wallet = Wallet(id=order.vendor_id, balance=0, escrow_balance=0)
-                db.add(vendor_wallet)
-                await db.flush()
-
-            # Move funds to customer wallet
-            customer_wallet.escrow_balance += charged_amount
-
-            # Move order amount to vendor's escrow
-            vendor_wallet.escrow_balance += order.amount_due_vendor
-
-            # Create customer transaction (payment received)
-            customer_transaction = Transaction(
-                wallet_id=customer_wallet.id,
-                amount=charged_amount,
+            # Queue customer and vendor wallet operations
+            # Customer wallet update (debit and move to escrow)
+            await wallet_service.publish_wallet_update(
+                wallet_id=str(order.owner_id),
+                escrow_change=float(charged_amount),
+                balance_change=0,
                 transaction_type=TransactionType.USER_TO_USER,
                 transaction_direction=TransactionDirection.DEBIT,
-                payment_status=PaymentStatus.PAID,
-                created_at=current_time,
-                payment_method=PaymentMethod.CARD,
                 from_user=customer.full_name or customer.business_name,
                 to_user=vendor_profile.full_name or vendor_profile.business_name,
-                updated_at=current_time,
+                metadata={
+                    "order_id": str(order.id),
+                    "operation": "food_order_payment"
+                }
             )
 
-            db.add(customer_transaction)
-            # db.add(vendor_transaction)
+            # Vendor wallet update (add to escrow)
+            await wallet_service.publish_wallet_update(
+                wallet_id=str(order.vendor_id),
+                escrow_change=str(order.amount_due_vendor),
+                balance_change=0,
+                transaction_type=TransactionType.USER_TO_USER,
+                transaction_direction=TransactionDirection.CREDIT,
+                from_user=customer.full_name or customer.business_name,
+                to_user=vendor_profile.full_name or vendor_profile.business_name,
+                metadata={
+                    "order_id": str(order.id),
+                    "operation": "food_order_payment"
+                }
+            )
 
-            # Commit all changes
-            await db.commit()
-            await db.refresh(order)
-            await db.refresh(customer_wallet)
-            await db.refresh(vendor_wallet)
+            # Original direct DB operations (commented out)
+            # # Fetch or create vendor wallet
+            # vendor_wallet_result = await db.execute(
+            #     select(Wallet).where(Wallet.id == order.vendor_id)
+            # )
+            # vendor_wallet = vendor_wallet_result.scalar_one_or_none()
+            # if not vendor_wallet:
+            #     vendor_wallet = Wallet(id=order.vendor_id, balance=0, escrow_balance=0)
+            #     db.add(vendor_wallet)
+            #     await db.flush()
+
+            # # Move funds to customer wallet
+            # customer_wallet.escrow_balance += charged_amount
+
+            # # Move order amount to vendor's escrow
+            # vendor_wallet.escrow_balance += order.amount_due_vendor
+
+            # # Create customer transaction (payment received)
+            # customer_transaction = Transaction(
+            #     wallet_id=customer_wallet.id,
+            #     amount=charged_amount,
+            #     transaction_type=TransactionType.USER_TO_USER,
+            #     transaction_direction=TransactionDirection.DEBIT,
+            #     payment_status=PaymentStatus.PAID,
+            #     created_at=current_time,
+            #     payment_method=PaymentMethod.CARD,
+            #     from_user=customer.full_name or customer.business_name,
+            #     to_user=vendor_profile.full_name or vendor_profile.business_name,
+            #     updated_at=current_time,
+            # )
+
+            # db.add(customer_transaction)
+            # # db.add(vendor_transaction)
+
+            # # Commit all changes
+            # await db.commit()
+            # await db.refresh(order)
+            # await db.refresh(customer_wallet)
+            # await db.refresh(vendor_wallet)
 
             # Send notifications
             customer_token = await get_user_notification_token(
@@ -1626,6 +1677,22 @@ async def product_order_payment_callback(request: Request, db: AsyncSession):
 
         await db.commit()
         await db.refresh(order)
+
+        await wallet_service.publish_wallet_update(
+                wallet_id=str(order.owner_id),
+                escrow_change=str(order.total_price),
+                balance_change=0,
+                transaction_type=TransactionType.USER_TO_USER,
+                transaction_direction=TransactionDirection.DEBIT,
+                payment_status=PaymentStatus.PAID,
+                payment_method=PaymentMethod.CARD,
+                from_user=customer.full_name or customer.business_name,
+                to_user=vendor.full_name or vendor.business_name,
+                metadata={
+                    "order_id": str(order.id),
+                    "operation": "food_order_payment"
+                }
+            )
 
         customer_tranx = Transaction(
             wallet_id=order.owner_id,

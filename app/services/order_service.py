@@ -20,8 +20,9 @@ from app.models.models import (
     ItemImage,
     Profile,
 )
+from app.queue import notification_queue, order_status_queue
 from app.services import ws_service
-from app.services.wallet_service import wallet_service
+from app.queue.wallet_queue import wallet_service
 
 import json
 from decimal import Decimal
@@ -987,24 +988,33 @@ async def cancel_order_or_delivery(
             token = await get_user_notification_token(
                 db=db, user_id=order.delivery.vendor_id
             )
-            rider_token = await get_user_notification_token(
-                db=db, user_id=order.delivery.rider_id
-            )
+            # rider_token = await get_user_notification_token(
+            #     db=db, user_id=order.delivery.rider_id
+            # )
+
 
             if token:
-                await send_push_notification(
-                    tokens=[token],
+                await notification_queue.publish_notification(
+                   tokens=[token],
                     title="Order canceled",
                     message="Your Order has been canceled and will be re-listed",
                     navigate_to="/(app)/delivery/orders",
                 )
-            if rider_token:
-                await send_push_notification(
-                    tokens=[rider_token],
-                    title="Order canceled",
-                    message="You canceled this order.",
-                    navigate_to="/(app)/delivery/orders",
-                )
+
+            # if token:
+            #     await send_push_notification(
+            #         tokens=[token],
+            #         title="Order canceled",
+            #         message="Your Order has been canceled and will be re-listed",
+            #         navigate_to="/(app)/delivery/orders",
+            #     )
+            # if rider_token:
+            #     await send_push_notification(
+            #         tokens=[rider_token],
+            #         title="Order canceled",
+            #         message="You canceled this order.",
+            #         navigate_to="/(app)/delivery/orders",
+            #     )
 
             redis_client.delete(f"{ALL_DELIVERY}")
             redis_client.delete("paid_pending_deliveries")
@@ -1015,7 +1025,17 @@ async def cancel_order_or_delivery(
                 delivery_id=order.delivery.id,
                 delivery_status=order.delivery.delivery_status,
             )
-
+            await order_status_queue.publish_order_update(
+                order_id=str(order.id),
+                new_status=order.delivery.delivery_status,
+                delivery_id=order.delivery.id,
+                cache_keys=[
+                    "paid_pending_deliveries",
+                    f"{ALL_DELIVERY}",
+                    f"user_related_orders:{current_user.id}",
+                    "orders"
+                ]
+            )
             return DeliveryStatusUpdateSchema(delivery_status=order.order.order_status)
 
 
@@ -1137,13 +1157,23 @@ async def vendor_mark_order_delivered(
                 db=db, user_id=order.owner_id
             )
 
+
             if owner_token:
-                await send_push_notification(
+
+                await notification_queue.publish_notification(
                     tokens=[owner_token],
-                    title="Order Delivered",
-                    message="Your order has been marked as delivered by the vendor, please verify before marking as received.",
-                    navigate_to="/(app)/delivery/orders",
-                )
+                        title="Order Delivered",
+                        message="Your order has been marked as delivered by the vendor, please verify before marking as received.",
+                        navigate_to="/(app)/delivery/orders",
+                    )
+
+            # if owner_token:
+            #     await send_push_notification(
+            #         tokens=[owner_token],
+            #         title="Order Delivered",
+            #         message="Your order has been marked as delivered by the vendor, please verify before marking as received.",
+            #         navigate_to="/(app)/delivery/orders",
+            #     )
 
                 redis_client.delete(f"delivery:{order_id}")
                 redis_client.delete(f"{ALL_DELIVERY}")
@@ -1315,12 +1345,21 @@ async def rider_accept_delivery_order(
     sender_token = await get_user_notification_token(db=db, user_id=order.owner_id)
 
     if sender_token:
-        await send_push_notification(
-            tokens=[sender_token],
-            title="Order Assigned",
-            message=f"Your order has been assigned to {current_user.profile.full_name}, {current_user.profile.phone_number}",
-            navigate_to="/(app)/delivery/orders",
-        )
+            await notification_queue.publish_notification(
+                tokens=[sender_token],
+                title="Order Assigned",
+                message=f"Your order has been assigned to {current_user.profile.full_name}, {current_user.profile.phone_number}",
+                navigate_to="/(app)/delivery/orders",
+            )
+       
+
+    # if sender_token:
+    #     await send_push_notification(
+    #         tokens=[sender_token],
+    #         title="Order Assigned",
+    #         message=f"Your order has been assigned to {current_user.profile.full_name}, {current_user.profile.phone_number}",
+    #         navigate_to="/(app)/delivery/orders",
+    #     )
 
 
     return DeliveryStatusUpdateSchema(
@@ -1337,7 +1376,6 @@ async def sender_confirm_delivery_or_order_received(
 
     order = result.scalar_one_or_none()
 
-    print('================================',order.owner_id, current_user.id, '============================')
 
     if not order:
         raise HTTPException(
@@ -1629,21 +1667,38 @@ async def sender_confirm_delivery_or_order_received(
             db=db, user_id=order.delivery.rider_id
         )
         vendor_token = await get_user_notification_token(db=db, user_id=order.vendor_id)
-       
+
+
         if rider_token:
-            await send_push_notification(
+            await notification_queue.publish_notification(
+                 tokens=[rider_token],
+                title="Order completed",
+                message=f"Congratulations! Order completed. {order.delivery.amount_due_dispatch} has been released to your wallet",
+                navigate_to="/(app)/delivery/orders",
+            )
+       
+
+        if vendor_token:
+            await notification_queue.publish_notification(
                 tokens=[rider_token],
                 title="Order completed",
                 message=f"Congratulations! Order completed. {order.delivery.amount_due_dispatch} has been released to your wallet",
                 navigate_to="/(app)/delivery/orders",
             )
-        if vendor_token:
-            await send_push_notification(
-                tokens=[vendor_token],
-                title="Order completed",
-                message=f"Congratulations! Order completed. ₦{order.delivery.order.amount_due_vendor} has been credited to your wallet",
-                navigate_to="/(app)/delivery/orders",
-            )
+        # if rider_token:
+        #     await send_push_notification(
+        #         tokens=[rider_token],
+        #         title="Order completed",
+        #         message=f"Congratulations! Order completed. {order.delivery.amount_due_dispatch} has been released to your wallet",
+        #         navigate_to="/(app)/delivery/orders",
+        #     )
+        # if vendor_token:
+        #     await send_push_notification(
+        #         tokens=[vendor_token],
+        #         title="Order completed",
+        #         message=f"Congratulations! Order completed. ₦{order.delivery.order.amount_due_vendor} has been credited to your wallet",
+        #         navigate_to="/(app)/delivery/orders",
+        #     )
 
 
         # redis_client.delete(f"delivery:{delivery_id}")
@@ -1770,7 +1825,7 @@ async def vendor_mark_laundry_item_received(
         rider_token = await get_user_notification_token(db=db, user_id=order.delivery.rider_id)
 
         if sender_token:
-            await send_push_notification(
+            await notification_queue.publish_notification(
                 tokens=[sender_token],
                 title="Laundry Items Received",
                 message="Your laundry items have been received by the vendor",
@@ -1778,12 +1833,28 @@ async def vendor_mark_laundry_item_received(
             )
 
         if rider_token:
-            await send_push_notification(
+            await notification_queue.publish_notification(
                 tokens=[rider_token],
                 title="Payment Completed",
                 message=f"Delivery completed. ₦{order.delivery.amount_due_dispatch} has been credited to your wallet",
                 navigate_to="/(app)/delivery/orders",
             )
+
+        # if sender_token:
+        #     await send_push_notification(
+        #         tokens=[sender_token],
+        #         title="Laundry Items Received",
+        #         message="Your laundry items have been received by the vendor",
+        #         navigate_to="/(app)/delivery/orders",
+        #     )
+
+        # if rider_token:
+        #     await send_push_notification(
+        #         tokens=[rider_token],
+        #         title="Payment Completed",
+        #         message=f"Delivery completed. ₦{order.delivery.amount_due_dispatch} has been credited to your wallet",
+        #         navigate_to="/(app)/delivery/orders",
+        #     )
 
         # Clear caches
         redis_client.delete(f"{ALL_DELIVERY}")
@@ -1857,12 +1928,20 @@ async def rider_mark_delivered(
     token = await get_user_notification_token(db=db, user_id=delivery.sender_id)
 
     if token:
-        await send_push_notification(
+        await notification_queue.publish_notification(
             tokens=[token],
-            title="Order Delivered",
+            title="Payment Successful",
             message="Your order has been delivered. Please confirm with the receipient before marking as received.",
             navigate_to="/(app)/delivery",
         )
+
+    # if token:
+    #     await send_push_notification(
+    #         tokens=[token],
+    #         title="Order Delivered",
+    #         message="Your order has been delivered. Please confirm with the receipient before marking as received.",
+    #         navigate_to="/(app)/delivery",
+    #     )
 
     redis_client.delete(f"delivery:{delivery_id}")
     redis_client.delete(ALL_DELIVERY)
@@ -2190,27 +2269,7 @@ async def safe_wallet_update(
     return new_balance, new_escrow
 
 
-async def create_wallet_transaction_message(
-    wallet_id: UUID,
-    amount: Decimal,
-    transaction_type: TransactionType,
-    transaction_direction: TransactionDirection,
-    to_user: str = None,
-    from_user: str = None,
-) -> dict:
-    """
-    Create a message for the transaction queue.
-    This will be processed asynchronously by a worker.
-    """
-    return {
-        "wallet_id": str(wallet_id),
-        "amount": str(amount),
-        "transaction_type": transaction_type.value,
-        "transaction_direction": transaction_direction.value,
-        "to_user": to_user,
-        "from_user": from_user,
-        "created_at": datetime.now().isoformat(),
-    }
+# Function removed as we're now using wallet_service directly
 
 
 async def queue_wallet_transaction(
@@ -2221,25 +2280,27 @@ async def queue_wallet_transaction(
     transaction_direction: TransactionDirection,
     to_user: str = None,
     from_user: str = None,
+    metadata: dict = None
 ) -> None:
     """
     Queue a wallet transaction to be processed asynchronously using RabbitMQ.
     This ensures reliable transaction processing even if the worker process is down.
     """
     try:
-        message = await create_wallet_transaction_message(
-            wallet_id=wallet_id,
-            amount=amount,
-            transaction_type=transaction_type,
-            transaction_direction=transaction_direction,
-            to_user=to_user,
-            from_user=from_user,
-        )
+        # Using wallet_service for transaction publishing
+        from app.queue.wallet_queue import wallet_service
         
         try:
-            # Publish message to RabbitMQ queue
-            from app.queue.rabbitmq import publish_transaction
-            await publish_transaction(message)
+            # Publish message to RabbitMQ queue using wallet_service
+            await wallet_service.publish_wallet_update(
+                wallet_id=str(wallet_id),
+                balance_change=str(amount),
+                transaction_type=transaction_type,
+                transaction_direction=transaction_direction,
+                to_user=to_user,
+                from_user=from_user,
+                metadata=metadata
+            )
             logger_config.info(f"Successfully queued transaction for wallet {wallet_id}")
         except Exception as e:
             logger_config.error(f"Failed to publish transaction to queue: {str(e)}")
@@ -2260,9 +2321,6 @@ async def queue_wallet_transaction(
                 logger_config.info("Used fallback direct transaction creation")
             except Exception as direct_error:
                 logger_config.error(f"Fallback also failed - both queue and direct creation failed: {str(direct_error)}")
-                # At this point both primary and fallback methods failed
-                # Consider notifying admin or adding to a retry queue
-                pass
             
     except Exception as e:
         logger_config.error(f"Failed to create transaction message: {str(e)}")
