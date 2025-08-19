@@ -1347,7 +1347,7 @@ async def order_payment_callback(request: Request, db: AsyncSession):
     # Fetch the order
     order_result = await db.execute(
         select(Order)
-        .where(Order.tx_ref == UUID1(tx_ref))
+        .where(Order.tx_ref == tx_ref)
         .where(
             Order.order_type.in_([OrderType.PACKAGE, OrderType.FOOD, OrderType.LAUNDRY])
         )
