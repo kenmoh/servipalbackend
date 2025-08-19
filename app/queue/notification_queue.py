@@ -56,6 +56,7 @@ class NotificationQueue:
             tokens = data.get('tokens', [])
             title = data.get('title')
             message_content = data.get('message')
+            navigate_to = data.get('navigate_to')
             
             if not tokens or not title or not message_content:
                 raise ValueError("Missing required notification fields")
@@ -65,6 +66,7 @@ class NotificationQueue:
                 tokens=tokens,
                 title=title,
                 message=message_content,
+                navigate_to=navigate_to,
                 data=data.get('extra_data')
             )
             
@@ -80,7 +82,7 @@ class NotificationQueue:
             else:
                 await message.reject(requeue=True)
 
-    async def publish_notification(self, tokens: List[str], title: str, message: str, extra_data: Optional[Dict[str, Any]] = None):
+    async def publish_notification(self, tokens: List[str], title: str, navigate_to: str, message: str, extra_data: Optional[Dict[str, Any]] = None):
         """Publish notification message"""
         try:
             await self.connect()
@@ -90,6 +92,7 @@ class NotificationQueue:
                 "title": title,
                 "message": message,
                 "extra_data": extra_data,
+                "navigate_to": navigate_to,
                 "timestamp": datetime.now().isoformat()
             }
             

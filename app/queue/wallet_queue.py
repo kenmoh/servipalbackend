@@ -100,24 +100,38 @@ class WalletQueue:
         await db.flush()
         return transaction
 
+
+    async def _update_transaction(
+        self, 
+        db: AsyncSession, 
+        tx_ref: str,
+        wallet_id: UUID,
+        **kwargs
+    ) -> Transaction:
+        """Update existing transaction """
+       
+        result = await db.execute(
+            select(Transaction).where(
+                Transaction.tx_ref == tx_ref,
+                Transaction.wallet_id == wallet_id
+            )
+        )
+        transaction = result.scalar_one_or_none()
+
+        if transaction:
+            # Update existing transaction
+            for key, value in kwargs.items():
+                if hasattr(transaction, key):
+                    setattr(transaction, key, value)
+            logger.info(f"Updated existing transaction: {transaction.id}")
+            return transaction
+
     async def process_wallet_message(self, message: IncomingMessage):
-        """Process wallet operation message with enhanced error handling and logging"""
-        operation = message.headers.get('operation', 'unknown')
-        wallet_id = message.headers.get('wallet_id', 'unknown')
-        
         try:
             data = json.loads(message.body.decode())
             
-            # Validate message structure
-            required_fields = ['wallet_id', 'transaction_type', 'transaction_direction']
-            if not all(field in data for field in required_fields):
-                logger.error(f"Invalid message format for operation {operation}: missing required fields")
-                await message.reject(requeue=False)
-                return
-                
             async for db in get_db():
                 try:
-                    # Start transaction
                     async with db.begin():
                         # Update wallet with decimal conversion safety
                         await self._safe_wallet_update(
@@ -126,75 +140,44 @@ class WalletQueue:
                             balance_change=Decimal(str(data.get('balance_change', 0))),
                             escrow_change=Decimal(str(data.get('escrow_change', 0)))
                         )
-                        
-                        # Determine transaction amount based on operation type
-                        if 'escrow' in operation:
-                            amount = abs(Decimal(str(data.get('escrow_change', 0))))
+
+                        # Determine if this should create new transaction or update existing
+                        is_new_transaction = data.get('metadata', {}).get('is_new_transaction', True)
+
+                        if is_new_transaction:
+                            # Create new transaction record
+                            await self._create_transaction(
+                                db=db,
+                                wallet_id=UUID(data['wallet_id']),
+                                tx_ref=data['tx_ref'],
+                                amount=abs(Decimal(str(data.get('balance_change', 0))) or 
+                                        Decimal(str(data.get('escrow_change', 0)))),
+                                transaction_type=data.get('transaction_type'),
+                                transaction_direction=data.get('transaction_direction'),
+                                payment_status=data.get('payment_status'),
+                                from_user=data.get('from_user'),
+                                to_user=data.get('to_user'),
+                                metadata=data.get('metadata', {})
+                            )
                         else:
-                            amount = abs(Decimal(str(data.get('balance_change', 0))))
-                        
-                        # Create transaction record with enhanced metadata
-                        transaction = await self._create_transaction(
-                            db=db,
-                            wallet_id=UUID(data['wallet_id']),
-                            amount=amount,
-                            transaction_type=data['transaction_type'],
-                            transaction_direction=data['transaction_direction'],
-                            payment_status=PaymentStatus.PAID,
-                            from_user=data.get('from_user'),
-                            to_user=data.get('to_user'),
-                            metadata={
-                                **data.get('metadata', {}),
-                                'operation': operation,
-                                'processed_at': datetime.now().isoformat()
-                            },
-                            created_at=datetime.fromisoformat(message.headers['created_at'])
-                            if 'created_at' in message.headers
-                            else datetime.now()
-                        )
-                        
-                    # Transaction successful
+                            # Update existing transaction
+                            await self._update_transaction(
+                                db=db,
+                                tx_ref=data['tx_ref'],
+                                wallet_id=UUID(data['wallet_id']),
+                                to_user=data.get('to_user'),
+                                metadata=data.get('metadata', {})
+                            )
+
                     await message.ack()
-                    logger.info(
-                        f"Successfully processed {operation} for wallet {wallet_id}. "
-                        f"Transaction ID: {transaction.id}"
-                    )
-                    
-                except ValueError as ve:
-                    # Handle validation errors
-                    logger.error(f"Validation error for {operation} on wallet {wallet_id}: {str(ve)}")
-                    await message.reject(requeue=False)
                     
                 except Exception as db_error:
-                    # Handle other database errors
-                    logger.error(
-                        f"Database error processing {operation} for wallet {wallet_id}: "
-                        f"{str(db_error)}"
-                    )
-                    # Check delivery count before requeueing
-                    delivery_count = message.header.delivery_count or 0
-                    if delivery_count < 3:  # Match x-max-retries
-                        await message.reject(requeue=True)
-                        logger.warning(f"Retrying message, attempt {delivery_count + 1}/3")
-                    else:
-                        await message.reject(requeue=False)
-                        logger.error(f"Max retries reached, sending to DLQ")
+                    logger.error(f"Database error: {str(db_error)}")
+                    await message.reject(requeue=True)
                     
-        except json.JSONDecodeError as je:
-            logger.error(f"Invalid JSON in message: {str(je)}")
-            # Don't retry invalid messages
-            await message.reject(requeue=False)
-            
         except Exception as e:
-            logger.error(f"Error processing {operation} for wallet {wallet_id}: {str(e)}")
-            # Check delivery count for general errors
-            delivery_count = message.header.delivery_count or 0
-            if delivery_count < 3:  # Match x-max-retries
-                await message.reject(requeue=True)
-                logger.warning(f"Retrying message, attempt {delivery_count + 1}/3")
-            else:
-                await message.reject(requeue=False)
-                logger.error(f"Max retries reached, sending to DLQ")
+            logger.error(f"Message processing error: {str(e)}")
+            await message.reject(requeue=False)
 
     async def publish_wallet_update(self, **kwargs):
         """Publish wallet update message with enhanced routing and headers"""

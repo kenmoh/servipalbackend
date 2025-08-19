@@ -5,6 +5,7 @@ from decimal import Decimal
 import json
 from uuid import UUID
 import uuid
+import uuid
 from fastapi import HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
@@ -63,11 +64,11 @@ async def verify_transaction_tx_ref(tx_ref: str):
 
 
 # GET PAYMENT LINK
-async def get_payment_link(id: UUID, amount: Decimal, current_user: User):
+async def get_payment_link(amount: Decimal, current_user: User):
     try:
         headers = {"Authorization": f"Bearer {settings.FLW_SECRET_KEY}"}
         details = {
-            "tx_ref": str(id),
+            "tx_ref": str(uuid.uuid1),
             "amount": str(amount),
             "currency": "NGN",
             "redirect_url": f"{servipal_base_url}/payment/order-payment-callback",

@@ -5,6 +5,7 @@ from uuid import UUID
 import logging
 import uuid
 from fastapi import BackgroundTasks, HTTPException, Request, status
+from httpcore import stream
 import httpx
 from pydantic import UUID1
 from sqlalchemy import insert, select, update, and_, func
@@ -1362,9 +1363,10 @@ async def order_payment_callback(request: Request, db: AsyncSession):
 
     # Update order payment status
     order.order_payment_status = new_status
+    order.tx_ref = tx_ref
 
     customer = await get_user_profile(order.owner_id, db)
-    dispatch_profile = await get_user_profile(order.delivery.dispatch_id, db)
+    # dispatch_profile = await get_user_profile(order.delivery.dispatch_id, db)
     vendor_profile = await get_user_profile(order.vendor_id, db)
 
     # Only move funds and create transactions if payment is successful
@@ -1388,15 +1390,18 @@ async def order_payment_callback(request: Request, db: AsyncSession):
             # Queue wallet operations for package delivery
             await wallet_service.publish_wallet_update(
                 wallet_id=str(order.owner_id),
+                tx_ref=tx_ref,
                 escrow_change=str(delivery_fee),
                 balance_change=str(0),
                 transaction_type=TransactionType.USER_TO_USER,
                 transaction_direction=TransactionDirection.DEBIT,
                 from_user=customer.full_name or customer.business_name,
-                to_user=dispatch_profile.full_name or dispatch_profile.business_name,
+                # to_user=dispatch_profile.business_name,
                 metadata={
                     "order_id": str(order.id),
-                    "operation": "package_delivery_payment"
+                    "operation": "package_delivery_payment",
+                    "is_new_transaction": True
+
                 }
             )
 
@@ -1482,30 +1487,35 @@ async def order_payment_callback(request: Request, db: AsyncSession):
             # Customer wallet update (debit and move to escrow)
             await wallet_service.publish_wallet_update(
                 wallet_id=str(order.owner_id),
+                tx_ref=tx_ref,
                 escrow_change=float(charged_amount),
-                balance_change=0,
+                balance_change=str(0),
                 transaction_type=TransactionType.USER_TO_USER,
                 transaction_direction=TransactionDirection.DEBIT,
                 from_user=customer.full_name or customer.business_name,
                 to_user=vendor_profile.full_name or vendor_profile.business_name,
                 metadata={
                     "order_id": str(order.id),
-                    "operation": "food_order_payment"
+                    "operation": "food_order_payment",
+                    "is_new_transaction": True
                 }
             )
 
             # Vendor wallet update (add to escrow)
             await wallet_service.publish_wallet_update(
                 wallet_id=str(order.vendor_id),
+                tx_ref=tx_ref,
                 escrow_change=str(order.amount_due_vendor),
-                balance_change=0,
+                balance_change=stream(0),
                 transaction_type=TransactionType.USER_TO_USER,
                 transaction_direction=TransactionDirection.CREDIT,
                 from_user=customer.full_name or customer.business_name,
                 to_user=vendor_profile.full_name or vendor_profile.business_name,
                 metadata={
                     "order_id": str(order.id),
-                    "operation": "food_order_payment"
+                    "operation": "food_order_payment",
+                    "is_new_transaction": True
+
                 }
             )
 
@@ -2005,6 +2015,224 @@ async def order_payment_callback_old(request: Request, db: AsyncSession):
     return {"order_payment_status": order_data.order_payment_status}
 
 
+# async def pay_with_wallet(
+#     db: AsyncSession,
+#     order_id: UUID,
+#     customer: User,
+# ) -> dict:
+#     """
+#     Handles pay with wallet.
+
+#     Args:
+#         db: The database session.
+#         order_id: The ID of the order to pay.
+#         customer: The authenticated user making the purchase.
+
+#     Returns:
+#         A status object with payment status and balances.
+
+#     Raises:
+#         HTTPException: Various exceptions for validation errors.
+#     """
+#     # Fetch order with related items, vendor, and delivery in one efficient query
+#     stmt_order = (
+#         select(Order)
+#         .where(
+#             Order.id == order_id,
+#             Order.owner_id == customer.id,
+#             Order.order_payment_status == PaymentStatus.PENDING,
+#         )
+#         .options(
+#             selectinload(Order.order_items).selectinload(OrderItem.item),
+#             selectinload(Order.vendor),
+#             selectinload(Order.delivery),
+#         )
+#         .with_for_update()
+#     )
+#     result_order = await db.execute(stmt_order)
+#     order = result_order.scalar_one_or_none()
+
+#     if not order:
+#         raise HTTPException(
+#             status_code=status.HTTP_404_NOT_FOUND, detail="Order not found"
+#         )
+
+#     # Fetch customer wallet (always needed)
+#     customer_wallet_stmt = (
+#         select(Wallet).where(Wallet.id == customer.id).with_for_update()
+#     )
+#     result = await db.execute(customer_wallet_stmt)
+#     customer_wallet = result.scalar_one_or_none()
+
+#     if not customer_wallet:
+#         raise HTTPException(
+#             status_code=status.HTTP_404_NOT_FOUND, detail="Buyer wallet not found"
+#         )
+
+#     current_time = datetime.now()
+#     transaction_values = []
+#     charged_amount = 0
+
+#     # --- PACKAGE LOGIC ---
+#     if order.order_type == OrderType.PACKAGE:
+#         # Must have delivery, no vendor at this stage
+#         if not order.delivery or not order.delivery.delivery_fee:
+#             raise HTTPException(
+#                 status_code=status.HTTP_400_BAD_REQUEST,
+#                 detail="Delivery fee required for package order.",
+#             )
+#         delivery_fee = order.delivery.delivery_fee
+#         charged_amount = delivery_fee
+#         if customer_wallet.balance < delivery_fee:
+#             raise HTTPException(
+#                 status_code=status.HTTP_400_BAD_REQUEST,
+#                 detail="Insufficient funds in wallet",
+#             )
+#         # Move delivery_fee from customer wallet to escrow
+#         customer_wallet.balance -= delivery_fee
+#         customer_wallet.escrow_balance += delivery_fee
+#         # Only customer transaction
+#         transaction_values.append(
+#             {
+#                 "wallet_id": customer_wallet.id,
+#                 "amount": delivery_fee,
+#                 "transaction_direction": TransactionDirection.DEBIT,
+#                 "transaction_type": TransactionType.USER_TO_USER,
+#                 "payment_status": PaymentStatus.PAID,
+#                 "created_at": current_time,
+#                 "payment_method": PaymentMethod.WALLET,
+#                 "from_user": customer.profile.full_name
+#                 or customer.profile.business_name,
+#                 "updated_at": current_time,
+#             }
+#         )
+#         # Update order status
+#         order.order_payment_status = PaymentStatus.PAID
+#         await db.execute(insert(Transaction), transaction_values)
+#         await db.commit()
+#         await db.refresh(order)
+#         # Notify customer
+#         customer_token = await get_user_notification_token(db=db, user_id=customer.id)
+#         if customer_token:
+#             await send_push_notification(
+#                 tokens=[customer_token],
+#                 title="Payment Successful",
+#                 message=f"Your payment of ₦{delivery_fee} for delivery was successful.",
+#             )
+#         # Clear caches
+#         redis_client.delete(f"user_related_orders:{customer.id}")
+#         redis_client.delete(f"user_orders:{order.owner_id}")
+#         redis_client.delete("paid_pending_deliveries")
+#         redis_client.delete("orders")
+
+#         return {
+#             "payment_status": order.order_payment_status,
+#             "charged_amount": str(delivery_fee),
+#         }
+
+#     # --- FOOD/LAUNDRY LOGIC ---
+#     # Fetch vendor wallet
+#     vendor_wallet_stmt = (
+#         select(Wallet).where(Wallet.id == order.vendor_id).with_for_update()
+#     )
+#     result = await db.execute(vendor_wallet_stmt)
+#     vendor_wallet = result.scalar_one_or_none()
+#     if not vendor_wallet:
+#         raise HTTPException(
+#             status_code=status.HTTP_404_NOT_FOUND, detail="Seller wallet not found"
+#         )
+#     vendor = await get_user_profile(order.vendor_id, db)
+
+#     total_price = order.total_price
+#     delivery_fee = 0
+#     if order.require_delivery == RequireDeliverySchema.DELIVERY:
+#         if order.delivery and order.delivery.delivery_fee:
+#             delivery_fee = order.delivery.delivery_fee
+#         else:
+#             raise HTTPException(
+#                 status_code=status.HTTP_400_BAD_REQUEST,
+#                 detail="Delivery fee required but not found.",
+#             )
+#     if order.require_delivery == RequireDeliverySchema.DELIVERY:
+#         charged_amount = total_price + delivery_fee
+#     else:
+#         charged_amount = total_price
+
+#     if customer_wallet.balance < charged_amount:
+#         raise HTTPException(
+#             status_code=status.HTTP_400_BAD_REQUEST,
+#             detail="Insufficient funds in wallet",
+#         )
+
+#     # Move funds to escrow
+#     customer_wallet.balance -= charged_amount
+#     customer_wallet.escrow_balance += charged_amount
+#     vendor_wallet.escrow_balance += order.amount_due_vendor
+
+#     # Buyer transaction ()
+#     transaction_values.append(
+#         {
+#             "wallet_id": customer_wallet.id,
+#             "amount": charged_amount,
+#             "transaction_type": TransactionType.USER_TO_USER,
+#             "transaction_direction": TransactionDirection.DEBIT,
+#             "payment_status": PaymentStatus.PAID,
+#             "created_at": current_time,
+#             "payment_method": PaymentMethod.WALLET,
+#             "to_user": vendor.full_name or vendor.business_name,
+#             "updated_at": current_time,
+#         }
+#     )
+#     # Seller transaction (CREDIT)
+#     transaction_values.append(
+#         {
+#             "wallet_id": vendor_wallet.id,
+#             "amount": order.amount_due_vendor,
+#             "transaction_type": TransactionType.USER_TO_USER,
+#             "transaction_direction": TransactionDirection.CREDIT,
+#             "payment_status": PaymentStatus.PAID,
+#             "created_at": current_time,
+#             "payment_method": PaymentMethod.WALLET,
+#             "from_user": customer.profile.full_name or customer.profile.business_name,
+#             "updated_at": current_time,
+#         }
+#     )
+
+#     await db.execute(insert(Transaction), transaction_values)
+#     order.order_payment_status = PaymentStatus.PAID
+#     await db.commit()
+#     await db.refresh(order)
+
+#     # Send notifications
+#     customer_token = await get_user_notification_token(db=db, user_id=customer.id)
+#     vendor_token = await get_user_notification_token(db=db, user_id=order.vendor_id)
+#     if customer_token:
+#         await send_push_notification(
+#             tokens=[customer_token],
+#             title="Payment Successful",
+#             message=f"Your payment of ₦{charged_amount} was successful.",
+#         )
+#     if vendor_token:
+#         await send_push_notification(
+#             tokens=[vendor_token],
+#             title="Order Paid",
+#             message=f"You have received a new order payment of ₦{total_price}.",
+#         )
+
+#     # Clear relevant caches
+#     redis_client.delete(f"user_related_orders:{customer.id}")
+#     redis_client.delete(f"user_related_orders:{order.vendor_id}")
+#     redis_client.delete(f"user_orders:{order.owner_id}")
+#     redis_client.delete(f"user_orders:{order.vendor_id}")
+#     redis_client.delete("paid_pending_deliveries")
+#     redis_client.delete("orders")
+
+#     return {
+#         "payment_status": order.order_payment_status,
+#         "charged_amount": str(charged_amount),
+#     }
+
+
 async def pay_with_wallet(
     db: AsyncSession,
     order_id: UUID,
@@ -2059,9 +2287,8 @@ async def pay_with_wallet(
             status_code=status.HTTP_404_NOT_FOUND, detail="Buyer wallet not found"
         )
 
-    current_time = datetime.now()
-    transaction_values = []
     charged_amount = 0
+    tx_ref = str(uuid.uuid1())  # Generate transaction reference
 
     # --- PACKAGE LOGIC ---
     if order.order_type == OrderType.PACKAGE:
@@ -2078,37 +2305,40 @@ async def pay_with_wallet(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Insufficient funds in wallet",
             )
-        # Move delivery_fee from customer wallet to escrow
-        customer_wallet.balance -= delivery_fee
-        customer_wallet.escrow_balance += delivery_fee
-        # Only customer transaction
-        transaction_values.append(
-            {
-                "wallet_id": customer_wallet.id,
-                "amount": delivery_fee,
-                "transaction_direction": TransactionDirection.DEBIT,
-                "transaction_type": TransactionType.USER_TO_USER,
-                "payment_status": PaymentStatus.PAID,
-                "created_at": current_time,
-                "payment_method": PaymentMethod.WALLET,
-                "from_user": customer.profile.full_name
-                or customer.profile.business_name,
-                "updated_at": current_time,
+
+        # Queue customer wallet update (move to escrow)
+        await wallet_service.publish_wallet_update(
+            wallet_id=str(customer_wallet.id),
+            tx_ref=tx_ref,
+            balance_change=str(-delivery_fee),
+            escrow_change=str(delivery_fee),
+            transaction_type=TransactionType.USER_TO_USER,
+            transaction_direction=TransactionDirection.DEBIT,
+            payment_status=PaymentStatus.PAID,
+            from_user=customer.profile.full_name or customer.profile.business_name,
+            metadata={
+                "order_id": str(order.id),
+                "operation": "package_delivery_payment",
+                "is_new_transaction": True,
             }
         )
+
         # Update order status
         order.order_payment_status = PaymentStatus.PAID
-        await db.execute(insert(Transaction), transaction_values)
+        order.tx_ref = UUID(tx_ref)
         await db.commit()
         await db.refresh(order)
+
         # Notify customer
         customer_token = await get_user_notification_token(db=db, user_id=customer.id)
         if customer_token:
-            await send_push_notification(
+            await notification_queue.publish_notification(
                 tokens=[customer_token],
                 title="Payment Successful",
                 message=f"Your payment of ₦{delivery_fee} for delivery was successful.",
+                navigate_to="/(app)/delivery/orders",
             )
+
         # Clear caches
         redis_client.delete(f"user_related_orders:{customer.id}")
         redis_client.delete(f"user_orders:{order.owner_id}")
@@ -2143,10 +2373,7 @@ async def pay_with_wallet(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Delivery fee required but not found.",
             )
-    if order.require_delivery == RequireDeliverySchema.DELIVERY:
-        charged_amount = total_price + delivery_fee
-    else:
-        charged_amount = total_price
+    charged_amount = total_price + delivery_fee if order.require_delivery == RequireDeliverySchema.DELIVERY else total_price
 
     if customer_wallet.balance < charged_amount:
         raise HTTPException(
@@ -2154,42 +2381,45 @@ async def pay_with_wallet(
             detail="Insufficient funds in wallet",
         )
 
-    # Move funds to escrow
-    customer_wallet.balance -= charged_amount
-    customer_wallet.escrow_balance += charged_amount
-    vendor_wallet.escrow_balance += order.amount_due_vendor
-
-    # Buyer transaction ()
-    transaction_values.append(
-        {
-            "wallet_id": customer_wallet.id,
-            "amount": charged_amount,
-            "transaction_type": TransactionType.USER_TO_USER,
-            "transaction_direction": TransactionDirection.DEBIT,
-            "payment_status": PaymentStatus.PAID,
-            "created_at": current_time,
-            "payment_method": PaymentMethod.WALLET,
-            "to_user": vendor.full_name or vendor.business_name,
-            "updated_at": current_time,
-        }
-    )
-    # Seller transaction (CREDIT)
-    transaction_values.append(
-        {
-            "wallet_id": vendor_wallet.id,
-            "amount": order.amount_due_vendor,
-            "transaction_type": TransactionType.USER_TO_USER,
-            "transaction_direction": TransactionDirection.CREDIT,
-            "payment_status": PaymentStatus.PAID,
-            "created_at": current_time,
-            "payment_method": PaymentMethod.WALLET,
-            "from_user": customer.profile.full_name or customer.profile.business_name,
-            "updated_at": current_time,
+    # Queue customer wallet update (move to escrow)
+    await wallet_service.publish_wallet_update(
+        wallet_id=str(customer_wallet.id),
+        tx_ref=tx_ref,
+        balance_change=str(-charged_amount),
+        escrow_change=str(charged_amount),
+        transaction_type=TransactionType.USER_TO_USER,
+        transaction_direction=TransactionDirection.DEBIT,
+        payment_status=PaymentStatus.PAID,
+        from_user=customer.profile.full_name or customer.profile.business_name,
+        to_user=vendor.full_name or vendor.business_name,
+        metadata={
+            "order_id": str(order.id),
+            "operation": "food_laundry_order_payment",
+            "is_new_transaction": True,
         }
     )
 
-    await db.execute(insert(Transaction), transaction_values)
+    # Queue vendor wallet update (credit to escrow)
+    await wallet_service.publish_wallet_update(
+        wallet_id=str(vendor_wallet.id),
+        tx_ref=tx_ref,
+        balance_change=str(0),
+        escrow_change=str(order.amount_due_vendor),
+        transaction_type=TransactionType.USER_TO_USER,
+        transaction_direction=TransactionDirection.CREDIT,
+        payment_status=PaymentStatus.PAID,
+        from_user=customer.profile.full_name or customer.profile.business_name,
+        to_user=vendor.full_name or vendor.business_name,
+        metadata={
+            "order_id": str(order.id),
+            "operation": "food_laundry_order_payment",
+            "is_new_transaction": True,
+        }
+    )
+
+    # Update order status
     order.order_payment_status = PaymentStatus.PAID
+    order.tx_ref = tx_ref
     await db.commit()
     await db.refresh(order)
 
@@ -2197,16 +2427,18 @@ async def pay_with_wallet(
     customer_token = await get_user_notification_token(db=db, user_id=customer.id)
     vendor_token = await get_user_notification_token(db=db, user_id=order.vendor_id)
     if customer_token:
-        await send_push_notification(
+        await notification_queue.publish_notification(
             tokens=[customer_token],
             title="Payment Successful",
             message=f"Your payment of ₦{charged_amount} was successful.",
+            navigate_to="/(app)/delivery/orders",
         )
     if vendor_token:
-        await send_push_notification(
+        await notification_queue.publish_notification(
             tokens=[vendor_token],
             title="Order Paid",
             message=f"You have received a new order payment of ₦{total_price}.",
+            navigate_to="/(app)/delivery/orders",
         )
 
     # Clear relevant caches
