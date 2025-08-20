@@ -142,7 +142,7 @@ scheduler.start()
 
 wallet_queue_consumer = WalletQueueConsumer()
 order_status_queue_consumer = OrderStatusQueueConsumer()
-notification_queue_consumer = NotificationQueueConsumer()
+# notification_queue_consumer = NotificationQueueConsumer()
 central_queue_producer = CentralQueueProducer()
 
 @asynccontextmanager
@@ -175,7 +175,7 @@ async def lifespan(application: FastAPI):
         await central_queue_producer.connect()
         await wallet_queue_consumer.start_consuming()
         await order_status_queue_consumer.start_consuming()
-        await notification_queue_consumer.start_consuming()
+        # await notification_queue_consumer.start_consuming()
         logger.info("Queue system initialized successfully")
 
         # Log scheduler status
@@ -195,7 +195,7 @@ async def lifespan(application: FastAPI):
         # Shutdown: Stop consumers and close producer
         await wallet_queue_consumer.stop_consuming()
         await order_status_queue_consumer.stop_consuming()
-        await notification_queue_consumer.stop_consuming()
+        # await notification_queue_consumer.stop_consuming()
         await central_queue_producer.close()
         logger.info("Queue system shut down successfully")
         logger.info("Cleaning up resources...")
