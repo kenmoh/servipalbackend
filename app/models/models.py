@@ -425,7 +425,7 @@ class Order(Base):
     __tablename__ = "orders"
 
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
-    tx_ref: Mapped[UUID1] = mapped_column(default=uuid1, nullable=True)
+    tx_ref: Mapped[UUID1] = mapped_column(default=uuid1)
     order_number: Mapped[int] = mapped_column(
         Integer,
         Sequence("order_number_seq", start=1000, increment=1),

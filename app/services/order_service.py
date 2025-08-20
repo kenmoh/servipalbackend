@@ -396,7 +396,7 @@ async def create_package_order(
                     "require_delivery": RequireDeliverySchema.DELIVERY,
                 }
             )
-            .returning(Order.id, Order.id, Order.owner_id, Order.vendor_id)
+            .returning(Order.id, Order.tx_ref, Order.owner_id, Order.vendor_id)
         )
 
         order_data = order_insert_result.fetchone()
@@ -451,6 +451,7 @@ async def create_package_order(
         total_amount_due = delivery_data.delivery_fee
 
         payment_link = await get_payment_link(
+            tx_ref=order_data.tx_ref,
             amount=delivery_data.delivery_fee,
             current_user=current_user,
         )
@@ -641,10 +642,10 @@ async def order_food_or_request_laundy_service(
                     "additional_info": order_item.additional_info,
                 }
             )
-            .returning(Order.id)
+            .returning(Order.id, Order.tx_ref)
         )
 
-        order_id = order_insert_result.scalar_one()
+        order_id, tx_ref = order_insert_result.scalar_one()
 
         # Create order items
         order_items_payload = [
@@ -660,7 +661,7 @@ async def order_food_or_request_laundy_service(
         # Create delivery if required
         delivery_id = None
         if requires_delivery:
-            delivery_insert_result = await db.execute(
+            await db.execute(
                 insert(Delivery)
                 .values(
                     {
@@ -686,7 +687,7 @@ async def order_food_or_request_laundy_service(
             # delivery_id = delivery_insert_result.scalar_one()
 
         # Generate payment link
-        payment_link = await get_payment_link(final_amount, current_user)
+        payment_link = await get_payment_link(tx_ref, final_amount, current_user)
 
         # Update order with payment link
         await db.execute(
