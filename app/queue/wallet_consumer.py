@@ -50,6 +50,8 @@ class WalletQueueConsumer(BaseQueueConsumer):
         wallet.balance = new_balance
         wallet.escrow_balance = new_escrow
 
+        logger(f"XXXXXXXXXX: FROM _safe_wallet_update: {wallet.balance} - {wallet.escrow_balance}")
+
         await db.commit()
 
 
@@ -64,14 +66,15 @@ class WalletQueueConsumer(BaseQueueConsumer):
 
                     await self._safe_wallet_update(db=db, wallet_id=wallet_id, balance_change=Decimal(balance_change), escrow_change=Decimal(escrow_change))
 
-                    # await db.execute(
-                    #     update(Wallet)
-                    #     .where(Wallet.id == wallet_id)
-                    #     .values(
-                    #         balance=Wallet.balance + Decimal(balance_change),
-                    #         escrow_balance=Wallet.escrow_balance + Decimal(escrow_change)
-                    #     )
-                    # )
+                    x=await db.execute(
+                        update(Wallet)
+                        .where(Wallet.id == wallet_id)
+                        .values(
+                            balance=Wallet.balance + Decimal(balance_change),
+                            escrow_balance=Wallet.escrow_balance + Decimal(escrow_change)
+                        )
+                    )
+                    logger(f"XXXXXXXXXX: FROM _safe_wallet_update: {x.balance} - {x.escrow_balance} XXXXXX")
             except Exception as db_error:
                 logger.error(f"Wallet update error: {str(db_error)}")
                 raise
