@@ -69,7 +69,7 @@ async def get_payment_link(tx_ref: UUID1, amount: Decimal, current_user: User):
     try:
         headers = {"Authorization": f"Bearer {settings.FLW_SECRET_KEY}"}
         details = {
-            "tx_ref": str (tx_ref)                                                          (tx_ref),
+            "tx_ref": str(tx_ref),
             "amount": str(amount),
             "currency": "NGN",
             "redirect_url": f"{servipal_base_url}/payment/order-payment-callback",

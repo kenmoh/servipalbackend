@@ -188,8 +188,8 @@ class WalletQueue:
             headers = {
                 "wallet_id": str(kwargs.get('wallet_id')),
                 "operation": (
-                    "escrow_hold" if kwargs.get('escrow_change', 0) > 0
-                    else "escrow_release" if kwargs.get('escrow_change', 0) < 0
+                    "escrow_hold" if Decimal(kwargs.get('escrow_change', 0)) > 0
+                    else "escrow_release" if Decimal(kwargs.get('escrow_change', 0)) < 0
                     else "wallet_update"
                 ),
                 "transaction_type": kwargs.get('transaction_type'),
