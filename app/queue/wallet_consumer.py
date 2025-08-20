@@ -79,6 +79,8 @@ class WalletQueueConsumer(BaseQueueConsumer):
 
 
     async def process_create_transaction(self, payload: Dict[str, Any]):
+
+        logger.info(f'PAYLOAD XXXXXXXXXXXXX: {payload} :XXXXXXXXXXXXXXXX')
         """Process transaction creation"""
         async for db in get_db():
             try:
@@ -102,7 +104,7 @@ class WalletQueueConsumer(BaseQueueConsumer):
                     await db.execute(
                         insert(Transaction).values(
                             wallet_id=UUID(wallet_id),
-                            to_wallet_id=UUID(to_wallet_id),
+                            to_wallet_id=UUID(to_wallet_id) if to_wallet_id is not None else None,
                             tx_ref=UUID1(tx_ref),
                             amount=Decimal(amount),
                             transaction_type=transaction_type,
