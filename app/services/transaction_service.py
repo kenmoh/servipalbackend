@@ -5,7 +5,6 @@ from uuid import UUID
 import logging
 import uuid
 from fastapi import BackgroundTasks, HTTPException, Request, status
-from httpcore import stream
 import httpx
 from pydantic import UUID1
 from sqlalchemy import insert, select, update, and_, func
@@ -1347,7 +1346,7 @@ async def order_payment_callback(request: Request, db: AsyncSession):
     # Fetch the order
     order_result = await db.execute(
         select(Order)
-        .where(Order.tx_ref == tx_ref)
+        .where(Order.tx_ref == UUID1(tx_ref))
         .where(
             Order.order_type.in_([OrderType.PACKAGE, OrderType.FOOD, OrderType.LAUNDRY])
         )
@@ -1391,7 +1390,7 @@ async def order_payment_callback(request: Request, db: AsyncSession):
                 service="wallet", operation="create_transaction",
                 payload={
                     'wallet_id': str(order.owner_id),
-                    'tx_ref': order.tx_ref,
+                    'tx_ref': tx_ref,
                     'escrow_change': str(delivery_fee),
                     'balance_change': str(0),
                     'transaction_type': TransactionType.USER_TO_USER,
@@ -1472,7 +1471,7 @@ async def order_payment_callback(request: Request, db: AsyncSession):
                     'wallet_id': str(order.vendor_id),
                     'tx_ref': tx_ref,
                     'escrow_change': str(order.amount_due_vendor),
-                    'balance_change': stream(0),
+                    'balance_change': str(0),
                     'transaction_type': TransactionType.USER_TO_USER,
                     'transaction_direction': TransactionDirection.CREDIT,
                     'from_user': customer.full_name or customer.business_name,
@@ -1759,7 +1758,7 @@ async def order_payment_callback(request: Request, db: AsyncSession):
 #                 wallet_id=str(order.vendor_id),
 #                 tx_ref=tx_ref,
 #                 escrow_change=str(order.amount_due_vendor),
-#                 balance_change=stream(0),
+#                 balance_change=str(0),
 #                 transaction_type=TransactionType.USER_TO_USER,
 #                 transaction_direction=TransactionDirection.CREDIT,
 #                 from_user=customer.full_name or customer.business_name,
