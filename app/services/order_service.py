@@ -1267,8 +1267,8 @@ async def rider_accept_delivery_order(
         payload={
             "wallet_id": str(order.delivery.dispatch_id),
             "tx_ref": str(order.tx_ref),
-            "balance_change": str(0),
-            "escrow_change": str(dispatch_amount),
+            'to_wallet_id': st(order.delivery.dispatch_id),
+            "amount": str(dispatch_amount),
             "transaction_type": transaction.transaction_type,
             "transaction_direction": TransactionDirection.CREDIT,
             "payment_method": transaction.payment_method,

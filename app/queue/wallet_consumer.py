@@ -29,7 +29,7 @@ class WalletQueueConsumer(BaseQueueConsumer):
         """Perform atomic wallet update"""
         # Get wallet with row lock for update
         # stmt = "SELECT * FROM wallets WHERE id = :wallet_id FOR UPDATE"
-        result = await db.execute(select(Wallet).where(Wallet.id==wallet_id))
+        result = await db.execute(select(Wallet).where(Wallet.id==wallet_id).with_for_update())
         # result = await db.execute(stmt, {"wallet_id": wallet_id})
         wallet = result.scalar_one_or_none()
         
@@ -50,8 +50,6 @@ class WalletQueueConsumer(BaseQueueConsumer):
         wallet.balance = new_balance
         wallet.escrow_balance = new_escrow
 
-        logger(f"XXXXXXXXXX: FROM _safe_wallet_update: {wallet.balance} - {wallet.escrow_balance}")
-
         await db.commit()
 
 
@@ -66,15 +64,15 @@ class WalletQueueConsumer(BaseQueueConsumer):
 
                     await self._safe_wallet_update(db=db, wallet_id=wallet_id, balance_change=Decimal(balance_change), escrow_change=Decimal(escrow_change))
 
-                    x=await db.execute(
-                        update(Wallet)
-                        .where(Wallet.id == wallet_id)
-                        .values(
-                            balance=Wallet.balance + Decimal(balance_change),
-                            escrow_balance=Wallet.escrow_balance + Decimal(escrow_change)
-                        )
-                    )
-                    logger(f"XXXXXXXXXX: FROM _safe_wallet_update: {x.balance} - {x.escrow_balance} XXXXXX")
+                    # await db.execute(
+                    #     update(Wallet)
+                    #     .where(Wallet.id == wallet_id)
+                    #     .values(
+                    #         balance=Wallet.balance + Decimal(balance_change),
+                    #         escrow_balance=Wallet.escrow_balance + Decimal(escrow_change)
+                    #     )
+                    # )
+                    # logger(f"XXXXXXXXXX: FROM _safe_wallet_update: {x.balance} - {x.escrow_balance} XXXXXX")
             except Exception as db_error:
                 logger.error(f"Wallet update error: {str(db_error)}")
                 raise
@@ -87,6 +85,7 @@ class WalletQueueConsumer(BaseQueueConsumer):
                 async with db.begin():
                     wallet_id = payload.get('wallet_id')
                     tx_ref = payload.get('tx_ref')
+                    to_wallet_id = payload.get('to_wallet_id', None)
                     amount = payload.get('amount')
                     transaction_type = payload.get('transaction_type')
                     transaction_direction = payload.get('transaction_direction')
@@ -103,6 +102,7 @@ class WalletQueueConsumer(BaseQueueConsumer):
                     await db.execute(
                         insert(Transaction).values(
                             wallet_id=UUID(wallet_id),
+                            to_wallet_id=UUID(to_wallet_id),
                             tx_ref=UUID1(tx_ref),
                             amount=Decimal(amount),
                             transaction_type=transaction_type,

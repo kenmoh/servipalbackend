@@ -1385,14 +1385,24 @@ async def order_payment_callback(request: Request, db: AsyncSession):
                 )
             delivery_fee = order.delivery.delivery_fee
 
+              # Customer wallet update (add to escrow)
+            await producer.publish_message(
+                service="wallet", operation="update_wallet",
+                payload={
+                    'wallet_id': str(order.owner_id),
+                    'escrow_change': str(order.delivery.delivery_fee),
+                    'balance_change': str(0),
+
+                }
+            )
+
             # Create transaction
             await producer.publish_message(
                 service="wallet", operation="create_transaction",
                 payload={
                     'wallet_id': str(order.owner_id),
                     'tx_ref': tx_ref,
-                    'escrow_change': str(delivery_fee),
-                    'balance_change': str(0),
+                    'amount': str(delivery_fee),
                     'transaction_type': TransactionType.USER_TO_USER,
                     'transaction_direction': TransactionDirection.DEBIT,
                     'from_user': customer.full_name or customer.business_name,
@@ -1448,37 +1458,7 @@ async def order_payment_callback(request: Request, db: AsyncSession):
                 else total_price
             )
 
-            # Queue customer and vendor wallet operations
-            # Customer transaction
-            await producer.publish_message(
-                service="wallet", operation="create_transaction",
-                payload={
-                    'wallet_id': str(order.owner_id),
-                    'tx_ref': tx_ref,
-                    'escrow_change': str(charged_amount),
-                    'balance_change': str(0),
-                    'transaction_type': TransactionType.USER_TO_USER,
-                    'transaction_direction': TransactionDirection.DEBIT,
-                    'from_user': customer.full_name or customer.business_name,
-                    'to_user': vendor_profile.full_name or vendor_profile.business_name,
-                }
-            )
-
-            # Create vendor transaction
-            await producer.publish_message(
-                service="wallet", operation="create_transaction",
-                payload={
-                    'wallet_id': str(order.vendor_id),
-                    'tx_ref': tx_ref,
-                    'escrow_change': str(order.amount_due_vendor),
-                    'balance_change': str(0),
-                    'transaction_type': TransactionType.USER_TO_USER,
-                    'transaction_direction': TransactionDirection.CREDIT,
-                    'from_user': customer.full_name or customer.business_name,
-                    'to_user': vendor_profile.full_name or vendor_profile.business_name,
-                }
-            )
-            # Customer wallet update (add to escrow)
+           # Customer wallet update (add to escrow)
             await producer.publish_message(
                 service="wallet", operation="update_wallet",
                 payload={
@@ -1498,6 +1478,37 @@ async def order_payment_callback(request: Request, db: AsyncSession):
 
                 }
             )
+
+            # Queue customer and vendor wallet operations
+            # Customer transaction
+            await producer.publish_message(
+                service="wallet", operation="create_transaction",
+                payload={
+                    'wallet_id': str(order.owner_id),
+                    'tx_ref': tx_ref,
+                    'amount': str(charged_amount),
+                    'to_wallet_id': str(order.vendor_id),
+                    'transaction_type': TransactionType.USER_TO_USER,
+                    'transaction_direction': TransactionDirection.DEBIT,
+                    'from_user': customer.full_name or customer.business_name,
+                    'to_user': vendor_profile.full_name or vendor_profile.business_name,
+                }
+            )
+
+            # Create vendor transaction
+            await producer.publish_message(
+                service="wallet", operation="create_transaction",
+                payload={
+                    'wallet_id': str(order.vendor_id),
+                    'tx_ref': tx_ref,
+                    'amount': str(order.amount_due_vendor),
+                    'transaction_type': TransactionType.USER_TO_USER,
+                    'transaction_direction': TransactionDirection.CREDIT,
+                    'from_user': customer.full_name or customer.business_name,
+                    'to_user': vendor_profile.full_name or vendor_profile.business_name,
+                }
+            )
+         
 
             # Send notifications
             customer_token = await get_user_notification_token(
