@@ -8,7 +8,6 @@ from fastapi import HTTPException, status
 
 from app.schemas.audit_logs import AuditLogResponse
 
-
 class AuditLogService:
     @staticmethod
     async def get_logs(
@@ -56,6 +55,7 @@ class AuditLogService:
             stmt = stmt.where(and_(*conditions))
         stmt = stmt.order_by(AuditLog.timestamp.desc()).offset(offset).limit(limit)
         result = await db.execute(stmt)
+
         return result.scalars().all()
 
     @staticmethod

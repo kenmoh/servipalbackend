@@ -1,0 +1,140 @@
+from decimal import Decimal
+from typing import Dict, Any
+from uuid import UUID
+
+from pydantic import UUID1
+from sqlalchemy import insert, update, select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+
+from app.database.database import get_db
+from app.models.models import Transaction, Wallet
+from app.queue.base_consumer import BaseQueueConsumer
+from app.utils.logger_config import setup_logger
+
+logger = setup_logger()
+
+class WalletQueueConsumer(BaseQueueConsumer):
+    def __init__(self):
+        super().__init__("wallet", "wallet_updates")
+        self._operation_handlers = {
+            "update_wallet": self.process_wallet_update,
+            "update_transaction": self.process_transaction_update,
+            "create_transaction": self.process_create_transaction,
+            
+        }
+
+
+    async def _safe_wallet_update(self, db: AsyncSession, wallet_id: UUID, balance_change: Decimal, escrow_change: Decimal) -> None:
+        """Perform atomic wallet update"""
+        # Get wallet with row lock for update
+        # stmt = "SELECT * FROM wallets WHERE id = :wallet_id FOR UPDATE"
+        result = await db.execute(select(Wallet).where(Wallet.id==wallet_id))
+        # result = await db.execute(stmt, {"wallet_id": wallet_id})
+        wallet = result.scalar_one_or_none()
+        
+        if not wallet:
+            raise ValueError(f"Wallet {wallet_id} not found")
+        
+        # Calculate new balances
+        new_balance = wallet.balance + balance_change
+        new_escrow = wallet.escrow_balance + escrow_change
+        
+        # Validate balances
+        if new_balance < 0:
+            raise ValueError(f"Insufficient balance: {wallet.balance} available, {abs(balance_change)} needed")
+        if new_escrow < 0:
+            raise ValueError(f"Insufficient escrow balance: {wallet.escrow_balance} available, {abs(escrow_change)} needed")
+        
+        # Update wallet
+        wallet.balance = new_balance
+        wallet.escrow_balance = new_escrow
+
+        await db.commit()
+
+
+    async def process_wallet_update(self, payload: Dict[str, Any]):
+        """Process wallet balance update"""
+        async for db in get_db():
+            try:
+                async with db.begin():
+                    wallet_id = payload.get('wallet_id')
+                    balance_change = payload.get('balance_change', 0)
+                    escrow_change = payload.get('escrow_change', 0)
+
+                    await self._safe_wallet_update(db=db, wallet_id=wallet_id, balance_change=Decimal(balance_change), escrow_change=Decimal(escrow_change))
+
+                    # await db.execute(
+                    #     update(Wallet)
+                    #     .where(Wallet.id == wallet_id)
+                    #     .values(
+                    #         balance=Wallet.balance + Decimal(balance_change),
+                    #         escrow_balance=Wallet.escrow_balance + Decimal(escrow_change)
+                    #     )
+                    # )
+            except Exception as db_error:
+                logger.error(f"Wallet update error: {str(db_error)}")
+                raise
+
+
+    async def process_create_transaction(self, payload: Dict[str, Any]):
+        """Process transaction creation"""
+        async for db in get_db():
+            try:
+                async with db.begin():
+                    wallet_id = payload.get('wallet_id')
+                    tx_ref = payload.get('tx_ref')
+                    amount = payload.get('amount')
+                    transaction_type = payload.get('transaction_type')
+                    transaction_direction = payload.get('transaction_direction')
+                    payment_status = payload.get('payment_status')
+                    payment_method = payload.get('payment_method')
+                    from_user = payload.get('from_user')
+                    to_user = payload.get('to_user')
+                                        
+                    # # Validate required fields
+                    # required_fields = ['wallet_id', 'tx_ref', 'amount', 'payment_method', 'transaction_type', 'transaction_direction', 'payment_status']
+                    # if not all(field in payload for field in required_fields):
+                    #     raise ValueError("Missing required transaction fields")
+                    
+                    await db.execute(
+                        insert(Transaction).values(
+                            wallet_id=UUID(wallet_id),
+                            tx_ref=UUID1(tx_ref),
+                            amount=Decimal(amount),
+                            transaction_type=transaction_type,
+                            transaction_direction=transaction_direction,
+                            payment_status=payment_status,
+                            from_user=from_user,
+                            payment_method=payment_method,
+                            to_user=to_user,
+                         
+                        )
+                    )
+                  
+            except Exception as db_error:
+                logger.error(f"Transaction creation error: {str(db_error)}")
+                raise
+
+    async def process_transaction_update(self, payload: Dict[str, Any]):
+        """Process transaction update"""
+        async for db in get_db():
+            try:
+                async with db.begin():
+                    wallet_id = UUID(payload.get('wallet_id'))
+                    tx_ref = UUID1(payload.get('tx_ref'))
+                    to_user = payload.get('to_user')
+                    
+                    await db.execute(
+                        update(Transaction)
+                        .where(
+                            Transaction.wallet_id == wallet_id,
+                            Transaction.tx_ref == tx_ref
+                        )
+                        .values(
+                            to_user=to_user
+                        )
+                    )
+            except Exception as db_error:
+                logger.error(f"Transaction update error: {str(db_error)}")
+                raise

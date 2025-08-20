@@ -56,6 +56,10 @@ from app.utils.utils import get_all_banks, resolve_account_details
 from app.config.config import redis_client
 from app.database.database import engine
 from app.schemas.user_schemas import AccountDetails, AccountDetailResponse
+from app.queue.notification_consumer import NotificationQueueConsumer
+from app.queue.order_consumer import OrderStatusQueueConsumer
+from app.queue.wallet_consumer import WalletQueueConsumer
+from app.queue.producer import CentralQueueProducer
 
 
 logger = setup_logger()
@@ -136,6 +140,10 @@ scheduler.start()
 #         print("Shutting down...")
 #         await db.close()
 
+wallet_queue_consumer = WalletQueueConsumer()
+order_status_queue_consumer = OrderStatusQueueConsumer()
+notification_queue_consumer = NotificationQueueConsumer()
+central_queue_producer = CentralQueueProducer()
 
 @asynccontextmanager
 async def lifespan(application: FastAPI):
@@ -157,11 +165,18 @@ async def lifespan(application: FastAPI):
         logger.info("Redis connection successful")
 
         # Start all queue consumers
-        logger.info("Starting service consumers...")
-        await start_wallet_consumer()
-        await start_notification_consumer()
-        await start_order_status_consumer()
-        logger.info("All service consumers started")
+        # logger.info("Starting service consumers...")
+        # await start_wallet_consumer()
+        # await start_notification_consumer()
+        # await start_order_status_consumer()
+        # logger.info("All service consumers started")
+
+        logger.info("Starting queue system...")
+        await central_queue_producer.connect()
+        await wallet_queue_consumer.start_consuming()
+        await order_status_queue_consumer.start_consuming()
+        await notification_queue_consumer.start_consuming()
+        logger.info("Queue system initialized successfully")
 
         # Log scheduler status
         logger.info(f"Scheduler running: {scheduler.running}")
@@ -177,6 +192,12 @@ async def lifespan(application: FastAPI):
         logger.info("Services shutdown complete")
 
     finally:
+        # Shutdown: Stop consumers and close producer
+        await wallet_queue_consumer.stop_consuming()
+        await order_status_queue_consumer.stop_consuming()
+        await notification_queue_consumer.stop_consuming()
+        await central_queue_producer.close()
+        logger.info("Queue system shut down successfully")
         logger.info("Cleaning up resources...")
         await db.close()
         logger.info("Cleanup complete")
