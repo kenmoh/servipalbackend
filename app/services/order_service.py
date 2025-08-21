@@ -1284,6 +1284,18 @@ async def rider_accept_delivery_order(
         },
     )
 
+    # Update dispatch escrow
+    await producer.publish_message(
+        service="wallet",
+        operation="update_wallet",
+        payload={
+            "wallet_id": str(order.delivery.dispatch_id),
+            "balance_change"=str(0),
+            "escrow_change"=str(dispatch_amount),
+        },
+    )
+
+
     # Original: Direct DB operations (commented for testing)
     # await db.execute(
     #     update(Wallet)
@@ -1876,7 +1888,7 @@ async def sender_confirm_delivery_or_order_received(
             operation="update_wallet",
             payload={
                 "wallet_id": str(order.vendor_id),
-                "tx_ref": tx_ref,
+                "tx_ref": str(tx_ref),
                 "balance_change": str(order.amount_due_vendor),
                 "escrow_change": str(-order.amount_due_vendor),
             },
@@ -1887,7 +1899,7 @@ async def sender_confirm_delivery_or_order_received(
             operation="update_wallet",
             payload={
                 "wallet_id": str(order.owner_id),
-                "tx_ref": tx_ref,
+                "tx_ref": str(tx_ref),
                 "balance_change": str(0),
                 "escrow_change": str(-total_spent),
             },
@@ -2286,7 +2298,7 @@ async def rider_mark_delivered(
     token = await get_user_notification_token(db=db, user_id=delivery.sender_id)
 
     if token:
-        await notification_queue.publish_notification(
+        await producer.publish_notification(
             tokens=[token],
             title="Payment Successful",
             message="Your order has been delivered. Please confirm with the receipient before marking as received.",
