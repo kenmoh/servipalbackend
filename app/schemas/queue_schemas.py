@@ -5,9 +5,11 @@ from pydantic import BaseModel
 from datetime import datetime
 from app.schemas.status_schema import TransactionDirection, TransactionType
 
+
 class WalletOperationType(str, Enum):
     UPDATE_BALANCE = "update_balance"
     CREATE_TRANSACTION = "create_transaction"
+
 
 class WalletUpdateMessage(BaseModel):
     operation: WalletOperationType

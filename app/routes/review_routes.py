@@ -34,7 +34,6 @@ async def create_new_review(
     )
 
 
-
 @router.get(
     "/{vendor_id}/vendor-reviews",
     status_code=status.HTTP_200_OK,

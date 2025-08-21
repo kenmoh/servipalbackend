@@ -8,6 +8,7 @@ from fastapi import HTTPException, status
 
 from app.schemas.audit_logs import AuditLogResponse
 
+
 class AuditLogService:
     @staticmethod
     async def get_logs(

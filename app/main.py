@@ -2,8 +2,14 @@ import os
 from app.config.config import settings
 from app.utils import limiter
 from app.queue.wallet_queue import start_wallet_consumer, stop_wallet_consumer
-from app.queue.notification_queue import start_notification_consumer, stop_notification_consumer
-from app.queue.order_status_queue import start_order_status_consumer, stop_order_status_consumer
+from app.queue.notification_queue import (
+    start_notification_consumer,
+    stop_notification_consumer,
+)
+from app.queue.order_status_queue import (
+    start_order_status_consumer,
+    stop_order_status_consumer,
+)
 
 # Set the timezone for the application process. This is crucial for libraries
 os.environ["TZ"] = settings.TZ
@@ -144,6 +150,7 @@ wallet_queue_consumer = WalletQueueConsumer()
 order_status_queue_consumer = OrderStatusQueueConsumer()
 # notification_queue_consumer = NotificationQueueConsumer()
 central_queue_producer = CentralQueueProducer()
+
 
 @asynccontextmanager
 async def lifespan(application: FastAPI):

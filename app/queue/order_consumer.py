@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 
 from app.database.database import get_db
-from app.models.models import Order
+from app.models.models import Delivery, Order
 from app.queue.base_consumer import BaseQueueConsumer
 from app.utils.logger_config import setup_logger
 
@@ -16,6 +16,7 @@ from app.utils.logger_config import setup_logger
 from app.queue.base_consumer import BaseQueueConsumer
 
 logger = setup_logger()
+
 
 class OrderStatusQueueConsumer(BaseQueueConsumer):
     def __init__(self):
@@ -30,33 +31,33 @@ class OrderStatusQueueConsumer(BaseQueueConsumer):
         async for db in get_db():
             try:
                 async with db.begin():
-                    order_id = UUID(payload.get('order_id'))
-                    new_status = payload.get('new_status')
-                    delivery_id = payload.get('delivery_id')
+                    order_id = UUID(payload.get("order_id"))
+                    new_status = payload.get("new_status")
+                    delivery_id = payload.get("delivery_id")
 
                     logger.info(f"XXXXX ORDER PAYLOAD: {payload} :XXXXX")
                     # notification_data = payload.get('notification', {})
                     # cache_keys = payload.get('cache_keys', [])
-                    
+
                     result = await db.execute(
                         update(Order)
                         .where(Order.id == order_id)
                         .values(order_status=new_status)
                     )
-                    
+
                     if result.rowcount == 0:
                         raise ValueError(f"Order {order_id} not found")
-                    
+
                     if delivery_id:
                         result = await db.execute(
                             update(Delivery)
                             .where(Delivery.id == UUID(delivery_id))
                             .values(delivery_status=new_status)
                         )
-                    
+
                     # for key in cache_keys:
                     #     redis_client.delete(key)
-                    
+
                     # if notification_data:
                     #     await notification_queue.publish_notification(**notification_data)
             except Exception as db_error:
@@ -68,33 +69,20 @@ class OrderStatusQueueConsumer(BaseQueueConsumer):
         async for db in get_db():
             try:
                 async with db.begin():
-                    order_id = UUID(payload.get('order_id'))
-                    new_status = payload.get('new_status')
-                   
-                    logger.info(f"XXXXX ORDER PAYMENT PAYLOAD: {payload} :XXXXX")
-                    # notification_data = payload.get('notification', {})
-                    # cache_keys = payload.get('cache_keys', [])
-                    
+                    order_id = UUID(payload.get("order_id"))
+                    new_status = payload.get("new_status")
                     result = await db.execute(
                         update(Order)
                         .where(Order.id == order_id)
                         .values(order_payment_status=new_status)
                     )
-                    
+
                     if result.rowcount == 0:
-                        logger.error(f'ERROR updating order payment status')
+                        logger.error(f"ERROR updating order payment status")
                         raise ValueError(f"Order {order_id} not found")
-                    
-                    # for key in cache_keys:
-                    #     redis_client.delete(key)
-                    
-                    # if notification_data:
-                    #     await notification_queue.publish_notification(**notification_data)
             except Exception as db_error:
                 logger.error(f"Order status update error: {str(db_error)}")
                 raise
 
-
-    
 
 order_consumer = OrderStatusQueueConsumer()
