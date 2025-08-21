@@ -1,7 +1,21 @@
+from decimal import Decimal
 from typing import Dict, Any
+from uuid import UUID
+
+from pydantic import UUID1
+from sqlalchemy import insert, update, select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+
+from app.database.database import get_db
+from app.models.models import Order
+from app.queue.base_consumer import BaseQueueConsumer
+from app.utils.logger_config import setup_logger
+
 
 from app.queue.base_consumer import BaseQueueConsumer
 
+logger = setup_logger()
 
 class OrderStatusQueueConsumer(BaseQueueConsumer):
     def __init__(self):
