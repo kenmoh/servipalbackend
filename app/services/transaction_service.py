@@ -1396,6 +1396,16 @@ async def order_payment_callback(request: Request, db: AsyncSession):
                 }
             )
 
+            await producer.publish_message(
+                service='order_status', order_status='update_order_status',
+                payload={
+                    'new_status': new_status,
+                    'order_id': order.id
+                
+                }
+
+            )
+
             # Create transaction
             await producer.publish_message(
                 service="wallet", operation="create_transaction",
@@ -1404,6 +1414,7 @@ async def order_payment_callback(request: Request, db: AsyncSession):
                     'tx_ref': tx_ref,
                     'amount': str(delivery_fee),
                     'transaction_type': TransactionType.USER_TO_USER,
+                    'payment_status': new_status,
                     'transaction_direction': TransactionDirection.DEBIT,
                     'from_user': customer.full_name or customer.business_name,
                 }
@@ -1479,6 +1490,16 @@ async def order_payment_callback(request: Request, db: AsyncSession):
                 }
             )
 
+            await producer.publish_message(
+                service='order_status', order_status='update_order_status',
+                payload={
+                    'new_status': new_status,
+                    'order_id': order.id
+                
+                }
+
+            )
+
             # Queue customer and vendor wallet operations
             # Customer transaction
             await producer.publish_message(
@@ -1488,6 +1509,7 @@ async def order_payment_callback(request: Request, db: AsyncSession):
                     'tx_ref': tx_ref,
                     'amount': str(charged_amount),
                     'to_wallet_id': str(order.vendor_id),
+                    'payment_status':new_status,
                     'transaction_type': TransactionType.USER_TO_USER,
                     'transaction_direction': TransactionDirection.DEBIT,
                     'from_user': customer.full_name or customer.business_name,

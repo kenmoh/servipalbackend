@@ -19,8 +19,10 @@ class OrderStatusQueueConsumer(BaseQueueConsumer):
                     order_id = UUID(payload.get('order_id'))
                     new_status = payload.get('new_status')
                     delivery_id = payload.get('delivery_id')
-                    notification_data = payload.get('notification', {})
-                    cache_keys = payload.get('cache_keys', [])
+
+                    logger.info(f"XXXXX ORDER PAYLOAD: {payload} :XXXXX")
+                    # notification_data = payload.get('notification', {})
+                    # cache_keys = payload.get('cache_keys', [])
                     
                     result = await db.execute(
                         update(Order)
@@ -38,11 +40,11 @@ class OrderStatusQueueConsumer(BaseQueueConsumer):
                             .values(delivery_status=new_status)
                         )
                     
-                    for key in cache_keys:
-                        redis_client.delete(key)
+                    # for key in cache_keys:
+                    #     redis_client.delete(key)
                     
-                    if notification_data:
-                        await notification_queue.publish_notification(**notification_data)
+                    # if notification_data:
+                    #     await notification_queue.publish_notification(**notification_data)
             except Exception as db_error:
                 logger.error(f"Order status update error: {str(db_error)}")
                 raise
