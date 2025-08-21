@@ -1397,7 +1397,7 @@ async def order_payment_callback(request: Request, db: AsyncSession):
             )
 
             await producer.publish_message(
-                service='order_status', order_status='update_order_status',
+                service='order_status', operation='order_payment_status',
                 payload={
                     'new_status': new_status,
                     'order_id': order.id
@@ -1491,7 +1491,7 @@ async def order_payment_callback(request: Request, db: AsyncSession):
             )
 
             await producer.publish_message(
-                service='order_status', order_status='update_order_status',
+                service='order_status', operation='order_payment_status',
                 payload={
                     'new_status': new_status,
                     'order_id': order.id

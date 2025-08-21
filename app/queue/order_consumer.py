@@ -8,7 +8,7 @@ class OrderStatusQueueConsumer(BaseQueueConsumer):
         super().__init__("order_status", "order_status_updates")
         self._operation_handlers = {
             "update_order_status": self.process_order_status_update,
-            # "create_order": self.process_create_order,
+            "order_payment_status": self.process_order_payment_status_update,
         }
 
     async def process_order_status_update(self, payload: Dict[str, Any]):
@@ -48,6 +48,38 @@ class OrderStatusQueueConsumer(BaseQueueConsumer):
             except Exception as db_error:
                 logger.error(f"Order status update error: {str(db_error)}")
                 raise
+
+    async def process_order_payment_status_update(self, payload: Dict[str, Any]):
+        """Process order status update"""
+        async for db in get_db():
+            try:
+                async with db.begin():
+                    order_id = UUID(payload.get('order_id'))
+                    new_status = payload.get('new_status')
+                   
+                    logger.info(f"XXXXX ORDER PAYMENT PAYLOAD: {payload} :XXXXX")
+                    # notification_data = payload.get('notification', {})
+                    # cache_keys = payload.get('cache_keys', [])
+                    
+                    result = await db.execute(
+                        update(Order)
+                        .where(Order.id == order_id)
+                        .values(order_payment_status=new_status)
+                    )
+                    
+                    if result.rowcount == 0:
+                        logger.error(f'ERROR updating order payment status')
+                        raise ValueError(f"Order {order_id} not found")
+                    
+                    # for key in cache_keys:
+                    #     redis_client.delete(key)
+                    
+                    # if notification_data:
+                    #     await notification_queue.publish_notification(**notification_data)
+            except Exception as db_error:
+                logger.error(f"Order status update error: {str(db_error)}")
+                raise
+
 
     
 
