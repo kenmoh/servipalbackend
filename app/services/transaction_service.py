@@ -1400,7 +1400,7 @@ async def order_payment_callback(request: Request, db: AsyncSession):
                 service='order_status', operation='order_payment_status',
                 payload={
                     'new_status': new_status,
-                    'order_id': order.id
+                    'order_id': str(order.id)
                 
                 }
 
@@ -1494,7 +1494,7 @@ async def order_payment_callback(request: Request, db: AsyncSession):
                 service='order_status', operation='order_payment_status',
                 payload={
                     'new_status': new_status,
-                    'order_id': order.id
+                    'order_id': str(order.id)
                 
                 }
 
