@@ -24,7 +24,6 @@ from app.models.models import (
 )
 from app.queue import notification_queue, order_status_queue
 from app.services import ws_service
-from app.queue.wallet_queue import wallet_service
 from app.queue.producer import producer
 
 
@@ -1290,8 +1289,8 @@ async def rider_accept_delivery_order(
         operation="update_wallet",
         payload={
             "wallet_id": str(order.delivery.dispatch_id),
-            "balance_change"=str(0),
-            "escrow_change"=str(dispatch_amount),
+            "balance_change":str(0),
+            "escrow_change":str(dispatch_amount),
         },
     )
 
@@ -2298,7 +2297,7 @@ async def rider_mark_delivered(
     token = await get_user_notification_token(db=db, user_id=delivery.sender_id)
 
     if token:
-        await producer.publish_notification(
+        await send_push_notification(
             tokens=[token],
             title="Payment Successful",
             message="Your order has been delivered. Please confirm with the receipient before marking as received.",
@@ -2416,84 +2415,84 @@ async def admin_modify_delivery_status(
 
 # <<< ----- UTILITY FUNCTIONS FOR ORDERS/DELIVERY ----- >>>
 
-async def handle_pickup_order_received(
-    db: AsyncSession,
-    order: Order,
-    vendor_profile: Profile,
-    sender: str,
-    vendor_amount: Decimal,
-) -> DeliveryStatusUpdateSchema:
-    """Helper function to handle pickup order received confirmation"""
-    try:
-        # Update order status
-        order.order_status = OrderStatus.RECEIVED
-        tx_ref = order.tx_ref  # Use existing tx_ref from payment
+# async def handle_pickup_order_received(
+#     db: AsyncSession,
+#     order: Order,
+#     vendor_profile: Profile,
+#     sender: str,
+#     vendor_amount: Decimal,
+# ) -> DeliveryStatusUpdateSchema:
+#     """Helper function to handle pickup order received confirmation"""
+#     try:
+#         # Update order status
+#         order.order_status = OrderStatus.RECEIVED
+#         tx_ref = order.tx_ref  # Use existing tx_ref from payment
 
-        # Update vendor wallet (move from escrow to balance)
-        await wallet_service.publish_wallet_update(
-            wallet_id=str(order.vendor_id),
-            tx_ref=tx_ref,
-            balance_change=str(vendor_amount),
-            escrow_change=str(-vendor_amount),
-            transaction_type=TransactionType.USER_TO_USER,
-            transaction_direction=TransactionDirection.CREDIT,
-            payment_status=PaymentStatus.PAID,
-            from_user=sender,
-            to_user=vendor_profile.full_name or vendor_profile.business_name,
-            metadata={
-                "order_id": str(order.id),
-                "operation": "pickup_order_escrow_release",
-                "is_new_transaction": False,
-            },
-        )
+#         # Update vendor wallet (move from escrow to balance)
+#         await wallet_service.publish_wallet_update(
+#             wallet_id=str(order.vendor_id),
+#             tx_ref=tx_ref,
+#             balance_change=str(vendor_amount),
+#             escrow_change=str(-vendor_amount),
+#             transaction_type=TransactionType.USER_TO_USER,
+#             transaction_direction=TransactionDirection.CREDIT,
+#             payment_status=PaymentStatus.PAID,
+#             from_user=sender,
+#             to_user=vendor_profile.full_name or vendor_profile.business_name,
+#             metadata={
+#                 "order_id": str(order.id),
+#                 "operation": "pickup_order_escrow_release",
+#                 "is_new_transaction": False,
+#             },
+#         )
 
-        # Update customer wallet (clear escrow)
-        await wallet_service.publish_wallet_update(
-            wallet_id=str(order.owner_id),
-            tx_ref=tx_ref,
-            balance_change=str(0),
-            escrow_change=str(-order.total_price),
-            transaction_type=TransactionType.USER_TO_USER,
-            transaction_direction=TransactionDirection.DEBIT,
-            payment_status=PaymentStatus.PAID,
-            from_user=sender,
-            to_user=vendor_profile.full_name or vendor_profile.business_name,
-            metadata={
-                "order_id": str(order.id),
-                "operation": "pickup_order_escrow_release",
-                "is_new_transaction": False,
-            },
-        )
+#         # Update customer wallet (clear escrow)
+#         await wallet_service.publish_wallet_update(
+#             wallet_id=str(order.owner_id),
+#             tx_ref=tx_ref,
+#             balance_change=str(0),
+#             escrow_change=str(-order.total_price),
+#             transaction_type=TransactionType.USER_TO_USER,
+#             transaction_direction=TransactionDirection.DEBIT,
+#             payment_status=PaymentStatus.PAID,
+#             from_user=sender,
+#             to_user=vendor_profile.full_name or vendor_profile.business_name,
+#             metadata={
+#                 "order_id": str(order.id),
+#                 "operation": "pickup_order_escrow_release",
+#                 "is_new_transaction": False,
+#             },
+#         )
 
-        await db.commit()
-        await db.refresh(order)
+#         await db.commit()
+#         await db.refresh(order)
 
-        # Send notification to vendor
-        vendor_token = await get_user_notification_token(db=db, user_id=order.vendor_id)
-        if vendor_token:
-            await notification_queue.publish_notification(
-                tokens=[vendor_token],
-                title="Order Completed",
-                message=f"Congratulations! Order completed. ₦{vendor_amount} has been released to your wallet.",
-                navigate_to="/(app)/delivery/orders",
-            )
+#         # Send notification to vendor
+#         vendor_token = await get_user_notification_token(db=db, user_id=order.vendor_id)
+#         if vendor_token:
+#             await notification_queue.publish_notification(
+#                 tokens=[vendor_token],
+#                 title="Order Completed",
+#                 message=f"Congratulations! Order completed. ₦{vendor_amount} has been released to your wallet.",
+#                 navigate_to="/(app)/delivery/orders",
+#             )
 
-        # Clear cache
-        redis_client.delete(f"{ALL_DELIVERY}")
-        redis_client.delete("paid_pending_deliveries")
-        redis_client.delete(f"user_related_orders:{order.owner_id}")
-        redis_client.delete(f"user_related_orders:{order.vendor_id}")
+#         # Clear cache
+#         redis_client.delete(f"{ALL_DELIVERY}")
+#         redis_client.delete("paid_pending_deliveries")
+#         redis_client.delete(f"user_related_orders:{order.owner_id}")
+#         redis_client.delete(f"user_related_orders:{order.vendor_id}")
 
-        # Broadcast status update
-        await ws_service.broadcast_order_status_update(
-            order_id=order.id, new_status=order.order_status
-        )
+#         # Broadcast status update
+#         await ws_service.broadcast_order_status_update(
+#             order_id=order.id, new_status=order.order_status
+#         )
 
-        return DeliveryStatusUpdateSchema(order_status=order.order_status)
+#         return DeliveryStatusUpdateSchema(order_status=order.order_status)
 
-    except Exception as e:
-        await db.rollback()
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+#     except Exception as e:
+#         await db.rollback()
+#         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
 
 async def get_charges(db: AsyncSession):
@@ -2646,65 +2645,6 @@ async def safe_wallet_update(
     )
 
     return new_balance, new_escrow
-
-
-async def queue_wallet_transaction(
-    db: AsyncSession,
-    wallet_id: UUID,
-    amount: Decimal,
-    transaction_type: TransactionType,
-    transaction_direction: TransactionDirection,
-    to_user: str = None,
-    from_user: str = None,
-    metadata: dict = None,
-) -> None:
-    """
-    Queue a wallet transaction to be processed asynchronously using RabbitMQ.
-    This ensures reliable transaction processing even if the worker process is down.
-    """
-    try:
-        # Using wallet_service for transaction publishing
-        from app.queue.wallet_queue import wallet_service
-
-        try:
-            # Publish message to RabbitMQ queue using wallet_service
-            await wallet_service.publish_wallet_update(
-                wallet_id=str(wallet_id),
-                balance_change=str(amount),
-                transaction_type=transaction_type,
-                transaction_direction=transaction_direction,
-                to_user=to_user,
-                from_user=from_user,
-                metadata=metadata,
-            )
-            logger_config.info(
-                f"Successfully queued transaction for wallet {wallet_id}"
-            )
-        except Exception as e:
-            logger_config.error(f"Failed to publish transaction to queue: {str(e)}")
-            # Fallback: Create transaction directly in case of queue failure
-            transaction = Transaction(
-                wallet_id=wallet_id,
-                amount=amount,
-                transaction_type=transaction_type,
-                transaction_direction=transaction_direction,
-                payment_status=PaymentStatus.PAID,
-                to_user=to_user,
-                from_user=from_user,
-            )
-
-            try:
-                db.add(transaction)
-                await db.flush()
-                logger_config.info("Used fallback direct transaction creation")
-            except Exception as direct_error:
-                logger_config.error(
-                    f"Fallback also failed - both queue and direct creation failed: {str(direct_error)}"
-                )
-
-    except Exception as e:
-        logger_config.error(f"Failed to create transaction message: {str(e)}")
-        # Log error but don't break flow - operations should continue even if transaction logging fails
 
 
 async def update_delivery_status_in_db(

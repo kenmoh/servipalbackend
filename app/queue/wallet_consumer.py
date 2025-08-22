@@ -61,8 +61,6 @@ class WalletQueueConsumer(BaseQueueConsumer):
         wallet.balance = new_balance
         wallet.escrow_balance = new_escrow
 
-        await db.commit()
-
     async def process_wallet_update(self, payload: Dict[str, Any]):
         """Process wallet balance update"""
         async for db in get_db():
