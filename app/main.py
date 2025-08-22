@@ -1,17 +1,7 @@
 import os
 from app.config.config import settings
 from app.utils import limiter
-from app.queue.wallet_queue import start_wallet_consumer, stop_wallet_consumer
-from app.queue.notification_queue import (
-    start_notification_consumer,
-    stop_notification_consumer,
-)
-from app.queue.order_status_queue import (
-    start_order_status_consumer,
-    stop_order_status_consumer,
-)
 
-# Set the timezone for the application process. This is crucial for libraries
 os.environ["TZ"] = settings.TZ
 
 from contextlib import asynccontextmanager
@@ -19,13 +9,11 @@ import asyncio
 from functools import partial
 import logfire
 import sentry_sdk
-# from opentelemetry.instrumentation.sqlalchemy import SQLAlchemyInstrumentor
 
 from fastapi import Depends, FastAPI
 from fastapi.openapi.docs import get_swagger_ui_html, get_redoc_html
 from fastapi.responses import RedirectResponse
 from fastapi.responses import JSONResponse
-from fastapi_mcp import FastApiMCP
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -62,7 +50,6 @@ from app.utils.utils import get_all_banks, resolve_account_details
 from app.config.config import redis_client
 from app.database.database import engine
 from app.schemas.user_schemas import AccountDetails, AccountDetailResponse
-from app.queue.notification_consumer import NotificationQueueConsumer
 from app.queue.order_consumer import OrderStatusQueueConsumer
 from app.queue.wallet_consumer import WalletQueueConsumer
 from app.queue.producer import CentralQueueProducer
@@ -97,13 +84,7 @@ def run_async(loop, coro):
     asyncio.run_coroutine_threadsafe(coro, loop)
 
 
-# Get event loop for async operations
 loop = asyncio.get_event_loop()
-
-
-# scheduler.add_job(reset_user_suspension, trigger=trigger)
-# scheduler.add_job(
-#     suspend_user_with_order_cancel_count_equal_3, trigger=trigger)
 
 scheduler.add_job(
     partial(run_async, loop, reset_user_suspension()),
@@ -119,36 +100,8 @@ scheduler.add_job(
 
 scheduler.start()
 
-# templates = Jinja2Templates(directory="templates")
-
-
-# @asynccontextmanager
-# async def lifespan(application: FastAPI):
-#     try:
-#         print("Starting up...")
-#         async with async_session() as db:
-#             await db.execute(text("SELECT 1"))
-#             await db.execute(
-#                 text(
-#                     "CREATE SEQUENCE IF NOT EXISTS order_number_seq START WITH 1000 INCREMENT BY 1"
-#                 )
-#             )
-#         print("Database connection successful.")
-#         # Check Redis connection
-#         redis_client.ping()
-#         print("Redis connection successful.")
-
-#         yield
-#         print('Scheduler started...')
-#         scheduler.shutdown()
-
-#     finally:
-#         print("Shutting down...")
-#         await db.close()
-
 wallet_queue_consumer = WalletQueueConsumer()
 order_status_queue_consumer = OrderStatusQueueConsumer()
-# notification_queue_consumer = NotificationQueueConsumer()
 central_queue_producer = CentralQueueProducer()
 
 
@@ -171,18 +124,10 @@ async def lifespan(application: FastAPI):
         redis_client.ping()
         logger.info("Redis connection successful")
 
-        # Start all queue consumers
-        # logger.info("Starting service consumers...")
-        # await start_wallet_consumer()
-        # await start_notification_consumer()
-        # await start_order_status_consumer()
-        # logger.info("All service consumers started")
-
         logger.info("Starting queue system...")
         await central_queue_producer.connect()
         await wallet_queue_consumer.start_consuming()
         await order_status_queue_consumer.start_consuming()
-        # await notification_queue_consumer.start_consuming()
         logger.info("Queue system initialized successfully")
 
         # Log scheduler status
@@ -192,9 +137,6 @@ async def lifespan(application: FastAPI):
         yield
 
         logger.info("Shutting down services...")
-        await stop_wallet_consumer()
-        await stop_notification_consumer()
-        await stop_order_status_consumer()
         scheduler.shutdown()
         logger.info("Services shutdown complete")
 

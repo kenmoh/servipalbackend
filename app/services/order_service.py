@@ -2,9 +2,9 @@ from curses import meta
 from datetime import timedelta, datetime
 from typing import Optional
 import uuid
+from webbrowser import get
 from sqlalchemy import func, or_, and_, select, update, insert
 
-# from sqlalchemy.sql.expression.ColumnOperators import in_
 from fastapi import UploadFile
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import joinedload, selectinload
@@ -15,14 +15,12 @@ from app.models.models import (
     Item,
     Order,
     OrderItem,
-    Review,
     Transaction,
     User,
     Wallet,
     ItemImage,
     Profile,
 )
-from app.queue import notification_queue, order_status_queue
 from app.services import ws_service
 from app.queue.producer import producer
 
@@ -907,213 +905,352 @@ async def cancel_order_or_delivery(
     db: AsyncSession, order_id: UUID, current_user: User
 ) -> DeliveryStatusUpdateSchema:
     """
-    Cancel a delivery (Owner/Rider/Dispatch). This sets both the delivery and related order status to CANCELLED,
-    updates wallet/escrow as needed, and logs an audit entry for traceability.
+    Cancel an order and its associated delivery. This action is irreversible and will
+    process refunds for paid orders.
+
     Args:
-        db: Database session
-        delivery_id: UUID of the delivery to cancel
-        current_user: User performing the cancellation
+        db: The database session.
+        order_id: The ID of the order to cancel.
+        current_user: The user initiating the cancellation.
+
     Returns:
-        DeliveryStatusUpdateSchema with the new delivery status
+        A schema indicating the new status of the order and delivery.
+
+    Raises:
+        HTTPException: If the order is not found, the user is not authorized,
+                       or the order is already in a final state.
     """
-    wallet_result = await db.execute(select(Wallet).where(Wallet.id == current_user.id))
-    wallet = wallet_result.scalar_one_or_none()
-    order = await _cancel_delivery_and_order(db=db, order_id=order_id)
-
-    if current_user.id not in [
-        order.delivery.sender_id,
-        order.delivery.vendor_id,
-        order.delivery.rider_id,
-        order.order.owner_id,
-        order.order.vendor_id,
-    ]:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="You are not authorized to cancel this order.",
+    async with db.begin():
+        # 1. Fetch the order with all related entities and lock it for update
+        order_stmt = (
+            select(Order)
+            .where(Order.id == order_id)
+            .options(
+                selectinload(Order.delivery),
+                selectinload(Order.owner).selectinload(User.wallet),
+                selectinload(Order.vendor).selectinload(User.wallet),
+            )
+            .with_for_update()
         )
+        order_result = await db.execute(order_stmt)
+        order = order_result.unique().scalar_one_or_none()
 
-    if current_user.user_type in [
-        UserType.CUSTOMER,
-        UserType.LAUNDRY_VENDOR,
-        UserType.RESTAURANT_VENDOR,
-    ]:
-        total_amount = (
-            max(order.delivery.delivery_fee, 0) + max(order.order.total_price, 0)
-            if order.order_type
-            in [OrderType.FOOD, OrderType.LAUNDRY, OrderType.PRODUCT]
-            else max(order.delivery.delivery_fee, 0)
-        )
-
-        # UPDATE SENDER WALLET
-        new_escrow = max(wallet.escrow_balance - total_amount, 0)
-        new_balance = max(wallet.balance + total_amount, 0)
-
-        await db.execute(
-            update(Wallet)
-            .where(Wallet.id == current_user.id)
-            .values(
-                {
-                    "balance": new_balance,
-                    "escrow_balance": new_escrow,
-                }
-            )
-        )
-        await db.commit()
-        await db.refresh(order)
-
-        invalidate_delivery_cache(order.delivery.id)
-        redis_client.delete("paid_pending_deliveries")
-        redis_client.delete(f"user_related_orders:{current_user.id}")
-        redis_client.delete("orders")
-        return DeliveryStatusUpdateSchema(delivery_status=order.order.order_status)
-
-    if current_user.user_type in [
-        UserType.RIDER,
-        UserType.DISPATCH,
-    ] and current_user.id in [order.delivery.rider_id, order.delivery.dispatch_id]:
-        if order.delivery.delivery_status == DeliveryStatus.ACCEPTED:
-            # await _cancel_delivery_and_order(db=db, order_id=order_id)
-
-            current_user.order_cancel_count += 1
-            await db.commit()
-
-            # UPDATE RIDER ESCROW BALANCE
-            new_escrow = max(
-                wallet.escrow_balance - order.delivery.amount_due_dispatch, 0
-            )
-            await db.execute(
-                update(Wallet)
-                .where(Wallet.id == order.delivery.dispatch_id)
-                .values({"escrow_balance": new_escrow})
+        if not order:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="Order not found"
             )
 
-            await db.commit()
-            await db.refresh(order)
+        # 2. Check authorization
+        allowed_user_ids = {order.owner_id, order.vendor_id}
+        if order.delivery:
+            allowed_user_ids.add(order.delivery.rider_id)
+            allowed_user_ids.add(order.delivery.dispatch_id)
 
-            invalidate_delivery_cache(order.delivery.id)
-            redis_client.delete(f"{ALL_DELIVERY}")
-
-            token = await get_user_notification_token(
-                db=db, user_id=order.delivery.vendor_id
+        if current_user.id not in allowed_user_ids:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="You are not authorized to cancel this order.",
             )
-           
 
-            if token:
-                await send_push_notification(
-                    tokens=[token],
-                    title="Order canceled",
-                    message="Your Order has been canceled and will be re-listed",
-                    navigate_to="/(app)/delivery/orders",
+        # 3. Check if order is already in a final state
+        if order.order_status in [OrderStatus.RECEIVED, OrderStatus.CANCELLED]:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Order is already {order.order_status.value} and cannot be cancelled.",
+            )
+
+        # --- Rider Cancellation (Re-list) ---
+        if current_user.user_type == UserType.RIDER:
+            if not order.delivery or order.delivery.rider_id != current_user.id:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="You are not the assigned rider for this delivery.",
                 )
 
-            # if token:
-            #     await send_push_notification(
-            #         tokens=[token],
-            #         title="Order canceled",
-            #         message="Your Order has been canceled and will be re-listed",
-            #         navigate_to="/(app)/delivery/orders",
-            #     )
-            # if rider_token:
-            #     await send_push_notification(
-            #         tokens=[rider_token],
-            #         title="Order canceled",
-            #         message="You canceled this order.",
-            #         navigate_to="/(app)/delivery/orders",
-            #     )
+            if order.order_status != OrderStatus.ACCEPTED:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Cannot cancel a delivery that has not been accepted.",
+                )
 
-            redis_client.delete(f"{ALL_DELIVERY}")
-            redis_client.delete("paid_pending_deliveries")
-            redis_client.delete(f"user_related_orders:{current_user.id}")
-            redis_client.delete("orders")
+            # Store old dispatch ID before clearing it
+            old_dispatch_id = order.delivery.dispatch_id
 
+            # Re-list the order by setting statuses to PENDING
+            order.order_status = OrderStatus.PENDING
+            order.delivery.delivery_status = DeliveryStatus.PENDING
+            order.delivery.rider_id = None
+            order.delivery.dispatch_id = None
+            order.delivery.rider_phone_number = None
+
+            # Increment rider's cancellation count
+            current_user.order_cancel_count = (current_user.order_cancel_count or 0) + 1
+            db.add(current_user)
+
+            # Reverse escrow for the original dispatch company if order was paid
+            if old_dispatch_id and order.order_payment_status == PaymentStatus.PAID:
+                await producer.publish_message(
+                    service="wallet",
+                    operation="update_wallet",
+                    payload={
+                        "wallet_id": str(old_dispatch_id),
+                        "balance_change": "0",
+                        "escrow_change": str(-order.delivery.amount_due_dispatch),
+                    },
+                )
+
+            # Invalidate caches
+            cache_keys_to_delete = [
+                f"user_orders:{order.owner_id}",
+                f"order_details:{order.id}",
+                "paid_pending_deliveries",
+                ALL_DELIVERY,
+                "orders",
+                f"delivery:{order.delivery.id}",
+                f"user_related_orders:{current_user.id}",
+            ]
+            redis_client.delete(*cache_keys_to_delete)
+
+            # Notify customer
+            try:
+                customer_token = await get_user_notification_token(db=db, user_id=order.owner_id)
+                if customer_token:
+                    await send_push_notification(
+                        tokens=[customer_token],
+                        title="Delivery Canceled",
+                        message=f"The delivery for your order #{order.order_number} was cancelled by the rider. It is now available for other riders.",
+                        navigate_to="/(app)/delivery/orders"
+                    )
+            except HTTPException as e:
+                if e.status_code == 404:
+                    logger_config.logger.warning(f"Could not send rider cancellation notification: {e.detail}")
+                else:
+                    raise
+
+            # Broadcast WebSocket updates
+            await ws_service.broadcast_order_status_update(
+                order_id=str(order.id), new_status=OrderStatus.PENDING.value
+            )
             await ws_service.broadcast_delivery_status_update(
-                delivery_id=order.delivery.id,
-                delivery_status=order.delivery.delivery_status,
+                delivery_id=str(order.delivery.id), new_status=DeliveryStatus.PENDING.value
             )
-            await order_status_queue.publish_order_update(
-                order_id=str(order.id),
-                new_status=order.delivery.delivery_status,
-                delivery_id=order.delivery.id,
-                cache_keys=[
-                    "paid_pending_deliveries",
-                    f"{ALL_DELIVERY}",
-                    f"user_related_orders:{current_user.id}",
-                    "orders",
-                ],
+
+            return DeliveryStatusUpdateSchema(
+                order_status=OrderStatus.PENDING.value,
+                delivery_status=DeliveryStatus.PENDING.value,
             )
-            return DeliveryStatusUpdateSchema(delivery_status=order.order.order_status)
+
+        # --- Sender/Vendor Cancellation (Full Cancellation) ---
+        else:
+            order.order_status = OrderStatus.CANCELLED
+            if order.delivery:
+                order.delivery.delivery_status = DeliveryStatus.CANCELLED
+
+            # Process refunds for paid orders
+            if order.order_payment_status == PaymentStatus.PAID:
+                # Refund buyer
+                buyer_refund_amount = order.grand_total
+                await producer.publish_message(
+                    service="wallet",
+                    operation="update_wallet",
+                    payload={
+                        "wallet_id": str(order.owner_id),
+                        "balance_change": str(buyer_refund_amount),
+                        "escrow_change": str(-buyer_refund_amount),
+                    },
+                )
+
+                # Deduct from vendor escrow
+                await producer.publish_message(
+                    service="wallet",
+                    operation="update_wallet",
+                    payload={
+                        "wallet_id": str(order.vendor_id),
+                        "balance_change": "0",
+                        "escrow_change": str(-order.amount_due_vendor),
+                    },
+                )
+
+                # Deduct from dispatch escrow if applicable
+                if order.delivery and order.delivery.dispatch_id:
+                    await producer.publish_message(
+                        service="wallet",
+                        operation="update_wallet",
+                        payload={
+                            "wallet_id": str(order.delivery.dispatch_id),
+                            "balance_change": "0",
+                            "escrow_change": str(-order.delivery.amount_due_dispatch),
+                        },
+                    )
+
+                # Create a refund transaction record
+                await producer.publish_message(
+                    service="wallet",
+                    operation="create_transaction",
+                    payload={
+                        "wallet_id": str(order.owner_id),
+                        "tx_ref": str(uuid.uuid1()),
+                        "amount": str(buyer_refund_amount),
+                        "transaction_type": TransactionType.REFUND.value,
+                        "transaction_direction": TransactionDirection.CREDIT.value,
+                        "payment_status": PaymentStatus.PAID.value,
+                        "payment_method": PaymentMethod.SYSTEM_REFUND.value,
+                        "from_user": "System",
+                        "to_user": "Self",
+                    },
+                )
+
+            # Invalidate caches
+            cache_keys_to_delete = [
+                f"user_orders:{order.owner_id}",
+                f"user_orders:{order.vendor_id}",
+                f"order_details:{order.id}",
+                "paid_pending_deliveries",
+                ALL_DELIVERY,
+                "orders",
+            ]
+            if order.delivery:
+                cache_keys_to_delete.append(f"delivery:{order.delivery.id}")
+                if order.delivery.rider_id:
+                    cache_keys_to_delete.append(f"user_related_orders:{order.delivery.rider_id}")
+            
+            redis_client.delete(*cache_keys_to_delete)
+
+            # Send notifications
+            try:
+                if current_user.id == order.owner_id:
+                    # Notify vendor
+                    vendor_token = await get_user_notification_token(db=db, user_id=order.vendor_id)
+                    if vendor_token:
+                        await send_push_notification(
+                            tokens=[vendor_token],
+                            title="Order Canceled",
+                            message=f"Order #{order.order_number} has been cancelled by the customer.",
+                            navigate_to="/(app)/delivery/orders"
+                        )
+                elif current_user.id == order.vendor_id:
+                    # Notify customer
+                    customer_token = await get_user_notification_token(db=db, user_id=order.owner_id)
+                    if customer_token:
+                        await send_push_notification(
+                            tokens=[customer_token],
+                            title="Order Canceled",
+                            message=f"Your order #{order.order_number} has been cancelled by the vendor.",
+                            navigate_to="/(app)/delivery/orders"
+                        )
+            except HTTPException as e:
+                if e.status_code == 404 and "Notification token not found" in e.detail:
+                    logger_config.logger.warning(f"Could not send cancellation notification: {e.detail}")
+                else:
+                    raise
+
+            # Broadcast WebSocket updates
+            await ws_service.broadcast_order_status_update(
+                order_id=str(order.id), new_status=OrderStatus.CANCELLED.value
+            )
+            if order.delivery:
+                await ws_service.broadcast_delivery_status_update(
+                    delivery_id=str(order.delivery.id), new_status=DeliveryStatus.CANCELLED.value
+                )
+
+            return DeliveryStatusUpdateSchema(
+                order_status=OrderStatus.CANCELLED.value,
+                delivery_status=DeliveryStatus.CANCELLED.value if order.delivery else None,
+            )
 
 
 async def re_list_item_for_delivery(
-    db: AsyncSession, order_id: UUID, current_user: User
+    db: AsyncSession, delivery_id: UUID, current_user: User
 ) -> DeliveryStatusUpdateSchema:
     """
-    Re-list delivery(Owner)
+    Re-lists a delivery for pickup after a rider has cancelled.
+    This action can only be performed by the order owner.
     """
-    wallet_result = await db.execute(select(Wallet).where(Wallet.id == current_user.id))
+    async with db.begin():
+        # 1. Fetch the delivery and its order, and lock the row for update.
+        stmt = (
+            select(Delivery)
+            .where(Delivery.id == delivery_id)
+            .options(selectinload(Delivery.order))
+            .with_for_update()
+        )
+        result = await db.execute(stmt)
+        delivery = result.scalar_one_or_none()
 
-    wallet = wallet_result.scalar_one_or_none()
-
-    if current_user.user_type in [
-        UserType.CUSTOMER,
-        UserType.LAUNDRY_VENDOR,
-        UserType.RESTAURANT_VENDOR,
-    ]:
-        # result = await db.execute(
-        #     select(Delivery)
-        #     .where(Delivery.id == order.delivery.id)
-        #     .where(Delivery.sender_id == current_user.id)
-        # )
-        # delivery = result.scalar_one_or_none()
-
-        try:
-            order = await _update_delivery_and_order(
-                db=db, order_id=order_id, delivery_status=DeliveryStatus.PENDING
+        if not delivery:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="Delivery not found."
             )
 
-            # if delivery.delivery_status == DeliveryStatus.CANCELLED:
-            #     result = await db.execute(
-            #         update(Delivery)
-            #         .where(Delivery.id == order.delivery.id)
-            #         .where(Delivery.sender_id == current_user.id)
-            #         .values(delivery_status=DeliveryStatus.PENDING)
-            #     )
-            #     await db.commit()
-
-            # UPDATE USER WALLET
-            new_escrow = wallet.escrow_balance + order.delivery.delivery_fee
-            new_balance = max(wallet.balance - order.delivery.delivery_fee, 0)
-            if new_balance < 0:
-                raise HTTPException(
-                    status_code=400,
-                    detail="Insufficient balance to re-list delivery.",
-                )
-            await db.execute(
-                update(Wallet)
-                .where(Wallet.id == current_user.sender_id)
-                .values(
-                    {
-                        "balance": new_balance,
-                        "escrow_balance": new_escrow,
-                    }
-                )
-            )
-            await db.commit()
-            await db.refresh(order.delivery)
-
-            invalidate_delivery_cache(order.delivery.id)
-            redis_client.delete(ALL_DELIVERY)
-            redis_client.delete("paid_pending_deliveries")
-            redis_client.delete(f"user_related_orders:{current_user.id}")
-            return DeliveryStatusUpdateSchema(
-                delivery_status=order.delivery.delivery_status
+        order = delivery.order
+        if not order:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Associated order not found.",
             )
 
-        except Exception as e:
+        # 2. Authorization and State Validation
+        if order.owner_id != current_user.id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="You are not authorized to re-list this delivery.",
+            )
+
+        if delivery.delivery_status != DeliveryStatus.CANCELLED:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Something went wrong. {e}",
+                detail="Only a cancelled delivery can be re-listed.",
             )
+
+        # 3. Update the delivery to be available again
+        delivery.delivery_status = DeliveryStatus.PENDING
+        delivery.rider_id = None
+        delivery.dispatch_id = None
+        delivery.rider_phone_number = None
+
+        # Also update the main order status if it was also cancelled
+        if order.order_status == OrderStatus.CANCELLED:
+            order.order_status = OrderStatus.PENDING
+
+        db.add(delivery)
+        db.add(order)
+
+        # 4. Invalidate Caches
+        invalidate_delivery_cache(delivery.id)
+        redis_client.delete(ALL_DELIVERY)
+        redis_client.delete("paid_pending_deliveries")
+        redis_client.delete(f"user_related_orders:{current_user.id}")
+        if order.vendor_id:
+            redis_client.delete(f"user_related_orders:{order.vendor_id}")
+
+        # 5. Notifications and Broadcasts
+        if order.vendor_id and order.vendor_id != order.owner_id:
+            try:
+                vendor_token = await get_user_notification_token(
+                    db=db, user_id=order.vendor_id
+                )
+                if vendor_token:
+                    await send_push_notification(
+                        tokens=[vendor_token],
+                        title="Delivery Re-listed",
+                        message=f"The delivery for order #{order.order_number} has been re-listed and is now awaiting a new rider.",
+                        navigate_to="/(app)/delivery/orders",
+                    )
+            except HTTPException as e:
+                if e.status_code == 404:
+                    logger_config.logger.warning(
+                        f"Could not send re-list notification: {e.detail}"
+                    )
+                else:
+                    raise
+
+        await ws_service.broadcast_delivery_status_update(
+            delivery_id=str(delivery.id), new_status=DeliveryStatus.PENDING.value
+        )
+
+        return DeliveryStatusUpdateSchema(
+            delivery_status=delivery.delivery_status, order_status=order.order_status
+        )
 
 
 # For orders without delivery
@@ -1132,8 +1269,6 @@ async def vendor_mark_order_delivered(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Order not found"
         )
-
-    # vendor_wallet = await fetch_wallet(db, order.vendor_id)
 
     try:
         if (
@@ -1294,64 +1429,6 @@ async def rider_accept_delivery_order(
         },
     )
 
-
-    # Original: Direct DB operations (commented for testing)
-    # await db.execute(
-    #     update(Wallet)
-    #     .where(Wallet.id == order.delivery.dispatch_id)
-    #     .values(
-    #         {
-    #             "escrow_balance": max(
-    #                 dispatch_wallet.escrow_balance + dispatch_amount, 0
-    #             )
-    #         }
-    #     )
-    # )
-
-    # if (
-    #     order.delivery.delivery_type in [DeliveryType.FOOD, DeliveryType.LAUNDRY]
-    #     and order.require_delivery == RequireDeliverySchema.DELIVERY
-    # ):
-    # New: Update escrow using RabbitMQ
-    # await wallet_service.publish_wallet_update(
-    #     wallet_id=str(order.delivery.dispatch_id),
-    #     balance_change=str(0),
-    #     escrow_change=str(dispatch_amount),
-    #     transaction_type=TransactionType.USER_TO_USER,
-    #     transaction_direction=TransactionDirection.CREDIT,
-    #     from_user=sender_profile.full_name or sender_profile.business_name,
-    #     to_user=dispatch_profile.full_name or dispatch_profile.business_name
-    # )
-
-    # await wallet_service.publish_wallet_update(
-    #     wallet_id=str(order.delivery.vendor_id),
-    #     balance_change=str(0),
-    #     escrow_change=str(vendor_amount),
-    #     transaction_type=TransactionType.USER_TO_USER,
-    #     transaction_direction=TransactionDirection.CREDIT,
-    #     from_user=sender_profile.full_name or sender_profile.business_name,
-    #     to_user=vendor_profile.full_name or vendor_profile.business_name
-    # )
-
-    # Original: Direct DB operations (commented for testing)
-    # await db.execute(
-    #     update(Wallet)
-    #     .where(Wallet.id == order.delivery.dispatch_id)
-    #     .values(
-    #         {
-    #             "escrow_balance": max(
-    #                 dispatch_wallet.escrow_balance + dispatch_amount, 0
-    #             )
-    #         }
-    #     )
-    # )
-    # await db.execute(
-    #     update(Wallet)
-    #     .where(Wallet.id == order.delivery.vendor_id)
-    #     .values(
-    #         {"escrow_balance": max(vendor_wallet.escrow_balance + vendor_amount, 0)}
-    #     )
-    # )
 
     order.delivery.delivery_status = DeliveryStatus.ACCEPTED
     order.order_status = OrderStatus.ACCEPTED
@@ -1799,6 +1876,61 @@ async def sender_confirm_delivery_or_order_received(
             )
 
         vendor_profile = await get_user_profile(order.vendor_id, db=db)
+        try:
+            order.order_status = OrderStatus.RECEIVED
+            await db.commit()
+            await db.refresh(order)
+
+            # Broadcast WebSocket update
+            await ws_service.broadcast_order_status_update(
+                order_id=order.id, new_status=order.order_status
+            )
+
+            # Notify vendor
+            vendor_token = await get_user_notification_token(
+                db=db, user_id=order.vendor_id
+            )
+            if vendor_token:
+                await send_push_notification(
+                    tokens=[vendor_token],
+                    title="Order Completed",
+                    message=f"Congratulations! Order completed. ₦{order.amount_due_vendor} has been released to your wallet.",
+                    navigate_to="/(app)/delivery/orders",
+                )
+
+            # Clear caches
+            redis_client.delete(f"{ALL_DELIVERY}")
+            redis_client.delete("paid_pending_deliveries")
+            redis_client.delete(f"user_related_orders:{current_user.id}")
+
+            # Release funds from escrow
+            # Update vendor wallet (move from escrow to balance)
+            await producer.publish_message(
+                service="wallet",
+                operation="update_wallet",
+                payload={
+                    "wallet_id": str(order.vendor_id),
+                    "balance_change": str(order.amount_due_vendor),
+                    "escrow_change": str(-order.amount_due_vendor),
+                },
+            )
+
+            # Update sender wallet (clear escrow)
+            await producer.publish_message(
+                service="wallet",
+                operation="update_wallet",
+                payload={
+                    "wallet_id": str(order.owner_id),
+                    "balance_change": str(0),
+                    "escrow_change": str(-order.total_price),
+                },
+            )
+
+            return DeliveryStatusUpdateSchema(order_status=order.order_status)
+
+        except Exception as e:
+            await db.rollback()
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
     # Handle delivery orders
     if not order.delivery:
@@ -1957,13 +2089,10 @@ async def vendor_mark_laundry_item_received(
             detail="You are not authorized to mark this order as received.",
         )
 
-    if current_user.user_type not in [
-        UserType.LAUNDRY_VENDOR,
-        UserType.RESTAURANT_VENDOR,
-    ]:
+    if current_user.user_type != UserType.LAUNDRY_VENDOR:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only vendors can mark laundry items as received.",
+            detail="Only laundry vendors can mark laundry items as received.",
         )
 
     # Check delivery status
@@ -1987,10 +2116,6 @@ async def vendor_mark_laundry_item_received(
         )
 
     try:
-        # Fetch profiles for transaction and notification records
-        sender_profile = await get_user_profile(order.owner_id, db=db)
-        dispatch_profile = await get_user_profile(order.delivery.dispatch_id, db=db)
-
         sender_token = await get_user_notification_token(db=db, user_id=order.delivery.sender_id)
         rider_token = await get_user_notification_token(db=db, user_id=order.delivery.rider_id)
 
@@ -2028,7 +2153,7 @@ async def vendor_mark_laundry_item_received(
             operation='update_order_status',
             payload={
                 'order_id': str(order.id),
-                'delivery_id': str(order.delivery.dispatch_id),
+                'delivery_id': str(order.delivery.id),
                 'order_status': OrderStatus.VENDOR_RECEIVED_LAUNDRY_ITEM,
                 'delivery_status': DeliveryStatus.VENDOR_RECEIVED_LAUNDRY_ITEM,
                 'cache_keys': cache_keys,

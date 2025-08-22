@@ -23,9 +23,8 @@ from app.models.models import (
     Transaction,
     OrderItem,
 )
-from app.queue.notification_queue import notification_queue
+
 from app.queue.producer import producer
-from app.queue.wallet_queue import wallet_service
 from app.schemas.transaction_schema import (
     TransactionSchema,
     TransactionFilterSchema,
