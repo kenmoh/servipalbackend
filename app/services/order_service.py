@@ -451,7 +451,7 @@ async def create_package_order(
 
         payment_link = await get_payment_link(
             tx_ref=order_data.tx_ref,
-            amount=delivery_data.delivery_fee,
+            amount=total_amount_due,
             current_user=current_user,
         )
 
@@ -635,16 +635,17 @@ async def order_food_or_request_laundy_service(
                     "order_type": item_type,
                     "require_delivery": order_item.require_delivery,
                     "total_price": total_price,
+                    "grand_total": final_amount,
                     "order_payment_status": PaymentStatus.PENDING,
                     "order_status": OrderStatus.PENDING,
                     "amount_due_vendor": amount_due_vendor,
                     "additional_info": order_item.additional_info,
                 }
             )
-            .returning(Order.id, Order.tx_ref)
+            .returning(Order.id, Order.tx_ref, Order.grand_total)
         )
 
-        order_id, tx_ref = order_insert_result.scalar_one()
+        order_id, tx_ref, grand_total = order_insert_result.scalar_one()
 
         # Create order items
         order_items_payload = [
@@ -658,7 +659,6 @@ async def order_food_or_request_laundy_service(
         await db.execute(insert(OrderItem).values(order_items_payload))
 
         # Create delivery if required
-        delivery_id = None
         if requires_delivery:
             await db.execute(
                 insert(Delivery)
@@ -686,13 +686,13 @@ async def order_food_or_request_laundy_service(
             # delivery_id = delivery_insert_result.scalar_one()
 
         # Generate payment link
-        payment_link = await get_payment_link(tx_ref, final_amount, current_user)
+        payment_link = await get_payment_link(tx_ref, grand_total, current_user)
 
         # Update order with payment link
         await db.execute(
             update(Order)
             .where(Order.id == order_id)
-            .values({"payment_link": payment_link, "grand_total": final_amount})
+            .values({"payment_link": payment_link})
         )
 
         await db.commit()
@@ -765,140 +765,6 @@ async def order_food_or_request_laundy_service(
             detail=f"Failed to create order - {e}",
         )
 
-
-async def _cancel_delivery_and_order(
-    db: AsyncSession, order_id: UUID
-) -> DeliveryStatusUpdateSchema:
-    """
-    Helper to set delivery and order status to cancelled and log the audit.
-    Args:
-        db: Database session
-        order: Order object
-        delivery_status
-        order_status: New order status
-
-    """
-
-    order_stmt = (
-        select(Order).options(selectinload(Order.delivery)).where(Order.id == order_id).with_for_update()
-    )
-
-    order_result = await db.execute(order_stmt)
-    order = order_result.scalar_one_or_none()
-
-    try:
-        if (
-            order.require_delivery == RequireDeliverySchema.DELIVERY
-            and order.delivery.delivery_status
-            not in [
-                DeliveryStatus.DELIVERED,
-                DeliveryStatus.RECEIVED,
-                DeliveryStatus.VENDOR_RECEIVED_LAUNDRY_ITEM,
-            ]
-        ):
-            # Set delivery status
-            await db.execute(
-                update(Delivery)
-                .where(Delivery.id == order.delivery.id)
-                .values(delivery_status=DeliveryStatus.CANCELLED)
-            )
-            # Set order status
-            await db.execute(
-                update(Order)
-                .where(Order.id == order.id)
-                .values(order_status=OrderStatus.CANCELLED)
-            )
-            # Commit after both updates and audit
-            await db.commit()
-            await db.refresh(order)
-
-            return DeliveryStatusUpdateSchema(
-                order_status=order.order.order_status,
-                delivery_status=order.delivery.delivery_status,
-            )
-
-        elif (
-            order.require_delivery == RequireDeliverySchema.PICKUP
-            and order.order_status
-            not in [
-                OrderStatus.DELIVERED,
-                OrderStatus.RECEIVED,
-            ]
-        ):
-            await db.execute(
-                update(Order)
-                .where(Order.id == order.id)
-                .values(order_status=OrderStatus.CANCELLED)
-            )
-            await db.commit()
-            await db.refresh(order)
-
-            return DeliveryStatusUpdateSchema(order_status=order.order.order_status)
-
-    except Exception as e:
-        await db.rollback()
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to cancel order - {e}",
-        )
-
-
-async def _update_delivery_and_order(
-    db: AsyncSession,
-    order_id: UUID,
-    delivery_status: DeliveryStatus = None,
-    order_status: OrderStatus = None,
-) -> DeliveryResponse:
-    """
-    Update delivery and/or order status.
-    Args:
-        db: Database session
-        order_id: UUID of the order
-        delivery_status: New status for delivery (optional)
-        order_status: New status for order (optional)
-    Returns:
-        DeliveryResponse
-    """
-    order_stmt = (
-        select(Order).options(selectinload(Order.delivery)).where(Order.id == order_id).with_for_update()
-    )
-    order_result = await db.execute(order_stmt)
-    order = order_result.scalar_one_or_none()
-
-    if not order:
-        raise HTTPException(status_code=404, detail="Order not found")
-
-    try:
-        # Update delivery if needed
-        if (
-            order.require_delivery == RequireDeliverySchema.DELIVERY
-            and order.delivery
-            and delivery_status
-        ):
-            await db.execute(
-                update(Delivery)
-                .where(Delivery.id == order.delivery.id)
-                .values(delivery_status=delivery_status)
-            )
-        # Update order if needed
-        if order_status:
-            await db.execute(
-                update(Order)
-                .where(Order.id == order.id)
-                .values(order_status=order_status)
-            )
-        await db.commit()
-        # Refresh order and delivery
-        await db.refresh(order)
-        if order.delivery:
-            await db.refresh(order.delivery)
-        return format_delivery_response(order, order.delivery)
-    except Exception as e:
-        await db.rollback()
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to update delivery/order - {e}",
-        )
 
 
 async def cancel_order_or_delivery(
@@ -1146,16 +1012,16 @@ async def cancel_order_or_delivery(
 
             # Broadcast WebSocket updates
             await ws_service.broadcast_order_status_update(
-                order_id=str(order.id), new_status=OrderStatus.CANCELLED.value
+                order_id=str(order.id), new_status=OrderStatus.CANCELLED
             )
             if order.delivery:
                 await ws_service.broadcast_delivery_status_update(
-                    delivery_id=str(order.delivery.id), new_status=DeliveryStatus.CANCELLED.value
+                    delivery_id=str(order.delivery.id), new_status=DeliveryStatus.CANCELLED
                 )
 
             return DeliveryStatusUpdateSchema(
-                order_status=OrderStatus.CANCELLED.value,
-                delivery_status=DeliveryStatus.CANCELLED.value if order.delivery else None,
+                order_status=OrderStatus.CANCELLED,
+                delivery_status=DeliveryStatus.CANCELLED if order.delivery else None,
             )
 
 
@@ -1424,7 +1290,7 @@ async def rider_accept_delivery_order(
         operation="update_wallet",
         payload={
             "wallet_id": str(order.delivery.dispatch_id),
-            "balance_change":str(0),
+            "balance_change":'0',
             "escrow_change":str(dispatch_amount),
         },
     )

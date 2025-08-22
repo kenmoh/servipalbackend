@@ -188,7 +188,6 @@ def custom_swagger_ui_html():
     return get_swagger_ui_html(
         openapi_url=app.openapi_url,
         title="ServiPal API",
-        # docs_url='/',
         swagger_favicon_url=FAVICON_URL,
     )
 

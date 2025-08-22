@@ -6,14 +6,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.auth import get_current_user
 from app.database.database import get_db
-from app.models.models import Transaction, User, Wallet
+from app.models.models import Transaction, User, Wallet, Order
 from app.schemas.marketplace_schemas import (
     TopUpRequestSchema,
     TransferDetailResponseSchema,
     WithdrawalShema,
     TopUpResponseSchema,
 )
-from app.schemas.schemas import PaymentLinkSchema
+from app.schemas.schemas import GenerateLinkType, PaymentLinkSchema
 from app.services import transaction_service
 from app.schemas.transaction_schema import (
     TransactionSchema,
@@ -21,7 +21,7 @@ from app.schemas.transaction_schema import (
     TransactionResponseSchema,
 )
 from app.schemas.status_schema import TransactionType, PaymentStatus, PaymentMethod
-from app.utils.utils import get_fund_wallet_payment_link
+from app.utils.utils import get_fund_wallet_payment_link, get_payment_link
 
 
 router = APIRouter(prefix="/api/payment", tags=["Payments/Transations"])
@@ -136,6 +136,7 @@ async def get_transaction(
 async def order_payment_callback(
     request: Request, db: AsyncSession = Depends(get_db)
 ) -> dict[str, str]:
+    
     return await transaction_service.order_payment_callback(request=request, db=db)
 
 
@@ -233,31 +234,45 @@ async def bank_transfer_callback(
 
 
 @router.put(
-    "/{transaction_id}/generate-new-payment-link",
+    "/{id}/generate-new-payment-link",
     status_code=status.HTTP_202_ACCEPTED,
 )
 async def generate_new_payment_link(
     transaction_id: UUID,
     db: AsyncSession = Depends(get_db),
+    link_type: GenerateLinkType = GenerateLinkType.ORDER
 ) -> PaymentLinkSchema:
     """
-    Generate a new payment link for an order.
+    Generate a new payment link for a transaction.
     """
-    transaction = await db.get(Transaction, transaction_id)
+    transaction = await db.get(Transaction, id)
+    order = await db.get(Order, id)
+
     if not transaction:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Order not found"
         )
 
     try:
-        transaction_payment_link = await get_fund_wallet_payment_link(
-            id=transaction_id, amount=transaction.amount, db=db
-        )
+        if link_type == GenerateLinkType.FUND_WALLET:
+            transaction_payment_link = await get_fund_wallet_payment_link(
+                id=transaction_id, amount=transaction.amount, db=db
+            )
 
-        transaction.payment_link = transaction_payment_link
-        await db.commit()
+            transaction.payment_link = transaction_payment_link
+            await db.commit()
 
-        return PaymentLinkSchema(payment_link=transaction_payment_link)
+            return PaymentLinkSchema(payment_link=transaction_payment_link)
+        else:
+            order_payment_link = await get_payment_link(
+                tx_ref=order.id, amount=order.order.grand_total, db=db
+            )
+
+            order.payment_link = transaction_payment_link
+            await db.commit()
+
+            return PaymentLinkSchema(payment_link=order_payment_link)
+            
 
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))

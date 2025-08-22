@@ -1,4 +1,5 @@
 from datetime import datetime
+from enum import Enum
 from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field, EmailStr
 
@@ -48,3 +49,8 @@ class DispatchRiderSchema(BaseModel):
 
 class PaymentLinkSchema(BaseModel):
     payment_link: str
+
+
+class GenerateLinkType(str, Enum):
+    ORDER = 'order'
+    FUND_WALLET = 'fund-wallet'
