@@ -987,7 +987,7 @@ async def fund_wallet_callback(request: Request, db: AsyncSession):
             status_code=502, detail="Failed to verify transaction status"
         )
 
-    # Defensive: ensure verify_tranx is a dict and has 'data'
+    # Ensure verify_tranx is a dict and has 'data'
     verify_data = verify_tranx.get("data") if isinstance(verify_tranx, dict) else None
     verify_status = verify_data.get("status") if verify_data else None
 
@@ -1016,7 +1016,7 @@ async def fund_wallet_callback(request: Request, db: AsyncSession):
             # Update wallet
             await producer.publish_message(
                 service="wallet",
-                operation="process_wallet_update",
+                operation="update_wallet",
                 payload={
                     "wallet_id": f"{transaction.wallet_id}",
                     "balance_change": f"{transaction.amount}",
@@ -1024,16 +1024,16 @@ async def fund_wallet_callback(request: Request, db: AsyncSession):
                 },
             )
 
-        return templates.TemplateResponse(
-            "payment-status.html",
-            {
-                "request": request,
-                "payment_status": transaction.payment_status,
-                "amount": str(transaction.amount),
-                "date": datetime.now().strftime("%b %d, %Y"),
-                "transaction_id": transx_id,
-            },
-        )
+            return templates.TemplateResponse(
+                "payment-status.html",
+                {
+                    "request": request,
+                    "payment_status": transaction.payment_status,
+                    "amount": str(transaction.amount),
+                    "date": datetime.now().strftime("%b %d, %Y"),
+                    "transaction_id": transx_id,
+                },
+            )
 
     except Exception as e:
         logging.error(f"Error updating transaction status: {e}")
