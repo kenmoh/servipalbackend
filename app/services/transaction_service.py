@@ -560,7 +560,7 @@ async def top_up_wallet(
         # Create the transaction record
         transaction = Transaction(
             wallet_id=wallet.id,
-            tx_ref=uuid.uuid1,
+            tx_ref=uuid.uuid1(),
             to_wallet_id=wallet.id,
             amount=topup_data.amount,
             transaction_type=TransactionType.FUND_WALLET,
