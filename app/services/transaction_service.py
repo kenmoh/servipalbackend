@@ -1028,7 +1028,7 @@ async def fund_wallet_callback(request: Request, db: AsyncSession):
                 "payment-status.html",
                 {
                     "request": request,
-                    "payment_status": transaction.payment_status,
+                    "payment_status": new_status,
                     "amount": str(transaction.amount),
                     "date": datetime.now().strftime("%b %d, %Y"),
                     "transaction_id": transx_id,
