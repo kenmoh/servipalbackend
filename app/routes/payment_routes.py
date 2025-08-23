@@ -217,7 +217,7 @@ async def pay_with_wallet(
     Pay for an order using the user's wallet.
     """
     return await transaction_service.pay_with_wallet(
-        db=db, order_id=order_id, buyer=current_user
+        db=db, order_id=order_id, customer=current_user
     )
 
 
