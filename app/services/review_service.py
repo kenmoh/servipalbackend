@@ -239,8 +239,8 @@ async def create_report(
             and order.delivery
         ):
             existing_report_stmt = existing_report_stmt.where(
-                UserReport.delivery_id == order.delivery.id
-            )
+                UserReport.order_id == order.id
+            ).with_for_update()
 
         existing_report_result = await db.execute(existing_report_stmt)
         existing_report = existing_report_result.scalar_one_or_none()
@@ -288,7 +288,14 @@ async def create_report(
         # Create admin acknowledgment message using insert
         admin_message_stmt = insert(Message).values(
             message_type=MessageType.REPORT,
-            content="Thank you for your report. We have received your complaint and our team is currently investigating this matter. We will review all details and take appropriate action. You will be notified of any updates or resolutions.",
+            content="""
+
+                Hello and thank you for bringing this to our attention. We've received your report and our support team has started an investigation.
+
+To keep everyone informed, we've created a dedicated thread for this case. This shared space will include you and the other user, allowing for a clear and centralized dialogue as we work towards a resolution.
+
+Please know that we are reviewing everything carefully. We will post all updates and our final decision within this thread and will notify you accordingly. We thank you for your help in keeping our community safe and respectful.
+            """
             report_id=report.id,
             role=UserType.ADMIN,
         )

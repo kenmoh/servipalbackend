@@ -645,7 +645,7 @@ async def order_food_or_request_laundy_service(
             .returning(Order.id, Order.tx_ref, Order.grand_total)
         )
 
-        order_id, tx_ref, grand_total = order_insert_result.scalar_one()
+        order_id, tx_ref, grand_total = order_insert_result.fetchone()
 
         # Create order items
         order_items_payload = [
