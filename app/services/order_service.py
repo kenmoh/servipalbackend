@@ -888,7 +888,7 @@ async def cancel_order_or_delivery(
                         navigate_to="/(app)/delivery/orders"
                     )
             except HTTPException as e:
-                if e.status_code == 404:
+                if e.status_code == status.HTTP_404_NOT_FOUND:
                     logger_config.logger.warning(f"Could not send rider cancellation notification: {e.detail}")
                 else:
                     raise
@@ -957,12 +957,12 @@ async def cancel_order_or_delivery(
                         "wallet_id": str(order.owner_id),
                         "tx_ref": str(uuid.uuid1()),
                         "amount": str(buyer_refund_amount),
-                        "transaction_type": TransactionType.REFUND.value,
-                        "transaction_direction": TransactionDirection.CREDIT.value,
-                        "payment_status": PaymentStatus.PAID.value,
-                        "payment_method": PaymentMethod.SYSTEM_REFUND.value,
+                        "transaction_type": TransactionType.REFUND,
+                        "transaction_direction": TransactionDirection.CREDIT,
+                        "payment_status": PaymentStatus.PAID,
+                        "payment_method": PaymentMethod.SYSTEM_REFUND,
                         "from_user": "System",
-                        "to_user": "Self",
+                        
                     },
                 )
 
@@ -2210,66 +2210,66 @@ class WalletUpdateError(Exception):
     pass
 
 
-async def safe_wallet_update(
-    db: AsyncSession,
-    wallet_id: UUID,
-    balance_change: Decimal = Decimal("0"),
-    escrow_change: Decimal = Decimal("0"),
-    allow_negative: bool = False,
-) -> tuple[Decimal, Decimal]:
-    """
-    Safely update wallet balances ensuring they never go negative unless explicitly allowed.
+# async def safe_wallet_update(
+#     db: AsyncSession,
+#     wallet_id: UUID,
+#     balance_change: Decimal = Decimal("0"),
+#     escrow_change: Decimal = Decimal("0"),
+#     allow_negative: bool = False,
+# ) -> tuple[Decimal, Decimal]:
+#     """
+#     Safely update wallet balances ensuring they never go negative unless explicitly allowed.
 
-    Args:
-        db: Database session
-        wallet_id: Wallet ID to update
-        balance_change: Amount to change balance by (positive for increase, negative for decrease)
-        escrow_change: Amount to change escrow by (positive for increase, negative for decrease)
-        allow_negative: Whether to allow negative balances (default False)
+#     Args:
+#         db: Database session
+#         wallet_id: Wallet ID to update
+#         balance_change: Amount to change balance by (positive for increase, negative for decrease)
+#         escrow_change: Amount to change escrow by (positive for increase, negative for decrease)
+#         allow_negative: Whether to allow negative balances (default False)
 
-    Returns:
-        tuple[Decimal, Decimal]: New balance and new escrow balance
+#     Returns:
+#         tuple[Decimal, Decimal]: New balance and new escrow balance
 
-    Raises:
-        WalletUpdateError: If update would result in negative balance/escrow and not allowed
-    """
-    # Fetch current wallet state
-    result = await db.execute(select(Wallet).where(Wallet.id == wallet_id))
-    wallet = result.scalar_one_or_none()
+#     Raises:
+#         WalletUpdateError: If update would result in negative balance/escrow and not allowed
+#     """
+#     # Fetch current wallet state
+#     result = await db.execute(select(Wallet).where(Wallet.id == wallet_id))
+#     wallet = result.scalar_one_or_none()
 
-    if not wallet:
-        raise WalletUpdateError(f"Wallet {wallet_id} not found")
+#     if not wallet:
+#         raise WalletUpdateError(f"Wallet {wallet_id} not found")
 
-    # Calculate new values
-    new_balance = wallet.balance + balance_change
-    new_escrow = wallet.escrow_balance + escrow_change
+#     # Calculate new values
+#     new_balance = wallet.balance + balance_change
+#     new_escrow = wallet.escrow_balance + escrow_change
 
-    # Check for negative values if not allowed
-    if not allow_negative:
-        if new_balance < 0:
-            raise WalletUpdateError(
-                f"Insufficient balance: {wallet.balance} available, {abs(balance_change)} needed"
-            )
-        if new_escrow < 0:
-            raise WalletUpdateError(
-                f"Insufficient escrow: {wallet.escrow_balance} available, {abs(escrow_change)} needed"
-            )
+#     # Check for negative values if not allowed
+#     if not allow_negative:
+#         if new_balance < 0:
+#             raise WalletUpdateError(
+#                 f"Insufficient balance: {wallet.balance} available, {abs(balance_change)} needed"
+#             )
+#         if new_escrow < 0:
+#             raise WalletUpdateError(
+#                 f"Insufficient escrow: {wallet.escrow_balance} available, {abs(escrow_change)} needed"
+#             )
 
-    # Ensure we never go below zero even if negative is allowed
-    new_balance = max(new_balance, Decimal("0"))
-    new_escrow = max(new_escrow, Decimal("0"))
+#     # Ensure we never go below zero even if negative is allowed
+#     new_balance = max(new_balance, Decimal("0"))
+#     new_escrow = max(new_escrow, Decimal("0"))
 
-    # Update wallet
-    await db.execute(
-        update(Wallet)
-        .where(Wallet.id == wallet_id)
-        .values(
-            balance=new_balance,
-            escrow_balance=new_escrow,
-        )
-    )
+#     # Update wallet
+#     await db.execute(
+#         update(Wallet)
+#         .where(Wallet.id == wallet_id)
+#         .values(
+#             balance=new_balance,
+#             escrow_balance=new_escrow,
+#         )
+#     )
 
-    return new_balance, new_escrow
+#     return new_balance, new_escrow
 
 
 async def update_delivery_status_in_db(
@@ -2589,7 +2589,7 @@ async def cancel_order(
 
     # Fetch the order
     order_result = await db.execute(
-        select(Order).where(Order.id == order_id).options(selectinload(Order.delivery))
+        select(Order).where(Order.id == order_id).options(selectinload(Order.delivery)).with_for_update()
     )
 
     order = order_result.scalar_one_or_none()

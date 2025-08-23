@@ -1250,7 +1250,7 @@ async def order_payment_callback(request: Request, db: AsyncSession):
                 operation="update_wallet",
                 payload={
                     "wallet_id": str(order.owner_id),
-                    "escrow_change": str(order.charged_amount),
+                    "escrow_change": str(order.grand_total),
                     "balance_change": str(0),
                 },
             )
@@ -1881,35 +1881,35 @@ async def pay_with_wallet(
                 detail="Insufficient funds in wallet",
             )
 
-        # Queue customer wallet update (move to escrow)
-
+        # 1. Create a debit transaction record for the customer
         await producer.publish_message(
             service='wallet',
             operation='create_transaction',
             payload={
-                'wallet_id':str(customer_wallet.id),
-                'tx_ref':str(order.tx_ref),
-                'amount':str(-delivery_fee),
-                'escrow_change':str(delivery_fee),
-                'transaction_type':TransactionType.USER_TO_USER,
-                'payment_method': PaymentMethod.WALLET,
-                'transaction_direction':TransactionDirection.DEBIT,
-                'payment_status':PaymentStatus.PAID,
-                'from_user':customer.profile.full_name or customer.profile.business_name,
+                'wallet_id': str(customer_wallet.id),
+                'tx_ref': str(order.tx_ref),
+                'amount': str(delivery_fee),
+                'transaction_type': TransactionType.USER_TO_USER.value,
+                'payment_method': PaymentMethod.WALLET.value,
+                'transaction_direction': TransactionDirection.DEBIT.value,
+                'payment_status': PaymentStatus.PAID.value,
+                'from_user': customer.profile.full_name or customer.profile.business_name,
+                'to_user': 'System Escrow',
             }
         )
+
+        # 2. Update the customer's wallet: move funds from balance to escrow
         await producer.publish_message(
             service='wallet',
             operation='update_wallet',
             payload={
-                'wallet_id':str(customer_wallet.id),
-                'tx_ref':str(order.tx_ref),
-                'balance_change':str(-delivery_fee),
-                'escrow_change':str(delivery_fee),
-               
+                'wallet_id': str(customer_wallet.id),
+                'balance_change': str(-delivery_fee),
+                'escrow_change': str(delivery_fee),
             }
         )
 
+        # 3. Update the order's payment status
         await producer.publish_message(
             service='order_status',
             operation='order_payment_status',
@@ -1918,13 +1918,6 @@ async def pay_with_wallet(
                 "new_status": PaymentStatus.PAID,
             }
         )
-        
-
-        # # Update order status
-        # order.order_payment_status = PaymentStatus.PAID
-     
-        # await db.commit()
-        # await db.refresh(order)
 
         # Notify customer
         customer_token = await get_user_notification_token(db=db, user_id=customer.id)
@@ -1980,10 +1973,8 @@ async def pay_with_wallet(
             operation='update_wallet',
             payload={
                 'wallet_id':str(order.owner_id),
-                'tx_ref':str(order.tx_ref),
                 'balance_change':str(-charged_amount),
                 'escrow_change':str(charged_amount),
-               
             }
         )
     # Update vendor wallet(move to escrow)
@@ -1992,10 +1983,8 @@ async def pay_with_wallet(
             operation='update_wallet',
             payload={
                 'wallet_id':str(order.vendor_id),
-                'tx_ref':str(order.tx_ref),
                 'balance_change':'0',
                 'escrow_change':str(order.amount_due_vendor),
-               
             }
         )
 

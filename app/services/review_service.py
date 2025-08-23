@@ -274,7 +274,7 @@ async def create_report(
             complainant_id=current_user.id,
             defendant_id=defendant_id,
             order_id=order_id,
-            # delivery_id=order.delivery.id if report_data.reported_user_type == ReportedUserType.DISPATCH else None,
+        
             report_tag=ReportTag.COMPLAINANT,
             report_status=ReportStatus.PENDING,
         )
@@ -310,48 +310,48 @@ async def create_report(
         await db.commit()
 
         token = await get_user_notification_token(db=db, user_id=report.defendant_id)
-        defendant_name = get_full_name_or_business_name(db=db, user_id=defendant_id)
-        complainant_name = (
-            current_user.profile.full_name or current_user.profile.business_name
-        )
+        # defendant_name = get_full_name_or_business_name(db=db, user_id=defendant_id)
+        # complainant_name = (
+        #     current_user.profile.full_name or current_user.profile.business_name
+        # )
 
         if token:
             await send_push_notification(
                 tokens=[token],
                 title="You have a new report",
-                message="You have been reported for your latest order. We want to here your own side before a final decision is made.",
+                message="You have been reported for your latest order. We want to here your own side before a final decision is made. Please reply to thread opened for this report.",
                 navigate_to="/(app)/delivery/orders",
             )
-        image = (
-            current_user.profile.profile_image.profile_image_url
-            if current_user.profile.profile_image
-            else current_user.profile.profile_image.backdrop_image_url or None
-        )
-        moderators = [
-            UserType.MODERATOR.value,
-            UserType.ADMIN.value,
-            UserType.SUPER_ADMIN.value,
-        ]
-        channel.create(current_user.id)
-        channel.update(
-            {
-                "name": complainant_name,
-                "report_tag": ReportTag.COMPLAINANT.value,
-                "image": image,
-                "order_id": order_id,
-                "role": current_user.user_type,
-            }
-        )
-        channel.add_members([f"{defendant_name}"])
-        channel.add_moderators(moderators)
+        # image = (
+        #     current_user.profile.profile_image.profile_image_url
+        #     if current_user.profile.profile_image
+        #     else current_user.profile.profile_image.backdrop_image_url or None
+        # )
+        # moderators = [
+        #     UserType.MODERATOR,
+        #     UserType.ADMIN,
+        #     UserType.SUPER_ADMIN,
+        # ]
+        # channel.create(current_user.id)
+        # channel.update(
+        #     {
+        #         "name": complainant_name,
+        #         "report_tag": ReportTag.COMPLAINANT.value,
+        #         "image": image,
+        #         "order_id": order_id,
+        #         "role": current_user.user_type,
+        #     }
+        # )
+        # channel.add_members([f"{defendant_name}"])
+        # channel.add_moderators(moderators)
 
-        message = {
-            "text": report_data.description,
-            "attachments": [{"type": "image", "asset_url": image, "thumb_url": image}],
-            "mentioned_users": [*moderators, defendant_name],
-        }
+        # message = {
+        #     "text": report_data.description,
+        #     "attachments": [{"type": "image", "asset_url": image, "thumb_url": image}],
+        #     "mentioned_users": [*moderators, defendant_name],
+        # }
 
-        channel.send_message(message, complainant_name)
+        # channel.send_message(message, complainant_name)
 
         return report
 
@@ -370,8 +370,8 @@ async def create_report(
         if "uq_reporter_order_report" in error_msg:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
-                detail="You have already submitted a report for this order against this user. "
-                "Please check your existing reports or contact support if you need to update your report.",
+                detail="You have already submitted a report for this order. "
+                "Please reply to the opened thread for this report.",
             )
         elif "uq_reporter_delivery_report" in error_msg:
             raise HTTPException(
@@ -441,9 +441,7 @@ async def add_message_to_report(
 
     # --- WebSocket broadcast for new report message ---
     recipient_ids = [str(report.complainant_id), str(report.defendant_id)]
-    # Optionally, filter out the sender if you don't want to notify them
-    # if str(current_user.id) in recipient_ids:
-    #     recipient_ids.remove(str(current_user.id))
+
     message_payload = {
         "id": str(message_obj.id),
         "content": message_obj.content,
