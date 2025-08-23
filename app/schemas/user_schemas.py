@@ -69,8 +69,8 @@ class TransactionSchema(BaseModel):
     wallet_id: UUID
     amount: Decimal
     payment_status: PaymentStatus
-    from_user: str
-    to_user: str
+    from_user: str | None = None
+    to_user: str | None = None
     transaction_direction: str | None = None
     payment_link: str | None = None
     transaction_type: TransactionType
