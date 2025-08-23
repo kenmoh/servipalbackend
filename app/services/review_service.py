@@ -58,6 +58,15 @@ from app.utils.utils import (
 )
 from app.services.ws_service import broadcast_new_report_message
 
+ADMIN_MESSAGE = f"""
+
+Hello and thank you for bringing this to our attention. We've received your report and our support team has started an investigation.
+
+To keep everyone informed, we've created a dedicated thread for this case. This shared space will include you and the other user, allowing for a clear and centralized dialogue as we work towards a resolution.
+
+Please know that we are reviewing everything carefully. We will post all updates and our final decision within this thread and will notify you accordingly. We thank you for your help in keeping our community safe and respectful.
+"""
+
 
 def convert_report_to_response(report: ReportType) -> ReportIssueResponse:
     """Convert a ReportIssue SQLAlchemy model to ReportIssueResponse Pydantic model"""
@@ -288,14 +297,7 @@ async def create_report(
         # Create admin acknowledgment message using insert
         admin_message_stmt = insert(Message).values(
             message_type=MessageType.REPORT,
-            content="""
-
-                Hello and thank you for bringing this to our attention. We've received your report and our support team has started an investigation.
-
-To keep everyone informed, we've created a dedicated thread for this case. This shared space will include you and the other user, allowing for a clear and centralized dialogue as we work towards a resolution.
-
-Please know that we are reviewing everything carefully. We will post all updates and our final decision within this thread and will notify you accordingly. We thank you for your help in keeping our community safe and respectful.
-            """
+            content=ADMIN_MESSAGE,
             report_id=report.id,
             role=UserType.ADMIN,
         )
