@@ -249,7 +249,7 @@ async def create_report(
         ):
             existing_report_stmt = existing_report_stmt.where(
                 UserReport.order_id == order.id
-            ).with_for_update()
+            )
 
         existing_report_result = await db.execute(existing_report_stmt)
         existing_report = existing_report_result.scalar_one_or_none()

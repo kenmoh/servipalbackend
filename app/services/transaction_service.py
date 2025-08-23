@@ -1297,6 +1297,7 @@ async def order_payment_callback(request: Request, db: AsyncSession):
                     "wallet_id": str(order.vendor_id),
                     "tx_ref": tx_ref,
                     "amount": str(order.amount_due_vendor),
+                    "payment_status": new_status,
                     "transaction_type": TransactionType.USER_TO_USER,
                     "transaction_direction": TransactionDirection.CREDIT,
                     "from_user": customer.full_name or customer.business_name,
