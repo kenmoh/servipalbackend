@@ -768,7 +768,7 @@ async def order_food_or_request_laundy_service(
 
 
 async def cancel_order_or_delivery(
-    db: AsyncSession, order_id: UUID, current_user: User
+    db: AsyncSession, order_id: UUID, current_user: User, reason: str = None
 ) -> DeliveryStatusUpdateSchema:
     """
     Cancel an order and its associated delivery. This action is irreversible and will
@@ -827,10 +827,24 @@ async def cancel_order_or_delivery(
 
         # --- Rider Cancellation (Re-list) ---
         if current_user.user_type == UserType.RIDER:
-            if not order.delivery or order.delivery.rider_id != current_user.id:
+            if not order.delivery:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="This order has no delivery to cancel.",
+                )
+
+            # Authorization check: Rider can cancel their own delivery.
+            # Dispatch can cancel a delivery assigned to their company.
+            is_rider_of_delivery = (
+                current_user.user_type == UserType.RIDER
+                and order.delivery.rider_id == current_user.id
+            )
+        
+
+            if not is_rider_of_delivery:
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,
-                    detail="You are not the assigned rider for this delivery.",
+                    detail="You are not authorized to cancel this specific delivery.",
                 )
 
             if order.order_status != OrderStatus.ACCEPTED:
@@ -839,19 +853,21 @@ async def cancel_order_or_delivery(
                     detail="Cannot cancel a delivery that has not been accepted.",
                 )
 
-            # Store old dispatch ID before clearing it
-            old_dispatch_id = order.delivery.dispatch_id
-
-            # Re-list the order by setting statuses to PENDING
+            # Re-list logic starts here
+            old_dispatch_id = order.delivery.dispatch_id  # Store before clearing
             order.order_status = OrderStatus.PENDING
             order.delivery.delivery_status = DeliveryStatus.PENDING
             order.delivery.rider_id = None
             order.delivery.dispatch_id = None
             order.delivery.rider_phone_number = None
+            order.cancel_reason = reason
 
-            # Increment rider's cancellation count
-            current_user.order_cancel_count = (current_user.order_cancel_count or 0) + 1
-            db.add(current_user)
+            # Increment rider's cancellation count if a rider is cancelling
+            if current_user.user_type == UserType.RIDER:
+                current_user.order_cancel_count = (
+                    current_user.order_cancel_count or 0
+                ) + 1
+                await db.commit()
 
             # Reverse escrow for the original dispatch company if order was paid
             if old_dispatch_id and order.order_payment_status == PaymentStatus.PAID:
@@ -884,7 +900,7 @@ async def cancel_order_or_delivery(
                     await send_push_notification(
                         tokens=[customer_token],
                         title="Delivery Canceled",
-                        message=f"The delivery for your order #{order.order_number} was cancelled by the rider. It is now available for other riders.",
+                        message=f"The delivery for your order #{order.order_number} was cancelled by the rider/dispatch. It is now available for other riders.",
                         navigate_to="/(app)/delivery/orders"
                     )
             except HTTPException as e:
@@ -908,6 +924,7 @@ async def cancel_order_or_delivery(
 
         # --- Sender/Vendor Cancellation (Full Cancellation) ---
         else:
+            order.cancel_reason = reason
             order.order_status = OrderStatus.CANCELLED
             if order.delivery:
                 order.delivery.delivery_status = DeliveryStatus.CANCELLED

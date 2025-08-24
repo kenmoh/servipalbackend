@@ -1834,8 +1834,7 @@ async def pay_with_wallet(
         select(Order)
         .where(
             Order.id == order_id,
-            Order.owner_id == customer.id,
-            Order.order_payment_status == PaymentStatus.PENDING,
+            Order.owner_id == customer.id, # Keep this to ensure user owns the order
         )
         .options(
             selectinload(Order.order_items).selectinload(OrderItem.item),
@@ -1851,6 +1850,14 @@ async def pay_with_wallet(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Order not found"
         )
+    
+    # Check if the order is already paid. If so, return success to ensure idempotency.
+    if order.order_payment_status == PaymentStatus.PAID:
+        return {
+            "payment_status": PaymentStatus.PAID,
+            "message": "Order has already been paid.",
+            "charged_amount": str(order.grand_total),
+        }
 
     # Fetch customer wallet (always needed)
     customer_wallet_stmt = (

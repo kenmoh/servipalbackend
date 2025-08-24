@@ -260,12 +260,13 @@ async def admin_modify_delivery_status(
 )
 async def cancel_order_or_delivery(
     order_id: UUID,
+    reason: str = None,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> DeliveryStatusUpdateSchema:
     try:
         return await order_service.cancel_order_or_delivery(
-            db=db, current_user=current_user, order_id=order_id
+            db=db, current_user=current_user, order_id=order_id, reason=reason
         )
 
     except Exception as e:
@@ -354,7 +355,7 @@ async def generate_new_payment_link(
             try:
                 # Get payment link from Flutterwave
                 order_payment_link = await get_payment_link(
-                    id=tx_ref, amount=order.grand_total, current_user=current_user
+                    tx_ref=tx_ref, amount=order.grand_total, current_user=current_user
                 )
 
                 await db.execute(

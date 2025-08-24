@@ -1,4 +1,5 @@
 from uuid import UUID
+import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status, Query
 from fastapi.responses import HTMLResponse
@@ -247,6 +248,7 @@ async def generate_new_payment_link(
     """
     transaction = await db.get(Transaction, id)
     order = await db.get(Order, id)
+    tx_ref = uuid.uuid1()
 
     if not transaction:
         raise HTTPException(
@@ -265,10 +267,11 @@ async def generate_new_payment_link(
             return PaymentLinkSchema(payment_link=transaction_payment_link)
         else:
             order_payment_link = await get_payment_link(
-                tx_ref=order.id, amount=order.order.grand_total, db=db
+                tx_ref=tx_ref, amount=order.order.grand_total, db=db
             )
 
             order.payment_link = transaction_payment_link
+            order.tx_ref = tx_ref
             await db.commit()
 
             return PaymentLinkSchema(payment_link=order_payment_link)
