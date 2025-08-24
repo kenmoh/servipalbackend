@@ -861,7 +861,7 @@ async def cancel_order_or_delivery(
             order.delivery.rider_id = None
             order.delivery.dispatch_id = None
             order.delivery.rider_phone_number = None
-            order.cancel_reason = reason
+            order.cancel_reason = reason.reason
 
             # Increment rider's cancellation count if a rider is cancelling
             if current_user.user_type == UserType.RIDER:
