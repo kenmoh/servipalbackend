@@ -1106,8 +1106,8 @@ async def re_list_item_for_delivery(
                     payload={
                         "wallet_id": str(order.owner_id),
                         "balance_change": str(-delivery.delivery_fee),
-                        "escrow_change": str(delivery.delivery_fee),
-                    },
+                        "escrow_change": str(delivery.delivery_fee)
+                    }
                 )
 
         # Create a refund transaction record
@@ -1122,8 +1122,7 @@ async def re_list_item_for_delivery(
                     "transaction_direction": TransactionDirection.DEBIT,
                     "payment_status": PaymentStatus.PAID,
                     "payment_method": PaymentMethod.WALLET,
-                    "from_user": "Self",
-                    
+                    "from_user": "Self"  
                 }
             )
 
