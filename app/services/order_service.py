@@ -1107,8 +1107,7 @@ async def re_list_item_for_delivery(
                         "wallet_id": str(order.owner_id),
                         "balance_change": str(-delivery.delivery_fee),
                         "escrow_change": str(delivery.delivery_fee)
-                    }
-                )
+                    })
 
         # Create a refund transaction record
         await producer.publish_message(
@@ -1116,7 +1115,7 @@ async def re_list_item_for_delivery(
                 operation="create_transaction",
                 payload={
                     "wallet_id": str(order.owner_id),
-                    "tx_ref": str(order.tx_ref,
+                    "tx_ref": str(order.tx_ref),
                     "amount": str(delivery.delivery_fee),
                     "transaction_type": TransactionType.USER_TO_USER,
                     "transaction_direction": TransactionDirection.DEBIT,
