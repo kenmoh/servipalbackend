@@ -72,14 +72,22 @@ class ReportCreate(BaseModel):
         from_attributes = True
 
 
-class ReportResponseSchema(ReportCreate):
+class ReportResponseSchema(BaseModel):
+    id: UUID
+    order_id: UUID | None
+    description: str
+    report_type: ReportType
+    reported_user_type: ReportedUserType
     created_at: datetime
     updated_at: datetime
     report_status: ReportStatus
     report_tag: ReportTag
 
+    class Config:
+        from_attributes = True
 
-class ReportIssueResponse(BaseModel):
+
+class ReportIssueResponse(BaseModel): # This seems to be an older or alternative schema, leaving as is.
     id: UUID
     order_id: UUID | None
     delivery_id: UUID | None

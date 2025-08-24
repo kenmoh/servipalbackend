@@ -1,9 +1,12 @@
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Query
 from fastapi.security import HTTPBearer
 from app.ws_manager.ws_manager import manager
+from app.auth.auth import get_user_from_token
+from app.database.database import async_session
 import json
 from datetime import datetime
 from app.utils.logger_config import setup_logger
+
 
 logger = setup_logger()
 
@@ -43,69 +46,69 @@ security = HTTPBearer()
 @router.websocket("")
 async def websocket_endpoint(
     websocket: WebSocket,
+    token: str = Query(...),
     client_type: str = Query("admin"),
 ):
     """Main WebSocket endpoint for real-time communication"""
-    await manager.connect(websocket, client_type)
+    async with async_session() as db:
+        user = await get_user_from_token(token=token, db=db)
+        if not user:
+            await websocket.close(code=1008)
+            return
 
-    try:
-        while True:
-            # Wait for messages from the client
-            data = await websocket.receive_text()
-            message = json.loads(data)
+        user_id = str(user.id)
+        await manager.connect(websocket, client_type, user_id)
 
-            # Handle different message types
-            if message.get("type") == "subscribe":
-                event = message.get("event")
-                if event:
-                    await manager.subscribe(websocket, event)
-                    # Send confirmation
-                    await websocket.send_text(
-                        json.dumps(
-                            {
-                                "type": "subscription_confirmed",
-                                "event": event,
-                                "timestamp": datetime.now().isoformat(),
-                            }
+        try:
+            while True:
+                # Wait for messages from the client
+                data = await websocket.receive_text()
+                message = json.loads(data)
+
+                # Handle different message types
+                if message.get("type") == "subscribe":
+                    event = message.get("event")
+                    if event:
+                        await manager.subscribe(websocket, event)
+                        # Send confirmation
+                        await websocket.send_text(
+                            json.dumps(
+                                {
+                                    "type": "subscription_confirmed",
+                                    "event": event,
+                                    "timestamp": datetime.now().isoformat(),
+                                }
+                            )
                         )
-                    )
 
-            elif message.get("type") == "unsubscribe":
-                event = message.get("event")
-                if event:
-                    await manager.unsubscribe(websocket, event)
-                    await websocket.send_text(
-                        json.dumps(
-                            {
-                                "type": "unsubscription_confirmed",
-                                "event": event,
-                                "timestamp": datetime.now().isoformat(),
-                            }
+                elif message.get("type") == "unsubscribe":
+                    event = message.get("event")
+                    if event:
+                        await manager.unsubscribe(websocket, event)
+                        await websocket.send_text(
+                            json.dumps(
+                                {
+                                    "type": "unsubscription_confirmed",
+                                    "event": event,
+                                    "timestamp": datetime.now().isoformat(),
+                                }
+                            )
                         )
+
+                elif message.get("type") == "ping":
+                    # Handle ping/pong for connection health
+                    await websocket.send_text(
+                        json.dumps({"type": "pong", "timestamp": datetime.now().isoformat()})
                     )
 
-            elif message.get("type") == "ping":
-                # Handle ping/pong for connection health
-                await websocket.send_text(
-                    json.dumps(
-                        {"type": "pong", "timestamp": datetime.now().isoformat()}
+                else:
+                    # Echo back unknown message types
+                    await websocket.send_text(
+                        json.dumps({"type": "echo", "message": message, "timestamp": datetime.now().isoformat()})
                     )
-                )
 
-            else:
-                # Echo back unknown message types
-                await websocket.send_text(
-                    json.dumps(
-                        {
-                            "type": "echo",
-                            "message": message,
-                            "timestamp": datetime.now().isoformat(),
-                        }
-                    )
-                )
-
-    except WebSocketDisconnect:
-        manager.disconnect(websocket, client_type)
-    except Exception as e:
-        print(f"WebSocket error: {e}")
-        manager.disconnect(websocket, client_type)
+        except WebSocketDisconnect:
+            manager.disconnect(websocket, client_type, user_id)
+        except Exception as e:
+            logger.error(f"WebSocket error: {e}")
+            manager.disconnect(websocket, client_type, user_id)

@@ -1,5 +1,5 @@
 import uuid
-from fastapi import Form, File, Request, UploadFile, HTTPException
+from fastapi import Body, Form, File, Request, UploadFile, HTTPException
 from uuid import UUID
 from decimal import Decimal
 
@@ -260,7 +260,7 @@ async def admin_modify_delivery_status(
 )
 async def cancel_order_or_delivery(
     order_id: UUID,
-    reason: str = None,
+    reason: str = Body(None),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> DeliveryStatusUpdateSchema:

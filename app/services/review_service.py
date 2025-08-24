@@ -1,9 +1,10 @@
+import asyncio
 import datetime
 import json
 
 from fastapi import HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import func, or_, select, update, insert
+from sqlalchemy import func, or_, select, update, insert, and_
 from sqlalchemy.orm import selectinload
 from sqlalchemy.exc import IntegrityError
 from fastapi import HTTPException
@@ -56,7 +57,7 @@ from app.utils.utils import (
     get_user_notification_token,
     send_push_notification,
 )
-from app.services.ws_service import broadcast_new_report_message
+from app.ws_manager.ws_manager import manager
 
 ADMIN_MESSAGE = f"""
 
@@ -89,43 +90,50 @@ def convert_report_to_response(report: ReportType) -> ReportIssueResponse:
 
 async def create_review(
     db: AsyncSession, current_user: User, data: ReviewCreate
-) -> ReviewCreate:
-    # Shared variables
-    reviewer_id = current_user.id
-    # reviewee_id = data.reviewee_id
-
+) -> Review:
+    """Creates a review for a completed food or laundry order."""
+    # 1. Fetch the order and verify its existence
     order_result = await db.execute(select(Order).where(Order.id == data.order_id))
     order = order_result.scalar_one_or_none()
 
-    # Check if review already exists
-    existing_review = await db.execute(
-        select(Review).where(
-            Review.order_id == data.order_id, Review.reviewer_id == reviewer_id
-        )
-    )
-    if existing_review.scalar():
-        #     redis_client.setex(cache_key, True, settings.REDIS_EX)
+    if not order:
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Review already exists for this order.",
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Order not found.",
         )
+
+    # 2. Perform all validation checks
+    if order.owner_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You can only review an order you placed.",
+        )
+
     if order.vendor_id == current_user.id:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="You cannot review your own order.",
         )
 
-    # Order validation
-    order = await db.get(Order, data.order_id)
-    if not order or order.order_status != OrderStatus.RECEIVED:
+    if order.order_status != OrderStatus.RECEIVED:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Order is not completed or doesn't exist.",
+            detail="Order must be in 'RECEIVED' status to be reviewed.",
         )
 
-    if order.owner_id != current_user.id:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail='You can only review your own order.')
+    # 3. Check if a review already exists for this order by this user
+    existing_review_result = await db.execute(
+        select(Review).where(
+            Review.order_id == data.order_id, Review.reviewer_id == current_user.id
+        )
+    )
+    if existing_review_result.scalar_one_or_none():
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="You have already reviewed this order.",
+        )
 
+    # 4. Create and save the review
     try:
         review = Review(
             order_id=data.order_id,
@@ -136,74 +144,113 @@ async def create_review(
             review_type=ReviewType.ORDER,
         )
 
-        # Save review
         db.add(review)
         await db.commit()
         await db.refresh(review)
 
         return review
+    except IntegrityError:
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Could not save the review due to a database error.",
+        )
     except Exception as e:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
-    
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"An unexpected error occurred: {str(e)}",
+        )
+
 
 async def create_product_review(
     db: AsyncSession, current_user: User, data: ReviewCreate
-) -> ReviewCreate:
-    # Shared variables
-    reviewer_id = current_user.id
-    # reviewee_id = data.reviewee_id
-
-    order_result = await db.execute(select(Order).where(Order.id == data.order_id).options(selectinload(Order.order_items)))
+) -> Review:
+    """Creates a review for a purchased product."""
+    # 1. Fetch the order with its items and verify existence
+    order_result = await db.execute(
+        select(Order)
+        .where(Order.id == data.order_id)
+        .options(selectinload(Order.order_items))
+    )
     order = order_result.scalar_one_or_none()
 
-    # Check if review already exists
-    existing_review = await db.execute(
-        select(Review).where(
-            Review.order_id == data.order_id, Review.reviewer_id == reviewer_id
-        )
-    )
-    if existing_review.scalar():
-        #     redis_client.setex(cache_key, True, settings.REDIS_EX)
+    if not order:
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Review already exists for this item.",
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Order not found.",
         )
+
+    # 2. Perform all validation checks
+    if order.owner_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You can only review an order you placed.",
+        )
+
     if order.vendor_id == current_user.id:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="You cannot review your own item.",
         )
 
-    # Order validation
-    order = await db.get(Order, data.order_id)
-    if not order or order.order_status != OrderStatus.RECEIVED:
+    if order.order_status != OrderStatus.RECEIVED:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Order is not completed or doesn't exist.",
+            detail="Order must be in 'RECEIVED' status to be reviewed.",
         )
 
-    if order.owner_id != current_user.id:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail='You can only review your own order.')
+    if not order.order_items:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Cannot review an order with no items.",
+        )
 
+    # 3. Check if a review already exists for this order by this user
+    existing_review_result = await db.execute(
+        select(Review).where(
+            Review.order_id == data.order_id, Review.reviewer_id == current_user.id
+        )
+    )
+    if existing_review_result.scalar_one_or_none():
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="You have already reviewed this order.",
+        )
+
+    # 4. Create and save the review
     try:
+        # Assuming a product order has one item. If it can have more, the API
+        # contract needs to change to specify which item is being reviewed.
+        item_to_review = order.order_items[0]
+
         review = Review(
             order_id=data.order_id,
-            item_id=data.order_id,
-            reviewee_id=order.order_items[0].item_id,
+            item_id=item_to_review.item_id,
+            reviewee_id=order.vendor_id,
             reviewer_id=current_user.id,
             rating=data.rating,
             comment=data.comment,
             review_type=ReviewType.PRODUCT,
         )
 
-        # Save review
         db.add(review)
         await db.commit()
         await db.refresh(review)
 
         return review
+    except IntegrityError:
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Could not save the review due to a database error.",
+        )
     except Exception as e:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"An unexpected error occurred: {str(e)}",
+        )
 
 
 async def fetch_vendor_reviews(
@@ -324,71 +371,82 @@ async def fetch_item_reviews(
 async def create_report(
     db: AsyncSession, order_id: UUID, current_user: User, report_data: ReportCreate
 ) -> ReportResponseSchema:
-    """Create a new report with automatic admin acknowledgment message"""
+    """Create a new report with automatic admin acknowledgment message."""
 
-    try:
-        # Get the order with delivery information
-        order_stmt = (
-            select(Order)
-            .options(
-                selectinload(Order.delivery),
-            )
-            .where(Order.id == order_id)
-        )
-        order_result = await db.execute(order_stmt)
-        order = order_result.scalar_one_or_none()
+    # 1. Fetch order and an admin user concurrently for efficiency
+    order_stmt = (
+        select(Order)
+        .options(selectinload(Order.delivery))
+        .where(Order.id == order_id)
+    )
+    admin_stmt = select(User).where(User.user_type == UserType.ADMIN).limit(1)
 
-        if not order:
-            raise ValueError(f"Order with ID {order_id} not found")
+    order_result, admin_result = await asyncio.gather(
+        db.execute(order_stmt), db.execute(admin_stmt)
+    )
+    order = order_result.scalar_one_or_none()
+    admin_user = admin_result.scalar_one_or_none()
 
-        # Determine defendant_id based on reported user type
-        if report_data.reported_user_type == ReportedUserType.CUSTOMER:
-            defendant_id = order.owner_id
-        elif report_data.reported_user_type == ReportedUserType.VENDOR:
-            defendant_id = order.vendor_id
-        elif report_data.reported_user_type == ReportedUserType.DISPATCH:
-            if not order.delivery:
-                raise ValueError(
-                    "Order has no delivery information for dispatch report"
-                )
-            defendant_id = order.delivery.dispatch_id
-        else:
-            raise ValueError(
-                f"Invalid reported user type: {report_data.reported_user_type}"
-            )
-
-        # Proactive check for existing report
-        existing_report_stmt = select(UserReport).where(
-            UserReport.complainant_id == current_user.id,
-            UserReport.defendant_id == defendant_id,
-            UserReport.order_id == order_id,
+    # 2. Perform all validations before proceeding
+    if not order:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Order with ID {order_id} not found",
         )
 
-        # Add delivery_id check if it's a dispatch report
-        if (
-            report_data.reported_user_type == ReportedUserType.DISPATCH
-            and order.delivery
-        ):
-            existing_report_stmt = existing_report_stmt.where(
-                UserReport.order_id == order.id
-            )
+    if not admin_user:
+        # This is a system configuration issue, not a client error.
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="System configuration error: No admin user available to handle reports.",
+        )
 
-        existing_report_result = await db.execute(existing_report_stmt)
-        existing_report = existing_report_result.scalar_one_or_none()
-
-        if existing_report:
-            report_target = (
-                "order"
-                if report_data.reported_user_type != ReportedUserType.DISPATCH
-                else "delivery"
-            )
+    # Determine defendant and other report details
+    defendant_id = None
+    delivery_id = None
+    if report_data.reported_user_type == ReportedUserType.CUSTOMER:
+        defendant_id = order.owner_id
+    elif report_data.reported_user_type == ReportedUserType.VENDOR:
+        defendant_id = order.vendor_id
+    elif report_data.reported_user_type == ReportedUserType.DISPATCH:
+        if not order.delivery:
             raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail=f"You have already submitted a report for this {report_target} against this user. "
-                f"Report ID: {existing_report.id}. Please check your existing reports or contact support.",
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Order has no delivery information for a dispatch report.",
             )
+        defendant_id = order.delivery.dispatch_id
+        delivery_id = order.delivery.id
 
-        # Create the report
+    if not defendant_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Could not identify the defendant for the report type '{report_data.reported_user_type.value}'.",
+        )
+
+    if current_user.id == defendant_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="You cannot report yourself."
+        )
+
+    # Proactively check for an existing report to provide a clear error message
+    existing_report_conditions = [
+        UserReport.complainant_id == current_user.id,
+        UserReport.defendant_id == defendant_id,
+        UserReport.order_id == order_id,
+    ]
+    if delivery_id:
+        # For dispatch reports, the uniqueness is on the delivery
+        existing_report_conditions.append(UserReport.delivery_id == delivery_id)
+
+    existing_report_stmt = select(UserReport).where(and_(*existing_report_conditions))
+    if (await db.execute(existing_report_stmt)).scalar_one_or_none():
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="You have already submitted a report for this issue. Please check your existing reports or contact support.",
+        )
+
+    # 3. Create report and related records within a single transaction
+    try:
         report = UserReport(
             reported_user_type=report_data.reported_user_type,
             report_type=report_data.report_type,
@@ -396,15 +454,14 @@ async def create_report(
             complainant_id=current_user.id,
             defendant_id=defendant_id,
             order_id=order_id,
-        
+            delivery_id=delivery_id,  # Correctly set delivery_id
             report_tag=ReportTag.COMPLAINANT,
-            report_status=ReportStatus.PENDING,
+            report_status=ReportStatus.INVESTIGATING,  # Set directly to investigating
         )
-
         db.add(report)
-        await db.flush()  # Flush to get the report ID
+        await db.flush()
 
-        # Create UserReportReadStatus for both users
+        # Create read statuses for both complainant and defendant
         db.add_all(
             [
                 UserReportReadStatus(
@@ -416,162 +473,182 @@ async def create_report(
             ]
         )
 
-        # Create admin acknowledgment message
-        admin_message_stmt = insert(Message).values(
+        # Create admin acknowledgment message with the admin as the sender
+        admin_message = Message(
             message_type=MessageType.REPORT,
             content=ADMIN_MESSAGE,
             report_id=report.id,
-            role=UserType.ADMIN,
+            sender_id=admin_user.id,
+            role=UserType.MODERATOR,
         )
-        await db.execute(admin_message_stmt)
+        db.add(admin_message)
 
-        # Update report status to investigating
-        report.report_status = ReportStatus.INVESTIGATING
-
-        # Commit all changes
         await db.commit()
+        await db.refresh(report)
 
+    except IntegrityError as e:
+        await db.rollback()
+        # This is a fallback; the proactive check should catch most cases.
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"A report with these details already exists. {e}",
+        )
+    except Exception as e:
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"An error occurred while creating the report: {e}",
+        )
+
+    # 4. Post-commit actions (like sending notifications)
+    try:
         token = await get_user_notification_token(db=db, user_id=report.defendant_id)
-
         if token:
             await send_push_notification(
                 tokens=[token],
-                title="Dispute",
-                message="You have been reported for your latest order. We want to here your own side before a final decision is made. Please reply to thread opened for this report.",
-                navigate_to="/(app)/delivery/orders",
+                title="Dispute Opened",
+                message="A report has been filed regarding a recent transaction. Please check your reports section for details.",
+                navigate_to="/(app)/reports",  # More specific navigation
             )
-        # image = (
-        #     current_user.profile.profile_image.profile_image_url
-        #     if current_user.profile.profile_image
-        #     else current_user.profile.profile_image.backdrop_image_url or None
-        # )
-        # moderators = [
-        #     UserType.MODERATOR,
-        #     UserType.ADMIN,
-        #     UserType.SUPER_ADMIN,
-        # ]
-        # channel.create(current_user.id)
-        # channel.update(
-        #     {
-        #         "name": complainant_name,
-        #         "report_tag": ReportTag.COMPLAINANT.value,
-        #         "image": image,
-        #         "order_id": order_id,
-        #         "role": current_user.user_type,
-        #     }
-        # )
-        # channel.add_members([f"{defendant_name}"])
-        # channel.add_moderators(moderators)
-
-        # message = {
-        #     "text": report_data.description,
-        #     "attachments": [{"type": "image", "asset_url": image, "thumb_url": image}],
-        #     "mentioned_users": [*moderators, defendant_name],
-        # }
-
-        # channel.send_message(message, complainant_name)
-
-        return report
-
-    except HTTPException:
-        # Re-raise HTTP exceptions as-is
-        await db.rollback()
-        raise
-
-    except IntegrityError as e:
-        # Rollback on constraint violation
-        await db.rollback()
-
-        # Check which constraint was violated
-        error_msg = str(e.orig).lower()
-
-        if "uq_reporter_order_report" in error_msg:
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail="You have already submitted a report for this order. "
-                "Please reply to the opened thread for this report.",
-            )
-        elif "uq_reporter_delivery_report" in error_msg:
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail="You have already submitted a report for this delivery against this user. "
-                "Please check your existing reports or contact support if you need to update your report.",
-            )
-        else:
-            # Generic constraint violation
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail="A report with these details already exists. Please check your existing reports.",
-            )
-
-    except ValueError as e:
-        # Handle validation errors (like missing order, invalid user type, etc.)
-        await db.rollback()
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
-
     except Exception:
-        # Rollback on any other error
-        await db.rollback()
-        raise HTTPException(
-            status_code=500,
-            detail="An error occurred while creating the report. Please try again.",
-        )
+        # Don't fail the request if notification fails, just log it.
+        pass
+
+    return report
 
 
 async def add_message_to_report(
     db: AsyncSession, report_id: UUID, current_user: User, message_data: MessageCreate
 ) -> MessageCreate:
-    """Add a message to an existing report thread and mark report as unread."""
-    # Add the message
-    message_obj = Message(
-        message_type=MessageType.REPORT,
-        content=message_data.content,
-        sender_id=current_user.id,
-        report_id=report_id,
-        role=current_user.user_type,
-    )
-    db.add(message_obj)
-    await db.flush()
+    """
+    Add a message to an existing report thread, making it feel real-time with
+    WebSockets and push notifications.
+    """
+    from app.services.ws_service import broadcast_new_report_message
 
-    # Set is_read=False for the recipient only
-    report = await db.get(UserReport, report_id)
-    recipient_id = (
-        report.complainant_id
-        if current_user.id != report.complainant_id
-        else report.defendant_id
-    )
-    await db.execute(
-        update(UserReportReadStatus)
-        .where(
-            UserReportReadStatus.report_id == report_id,
-            UserReportReadStatus.user_id == recipient_id,
+    async with db.begin():
+        # 1. Fetch report and verify user is a participant
+        report_stmt = (
+            select(UserReport)
+            .options(
+                selectinload(UserReport.complainant)
+                .selectinload(User.profile)
+                .selectinload(Profile.profile_image),
+                selectinload(UserReport.defendant)
+                .selectinload(User.profile)
+                .selectinload(Profile.profile_image),
+                selectinload(UserReport.order),  # For notification context
+            )
+            .where(UserReport.id == report_id)
         )
-        .values(is_read=False)
+        report_result = await db.execute(report_stmt)
+        report = report_result.scalar_one_or_none()
+
+        if not report:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="Report not found."
+            )
+
+        is_admin = current_user.user_type in [
+            UserType.ADMIN,
+            UserType.SUPER_ADMIN,
+            UserType.MODERATOR,
+        ]
+        is_participant = current_user.id in [
+            report.complainant_id,
+            report.defendant_id,
+        ]
+
+        if not (is_participant or is_admin):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="You are not authorized to post in this report thread.",
+            )
+
+        # 2. Create and save the message
+        message_obj = Message(
+            message_type=MessageType.REPORT,
+            content=message_data.content,
+            sender_id=current_user.id,
+            report_id=report_id,
+            role=current_user.user_type,
+        )
+        db.add(message_obj)
+        await db.flush()
+
+        # 3. Mark the report as unread for all other participants
+        recipient_users = []
+        if current_user.id != report.complainant_id:
+            recipient_users.append(report.complainant)
+        if current_user.id != report.defendant_id:
+            recipient_users.append(report.defendant)
+
+        # Mark as unread for direct recipients
+        for recipient in recipient_users:
+            await db.execute(
+                update(UserReportReadStatus)
+                .where(
+                    UserReportReadStatus.report_id == report_id,
+                    UserReportReadStatus.user_id == recipient.id,
+                )
+                .values(is_read=False)
+            )
+
+    # Refresh the message object to get DB-defaults like created_at
+    await db.refresh(message_obj)
+
+    # 4. Invalidate relevant caches
+    cache_keys_to_delete = [
+        f"report:{report_id}:thread:{uid}"
+        for uid in [report.complainant_id, report.defendant_id, current_user.id]
+    ]
+    redis_client.delete(*cache_keys_to_delete)
+
+    # 5. Prepare rich payload and send real-time updates
+    sender_name = get_full_name_or_business_name(current_user.profile)
+    sender_avatar = (
+        current_user.profile.profile_image.profile_image_url
+        if current_user.profile and current_user.profile.profile_image
+        else None
     )
 
-    await db.commit()
-    # Invalidate cache for both users
-    redis_client.delete(f"user:{report.complainant_id}:report_threads")
-    redis_client.delete(f"user:{current_user.id}:report_threads")
-    redis_client.delete(f"user:{report.defendant_id}:report_threads")
-    redis_client.delete(f"report:{report_id}:thread:{report.complainant_id}")
-    redis_client.delete(f"report:{report_id}:thread:{report.defendant_id}")
+    thread_message_payload = ThreadMessage(
+        id=message_obj.id,
+        sender=SenderInfo(name=sender_name, avatar=sender_avatar),
+        message_type=message_obj.message_type,
+        role=str(current_user.user_type.value),
+        date=message_obj.created_at,
+        content=message_obj.content,
+        read=False,  # It's unread for the recipients
+    )
 
-    # --- WebSocket broadcast for new report message ---
-    recipient_ids = [str(report.complainant_id), str(report.defendant_id)]
+    # Broadcast via WebSocket to direct participants and all admins
+    recipient_ids_for_ws = [str(u.id) for u in recipient_users]
+    await broadcast_new_report_message(
+        report_id=str(report.id),
+        message_data=thread_message_payload.model_dump(mode="json"),
+        recipient_ids=recipient_ids_for_ws,
+    )
 
-    message_payload = {
-        "id": str(message_obj.id),
-        "content": message_obj.content,
-        "sender_id": str(current_user.id),
-        "role": str(current_user.user_type),
-        "created_at": message_obj.created_at.isoformat()
-        if hasattr(message_obj, "created_at")
-        else None,
-    }
-    await broadcast_new_report_message(str(report_id), message_payload, recipient_ids)
+    # Send push notifications to direct recipients
+    for recipient in recipient_users:
+        # Only send a push notification if the user is NOT connected via WebSocket
+        is_recipient_online = await manager.is_user_online(str(recipient.id))
+        if not is_recipient_online:
+            try:
+                token = await get_user_notification_token(db=db, user_id=recipient.id)
+                if token:
+                    await send_push_notification(
+                        tokens=[token],
+                        title=f"New Message in Report #{report.order.order_number if report.order else report.id}",
+                        message=f"{sender_name}: {message_data.content[:50]}...",
+                        navigate_to=f"/(app)/reports/{report.id}",
+                    )
+            except Exception:
+                # Log and continue, don't fail the request if a notification fails
+                pass
 
-    return message_obj
+    return message_data
 
 
 async def mark_message_as_read(db: AsyncSession, report_id: UUID, current_user: User):

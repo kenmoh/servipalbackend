@@ -173,6 +173,32 @@ async def get_current_user(
     return user
 
 
+async def get_user_from_token(token: str, db: AsyncSession) -> User | None:
+    """
+    Decodes a JWT token and retrieves the user from the database.
+    Used for authenticating WebSocket connections.
+    Returns the user object or None if validation fails.
+    """
+    try:
+        payload = jwt.decode(
+            token, settings.JWT_SECRET_KEY, algorithms=[settings.JWT_ALGORITHM]
+        )
+        user_id: str = payload.get("sub")
+        if user_id is None:
+            return None
+    except JWTError:
+        return None
+
+    query = select(User).where(User.id == user_id)
+    result = await db.execute(query)
+    user = result.scalar_one_or_none()
+
+    if user is None or user.is_blocked:
+        return None
+
+    return user
+
+
 async def get_current_active_superuser(
     current_user: User = Depends(get_current_user),
 ) -> User:
