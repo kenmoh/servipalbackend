@@ -925,7 +925,7 @@ async def cancel_order_or_delivery(
 
         # --- Sender/Vendor Cancellation (Full Cancellation) ---
         else:
-            order.cancel_reason = reason
+            order.cancel_reason = reason.reason
             order.order_status = OrderStatus.CANCELLED
             if order.delivery:
                 order.delivery.delivery_status = DeliveryStatus.CANCELLED
