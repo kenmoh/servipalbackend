@@ -932,8 +932,9 @@ async def cancel_order_or_delivery(
 
             # Process refunds for paid orders
             if order.order_payment_status == PaymentStatus.PAID:
-                # Refund buyer
+                # Refund buyer and set payment status to refund
                 buyer_refund_amount = order.grand_total
+                order.order_payment_status = PaymentStatus.PENDING
                 await producer.publish_message(
                     service="wallet",
                     operation="update_wallet",
@@ -1098,6 +1099,33 @@ async def re_list_item_for_delivery(
 
         db.add(delivery)
         db.add(order)
+
+        await producer.publish_message(
+                    service="wallet",
+                    operation="update_wallet",
+                    payload={
+                        "wallet_id": str(order.owner_id),
+                        "balance_change": str(-order.grand_total),
+                        "escrow_change": str(order.grand_total),
+                    },
+                )
+
+            # Create a refund transaction record
+            await producer.publish_message(
+                    service="wallet",
+                    operation="create_transaction",
+                    payload={
+                        "wallet_id": str(order.owner_id),
+                        "tx_ref": str(order.tx_ref,
+                        "amount": str(order.grand_total),
+                        "transaction_type": TransactionType.USER_TO_USER,
+                        "transaction_direction": TransactionDirection.DEBIT,
+                        "payment_status": PaymentStatus.PAID,
+                        "payment_method": PaymentMethod.WALLET,
+                        "from_user": "Self",
+                        
+                    },
+                )
 
         # 4. Invalidate Caches
         invalidate_delivery_cache(delivery.id)
