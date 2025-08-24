@@ -52,6 +52,7 @@ from app.schemas.delivery_schemas import (
     DeliveryResponse,
     DeliveryType,
     PaginatedDeliveryResponse,
+    CancelOrderSchema
 )
 from app.schemas.item_schemas import ItemType
 
@@ -768,7 +769,7 @@ async def order_food_or_request_laundy_service(
 
 
 async def cancel_order_or_delivery(
-    db: AsyncSession, order_id: UUID, current_user: User, reason: str = None
+    db: AsyncSession, order_id: UUID, current_user: User, reason: CancelOrderSchema
 ) -> DeliveryStatusUpdateSchema:
     """
     Cancel an order and its associated delivery. This action is irreversible and will

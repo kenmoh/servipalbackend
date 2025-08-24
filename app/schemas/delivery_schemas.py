@@ -64,3 +64,6 @@ class DeliveryResponse(BaseModel):
 class PaginatedDeliveryResponse(BaseModel):
     total: int
     data: list[DeliveryResponse]
+
+class CancelOrderSchema(BaseModel):
+    reason: str
