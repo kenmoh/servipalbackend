@@ -33,6 +33,22 @@ async def create_new_review(
         db=db, current_user=current_user, data=data
     )
 
+@router.post(
+    "/item-review",
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_item_review(
+    data: ReviewCreate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> ReviewResponse:
+    """
+    Endpoint to create a new review
+    """
+    return await review_service.create_product_review(
+        db=db, current_user=current_user, data=data
+    )
+
 
 @router.get(
     "/{vendor_id}/vendor-reviews",
@@ -46,6 +62,20 @@ async def get_user_reviews(
     Endpoint to get current user reviews
     """
     return await review_service.fetch_vendor_reviews(db=db, vendor_id=vendor_id)
+
+
+@router.get(
+    "/{item_id}/item-reviews",
+    status_code=status.HTTP_200_OK,
+)
+async def fetch_item_reviews(
+    item_id: UUID,
+    db: AsyncSession = Depends(get_db),
+) -> list[ReviewResponse]:
+    """
+    Endpoint to get current user reviews
+    """
+    return await review_service.fetch_item_reviews(db=db, item_id=item_id)
 
 
 @router.get("/admin/reviews", status_code=status.HTTP_200_OK)

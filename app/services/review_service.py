@@ -123,6 +123,9 @@ async def create_review(
             detail="Order is not completed or doesn't exist.",
         )
 
+    if order.owner_id != current_user.id:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail='You can only review your own order.')
+
     try:
         review = Review(
             order_id=data.order_id,
@@ -131,6 +134,66 @@ async def create_review(
             rating=data.rating,
             comment=data.comment,
             review_type=ReviewType.ORDER,
+        )
+
+        # Save review
+        db.add(review)
+        await db.commit()
+        await db.refresh(review)
+
+        return review
+    except Exception as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    
+
+async def create_product_review(
+    db: AsyncSession, current_user: User, data: ReviewCreate
+) -> ReviewCreate:
+    # Shared variables
+    reviewer_id = current_user.id
+    # reviewee_id = data.reviewee_id
+
+    order_result = await db.execute(select(Order).where(Order.id == data.order_id).options(selectinload(Order.order_items)))
+    order = order_result.scalar_one_or_none()
+
+    # Check if review already exists
+    existing_review = await db.execute(
+        select(Review).where(
+            Review.order_id == data.order_id, Review.reviewer_id == reviewer_id
+        )
+    )
+    if existing_review.scalar():
+        #     redis_client.setex(cache_key, True, settings.REDIS_EX)
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Review already exists for this item.",
+        )
+    if order.vendor_id == current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You cannot review your own item.",
+        )
+
+    # Order validation
+    order = await db.get(Order, data.order_id)
+    if not order or order.order_status != OrderStatus.RECEIVED:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Order is not completed or doesn't exist.",
+        )
+
+    if order.owner_id != current_user.id:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail='You can only review your own order.')
+
+    try:
+        review = Review(
+            order_id=data.order_id,
+            item_id=data.order_id,
+            reviewee_id=order.order_items[0].item_id,
+            reviewer_id=current_user.id,
+            rating=data.rating,
+            comment=data.comment,
+            review_type=ReviewType.PRODUCT,
         )
 
         # Save review
@@ -161,6 +224,65 @@ async def fetch_vendor_reviews(
             .selectinload(Profile.profile_image)
         )
         .where(Review.reviewee_id == vendor_id)
+    )
+
+    stmt = stmt.order_by(Review.created_at.desc())
+    result = await db.execute(stmt)
+    reviews = result.scalars().all()
+
+    response_list = [
+        ReviewResponse(
+            id=r.id,
+            rating=r.rating,
+            comment=r.comment,
+            created_at=r.created_at,
+            reviewer=ReviewerProfile(
+                id=r.reviewer.id,
+                full_name=r.reviewer.profile.full_name
+                if r.reviewer.profile and r.reviewer.profile.full_name
+                else r.reviewer.profile.business_name
+                if r.reviewer.profile
+                else None,
+                profile_image_url=(
+                    r.reviewer.profile.profile_image.profile_image_url
+                    if r.reviewer.profile and r.reviewer.profile.profile_image
+                    else None
+                ),
+            ),
+        )
+        for r in reviews
+    ]
+
+    # Only cache if we have a full page
+    if response_list:
+        redis_client.setex(
+            cache_key, [r.model_dump() for r in response_list], default=str
+        )
+
+    return response_list
+
+
+
+
+
+async def fetch_item_reviews(
+    item_id: UUID, db: AsyncSession
+) -> list[ReviewResponse]:
+    cache_key = f"reviews:{item_id}"
+    cached_reviews = redis_client.get(cache_key)
+
+    if cached_reviews:
+        return [ReviewResponse(**r) for r in cached_reviews]
+
+    # DB fallback
+    stmt = (
+        select(Review)
+        .options(
+            selectinload(Review.reviewer)
+            .selectinload(User.profile)
+            .selectinload(Profile.profile_image)
+        )
+        .where(Review.item_id == item_id)
     )
 
     stmt = stmt.order_by(Review.created_at.desc())
@@ -294,7 +416,7 @@ async def create_report(
             ]
         )
 
-        # Create admin acknowledgment message using insert
+        # Create admin acknowledgment message
         admin_message_stmt = insert(Message).values(
             message_type=MessageType.REPORT,
             content=ADMIN_MESSAGE,
@@ -310,15 +432,11 @@ async def create_report(
         await db.commit()
 
         token = await get_user_notification_token(db=db, user_id=report.defendant_id)
-        # defendant_name = get_full_name_or_business_name(db=db, user_id=defendant_id)
-        # complainant_name = (
-        #     current_user.profile.full_name or current_user.profile.business_name
-        # )
 
         if token:
             await send_push_notification(
                 tokens=[token],
-                title="You have a new report",
+                title="Dispute",
                 message="You have been reported for your latest order. We want to here your own side before a final decision is made. Please reply to thread opened for this report.",
                 navigate_to="/(app)/delivery/orders",
             )
