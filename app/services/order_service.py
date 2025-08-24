@@ -1124,7 +1124,7 @@ async def re_list_item_for_delivery(
                     "payment_method": PaymentMethod.WALLET,
                     "from_user": "Self",
                     
-                },
+                }
             )
 
         # 4. Invalidate Caches
