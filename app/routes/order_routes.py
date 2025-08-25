@@ -164,14 +164,14 @@ async def sender_confirm_delivery_or_order_received(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
 
-@router.put("/{order_id}/update-status", status_code=status.HTTP_202_ACCEPTED)
+@router.put("/{order_id}/vendor-update-order-status", status_code=status.HTTP_202_ACCEPTED)
 async def vendor_mark_order_delivered(
     order_id: UUID,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> DeliveryStatusUpdateSchema:
     """
-    Mark order delivered(without delivery) by vendor
+    Mark order delivered(for order without delivery) by vendor
     """
     return await order_service.vendor_mark_order_delivered(
         db=db,
@@ -237,7 +237,27 @@ async def laundry_vendor_mark_item_received(
 
 
 @router.put(
-    "/{delivery_id}/update-by-admin",
+    "/{delivery_id}/admin-update-order-status",
+    status_code=status.HTTP_202_ACCEPTED,
+)
+async def admin_modify_order_status(
+    order_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> DeliveryStatusUpdateSchema:
+    try:
+        return await order_service.admin_modify_order_status(
+            db=db, current_user=current_user, order_id=order_id
+        )
+
+    except Exception as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    
+
+
+
+@router.put(
+    "/{delivery_id}/admin-update-delivery-status",
     status_code=status.HTTP_202_ACCEPTED,
 )
 async def admin_modify_delivery_status(
@@ -309,22 +329,6 @@ async def cancel_order(
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
-
-@router.post("/{order_id}/reaccept", status_code=status.HTTP_202_ACCEPTED)
-async def reaccept_order(
-    order_id: UUID,
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-) -> DeliveryStatusUpdateSchema:
-    """
-    Re-accept (re-list) a previously cancelled order.
-    """
-    try:
-        return await order_service.reaccept_order(
-            db=db, order_id=order_id, current_user=current_user
-        )
-    except Exception as e:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
 
 @router.put(

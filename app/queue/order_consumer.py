@@ -69,10 +69,11 @@ class OrderStatusQueueConsumer(BaseQueueConsumer):
                 async with db.begin():
                     order_id = UUID(payload.get("order_id"))
                     new_status = payload.get("new_status")
+                    order_status = payload.get('order_status')
                     result = await db.execute(
                         update(Order)
                         .where(Order.id == order_id)
-                        .values(order_payment_status=new_status)
+                        .values(order_payment_status=new_status, order_status=order_status)
                     )
 
                     if result.rowcount == 0:

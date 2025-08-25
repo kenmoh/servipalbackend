@@ -40,6 +40,7 @@ from app.services.order_service import get_user_profile
 from app.services.settings_service import get_charge_and_commission_settings
 from app.schemas.order_schema import OrderType
 from app.schemas.status_schema import (
+    OrderStatus,
     PaymentMethod,
     PaymentStatus,
     RequireDeliverySchema,
@@ -1250,7 +1251,7 @@ async def order_payment_callback(request: Request, db: AsyncSession):
                 operation="update_wallet",
                 payload={
                     "wallet_id": str(order.owner_id),
-                    "escrow_change": str(order.grand_total),
+                    "escrow_change": str(charged_amount),
                     "balance_change": str(0),
                 },
             )
@@ -1724,7 +1725,7 @@ async def product_order_payment_callback(request: Request, db: AsyncSession):
             service='wallet', operation='update_wallet',
             payload={
                 "wallet_id": str(order.owner_id),
-                "escrow_change": str(order.total_price),
+                "escrow_change": str(order.grand_total),
                 "balance_change": '0',
                 
             }
@@ -1765,7 +1766,7 @@ async def product_order_payment_callback(request: Request, db: AsyncSession):
                 'wallet_id':str(order.owner_id),
                 'tx_ref':str(order.tx_ref),
                 'to_wallet_id': str(order.vendor_id),
-                'amount':f'{order.total_price}',
+                'amount':f'{order.grand_total}',
                 'transaction_type':TransactionType.USER_TO_USER,
                 'transaction_direction':TransactionDirection.DEBIT,
                 'payment_status':PaymentStatus.PAID,
@@ -1924,6 +1925,7 @@ async def pay_with_wallet(
             payload={
                 "order_id": str(order.id),
                 "new_status": PaymentStatus.PAID,
+                "order_status": OrderStatus.PENDING
             }
         )
 
@@ -1974,6 +1976,32 @@ async def pay_with_wallet(
             detail="Insufficient funds in wallet",
         )
 
+    # Send notifications
+    customer_token = await get_user_notification_token(db=db, user_id=customer.id)
+    vendor_token = await get_user_notification_token(db=db, user_id=order.vendor_id)
+    if customer_token:
+        await send_push_notification(
+            tokens=[customer_token],
+            title="Payment Successful",
+            message=f"Your payment of ₦{charged_amount} was successful.",
+            navigate_to="/(app)/delivery/orders",
+        )
+    if vendor_token:
+        await send_push_notification(
+            tokens=[vendor_token],
+            title="Order Paid",
+            message=f"You have received a new order payment of ₦{total_price}.",
+            navigate_to="/(app)/delivery/orders",
+        )
+
+    # Clear relevant caches
+    redis_client.delete(f"user_related_orders:{customer.id}")
+    redis_client.delete(f"user_related_orders:{order.vendor_id}")
+    redis_client.delete(f"user_orders:{order.owner_id}")
+    redis_client.delete(f"user_orders:{order.vendor_id}")
+    redis_client.delete("paid_pending_deliveries")
+    redis_client.delete("orders")
+
 
     # Update customer wallet(move to escrow)
     await producer.publish_message(
@@ -2002,6 +2030,7 @@ async def pay_with_wallet(
             payload={
                 "order_id": str(order.id),
                 "new_status": PaymentStatus.PAID,
+                "order_status": OrderStatus.PENDING
             }
         )    
 
@@ -2041,31 +2070,7 @@ async def pay_with_wallet(
     )
 
 
-    # Send notifications
-    customer_token = await get_user_notification_token(db=db, user_id=customer.id)
-    vendor_token = await get_user_notification_token(db=db, user_id=order.vendor_id)
-    if customer_token:
-        await send_push_notification(
-            tokens=[customer_token],
-            title="Payment Successful",
-            message=f"Your payment of ₦{charged_amount} was successful.",
-            navigate_to="/(app)/delivery/orders",
-        )
-    if vendor_token:
-        await send_push_notification(
-            tokens=[vendor_token],
-            title="Order Paid",
-            message=f"You have received a new order payment of ₦{total_price}.",
-            navigate_to="/(app)/delivery/orders",
-        )
-
-    # Clear relevant caches
-    redis_client.delete(f"user_related_orders:{customer.id}")
-    redis_client.delete(f"user_related_orders:{order.vendor_id}")
-    redis_client.delete(f"user_orders:{order.owner_id}")
-    redis_client.delete(f"user_orders:{order.vendor_id}")
-    redis_client.delete("paid_pending_deliveries")
-    redis_client.delete("orders")
+  
 
     return {
         "payment_status": order.order_payment_status,
