@@ -148,6 +148,8 @@ async def create_review(
         await db.commit()
         await db.refresh(review)
 
+        redis_client.delete(f"reviews:{order.vendor_id}")
+
         return ReviewResponse(
             id=r.id,
             rating=r.rating,
@@ -278,6 +280,7 @@ async def fetch_vendor_reviews(
     cache_key = f"reviews:{vendor_id}"
     cached_reviews = redis_client.get(cache_key)
 
+
     if cached_reviews:
         return [ReviewResponse(**r) for r in cached_reviews]
 
@@ -321,7 +324,8 @@ async def fetch_vendor_reviews(
 
     # Only cache if we have a full page
     if response_list:
-        redis_client.setex(cache_key, [r.model_dump() for r in response_list])
+        value = json.dumps([r.model_dump() for r in response_list], default=str)
+        redis_client.setex(cache_key, 3600, value) 
 
     return response_list
 
