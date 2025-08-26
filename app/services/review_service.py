@@ -90,7 +90,7 @@ def convert_report_to_response(report: ReportType) -> ReportIssueResponse:
 
 async def create_review(
     db: AsyncSession, current_user: User, data: ReviewCreate
-) -> Review:
+) -> ReviewResponse:
     """Creates a review for a completed food or laundry order."""
     # 1. Fetch the order and verify its existence
     order_result = await db.execute(select(Order).where(Order.id == data.order_id))
