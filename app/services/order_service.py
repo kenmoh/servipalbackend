@@ -1440,8 +1440,8 @@ async def sender_confirm_delivery_or_order_received(
             redis_client.delete("paid_pending_deliveries")
             redis_client.delete(f"user_related_orders:{current_user.id}")
             redis_client.delete(f"user_related_orders:{order.vendor_id}")
-            redis_client.delete(f"user_related_orders:{order.delivery.delivery_id}")
-            redis_client.delete(f"user_related_orders:{order.delivery.rider_id}")
+            # redis_client.delete(f"user_related_orders:{order.delivery.delivery_id}")
+            # redis_client.delete(f"user_related_orders:{order.delivery.rider_id}")
 
             # Release funds from escrow
             # Update vendor wallet (move from escrow to balance)
