@@ -279,11 +279,11 @@ async def fetch_vendor_reviews(
 ) -> list[ReviewResponse]:
     cache_key = f"reviews:{vendor_id}"
     cached_reviews = redis_client.get(cache_key)
-
-
     if cached_reviews:
-        return [ReviewResponse(**r) for r in cached_reviews]
-
+        # Parse the JSON string back to a list of dictionaries
+        reviews_data = json.loads(cached_reviews)
+        return [ReviewResponse(**r) for r in reviews_data]
+    
     # DB fallback
     stmt = (
         select(Review)
@@ -294,11 +294,9 @@ async def fetch_vendor_reviews(
         )
         .where(Review.reviewee_id == vendor_id)
     )
-
     stmt = stmt.order_by(Review.created_at.desc())
     result = await db.execute(stmt)
     reviews = result.scalars().all()
-
     response_list = [
         ReviewResponse(
             id=r.id,
@@ -321,12 +319,10 @@ async def fetch_vendor_reviews(
         )
         for r in reviews
     ]
-
     # Only cache if we have a full page
     if response_list:
         value = json.dumps([r.model_dump() for r in response_list])
         redis_client.setex(cache_key, 3600, value) 
-
     return response_list
 
 
