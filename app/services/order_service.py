@@ -865,7 +865,6 @@ async def cancel_order_or_delivery(
                 current_user.order_cancel_count = (
                     current_user.order_cancel_count or 0
                 ) + 1
-                await db.commit()
 
             # Reverse escrow for the original dispatch company if order was paid
             if old_dispatch_id and order.order_payment_status == PaymentStatus.PAID:
@@ -920,7 +919,7 @@ async def cancel_order_or_delivery(
                 delivery_status=DeliveryStatus.PENDING.value,
             )
 
-        # --- Sender/Vendor Cancellation (Full Cancellation) ---
+        # --- r CancellatSender/Vendoion (Full Cancellation) ---
         else:
             order.cancel_reason = reason.reason
             order.order_status = OrderStatus.CANCELLED
