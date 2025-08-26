@@ -1435,14 +1435,6 @@ async def sender_confirm_delivery_or_order_received(
                     navigate_to="/(app)/delivery/orders",
                 )
 
-            # Clear caches
-            redis_client.delete(f"{ALL_DELIVERY}")
-            redis_client.delete("paid_pending_deliveries")
-            redis_client.delete(f"user_related_orders:{current_user.id}")
-            redis_client.delete(f"user_related_orders:{order.vendor_id}")
-            # redis_client.delete(f"user_related_orders:{order.delivery.delivery_id}")
-            # redis_client.delete(f"user_related_orders:{order.delivery.rider_id}")
-
             # Release funds from escrow
             # Update vendor wallet (move from escrow to balance)
             await producer.publish_message(
@@ -1465,6 +1457,12 @@ async def sender_confirm_delivery_or_order_received(
                     "escrow_change": str(-order.total_price),
                 },
             )
+
+            # Clear caches
+            redis_client.delete(f"{ALL_DELIVERY}")
+            redis_client.delete("paid_pending_deliveries")
+            redis_client.delete(f"user_related_orders:{current_user.id}")
+            redis_client.delete(f"user_related_orders:{order.vendor_id}")           
 
             return DeliveryStatusUpdateSchema(order_status=order.order_status)
 
@@ -1537,13 +1535,6 @@ async def sender_confirm_delivery_or_order_received(
                 navigate_to="/(app)/delivery/orders",
             )
 
-        redis_client.delete(f"{ALL_DELIVERY}")
-        redis_client.delete("paid_pending_deliveries")
-        redis_client.delete(f"user_related_orders:{current_user.id}")
-        redis_client.delete(f"user_related_orders:{order.vendor_id}")
-        redis_client.delete(f"user_related_orders:{order.delivery.dispatch_id}")
-        redis_client.delete(f"user_related_orders:{order.delivery.rider_id}")
-
         # Update dispatch wallet (move from escrow to balance)
         if order.delivery and order.delivery.delivery_fee > 0:
             await producer.publish_message(
@@ -1589,6 +1580,14 @@ async def sender_confirm_delivery_or_order_received(
                 "to_user": to_user,
             },
         )
+
+
+        redis_client.delete(f"{ALL_DELIVERY}")
+        redis_client.delete("paid_pending_deliveries")
+        redis_client.delete(f"user_related_orders:{current_user.id}")
+        redis_client.delete(f"user_related_orders:{order.vendor_id}")
+        redis_client.delete(f"user_related_orders:{order.delivery.dispatch_id}")
+        redis_client.delete(f"user_related_orders:{order.delivery.rider_id}")
 
 
         return DeliveryStatusUpdateSchema(
