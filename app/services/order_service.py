@@ -1286,29 +1286,29 @@ async def rider_accept_delivery_order(
     dispatch_profile = await get_user_profile(order.delivery.dispatch_id, db=db)
     sender_profile = await get_user_profile(order.owner_id, db=db)
 
-    transaction_result = await db.execute(
-        select(Transaction).where(Transaction.tx_ref == order.tx_ref)
-    )
-    transaction = transaction_result.scalar_one_or_none()
-
     # Amount to move to escrow
     dispatch_amount = max(order.delivery.amount_due_dispatch, 0)
 
-    # Move dispatch funds to escrow (escrow increases) for dispatch
-    # if order.delivery.delivery_type == DeliveryType.PACKAGE:
-
+    # This is an internal settlement from the customer's escrow to the dispatch company's escrow.
+    # We create a new, distinct transaction for this movement. It should not inherit properties
+    # like 'payment_method' from the original customer payment.
     await producer.publish_message(
         service="wallet",
         operation="create_transaction",
         payload={
             "wallet_id": str(order.delivery.dispatch_id),
             "tx_ref": str(order.tx_ref),
+            # The 'to_wallet_id' is the same as the wallet_id because this is a credit
+            # to the dispatch company's wallet.
             "to_wallet_id": str(order.delivery.dispatch_id),
             "amount": str(dispatch_amount),
-            "transaction_type": transaction.transaction_type,
+            # This is an internal settlement, so we use standard types.
+            "transaction_type": TransactionType.USER_TO_USER,
             "transaction_direction": TransactionDirection.CREDIT,
-            "payment_method": transaction.payment_method,
-            "payment_status": transaction.payment_status,
+            # The payment method is 'ESCROW_SETTLEMENT', not the customer's original method (e.g., CARD).
+            "payment_method": PaymentMethod.ESCROW_SETTLEMENT,
+            # The payment is considered 'PAID' as the funds are already secured in escrow.
+            "payment_status": PaymentStatus.PAID,
             "from_user": sender_profile.full_name or sender_profile.business_name,
             "to_user": dispatch_profile.full_name or dispatch_profile.business_name,
         },
@@ -1332,8 +1332,10 @@ async def rider_accept_delivery_order(
         payload={
             "wallet_id": str(order.delivery.dispatch_id),
             "balance_change":'0',
+                    "transaction_direction": TransactionDirection.CREDIT,
             "escrow_change":str(dispatch_amount),
         },
+
     )
 
 
@@ -1349,6 +1351,7 @@ async def rider_accept_delivery_order(
     redis_client.delete(f"user_related_orders:{order.delivery.dispatch_id}")
     redis_client.delete(f"user_related_orders:{order.owner_id}")
 
+    
     await ws_service.broadcast_delivery_status_update(
         delivery_id=order.delivery.id, new_status=order.delivery.delivery_status
     )
@@ -1773,6 +1776,12 @@ async def rider_mark_delivered(
     if current_user.user_type not in [UserType.RIDER, UserType.DISPATCH] and (
         delivery.rider_id != current_user.id or delivery.dispatch_id != current_user.id
     ):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="You are not allowed to perform this action.",
+        )
+
+    if delivery.rider_id != current_user.id:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="You are not allowed to perform this action.",
@@ -2679,6 +2688,3 @@ async def cancel_order(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to cancel order",
         )
-
-
-

@@ -107,6 +107,7 @@ class PaymentMethod(str, Enum):
     CARD: str = "card"
     BANK_TRANSFER: str = "bank_transfer"
     SYSTEM_REFUND: str = "Refund"
+    ESCROW_SETTLEMENT: str = "escrow-settlement"
 
 
 class DisputeStatus(str, Enum):
