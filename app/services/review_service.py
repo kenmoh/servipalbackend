@@ -148,7 +148,26 @@ async def create_review(
         await db.commit()
         await db.refresh(review)
 
-        return review
+        return ReviewResponse(
+            id=r.id,
+            rating=r.rating,
+            comment=r.comment,
+            created_at=r.created_at,
+            reviewer=ReviewerProfile(
+                id=r.reviewer.id,
+                full_name=r.reviewer.profile.full_name
+                if r.reviewer.profile and r.reviewer.profile.full_name
+                else r.reviewer.profile.business_name
+                if r.reviewer.profile
+                else None,
+                profile_image_url=(
+                    r.reviewer.profile.profile_image.profile_image_url
+                    if r.reviewer.profile and r.reviewer.profile.profile_image
+                    else None
+                ),
+            ),
+        )
+
     except IntegrityError:
         await db.rollback()
         raise HTTPException(
@@ -302,9 +321,7 @@ async def fetch_vendor_reviews(
 
     # Only cache if we have a full page
     if response_list:
-        redis_client.setex(
-            cache_key, [r.model_dump() for r in response_list], default=str
-        )
+        redis_client.setex(cache_key, [r.model_dump() for r in response_list])
 
     return response_list
 
