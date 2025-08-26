@@ -2300,7 +2300,7 @@ def format_delivery_response(
         "require_delivery": order.require_delivery,
         "total_price": str(order.total_price),
         "order_payment_status": order.order_payment_status.value,
-        "order_status": order.order_status.value if order.order_status else None,
+        "order_status": order.order_status,
         "amount_due_vendor": str(order.amount_due_vendor),
         "payment_link": order.payment_link or "",
         "order_items": order_items,
