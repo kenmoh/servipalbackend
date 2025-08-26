@@ -685,12 +685,13 @@ async def order_food_or_request_laundy_service(
 
         # Generate payment link
         payment_link = await get_payment_link(tx_ref, grand_total, current_user)
+        order_status = OrderStatus.PENDING
 
         # Update order with payment link
         await db.execute(
             update(Order)
             .where(Order.id == order_id)
-            .values({"payment_link": payment_link})
+            .values({"payment_link": payment_link, "order_status": order_status })
         )
 
         await db.commit()
@@ -919,7 +920,7 @@ async def cancel_order_or_delivery(
                 delivery_status=DeliveryStatus.PENDING.value,
             )
 
-        # --- r CancellatSender/Vendoion (Full Cancellation) ---
+        # --- Sender/Vendoion (Full Cancellation) ---
         else:
             order.cancel_reason = reason.reason
             order.order_status = OrderStatus.CANCELLED
