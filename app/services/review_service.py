@@ -452,9 +452,8 @@ async def create_report(
             complainant_id=current_user.id,
             defendant_id=defendant_id,
             order_id=order_id,
-            delivery_id=delivery_id,  # Correctly set delivery_id
             report_tag=ReportTag.COMPLAINANT,
-            report_status=ReportStatus.INVESTIGATING,  # Set directly to investigating
+            report_status=ReportStatus.INVESTIGATING,
         )
         db.add(report)
         await db.flush()
