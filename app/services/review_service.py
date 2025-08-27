@@ -74,7 +74,7 @@ def convert_report_to_response(report: ReportType) -> ReportIssueResponse:
     return ReportIssueResponse(
         id=report.id,
         order_id=report.order_id,
-        delivery_id=report.delivery_id,
+        # delivery_id=report.delivery_id,
         dispatch_id=report.dispatch_id,
         vendor_id=report.vendor_id,
         customer_id=report.customer_id,
@@ -401,7 +401,6 @@ async def create_report(
 
     # Determine defendant and other report details
     defendant_id = None
-    delivery_id = None
     if report_data.reported_user_type == ReportedUserType.CUSTOMER:
         defendant_id = order.owner_id
     elif report_data.reported_user_type == ReportedUserType.VENDOR:
@@ -413,7 +412,6 @@ async def create_report(
                 detail="Order has no delivery information for a dispatch report.",
             )
         defendant_id = order.delivery.dispatch_id
-        delivery_id = order.delivery.id
 
     if not defendant_id:
         raise HTTPException(
@@ -421,7 +419,7 @@ async def create_report(
             detail=f"Could not identify the defendant for the report type '{report_data.reported_user_type.value}'.",
         )
 
-    if current_user.id == defendant_id:
+    if current_user.id == order.owner_id or current_user.id == order.vendor_id or current_user.id==order.delivery.dispatch_id or current_user.id == order.delivery.rider_id:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail="You cannot report yourself."
         )
@@ -432,9 +430,9 @@ async def create_report(
         UserReport.defendant_id == defendant_id,
         UserReport.order_id == order_id,
     ]
-    if delivery_id:
+    if order_id:
         # For dispatch reports, the uniqueness is on the delivery
-        existing_report_conditions.append(UserReport.delivery_id == delivery_id)
+        existing_report_conditions.append(UserReport.order_id == order_id)
 
     existing_report_stmt = select(UserReport).where(and_(*existing_report_conditions))
     if (await db.execute(existing_report_stmt)).scalar_one_or_none():
