@@ -602,7 +602,7 @@ async def add_message_to_report(
     redis_client.delete(*cache_keys_to_delete)
 
     # 5. Prepare rich payload and send real-time updates
-    sender_name = get_full_name_or_business_name(current_user.profile)
+    sender_name = get_full_name_or_business_name(current_user.id, current_user.profile)
     sender_avatar = (
         current_user.profile.profile_image.profile_image_url
         if current_user.profile and current_user.profile.profile_image
