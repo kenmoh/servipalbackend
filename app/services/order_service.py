@@ -879,6 +879,23 @@ async def cancel_order_or_delivery(
                     },
                 )
 
+              # Remove escrow from vendor
+                await producer.publish_message(
+                    service="wallet",
+                    operation="create_transaction",
+                    payload={
+                        "wallet_id": str(order.delivery.dispatch_id),
+                        "tx_ref": str(uuid.uuid1()),
+                        "amount": str(-order.delivery.amount_due_dispatch),
+                        "transaction_type": TransactionType.ORDER_CANCELLATION,
+                        "transaction_direction": TransactionDirection.DEBIT,
+                        "payment_status": PaymentStatus.PAID,
+                        "payment_method": PaymentMethod.FUND_REVERSAL,
+                        "from_user": "System Reversal",
+
+                    },
+                )
+
             # Invalidate caches
             cache_keys_to_delete = [
                 f"user_orders:{order.owner_id}",

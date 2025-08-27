@@ -95,6 +95,7 @@ class TransactionType(str, Enum):
     USER_TO_SELF = "self"
     WITHDRAWAL = "withdrawal"
     REFUND = "refund"
+    ORDER_CANCELLATION = "order-cancellation"
 
 
 class TransactionDirection(str, Enum):
@@ -108,6 +109,8 @@ class PaymentMethod(str, Enum):
     BANK_TRANSFER: str = "bank_transfer"
     SYSTEM_REFUND: str = "Refund"
     ESCROW_SETTLEMENT: str = "escrow-settlement"
+    FUND_REVERSAL: str = "reversal"
+
 
 
 class DisputeStatus(str, Enum):
