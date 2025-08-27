@@ -52,7 +52,7 @@ class ReportType(str, Enum):
     LATE_DELIVERY = "late_delivery"
     RIDER_BEHAVIOUR = "rider_behaviour"
     CUSTOMER_BEHAVIOUR = "customer_behaviour"
-    OTHERS = "Others"
+    OTHERS = "others"
 
 
 class ReportStatus(str, Enum):

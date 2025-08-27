@@ -90,7 +90,7 @@ def convert_report_to_response(report: ReportType) -> ReportIssueResponse:
 
 async def create_review(
     db: AsyncSession, current_user: User, data: ReviewCreate
-) -> ReviewResponse:
+) -> ReviewCreate:
     """Creates a review for a completed food or laundry order."""
     # 1. Fetch the order and verify its existence
     order_result = await db.execute(select(Order).where(Order.id == data.order_id))
@@ -150,25 +150,7 @@ async def create_review(
 
         redis_client.delete(f"reviews:{order.vendor_id}")
 
-        return ReviewResponse(
-            id=r.id,
-            rating=r.rating,
-            comment=r.comment,
-            created_at=r.created_at,
-            reviewer=ReviewerProfile(
-                id=r.reviewer.id,
-                full_name=r.reviewer.profile.full_name
-                if r.reviewer.profile and r.reviewer.profile.full_name
-                else r.reviewer.profile.business_name
-                if r.reviewer.profile
-                else None,
-                profile_image_url=(
-                    r.reviewer.profile.profile_image.profile_image_url
-                    if r.reviewer.profile and r.reviewer.profile.profile_image
-                    else None
-                ),
-            ),
-        )
+        return review
 
     except IntegrityError:
         await db.rollback()
@@ -390,18 +372,17 @@ async def create_report(
 ) -> ReportResponseSchema:
     """Create a new report with automatic admin acknowledgment message."""
 
-    # 1. Fetch order and an admin user concurrently for efficiency
+    # 1. Fetch order and an admin user sequentially to avoid concurrent use of the same session
     order_stmt = (
         select(Order)
         .options(selectinload(Order.delivery))
         .where(Order.id == order_id)
     )
-    admin_stmt = select(User).where(User.user_type == UserType.ADMIN).limit(1)
-
-    order_result, admin_result = await asyncio.gather(
-        db.execute(order_stmt), db.execute(admin_stmt)
-    )
+    order_result = await db.execute(order_stmt)
     order = order_result.scalar_one_or_none()
+
+    admin_stmt = select(User).where(User.user_type == UserType.ADMIN).limit(1)
+    admin_result = await db.execute(admin_stmt)
     admin_user = admin_result.scalar_one_or_none()
 
     # 2. Perform all validations before proceeding
