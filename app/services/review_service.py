@@ -381,7 +381,7 @@ async def create_report(
     order_result = await db.execute(order_stmt)
     order = order_result.scalar_one_or_none()
 
-    admin_stmt = select(User).where(User.user_type == UserType.ADMIN).limit(1)
+    admin_stmt = select(User).where(User.user_type == UserType.MODERATOR).limit(1)
     admin_result = await db.execute(admin_stmt)
     admin_user = admin_result.scalar_one_or_none()
 
