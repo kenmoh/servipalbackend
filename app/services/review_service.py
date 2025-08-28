@@ -303,7 +303,7 @@ async def fetch_vendor_reviews(
     ]
     # Only cache if we have a full page
     if response_list:
-        value = json.dumps([r.model_dump() for r in response_list])
+        value = json.dumps([r.model_dump() for r in response_list], default=str)
         redis_client.setex(cache_key, 3600, value) 
     return response_list
 
