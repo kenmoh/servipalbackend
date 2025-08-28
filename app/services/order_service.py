@@ -1249,10 +1249,20 @@ async def rider_accept_delivery_order(
 ) -> DeliveryStatusUpdateSchema:
     dispatch_id = get_dispatch_id(current_user)
 
+    existing = await db.execute(
+        select(Delivery).where(Delivery.rider_id == current_user.id, Delivery.delivery_status==DeliveryStatus.ACCEPTED)
+    )
+
+    existing_delivery = existing.scalars().all()
+
+
     result = await db.execute(
         select(Order).where(Order.id == order_id).options(selectinload(Order.delivery)).with_for_update()
     )
     order = result.scalar_one_or_none()
+
+    if existing_delivery:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="You still have a pending delivery.")
 
     if not order:
         raise HTTPException(
@@ -1789,19 +1799,18 @@ async def rider_mark_delivered(
 
     if not delivery:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Delivery not found.")
-    if current_user.user_type not in [UserType.RIDER, UserType.DISPATCH] and (
-        delivery.rider_id != current_user.id or delivery.dispatch_id != current_user.id
-    ):
+    
+    if current_user.user_type != UserType.RIDER and delivery.rider_id != current_user.id:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="You are not allowed to perform this action.",
         )
 
-    if delivery.rider_id != current_user.id:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="You are not allowed to perform this action.",
-        )
+    # if delivery.rider_id != current_user.id:
+    #     raise HTTPException(
+    #         status_code=status.HTTP_401_UNAUTHORIZED,
+    #         detail="You are not allowed to perform this action.",
+    #     )
 
     if delivery.delivery_status == DeliveryStatus.ACCEPTED:
         await db.execute(

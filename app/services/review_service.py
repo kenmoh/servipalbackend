@@ -418,8 +418,8 @@ async def create_report(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Could not identify the defendant for the report type '{report_data.reported_user_type.value}'.",
         )
-
-    if current_user.id == order.owner_id or current_user.id == order.vendor_id or current_user.id==order.delivery.dispatch_id or current_user.id == order.delivery.rider_id:
+    
+    if current_user.id == defendant_id:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail="You cannot report yourself."
         )
