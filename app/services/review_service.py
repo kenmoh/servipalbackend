@@ -223,8 +223,7 @@ async def create_product_review(
 
     # 4. Create and save the review
     try:
-        # Assuming a product order has one item. If it can have more, the API
-        # contract needs to change to specify which item is being reviewed.
+       
         item_to_review = order.order_items[0]
 
         review = Review(

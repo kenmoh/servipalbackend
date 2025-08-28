@@ -61,7 +61,7 @@ async def get_marketplace_items(db: AsyncSession) -> list[ItemResponse]:
 
     stmt = (
         select(Item)
-        .where(Item.item_type == ItemType.PRODUCT)
+        .where(Item.item_type == ItemType.PRODUCT, Item.stock > 0)
         .options(joinedload(Item.images))
     )
     result = await db.execute(stmt)
