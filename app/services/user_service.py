@@ -147,6 +147,7 @@ async def get_current_user_details(
                 ),
                 "bank_name": getattr(user.profile, "bank_name", None),
                 "full_name": user.profile.full_name,
+                "state": user.profile.state,
                 "store_name": user.profile.store_name,
                 "business_name": getattr(user.profile, "business_name", None),
                 "business_address": getattr(user.profile, "business_address", None),
@@ -252,6 +253,7 @@ async def get_users(
                     ),
                     "bank_name": getattr(user.profile, "bank_name", None),
                     "full_name": user.profile.full_name,
+                    "state": user.profile.state,
                     "store_name": user.profile.store_name,
                     "business_name": getattr(user.profile, "business_name", None),
                     "business_address": getattr(user.profile, "business_address", None),
@@ -349,6 +351,7 @@ async def get_active_users(
                 "bank_name": getattr(user.profile, "bank_name", None),
                 "full_name": user.profile.full_name,
                 "store_name": user.profile.store_name,
+                "state": user.profile.state,
                 "business_name": getattr(user.profile, "business_name", None),
                 "business_address": getattr(user.profile, "business_address", None),
                 "backdrop_image_url": getattr(
@@ -825,6 +828,7 @@ async def get_user_with_profile(db: AsyncSession, user_id: UUID) -> ProfileSchem
             "bank_name": profile.bank_name or None,
             "full_name": profile.full_name or None,
             "store_name": profile.store_name or None,
+            "state": profile.state or None,
             "business_name": profile.business_name or None,
             "business_address": profile.business_address or None,
             "business_registration_number": profile.business_registration_number

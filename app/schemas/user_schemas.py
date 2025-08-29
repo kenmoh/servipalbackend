@@ -393,6 +393,7 @@ class ProfileSchema(BaseModel):
     bank_account_number: str | None = None
     bank_name: str | None = None
     full_name: str | None = None
+    state: str | None = None
     business_name: str | None = None
     store_name: str | None = None
     business_address: str | None = None

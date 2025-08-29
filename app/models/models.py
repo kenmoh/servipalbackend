@@ -214,6 +214,7 @@ class Profile(Base):
     bank_name: Mapped[str] = mapped_column(nullable=True)
     bank_account_number: Mapped[str] = mapped_column(nullable=True)
     business_address: Mapped[str] = mapped_column(nullable=True)
+    state: Mapped[str] = mapped_column(nullable=True)
     business_registration_number: Mapped[str] = mapped_column(nullable=True)
     account_holder_name: Mapped[str] = mapped_column(nullable=True)
     opening_hours: Mapped[time] = mapped_column(nullable=True)
