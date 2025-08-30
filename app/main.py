@@ -55,6 +55,7 @@ from app.queue.wallet_consumer import WalletQueueConsumer
 from app.queue.producer import CentralQueueProducer
 
 
+
 logger = setup_logger()
 
 scheduler = BackgroundScheduler()
@@ -133,7 +134,7 @@ async def lifespan(application: FastAPI):
         # Log scheduler status
         logger.info(f"Scheduler running: {scheduler.running}")
         logger.info(f"Scheduled jobs: {scheduler.get_jobs()}")
-
+       
         yield
 
         logger.info("Shutting down services...")

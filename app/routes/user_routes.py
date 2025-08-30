@@ -21,6 +21,7 @@ from app.schemas.schemas import DispatchRiderSchema
 from app.schemas.status_schema import UserType
 from app.schemas.user_schemas import (
     Notification,
+    UserCoords,
     ProfileSchema,
     UserProfileResponse,
     RiderProfileSchema,
@@ -161,6 +162,7 @@ async def get_rider_details(
 async def get_restaurants(
     category_id: UUID | None = None,
     db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ) -> list[VendorUserResponse]:
     """
     Get  all restaurant users, optionally filtered by category.
@@ -304,6 +306,17 @@ async def register_for_push_notification(
     """Add Push token"""
     return await user_service.register_notification(
         push_token=push_token, db=db, current_user=current_user
+    )
+
+@router.put("/user-coordinates", status_code=status.HTTP_202_ACCEPTED)
+async def register_current_user_coords(
+    location_data: UserCoords,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Add user coordinates"""
+    return await user_service.update_user_location_coords(
+        location_data=location_data, db=db, current_user=current_user
     )
 
 

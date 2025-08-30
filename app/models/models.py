@@ -91,6 +91,7 @@ class User(Base):
     email_verification_code: Mapped[str] = mapped_column(nullable=True)
     email_verification_expires: Mapped[datetime] = mapped_column(nullable=True)
     account_status: Mapped[AccountStatus] = mapped_column(default=AccountStatus.PENDING)
+    current_user_loation_coords: Mapped[dict] = mapped_column(JSON, nullable=True)
 
     # Dispatcher-rider relationship with proper cascade
     dispatcher_id: Mapped[Optional[UUID]] = mapped_column(

@@ -10,6 +10,10 @@ from app.schemas.status_schema import (
 )
 
 
+class UserCoords(BaseModel):
+    latitude: float
+    longitude: float
+
 class AccountDetails(BaseModel):
     account_number: str
     account_bank: str

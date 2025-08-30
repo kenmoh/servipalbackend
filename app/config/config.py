@@ -93,6 +93,12 @@ class Settings(BaseSettings):
     # Timezone
     TZ: str = os.getenv("TZ", "Etc/UTC")
 
+    # GOOGLE
+    GOOGLE_MAP_API_KEY: str = os.getenv("GOOGLE_MAP_API_KEY")
+
+    # MAP BOX
+    MAPBOX_API_KEY: str = os.getenv("MAPBOX_API_KEY")
+
 
 settings = Settings()
 
