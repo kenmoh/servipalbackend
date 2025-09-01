@@ -21,6 +21,7 @@ from app.models.models import (
 )
 from app.services import ws_service
 from app.queue.producer import producer
+from app.utils.map import get_distance_between_addresses
 
 
 import json
@@ -2266,7 +2267,7 @@ async def fetch_wallet(db: AsyncSession, user_id: UUID) -> WalletRespose:
 
 
 def format_delivery_response(
-    order: Order, delivery: Optional[Delivery] = None
+    order: Order, distance: float, delivery: Optional[Delivery] = None
 ) -> DeliveryResponse:
     # Format order items with proper image structure
 
@@ -2334,7 +2335,9 @@ def format_delivery_response(
         "cancel_reason": getattr(order, "cancel_reason", None),
     }
 
-    return DeliveryResponse(delivery=delivery_data, order=order_data)
+
+
+    return DeliveryResponse(delivery=delivery_data, order=order_data, distance=distance)
 
 
 async def get_user_profile(user_id: UUID, db: AsyncSession):
@@ -2404,7 +2407,7 @@ def filter_paid_pending_deliveries(
 
 
 
-async def get_paid_pending_deliveries(db: AsyncSession) -> list[DeliveryResponse]:
+async def get_paid_pending_deliveries(db: AsyncSession, current_user: User) -> list[DeliveryResponse]:
     """
     Returns deliveries where:
       - order_payment_status == 'paid'
@@ -2439,8 +2442,15 @@ async def get_paid_pending_deliveries(db: AsyncSession) -> list[DeliveryResponse
     )
     result = await db.execute(stmt)
     orders = result.unique().scalars().all()
+
+    distance = None
+    for order in orders:
+        distance = await get_distance_between_addresses(
+                        vendor_address=order.delivery.origin,
+                        current_user=current_user
+                    )
     delivery_responses = [
-        format_delivery_response(order, order.delivery) for order in orders
+        format_delivery_response(order=order, delivery=order.delivery, distance=distance) for order in orders if distance <= 35.0
     ]
 
     redis_client.setex(

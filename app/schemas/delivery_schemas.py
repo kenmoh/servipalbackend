@@ -44,6 +44,7 @@ class DeliverySchema(BaseModel):
     dispatch_id: UUID | None = None
     rider_id: UUID | None = None
     distance: Decimal
+    current_user_distance: float | None=None
     duration: str
     origin: str
     destination: str
@@ -59,6 +60,7 @@ class DeliverySchema(BaseModel):
 class DeliveryResponse(BaseModel):
     delivery: DeliverySchema | None = None
     order: OrderResponseSchema
+    distance: float | None = None
 
 
 class PaginatedDeliveryResponse(BaseModel):

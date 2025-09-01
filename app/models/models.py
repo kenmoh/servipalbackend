@@ -281,6 +281,7 @@ class Wallet(Base):
     id: Mapped[UUID] = mapped_column(ForeignKey("users.id"), primary_key=True)
     balance: Mapped[Decimal] = mapped_column(default=0.00)
     escrow_balance: Mapped[Decimal] = mapped_column(default=0.00)
+    # idempotency_key: Mapped[str] = mapped_column(nullable=True)
     created_at: Mapped[datetime] = mapped_column(default=datetime.now)
     updated_at: Mapped[datetime] = mapped_column(
         default=datetime.now, onupdate=datetime.now
@@ -301,6 +302,7 @@ class Transaction(Base):
     tx_ref: Mapped[UUID1] = mapped_column(default=uuid1, nullable=True)
     wallet_id: Mapped[UUID] = mapped_column(ForeignKey("wallets.id"))
     to_wallet_id: Mapped[UUID] = mapped_column(ForeignKey("users.id"), nullable=True)
+    # idempotency_key: Mapped[str] = mapped_column(nullable=True)
     amount: Mapped[Decimal] = mapped_column(default=0.00)
     from_user: Mapped[str] = mapped_column(nullable=True)
     to_user: Mapped[str] = mapped_column(nullable=True)
@@ -314,6 +316,11 @@ class Transaction(Base):
         default=datetime.now, onupdate=datetime.now
     )
     wallet: Mapped["Wallet"] = relationship(back_populates="transactions")
+
+    # __table_args__ = (
+    #     # Prevent duplicate transactions for the same tx_ref, wallet, and direction
+    #     UniqueConstraint('tx_ref', 'wallet_id', 'transaction_direction', name='unique_tx_per_wallet_direction'),
+    # )
 
 
 class RefreshToken(Base):

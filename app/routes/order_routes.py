@@ -59,9 +59,9 @@ async def get_all_pickup_delivery_orders(
 
 @router.get("/paid-pending-deliveries", status_code=status.HTTP_200_OK)
 async def get_paid_pending_deliveries(
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)
 ) -> list[DeliveryResponse]:
-    return await order_service.get_paid_pending_deliveries(db=db)
+    return await order_service.get_paid_pending_deliveries(db=db, current_user=current_user)
 
 
 @router.get("/{user_id}/user-related-orders", status_code=status.HTTP_200_OK)
