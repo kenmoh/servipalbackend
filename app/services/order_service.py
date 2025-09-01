@@ -2267,7 +2267,7 @@ async def fetch_wallet(db: AsyncSession, user_id: UUID) -> WalletRespose:
 
 
 def format_delivery_response(
-    order: Order, distance: float, delivery: Optional[Delivery] = None
+    order: Order, distance: Optional[float] = None, delivery: Optional[Delivery] = None
 ) -> DeliveryResponse:
     # Format order items with proper image structure
 
@@ -2337,7 +2337,7 @@ def format_delivery_response(
 
 
 
-    return DeliveryResponse(delivery=delivery_data, order=order_data, distance=distance)
+    return DeliveryResponse(order=order_data, delivery=delivery_data,  distance=distance)
 
 
 async def get_user_profile(user_id: UUID, db: AsyncSession):
@@ -2506,7 +2506,7 @@ async def get_user_related_orders(
     orders = result.unique().scalars().all()
 
     delivery_responses = [
-        format_delivery_response(order, order.delivery) for order in orders
+        format_delivery_response(order=order, delivery=order.delivery) for order in orders
     ]
 
     redis_client.setex(
