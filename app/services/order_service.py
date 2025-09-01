@@ -2413,7 +2413,7 @@ async def get_paid_pending_deliveries(db: AsyncSession) -> list[DeliveryResponse
     """
 
     cache_key = "paid_pending_deliveries"
-
+    
     # Try cache first with error handling
     cached_deliveries = redis_client.get(cache_key)
     if cached_deliveries:

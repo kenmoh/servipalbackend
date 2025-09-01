@@ -11,8 +11,8 @@ from app.schemas.status_schema import (
 
 
 class UserCoords(BaseModel):
-    latitude: float
-    longitude: float
+    lat: float
+    lng: float
 
 class AccountDetails(BaseModel):
     account_number: str

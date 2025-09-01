@@ -1753,8 +1753,8 @@ async def update_user_location_coords(
 ) -> UserCoords:
     # Create the coordinate dictionary
     coordinate = {
-        'lat': location_data.latitude,
-        'lng': location_data.longitude
+        'lat': location_data.lat,
+        'lng': location_data.lng
     }
     
     # Create cache key using user ID
