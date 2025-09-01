@@ -1434,7 +1434,7 @@ async def upload_image_profile(
 # <<<<< --------- GET LAUNDRY SERVICE PROVIDERS ---------- >>>>>
 
 
-async def get_users_by_laundry_services(db: AsyncSession) -> list[VendorUserResponse]:
+async def get_users_by_laundry_services(db: AsyncSession, current_user: User) -> list[VendorUserResponse]:
     """
     Fetch all vendors who offer laundry services with:
     - basic info
@@ -1499,6 +1499,11 @@ async def get_users_by_laundry_services(db: AsyncSession) -> list[VendorUserResp
             if total_items == 0:
                 continue  # skip vendors with no laundry services
 
+            distance = await get_distance_between_addresses(
+                    vendor_address=profile.business_address,
+                    current_user=current_user
+                )
+
             vendor_dict = {
                 "id": str(user.id),
                 "company_name": profile.business_name or "",
@@ -1522,9 +1527,11 @@ async def get_users_by_laundry_services(db: AsyncSession) -> list[VendorUserResp
                     "number_of_reviews": review_count or 0,
                 },
                 "total_items": total_items,
+                "distance": distance
             }
 
-            response.append(vendor_dict)
+            if distance and distance <= 35.0:
+                response.append(vendor_dict)
 
         # Cache result
         redis_client.setex(

@@ -181,12 +181,13 @@ async def get_restaurants(
     status_code=status.HTTP_200_OK,
 )
 async def get_laundry_vendors(
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ) -> list[VendorUserResponse]:
     """
     Get users who provide laundry services.
     """
-    return await user_service.get_users_by_laundry_services(db)
+    return await user_service.get_users_by_laundry_services(db=db, current_user=current_user)
 
 
 @router.put("/upload-image", status_code=status.HTTP_202_ACCEPTED)
