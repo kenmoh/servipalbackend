@@ -168,10 +168,10 @@ async def get_restaurants(
     Get  all restaurant users, optionally filtered by category.
     """
     try:
-        return await user_service.get_restaurant_vendors(db, category_id)
+        return await user_service.get_restaurant_vendors(db=db, current_user=current_user, category_id=category_id, )
     except Exception as e:
         raise HTTPException(
-            status_code=500, detail=f"Failed to retrieve food vendors: {str(e)}"
+            status_code=500, detail=f"Failed to retrieve restaurant vendors: {str(e)}"
         )
 
 

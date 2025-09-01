@@ -57,12 +57,13 @@ async def get_distance_between_addresses(vendor_address: str, current_user: User
     
     if vendor_coords and user_coords:
         # Calculate distance using Mapbox
-        distance_info = await distance_between_restaurant_and_vendor(
+        distance_info = await distance_between_user_and_vendor(
             user_coords['lat'], 
             user_coords['lng'],
             vendor_coords['lat'], 
             vendor_coords['lng']
         )
+
         if distance_info:
             return distance_info.get('distance_km', distance_info.get('distance', 0) / 1000)
         return None

@@ -859,6 +859,112 @@ async def get_user_with_profile(db: AsyncSession, user_id: UUID) -> ProfileSchem
 
 # <<<<< --------- GET USER BY FOOD CATEGORY ---------- >>>>>
 
+async def get_restaurant_vendors(
+    db: AsyncSession, current_user: User, category_id: UUID | None = None,
+) -> list[VendorUserResponse]:
+    cache_key = f"restaurant_vendors:{category_id if category_id else 'all'}"
+    cached_data = redis_client.get(cache_key)
+    if cached_data:
+        return json.loads(cached_data)
+
+
+    try:
+        # Review stats subquery (for ORDER type reviews)
+        review_stats_subq = (
+            select(
+                Order.vendor_id.label("vendor_id"),
+                func.avg(Review.rating).label("average_rating"),
+                func.count(Review.id).label("review_count"),
+            )
+            .join(Review, Review.order_id == Order.id)
+            .where(Review.review_type == ReviewType.ORDER)
+            .group_by(Order.vendor_id)
+            .subquery()
+        )
+
+        # Main query
+        stmt = (
+            select(
+                User,
+                Profile,
+                ProfileImage,
+                func.coalesce(review_stats_subq.c.average_rating, 0).label(
+                    "avg_rating"
+                ),
+                func.coalesce(review_stats_subq.c.review_count, 0).label(
+                    "review_count"
+                ),
+            )
+            .join(Profile, Profile.user_id == User.id)
+            .outerjoin(ProfileImage, ProfileImage.profile_id == User.id)
+            .outerjoin(review_stats_subq, review_stats_subq.c.vendor_id == User.id)
+            .where(User.user_type == UserType.RESTAURANT_VENDOR)
+        )
+
+        # If category_id is provided, filter vendors to only those with items in that category
+        if category_id:
+            vendors_with_category_items = (
+                select(Item.user_id)
+                .where(
+                    and_(
+                        Item.item_type == ItemType.FOOD, Item.category_id == category_id
+                    )
+                )
+                .distinct()
+                .subquery()
+            )
+            stmt = stmt.join(
+                vendors_with_category_items,
+                vendors_with_category_items.c.user_id == User.id,
+            )
+
+        result = await db.execute(stmt)
+        rows = result.all()
+        response = []
+        for user, profile, image, avg_rating, review_count in rows:
+            distance = await get_distance_between_addresses(
+                    vendor_address=profile.business_address,
+                    current_user=current_user
+                )
+           
+            vendor_dict = {
+                "id": str(user.id),
+                "company_name": profile.business_name or "",
+                "email": user.email,
+                "phone_number": profile.phone_number,
+                "profile_image": image.profile_image_url if image else None,
+                "location": profile.business_address,
+                "backdrop_image_url": image.backdrop_image_url if image else None,
+                "opening_hour": (
+                    profile.opening_hours.strftime("%H:%M:%S")
+                    if profile.opening_hours
+                    else None
+                ),
+                "closing_hour": (
+                    profile.closing_hours.strftime("%H:%M:%S")
+                    if profile.closing_hours
+                    else None
+                ),
+                "rating": {
+                    "average_rating": str(round(float(avg_rating or 0), 2)),
+                    "number_of_reviews": review_count or 0,
+                },
+
+                "distance":distance
+            }
+            if distance and distance <= 35.0:
+                response.append(vendor_dict)
+
+        # Cache result
+        redis_client.setex(
+            cache_key, settings.REDIS_EX, json.dumps(response, default=str)
+        )
+        return response
+    except Exception as e:
+        logger.error(f"Error fetching vendors: {str(e)}")
+        raise
+
+
 
 # async def get_restaurant_vendors(
 #     db: AsyncSession, current_user: User, category_id: UUID | None = None,
@@ -960,145 +1066,147 @@ async def get_user_with_profile(db: AsyncSession, user_id: UUID) -> ProfileSchem
 #         raise
 
 
-async def get_restaurant_vendors(
-    db: AsyncSession, 
-    current_user: User, 
-    category_id: UUID | None = None,
-    max_distance_km: float = 35.0
-) -> list[VendorUserResponse]:
+# async def get_restaurant_vendors(
+#     db: AsyncSession, 
+#     current_user: User, 
+#     category_id: UUID | None = None,
+#     max_distance_km: float = 35.0
+# ) -> list[VendorUserResponse]:
     
-    # Check if user has location coordinates
-    if not current_user.current_user_location_coords:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="User location coordinates required for distance filtering"
-        )
+#     # Check if user has location coordinates
+#     if not current_user.current_user_location_coords:
+#         raise HTTPException(
+#             status_code=status.HTTP_400_BAD_REQUEST,
+#             detail="User location coordinates required for distance filtering"
+#         )
     
-    cache_key = f"restaurant_vendors:{category_id if category_id else 'all'}:distance_{max_distance_km}"
-    cached_data = redis_client.get(cache_key)
-    if cached_data:
-        return json.loads(cached_data)
+#     cache_key = f"restaurant_vendors:{category_id if category_id else 'all'}:distance_{max_distance_km}"
+#     cached_data = redis_client.get(cache_key)
+#     if cached_data:
+#         return json.loads(cached_data)
    
-    try:
-        # Review stats subquery (for ORDER type reviews)
-        review_stats_subq = (
-            select(
-                Order.vendor_id.label("vendor_id"),
-                func.avg(Review.rating).label("average_rating"),
-                func.count(Review.id).label("review_count"),
-            )
-            .join(Review, Review.order_id == Order.id)
-            .where(Review.review_type == ReviewType.ORDER)
-            .group_by(Order.vendor_id)
-            .subquery()
-        )
+#     try:
+#         # Review stats subquery (for ORDER type reviews)
+#         review_stats_subq = (
+#             select(
+#                 Order.vendor_id.label("vendor_id"),
+#                 func.avg(Review.rating).label("average_rating"),
+#                 func.count(Review.id).label("review_count"),
+#             )
+#             .join(Review, Review.order_id == Order.id)
+#             .where(Review.review_type == ReviewType.ORDER)
+#             .group_by(Order.vendor_id)
+#             .subquery()
+#         )
         
-        # Main query
-        stmt = (
-            select(
-                User,
-                Profile,
-                ProfileImage,
-                func.coalesce(review_stats_subq.c.average_rating, 0).label("avg_rating"),
-                func.coalesce(review_stats_subq.c.review_count, 0).label("review_count"),
-            )
-            .join(Profile, Profile.user_id == User.id)
-            .outerjoin(ProfileImage, ProfileImage.profile_id == User.id)
-            .outerjoin(review_stats_subq, review_stats_subq.c.vendor_id == User.id)
-            .where(User.user_type == UserType.RESTAURANT_VENDOR)
-        )
+#         # Main query
+#         stmt = (
+#             select(
+#                 User,
+#                 Profile,
+#                 ProfileImage,
+#                 func.coalesce(review_stats_subq.c.average_rating, 0).label("avg_rating"),
+#                 func.coalesce(review_stats_subq.c.review_count, 0).label("review_count"),
+#             )
+#             .join(Profile, Profile.user_id == User.id)
+#             .outerjoin(ProfileImage, ProfileImage.profile_id == User.id)
+#             .outerjoin(review_stats_subq, review_stats_subq.c.vendor_id == User.id)
+#             .where(User.user_type == UserType.RESTAURANT_VENDOR)
+#         )
         
-        # If category_id is provided, filter vendors to only those with items in that category
-        if category_id:
-            vendors_with_category_items = (
-                select(Item.user_id)
-                .where(
-                    and_(
-                        Item.item_type == ItemType.FOOD, 
-                        Item.category_id == category_id
-                    )
-                )
-                .distinct()
-                .subquery()
-            )
-            stmt = stmt.join(
-                vendors_with_category_items,
-                vendors_with_category_items.c.user_id == User.id,
-            )
+#         # If category_id is provided, filter vendors to only those with items in that category
+#         if category_id:
+#             vendors_with_category_items = (
+#                 select(Item.user_id)
+#                 .where(
+#                     and_(
+#                         Item.item_type == ItemType.FOOD, 
+#                         Item.category_id == category_id
+#                     )
+#                 )
+#                 .distinct()
+#                 .subquery()
+#             )
+#             stmt = stmt.join(
+#                 vendors_with_category_items,
+#                 vendors_with_category_items.c.user_id == User.id,
+#             )
         
-        result = await db.execute(stmt)
-        rows = result.all()
+#         result = await db.execute(stmt)
+#         rows = result.all()
         
-        # Process vendors with distance filtering
-        response = []
-        distance_tasks = []
+#         # Process vendors with distance filtering
+#         response = []
+#         distance_tasks = []
         
-        for user, profile, image, avg_rating, review_count in rows:
-            if profile.business_address:  # Only calculate distance if address exists
-                vendor_dict = {
-                    "id": str(user.id),
-                    "company_name": profile.business_name or "",
-                    "email": user.email,
-                    "phone_number": profile.phone_number,
-                    "profile_image": image.profile_image_url if image else None,
-                    "location": profile.business_address,
-                    "backdrop_image_url": image.backdrop_image_url if image else None,
-                    "opening_hour": (
-                        profile.opening_hours.strftime("%H:%M:%S")
-                        if profile.opening_hours
-                        else None
-                    ),
-                    "closing_hour": (
-                        profile.closing_hours.strftime("%H:%M:%S")
-                        if profile.closing_hours
-                        else None
-                    ),
-                    "rating": {
-                        "average_rating": str(round(float(avg_rating or 0), 2)),
-                        "number_of_reviews": review_count or 0,
-                    },
-                }
+#         for user, profile, image, avg_rating, review_count in rows:
+#             if profile.business_address:  # Only calculate distance if address exists
+#                 vendor_dict = {
+#                     "id": str(user.id),
+#                     "company_name": profile.business_name or "",
+#                     "email": user.email,
+#                     "phone_number": profile.phone_number,
+#                     "profile_image": image.profile_image_url if image else None,
+#                     "location": profile.business_address,
+#                     "backdrop_image_url": image.backdrop_image_url if image else None,
+#                     "opening_hour": (
+#                         profile.opening_hours.strftime("%H:%M:%S")
+#                         if profile.opening_hours
+#                         else None
+#                     ),
+#                     "closing_hour": (
+#                         profile.closing_hours.strftime("%H:%M:%S")
+#                         if profile.closing_hours
+#                         else None
+#                     ),
+#                     "rating": {
+#                         "average_rating": str(round(float(avg_rating or 0), 2)),
+#                         "number_of_reviews": review_count or 0,
+#                     },
+#                 }
                 
-                # Add to tasks for distance calculation
-                distance_tasks.append((vendor_dict, profile.business_address))
+#                 # Add to tasks for distance calculation
+#                 distance_tasks.append((vendor_dict, profile.business_address))
                         
-        # Calculate distances concurrently
-        async def get_vendor_with_distance(vendor_dict, address):
-            try:
-                distance_km = await get_distance_between_addresses(address, current_user)
-                if distance_km is not None and distance_km <= max_distance_km:
-                    vendor_dict["distance_km"] = round(distance_km, 2)
-                    return vendor_dict
-                return None
-            except Exception as e:
-                logger.warning(f"Failed to calculate distance for vendor {vendor_dict['id']}: {str(e)}")
-                return None
+#         # Calculate distances concurrently
+#         async def get_vendor_with_distance(vendor_dict, address):
+#             try:
+#                 distance_km = await get_distance_between_addresses(address, current_user)
+
+#                 print('XXXXXXXXXXXXXX', distance_km, 'XXXXXXXXXXXXXX')
+#                 if distance_km is not None and distance_km <= max_distance_km:
+#                     vendor_dict["distance_km"] = round(distance_km, 2)
+#                     return vendor_dict
+#                 return None
+#             except Exception as e:
+#                 logger.warning(f"Failed to calculate distance for vendor {vendor_dict['id']}: {str(e)}")
+#                 return None
         
-        # Run distance calculations concurrently
-        distance_results = await asyncio.gather(
-            *[get_vendor_with_distance(vendor_dict, address) for vendor_dict, address in distance_tasks],
-            return_exceptions=True
-        )
+#         # Run distance calculations concurrently
+#         distance_results = await asyncio.gather(
+#             *[get_vendor_with_distance(vendor_dict, address) for vendor_dict, address in distance_tasks],
+#             return_exceptions=True
+#         )
         
-        # Filter out None results and exceptions
-        filtered_vendors = [
-            result for result in distance_results 
-            if result is not None and not isinstance(result, Exception)
-        ]
+#         # Filter out None results and exceptions
+#         filtered_vendors = [
+#             result for result in distance_results 
+#             if result is not None and not isinstance(result, Exception)
+#         ]
         
-        # Sort by distance (closest first)
-        filtered_vendors.sort(key=lambda x: x.get('distance_km', float('inf')))
+#         # Sort by distance (closest first)
+#         filtered_vendors.sort(key=lambda x: x.get('distance_km', float('inf')))
         
-        # Cache result (shorter cache time since it depends on user location)
-        redis_client.setex(
-            cache_key, 1800, json.dumps(filtered_vendors, default=str)  # 30 minutes cache
-        )
+#         # Cache result (shorter cache time since it depends on user location)
+#         redis_client.setex(
+#             cache_key, 1800, json.dumps(filtered_vendors, default=str)  # 30 minutes cache
+#         )
         
-        return filtered_vendors
+#         return filtered_vendors
         
-    except Exception as e:
-        logger.error(f"Error fetching vendors: {str(e)}")
-        raise
+#     except Exception as e:
+#         logger.error(f"Error fetching vendors: {str(e)}")
+#         raise
 
 
 async def get_vendor_reviews(

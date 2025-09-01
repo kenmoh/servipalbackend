@@ -499,6 +499,7 @@ class VendorUserResponse(BaseModel):
     opening_hour: time | None = None
     closing_hour: time | None = None
     rating: RatingSchema
+    distance: float
 
 
 class ProfileImageResponseSchema(BaseModel):
