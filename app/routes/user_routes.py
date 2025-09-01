@@ -313,7 +313,7 @@ async def register_current_user_coords(
     location_data: UserCoords,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
-):
+)-> UserCoords:
     """Add user coordinates"""
     return await user_service.update_user_location_coords(
         location_data=location_data, db=db, current_user=current_user

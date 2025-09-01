@@ -1642,7 +1642,7 @@ async def update_user_location_coords(
     location_data: UserCoords,
     db: AsyncSession,
     current_user: User,
-) -> dict:
+) -> UserCoords:
     # Create the coordinate dictionary
     coordinate = {
         'lat': location_data.latitude,
