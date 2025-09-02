@@ -244,7 +244,7 @@ async def create_product_review(
         redis_client.delete(cache_key)
 
         return review
-        
+
     except IntegrityError:
         await db.rollback()
         raise HTTPException(
@@ -322,7 +322,9 @@ async def fetch_item_reviews(
     cached_reviews = redis_client.get(cache_key)
 
     if cached_reviews:
-        return [ReviewResponse(**r) for r in cached_reviews]
+        # Parse the JSON string back to a list of dictionaries
+        reviews_data = json.loads(cached_reviews)
+        return [ReviewResponse(**r) for r in reviews_data]
 
     # DB fallback
     stmt = (
