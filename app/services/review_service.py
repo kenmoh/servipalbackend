@@ -168,7 +168,7 @@ async def create_review(
 
 async def create_product_review(
     db: AsyncSession, current_user: User, data: ReviewCreate
-) -> Review:
+) -> ReviewResponse:
     """Creates a review for a purchased product."""
     # 1. Fetch the order with its items and verify existence
     order_result = await db.execute(
@@ -240,7 +240,11 @@ async def create_product_review(
         await db.commit()
         await db.refresh(review)
 
+        cache_key = f"reviews:{review.item_id}"
+        redis_client.delete(cache_key)
+
         return review
+        
     except IntegrityError:
         await db.rollback()
         raise HTTPException(
@@ -313,6 +317,7 @@ async def fetch_vendor_reviews(
 async def fetch_item_reviews(
     item_id: UUID, db: AsyncSession
 ) -> list[ReviewResponse]:
+
     cache_key = f"reviews:{item_id}"
     cached_reviews = redis_client.get(cache_key)
 
@@ -360,8 +365,11 @@ async def fetch_item_reviews(
     # Only cache if we have a full page
     if response_list:
         redis_client.setex(
-            cache_key, [r.model_dump() for r in response_list], default=str
+            cache_key,
+            settings.REDIS_EX,
+            json.dumps([r.model_dump() for r in response_list], default=str),
         )
+       
 
     return response_list
 
