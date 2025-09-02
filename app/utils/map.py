@@ -4,26 +4,75 @@ from app.models.models import User
 
 
 
+# https://api.distancematrix.ai/maps/api/geocode/json?address=1600+Amphitheatre+Parkway,+Mountain+View,+CA&key=W1NAwfy0h1cQXLfxAjyGfOXbzJ8OCFGHWSxLHTNKPljQUF9m6OpERWGRbzoyGH73
+
+
+
 GOOGLE_URL = 'https://maps.googleapis.com/maps/api/geocode/json'
 MAP_BOX = "https://api.mapbox.com/directions/v5/mapbox/driving"
+DISTANX_MATRIX = 'https://api.distancematrix.ai/maps/api/geocode/json'
 
 async def get_vendor_coordinates_from_address(restaurant_location: str):
     async with httpx.AsyncClient(timeout=30.0) as client:
         response = await client.get(
-            f"{GOOGLE_URL}?address={restaurant_location}&key={settings.GOOGLE_MAP_API_KEY}"
+            # f"{GOOGLE_URL}?address={restaurant_location}&key={settings.GOOGLE_MAP_API_KEY}"
+            f"{DISTANX_MATRIX}?address={restaurant_location}&key=W1NAwfy0h1cQXLfxAjyGfOXbzJ8OCFGHWSxLHTNKPljQUF9m6OpERWGRbzoyGH73"
         )
         response_data = response.json()
-        
+               
         # Extract coordinates from the response
-        if response_data.get('status') == 'OK' and response_data.get('results'):
-            location = response_data['results'][0]['geometry']['location']
-            return {
-                'lat': location['lat'],
-                'lng': location['lng']
-            }
+        if response_data.get('status') == 'OK':
+            # Check for 'result' (single result) or 'results' (multiple results)
+            results = response_data.get('result') or response_data.get('results')
+            
+            if results:
+                # Handle both single result and array of results
+                first_result = results[0] if isinstance(results, list) else results
+                
+                # Extract coordinates
+                geometry = first_result.get('geometry', {})
+                location = geometry.get('location', {})
+                
+                lat = location.get('lat')
+                lng = location.get('lng')
+                
+                if lat is not None and lng is not None:
+                    return {
+                        'lat': lat,
+                        'lng': lng
+                    }
+                else:
+                    print(f"No coordinates found in location data: {location}")
+            else:
+                print("No results found in response")
         else:
-            # Return None or raise an exception based on your error handling preference
-            return None
+            print(f"Geocoding failed with status: {response_data.get('status')}")
+        
+        # Return None if extraction fails
+        print(f"Failed to extract coordinates for address: {restaurant_location}")
+        return None
+
+# async def get_vendor_coordinates_from_address(restaurant_location: str):
+#     async with httpx.AsyncClient(timeout=30.0) as client:
+#         response = await client.get(
+#             # f"{GOOGLE_URL}?address={restaurant_location}&key={settings.GOOGLE_MAP_API_KEY}"
+#             f"{DISTANX_MATRIX}?address={restaurant_location}&key=W1NAwfy0h1cQXLfxAjyGfOXbzJ8OCFGHWSxLHTNKPljQUF9m6OpERWGRbzoyGH73"
+
+#         )
+#         response_data = response.json()
+
+#         print("XXXXXXXXXXXXXXX GOOGLE: ", response_data)
+        
+#         # Extract coordinates from the response
+#         if response_data.get('status') == 'OK' and response_data.get('results'):
+#             location = response_data['results'][0]['geometry']['location']
+#             return {
+#                 'lat': location['lat'],
+#                 'lng': location['lng']
+#             }
+#         else:
+#             # Return None or raise an exception based on your error handling preference
+#             return None
 
 
 async def distance_between_user_and_vendor(originLat: float, originLng: float, vendorLat: float, vendorLng: float):

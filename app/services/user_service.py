@@ -926,6 +926,7 @@ async def get_restaurant_vendors(
                     vendor_address=profile.business_address,
                     current_user=current_user
                 )
+
            
             vendor_dict = {
                 "id": str(user.id),

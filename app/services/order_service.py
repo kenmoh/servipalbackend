@@ -2406,7 +2406,6 @@ def filter_paid_pending_deliveries(
     return filtered
 
 
-
 async def get_paid_pending_deliveries(db: AsyncSession, current_user: User) -> list[DeliveryResponse]:
     """
     Returns deliveries where:
@@ -2414,14 +2413,13 @@ async def get_paid_pending_deliveries(db: AsyncSession, current_user: User) -> l
       - delivery.delivery_status == 'pending'
       - order.require_delivery == 'delivery'
     """
-
     cache_key = "paid_pending_deliveries"
     
     # Try cache first with error handling
     cached_deliveries = redis_client.get(cache_key)
-    if cached_deliveries:
-        return [DeliveryResponse(**d) for d in json.loads(cached_deliveries)]
-
+    # if cached_deliveries:
+    #     return [DeliveryResponse(**d) for d in json.loads(cached_deliveries)]
+    
     stmt = (
         select(Order)
         .where(
@@ -2442,23 +2440,98 @@ async def get_paid_pending_deliveries(db: AsyncSession, current_user: User) -> l
     )
     result = await db.execute(stmt)
     orders = result.unique().scalars().all()
-
-    distance = None
+    
+    delivery_responses = []
+    
     for order in orders:
-        distance = await get_distance_between_addresses(
-                        vendor_address=order.delivery.origin,
-                        current_user=current_user
-                    )
-    delivery_responses = [
-        format_delivery_response(order=order, delivery=order.delivery, distance=distance) for order in orders if distance <= 35.0
-    ]
 
-    redis_client.setex(
-        cache_key,
-        timedelta(seconds=settings.REDIS_EX),
-        json.dumps([d.model_dump() for d in delivery_responses], default=str),
-    )
+        try:
+            distance_km = await get_distance_between_addresses(
+                vendor_address=order.delivery.origin,
+                current_user=current_user
+            )
+            
+            
+            # Only include orders within 35km radius
+            if distance_km is not None and distance_km <= 35.0:
+                delivery_response = format_delivery_response(
+                    order=order, 
+                    delivery=order.delivery, 
+                    distance=distance_km
+                )
+                delivery_responses.append(delivery_response)
+               
+                
+        except Exception as e:
+            print(f'Error calculating distance for order {order.id}: {e}')
+            continue
+    
+    # Cache the results
+    if delivery_responses:
+        redis_client.setex(
+            cache_key,
+            timedelta(seconds=settings.REDIS_EX),
+            json.dumps([d.model_dump() for d in delivery_responses], default=str),
+        )
+    
     return delivery_responses
+
+
+# async def get_paid_pending_deliveries(db: AsyncSession, current_user: User) -> list[DeliveryResponse]:
+#     """
+#     Returns deliveries where:
+#       - order_payment_status == 'paid'
+#       - delivery.delivery_status == 'pending'
+#       - order.require_delivery == 'delivery'
+#     """
+
+#     cache_key = "paid_pending_deliveries"
+    
+#     # Try cache first with error handling
+#     cached_deliveries = redis_client.get(cache_key)
+#     if cached_deliveries:
+#         return [DeliveryResponse(**d) for d in json.loads(cached_deliveries)]
+
+#     stmt = (
+#         select(Order)
+#         .where(
+#             and_(
+#                 Order.order_payment_status == "paid",
+#                 Order.require_delivery == "delivery",
+#                 Order.delivery.has(delivery_status="pending"),
+#             )
+#         )
+#         .options(
+#             selectinload(Order.order_items).options(
+#                 joinedload(OrderItem.item).options(selectinload(Item.images))
+#             ),
+#             joinedload(Order.delivery),
+#             joinedload(Order.vendor).joinedload(User.profile),
+#         )
+#         .order_by(Order.created_at.desc())
+#     )
+#     result = await db.execute(stmt)
+#     orders = result.unique().scalars().all()
+
+#     distance = None
+#     for order in orders:
+#         distance_km = await get_distance_between_addresses(
+#                         vendor_address=order.delivery.origin,
+#                         current_user=current_user
+#                     )
+#         print('XXXXXXXXXXXXXXXXXXXXX', distance_km, order.delivery.origin, 'XXXXXXXXXXXXXXXXXXXXX')
+#         if distance_km:
+#             distance = distance_km
+#     delivery_responses = [
+#         format_delivery_response(order=order, delivery=order.delivery, distance=distance) for order in orders if distance and distance <= 35.0
+#     ]
+
+#     redis_client.setex(
+#         cache_key,
+#         timedelta(seconds=settings.REDIS_EX),
+#         json.dumps([d.model_dump() for d in delivery_responses], default=str),
+#     )
+#     return delivery_responses
 
 
 async def get_user_related_orders(
