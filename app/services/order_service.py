@@ -98,7 +98,7 @@ async def get_delivery_by_order_id(
                 status_code=status.HTTP_404_NOT_FOUND, detail="Order not found"
             )
 
-        oder_response = format_delivery_response(order, order.delivery)
+        oder_response = format_delivery_response(order=order, delivery=order.delivery)
 
         return oder_response
 
@@ -144,7 +144,7 @@ async def get_user_orders(db: AsyncSession, user_id: UUID) -> list[DeliveryRespo
 
     # Format responses - delivery will be None for orders without delivery
     delivery_responses = [
-        format_delivery_response(order, order.delivery) for order in orders
+        format_delivery_response(order=order, delivery=order.delivery) for order in orders
     ]
 
     # Cache the formatted responses with error handling
@@ -195,7 +195,7 @@ async def get_all_orders(
 
     # Format responses - delivery will be None for orders without delivery
     delivery_responses = [
-        format_delivery_response(order, order.delivery) for order in orders
+        format_delivery_response(order=order, delivery=order.delivery) for order in orders
     ]
 
     # Cache the formatted responses with error handling
@@ -255,7 +255,7 @@ async def get_all_require_delivery_orders(
     orders = result.unique().scalars().all()
 
     delivery_responses = [
-        format_delivery_response(order, order.delivery) for order in orders
+        format_delivery_response(order=order, delivery=order.delivery) for order in orders
     ]
 
     response = {"data": [d.model_dump() for d in delivery_responses], "total": total}
@@ -319,7 +319,7 @@ async def get_all_pickup_delivery_orders(
     orders = result.unique().scalars().all()
 
     delivery_responses = [
-        format_delivery_response(order, order.delivery) for order in orders
+        format_delivery_response(order=order, delivery=order.delivery) for order in orders
     ]
 
     response = {"data": [d.model_dump() for d in delivery_responses], "total": total}
@@ -504,7 +504,7 @@ async def create_package_order(
         await ws_service.broadcast_new_order({"order_id": order.id})
 
         # REUSE the formatting function
-        return format_delivery_response(order, delivery)
+        return format_delivery_response(order=order, delivery=delivery)
 
     except Exception as e:
         # Rollback
@@ -724,7 +724,7 @@ async def order_food_or_request_laundy_service(
             )
             result = await db.execute(stmt)
             order, delivery = result.first()
-            return format_delivery_response(order, delivery)
+            return format_delivery_response(order=order, delivery=delivery)
         else:
             stmt = (
                 select(Order)
@@ -756,7 +756,7 @@ async def order_food_or_request_laundy_service(
             redis_client.delete(f"user_orders:{order.owner_id}")
             redis_client.delete(f"user_orders:{order.vendor_id}")
             redis_client.delete("orders")
-            return format_delivery_response(order, delivery=None)
+            return format_delivery_response(order=order, delivery=None)
 
     except Exception as e:
         await db.rollback()
