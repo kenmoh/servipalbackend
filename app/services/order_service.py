@@ -2417,8 +2417,8 @@ async def get_paid_pending_deliveries(db: AsyncSession, current_user: User) -> l
     
     # Try cache first with error handling
     cached_deliveries = redis_client.get(cache_key)
-    # if cached_deliveries:
-    #     return [DeliveryResponse(**d) for d in json.loads(cached_deliveries)]
+    if cached_deliveries:
+        return [DeliveryResponse(**d) for d in json.loads(cached_deliveries)]
     
     stmt = (
         select(Order)
