@@ -243,7 +243,12 @@ async def create_product_review(
         cache_key = f"reviews:{review.item_id}"
         redis_client.delete(cache_key)
 
-        return review
+        return ReviewResponse(
+            id=review.id,
+            rating=review.rating,
+            comment=review.comment,
+            created_at=review.created_at
+        )
 
     except IntegrityError:
         await db.rollback()

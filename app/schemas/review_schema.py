@@ -43,7 +43,7 @@ class ReviewResponse(BaseModel):
     rating: int
     comment: str
     created_at: datetime
-    reviewer: ReviewerProfile
+    reviewer: ReviewerProfile | None = None
 
 
 class ReportType(str, Enum):

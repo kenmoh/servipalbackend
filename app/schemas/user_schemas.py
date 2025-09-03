@@ -407,7 +407,7 @@ class ProfileSchema(BaseModel):
     account_holder_name: str | None = None
     profile_image_url: str | None = None
     backdrop_image_url: str | None = None
-    state: str | None = None
+    state: str | None = Noneil
 
     model_config = ConfigDict(from_attributes=True)
 
