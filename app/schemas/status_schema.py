@@ -81,6 +81,7 @@ class PaymentStatus(str, Enum):
     PENDING: str = "pending"
     COMPLETED: str = "completed"
     SUCCESSFUL: str = "successful"
+    ESCROWED: str = "escrowed"
 
 
 class AccountStatus(str, Enum):

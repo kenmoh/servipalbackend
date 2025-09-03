@@ -19,7 +19,7 @@ from app.models.models import (
     OrderItem,
     Wallet,
 )
-from app.schemas.delivery_schemas import DeliveryResponse
+from app.queue.producer import producer
 from app.schemas.marketplace_schemas import (
     ItemImageResponse,
     ProductBuyRequest,
@@ -381,19 +381,30 @@ async def owner_mark_item_received(
 
             # Create the transaction for the vendor now that funds are released.
             # The buyer's debit transaction was already created at the time of payment.
-            vendor_transx = Transaction(
-                wallet_id=order.vendor_id,
-                amount=order.amount_due_vendor,
-                payment_status=PaymentStatus.PAID,
-                transaction_type=TransactionType.USER_TO_USER,
-                transaction_direction=TransactionDirection.CREDIT,
-                to_user=vendor_profile.full_name or vendor_profile.business_name,
-                from_user=current_user.profile.full_name
-                or current_user.profile.business_name,
-            )
 
-            db.add(vendor_transx)
-            await db.commit()
+           # Vendor wallet update (remove from escrow)
+            await producer.publish_message(
+                service="wallet",
+                operation="update_wallet",
+                payload={
+                    "wallet_id": str(order.vendor_id),
+                    "escrow_change": str(-order.amount_due_vendor),
+                    "balance_change": str(order.amount_due_vendor),
+                },
+            )
+            # vendor_transx = Transaction(
+            #     wallet_id=order.vendor_id,
+            #     amount=order.amount_due_vendor,
+            #     payment_status=PaymentStatus.PAID,
+            #     transaction_type=TransactionType.USER_TO_USER,
+            #     transaction_direction=TransactionDirection.CREDIT,
+            #     to_user=vendor_profile.full_name or vendor_profile.business_name,
+            #     from_user=current_user.profile.full_name
+            #     or current_user.profile.business_name,
+            # )
+
+            # db.add(vendor_transx)
+            # await db.commit()
 
             token = await get_user_notification_token(db=db, user_id=order.vendor_id)
 

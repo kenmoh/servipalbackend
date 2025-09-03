@@ -1,7 +1,7 @@
 from uuid import UUID
 from decimal import Decimal
 
-from fastapi import APIRouter, Depends, File, Request, UploadFile, status, Form
+from fastapi import APIRouter, Depends, File, Request, UploadFile, status, Form, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.auth import get_db, get_current_user
@@ -16,6 +16,7 @@ from app.schemas.item_schemas import (
 )
 from app.services import item_service
 from app.utils.limiter import limiter
+from app.utils.s3_service import convert_video_to_gif, get_conversion_status
 
 router = APIRouter(prefix="/api/items", tags=["Items"])
 
@@ -229,3 +230,94 @@ async def delete_item(
     """
     await item_service.delete_item(db, current_user, item_id)
     return None
+
+
+@router.post(
+    "/convert-video-to-gif",
+    status_code=status.HTTP_200_OK,
+    summary="Convert video to GIF",
+    description="Upload a video file (max 2 minutes, max 25MB) and convert it to GIF format. The video is temporarily stored in Appwrite, converted to GIF, and then the video is deleted.",
+)
+@limiter.limit("3/minute")
+async def convert_video_to_gif_endpoint(
+    request: Request,
+    video: UploadFile = File(..., description="Video file to convert (max 2 minutes, max 25MB)"),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> dict:
+    """
+    Endpoint to convert a video file to GIF format.
+    - Requires authenticated user.
+    - Video must be under 2 minutes and 25MB.
+    - Returns GIF URL after successful conversion.
+    - Video file is automatically deleted after conversion.
+    """
+    try:
+        result = await convert_video_to_gif(video)
+        return result
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e)
+        )
+
+
+@router.get(
+    "/conversion-status/{task_id}",
+    status_code=status.HTTP_200_OK,
+    summary="Check video conversion status",
+    description="Check the status of a video to GIF conversion task and get the GIF URL if completed.",
+)
+async def check_conversion_status(
+    task_id: str,
+    gif_filename: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> dict:
+    """
+    Endpoint to check the status of a video to GIF conversion.
+    - Requires authenticated user.
+    - Returns status and GIF URL if conversion is complete.
+    """
+    try:
+        result = await get_conversion_status(task_id, gif_filename)
+        return result
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e)
+        )
+
+
+@router.post(
+    "/process-completed-videos",
+    status_code=status.HTTP_200_OK,
+    summary="Process completed video conversions",
+    description="Process all completed video to GIF conversions and update ItemImage records with final GIF URLs.",
+)
+async def process_completed_videos_endpoint(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> dict:
+    """
+    Endpoint to process completed video conversions and update ItemImage records.
+    - Requires authenticated user.
+    - Finds all pending video conversions and updates them with final GIF URLs.
+    - Returns count of updated records.
+    """
+    try:
+        from app.utils.s3_service import process_completed_video_conversions
+        
+        updated_count = await process_completed_video_conversions(db)
+        
+        return {
+            "status": "success",
+            "message": f"Processed {updated_count} completed video conversions",
+            "updated_count": updated_count
+        }
+        
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e)
+        )

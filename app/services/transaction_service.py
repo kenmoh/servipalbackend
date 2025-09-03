@@ -1298,7 +1298,7 @@ async def order_payment_callback(request: Request, db: AsyncSession):
                     "wallet_id": str(order.vendor_id),
                     "tx_ref": tx_ref,
                     "amount": str(order.amount_due_vendor),
-                    "payment_status": new_status,
+                    "payment_status": PaymentStatus.ESCROWED,
                     "transaction_type": TransactionType.USER_TO_USER,
                     "transaction_direction": TransactionDirection.CREDIT,
                     "from_user": customer.full_name or customer.business_name,
@@ -1787,7 +1787,7 @@ async def product_order_payment_callback(request: Request, db: AsyncSession):
                 'amount':str(order.amount_due_vendor),
                 'transaction_type':TransactionType.USER_TO_USER,
                 'transaction_direction':TransactionDirection.CREDIT,
-                'payment_status':PaymentStatus.PAID,
+                'payment_status':PaymentStatus.ESCROWED,
                 'payment_method':PaymentMethod.CARD,
                 'from_user':customer.full_name or customer.business_name,
                 'to_user':vendor.full_name or vendor.business_name,}

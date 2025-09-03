@@ -2,14 +2,34 @@ from uuid import uuid4, uuid1
 from app.config.config import settings
 import secrets
 import logging
+import os
+import tempfile
+from pathlib import Path
 
 from fastapi import HTTPException, UploadFile, status
 import boto3
 from botocore.exceptions import ClientError
+from moviepy import VideoFileClip
+from appwrite.client import Client
+from appwrite.services.storage import Storage
+from appwrite.input_file import InputFile
+import dramatiq
+
 from uuid import uuid4
 
 logging.basicConfig(level=logging.INFO)
 
+# Initialize Dramatiq broker
+dramatiq.set_broker(dramatiq.brokers.Redis(url=settings.REDIS_HOST))
+
+# Initialize Appwrite client
+appwrite_client = Client()
+appwrite_client.set_endpoint(settings.APPWRITE_ENDPOINT)
+appwrite_client.set_project(settings.APPWRITE_PROJECT_ID)
+appwrite_client.set_key(settings.APPWRITE_API_KEY)
+
+# Initialize Appwrite storage
+appwrite_storage = Storage(appwrite_client)
 
 aws_bucket_name = settings.S3_BUCKET_NAME
 s3 = boto3.resource(
@@ -118,10 +138,6 @@ async def add_profile_image(image: UploadFile) -> str:
         bucket.upload_fileobj(
             image.file,
             file_key,
-            # ExtraArgs={
-            #     "ContentType": image.content_type,
-            #     "ACL": "public-read"
-            # }
         )
 
         # Generate and return URL
@@ -188,26 +204,6 @@ async def update_image(new_image: UploadFile, old_image_url: str) -> str:
     return await add_image(new_image)
 
 
-# async def update_image(
-#     new_image: UploadFile,
-#     old_image_url: str,
-# ) -> str:
-#     """
-#     Update an image by deleting the old one and uploading the new one
-#     Args:
-#         new_image: New image to upload
-#         old_image_url: URL of image to replace
-#         folder: S3 folder path
-#     Returns:
-#         str: New image URL
-#     """
-#     # Delete old image
-#     if old_image_url:
-#         await delete_s3_object(old_image_url)
-
-#     # Upload new image
-#     return await add_image(new_image)
-
 
 async def update_multiple_images(
     new_images: list[UploadFile],
@@ -230,3 +226,205 @@ async def update_multiple_images(
 
     # Upload new images
     return await upload_multiple_images(new_images, folder)
+
+
+@dramatiq.actor
+def process_video_to_gif_background(video_filename: str, gif_filename: str, video_url: str):
+    """
+    Background task to convert video to GIF using Dramatiq
+    """
+    try:
+        logging.info(f"Starting background video to GIF conversion: {video_filename}")
+        
+        # Initialize Appwrite client inside the function to avoid circular imports
+        from app.config.config import settings
+        from appwrite.client import Client
+        from appwrite.services.storage import Storage
+        from appwrite.input_file import InputFile
+        
+        appwrite_client = Client()
+        appwrite_client.set_endpoint(settings.APPWRITE_ENDPOINT)
+        appwrite_client.set_project(settings.APPWRITE_PROJECT_ID)
+        appwrite_client.set_key(settings.APPWRITE_API_KEY)
+        appwrite_storage = Storage(appwrite_client)
+        
+        # Convert video to GIF using moviepy with the video URL
+        with VideoFileClip(video_url) as video_clip:
+            # Check duration (max 2 minutes = 120 seconds)
+            if video_clip.duration > 120:
+                # Trim video to first 2 minutes
+                video_clip = video_clip.subclip(0, 120)
+                logging.info("Video trimmed to 2 minutes")
+            
+            # Convert to GIF with optimized settings
+            gif_path = os.path.join(tempfile.gettempdir(), gif_filename)
+            video_clip.write_gif(
+                gif_path,
+                fps=15,  # Reduced FPS for smaller file size
+                verbose=False,
+                logger=None
+            )
+        
+        # Upload GIF to Appwrite storage
+        logging.info(f"Uploading GIF to Appwrite: {gif_filename}")
+        with open(gif_path, 'rb') as gif_file:
+            appwrite_storage.create_file(
+                bucket_id=settings.APPWRITE_BUCKET_ID,
+                file_id=gif_filename,
+                file=InputFile.from_path(gif_path, filename=gif_filename)
+            )
+        
+        # Delete video from Appwrite storage
+        logging.info(f"Deleting video from Appwrite: {video_filename}")
+        appwrite_storage.delete_file(
+            bucket_id=settings.APPWRITE_BUCKET_ID,
+            file_id=video_filename
+        )
+        
+        # Clean up temporary GIF file
+        os.unlink(gif_path)
+        
+        logging.info("Background video to GIF conversion completed successfully")
+        
+    except Exception as e:
+        logging.error(f"Error in background video to GIF conversion: {str(e)}")
+        # Try to clean up video if conversion failed
+        try:
+            if 'appwrite_storage' in locals():
+                appwrite_storage.delete_file(
+                    bucket_id=settings.APPWRITE_BUCKET_ID,
+                    file_id=video_filename
+                )
+        except Exception as cleanup_error:
+            logging.error(f"Failed to cleanup video file: {cleanup_error}")
+        raise
+
+
+async def convert_video_to_gif(video_file: UploadFile) -> dict:
+    """
+    Convert video to GIF with the following workflow:
+    1. Upload video to Appwrite storage (max 2 minutes, max 25MB)
+    2. Start background task to convert video to GIF
+    3. Return task ID for tracking
+    
+    Args:
+        video_file: UploadFile object containing the video
+        
+    Returns:
+        dict: Contains 'task_id', 'status', and 'message' keys
+        
+    Raises:
+        HTTPException: If video validation fails or processing errors occur
+    """
+    try:
+        # Validate video file
+        if not video_file.content_type.startswith("video/"):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="File must be a video"
+            )
+        
+        # Check file size (25MB = 25 * 1024 * 1024 bytes)
+        max_size = 25 * 1024 * 1024
+        video_file.file.seek(0, 2)  # Seek to end
+        file_size = video_file.file.tell()
+        video_file.file.seek(0)  # Reset to beginning
+        
+        if file_size > max_size:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Video file size must be less than 25MB"
+            )
+        
+        # Generate unique filename
+        video_filename = f"{uuid4()}-{video_file.filename}"
+        gif_filename = f"{uuid4()}-{Path(video_file.filename).stem}.gif"
+        
+        # Upload video to Appwrite storage
+        logging.info(f"Uploading video to Appwrite: {video_filename}")
+        
+        # Create a temporary file from the UploadFile
+        with tempfile.NamedTemporaryFile(delete=False, suffix=Path(video_file.filename).suffix) as temp_file:
+            video_file.file.seek(0)
+            temp_file.write(video_file.file.read())
+            temp_file_path = temp_file.name
+        
+        try:
+            appwrite_storage.create_file(
+                bucket_id=settings.APPWRITE_BUCKET_ID,
+                file_id=video_filename,
+                file=InputFile.from_path(temp_file_path, filename=video_filename)
+            )
+            
+            video_url = f"{settings.APPWRITE_ENDPOINT}/storage/buckets/{settings.APPWRITE_BUCKET_ID}/files/{video_filename}/view?project={settings.APPWRITE_PROJECT_ID}"
+            
+            # Start background task
+            task = process_video_to_gif_background.send(video_filename, gif_filename, video_url)
+            
+            logging.info(f"Started background video to GIF conversion task: {task.id}")
+            
+            return {
+                "task_id": task.id,
+                "status": "processing",
+                "message": "Video uploaded and conversion started in background",
+                "video_filename": video_filename,
+                "gif_filename": gif_filename
+            }
+            
+        finally:
+            # Clean up temporary file
+            if os.path.exists(temp_file_path):
+                os.unlink(temp_file_path)
+        
+    except Exception as e:
+        logging.error(f"Unexpected error in convert_video_to_gif: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="An unexpected error occurred during video processing"
+        )
+
+
+async def get_conversion_status(task_id: str, gif_filename: str) -> dict:
+    """
+    Check the status of a video to GIF conversion task
+    
+    Args:
+        task_id: Dramatiq task ID
+        gif_filename: Expected GIF filename
+        
+    Returns:
+        dict: Contains status and GIF URL if available
+    """
+    try:
+        # Check if GIF exists in Appwrite storage
+        try:
+            gif_info = appwrite_storage.get_file(
+                bucket_id=settings.APPWRITE_BUCKET_ID,
+                file_id=gif_filename
+            )
+            
+            # If GIF exists, conversion is complete
+            gif_url = f"{settings.APPWRITE_ENDPOINT}/storage/buckets/{settings.APPWRITE_BUCKET_ID}/files/{gif_filename}/view?project={settings.APPWRITE_PROJECT_ID}"
+            
+            return {
+                "task_id": task_id,
+                "status": "completed",
+                "gif_url": gif_url,
+                "message": "Video successfully converted to GIF"
+            }
+            
+        except Exception:
+            # GIF doesn't exist yet, check if task is still processing
+            return {
+                "task_id": task_id,
+                "status": "processing",
+                "message": "Video conversion in progress"
+            }
+            
+    except Exception as e:
+        logging.error(f"Error checking conversion status: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to check conversion status"
+        )
+
