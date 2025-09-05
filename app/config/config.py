@@ -45,11 +45,11 @@ class Settings(BaseSettings):
     AWS_ACCESS_KEY_ID: str = os.getenv("AWSAccessKeyId")
     S3_BUCKET_NAME: str = os.getenv("S3_BUCKET_NAME")
 
-    # Appwrite
-    APPWRITE_ENDPOINT: str = os.getenv("APPWRITE_ENDPOINT", "https://fra.cloud.appwrite.io/v1")
-    APPWRITE_PROJECT_ID: str = os.getenv("APPWRITE_PROJECT_ID", "6874f7f090f71072dad4")
-    APPWRITE_API_KEY: str = os.getenv("APPWRITE_API_KEY")
-    APPWRITE_BUCKET_ID: str = os.getenv("APPWRITE_BUCKET_ID", "default")
+    # # Appwrite
+    # APPWRITE_ENDPOINT: str = os.getenv("APPWRITE_ENDPOINT", "https://fra.cloud.appwrite.io/v1")
+    # APPWRITE_PROJECT_ID: str = os.getenv("APPWRITE_PROJECT_ID", "6874f7f090f71072dad4")
+    # APPWRITE_API_KEY: str = os.getenv("APPWRITE_API_KEY")
+    # APPWRITE_BUCKET_ID: str = os.getenv("APPWRITE_BUCKET_ID", "default")
 
     # Email Settings
     MAIL_USERNAME: str = os.getenv("MAIL_USERNAME")

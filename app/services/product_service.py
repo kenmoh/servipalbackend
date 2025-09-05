@@ -95,7 +95,6 @@ async def create_product(
 
         return new_product
     except IntegrityError as e:
-        print
         await db.rollback()
         # Check if the error is due to the unique constraint violation
         if isinstance(e.orig, UniqueViolationError) and "uq_name_item" in str(e.orig):
