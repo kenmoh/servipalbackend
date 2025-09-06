@@ -150,7 +150,12 @@ async def create_review(
 
         redis_client.delete(f"reviews:{order.vendor_id}")
 
-        return review
+        return ReviewResponse(
+            id=review.id,
+            rating=review.rating,
+            comment=review.comment,
+            created_at=review.created_at
+        )
 
     except IntegrityError:
         await db.rollback()
