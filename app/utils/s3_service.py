@@ -20,7 +20,7 @@ from uuid import uuid4
 logging.basicConfig(level=logging.INFO)
 
 # Initialize Dramatiq broker
-dramatiq.set_broker(dramatiq.brokers.Redis(url=settings.REDIS_HOST))
+# dramatiq.set_broker(dramatiq.brokers.Redis(url=settings.REDIS_HOST))
 
 # Initialize Appwrite client
 # appwrite_client = Client()

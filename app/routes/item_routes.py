@@ -16,7 +16,7 @@ from app.schemas.item_schemas import (
 )
 from app.services import item_service
 from app.utils.limiter import limiter
-from app.utils.s3_service import convert_video_to_gif, get_conversion_status
+# from app.utils.s3_service import convert_video_to_gif, get_conversion_status
 
 router = APIRouter(prefix="/api/items", tags=["Items"])
 
@@ -232,61 +232,61 @@ async def delete_item(
     return None
 
 
-@router.post(
-    "/convert-video-to-gif",
-    status_code=status.HTTP_200_OK,
-    summary="Convert video to GIF",
-    description="Upload a video file (max 2 minutes, max 25MB) and convert it to GIF format. The video is temporarily stored in Appwrite, converted to GIF, and then the video is deleted.",
-)
-@limiter.limit("3/minute")
-async def convert_video_to_gif_endpoint(
-    request: Request,
-    video: UploadFile = File(..., description="Video file to convert (max 2 minutes, max 25MB)"),
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-) -> dict:
-    """
-    Endpoint to convert a video file to GIF format.
-    - Requires authenticated user.
-    - Video must be under 2 minutes and 25MB.
-    - Returns GIF URL after successful conversion.
-    - Video file is automatically deleted after conversion.
-    """
-    try:
-        result = await convert_video_to_gif(video)
-        return result
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e)
-        )
+# @router.post(
+#     "/convert-video-to-gif",
+#     status_code=status.HTTP_200_OK,
+#     summary="Convert video to GIF",
+#     description="Upload a video file (max 2 minutes, max 25MB) and convert it to GIF format. The video is temporarily stored in Appwrite, converted to GIF, and then the video is deleted.",
+# )
+# @limiter.limit("3/minute")
+# async def convert_video_to_gif_endpoint(
+#     request: Request,
+#     video: UploadFile = File(..., description="Video file to convert (max 2 minutes, max 25MB)"),
+#     db: AsyncSession = Depends(get_db),
+#     current_user: User = Depends(get_current_user),
+# ) -> dict:
+#     """
+#     Endpoint to convert a video file to GIF format.
+#     - Requires authenticated user.
+#     - Video must be under 2 minutes and 25MB.
+#     - Returns GIF URL after successful conversion.
+#     - Video file is automatically deleted after conversion.
+#     """
+#     try:
+#         result = await convert_video_to_gif(video)
+#         return result
+#     except Exception as e:
+#         raise HTTPException(
+#             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+#             detail=str(e)
+#         )
 
 
-@router.get(
-    "/conversion-status/{task_id}",
-    status_code=status.HTTP_200_OK,
-    summary="Check video conversion status",
-    description="Check the status of a video to GIF conversion task and get the GIF URL if completed.",
-)
-async def check_conversion_status(
-    task_id: str,
-    gif_filename: str,
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-) -> dict:
-    """
-    Endpoint to check the status of a video to GIF conversion.
-    - Requires authenticated user.
-    - Returns status and GIF URL if conversion is complete.
-    """
-    try:
-        result = await get_conversion_status(task_id, gif_filename)
-        return result
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e)
-        )
+# @router.get(
+#     "/conversion-status/{task_id}",
+#     status_code=status.HTTP_200_OK,
+#     summary="Check video conversion status",
+#     description="Check the status of a video to GIF conversion task and get the GIF URL if completed.",
+# )
+# async def check_conversion_status(
+#     task_id: str,
+#     gif_filename: str,
+#     db: AsyncSession = Depends(get_db),
+#     current_user: User = Depends(get_current_user),
+# ) -> dict:
+#     """
+#     Endpoint to check the status of a video to GIF conversion.
+#     - Requires authenticated user.
+#     - Returns status and GIF URL if conversion is complete.
+#     """
+#     try:
+#         result = await get_conversion_status(task_id, gif_filename)
+#         return result
+#     except Exception as e:
+#         raise HTTPException(
+#             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+#             detail=str(e)
+#         )
 
 
 @router.post(
