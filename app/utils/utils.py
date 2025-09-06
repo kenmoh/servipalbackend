@@ -27,7 +27,7 @@ from app.utils.logger_config import setup_logger
 
 flutterwave_base_url = "https://api.flutterwave.com/v3"
 servipal_base_url = "https://servipalbackend.onrender.com/api"
-banks_url = "https://api.flutterwave.com/v3/banks/NG"
+bank_url = "https://api.flutterwave.com/v3/banks/NG"
 
 logger = setup_logger()
 
@@ -164,7 +164,7 @@ async def get_all_banks() -> list[BankSchema]:
         headers = {"Authorization": f"Bearer {settings.FLW_SECRET_KEY}"}
 
         async with httpx.AsyncClient(timeout=30.0) as client:
-            response = await client.get(banks_url, headers=headers)
+            response = await client.get(bank_url, headers=headers)
             banks = response.json()["data"]
 
             sorted_banks = sorted(banks, key=lambda bank: bank["name"])
@@ -316,7 +316,7 @@ async def get_bank_code(bank_name: str):
 
     try:
         async with httpx.AsyncClient(timeout=30.0) as client:
-            response = await client.get(banks_url, headers=headers)
+            response = await client.get(bank_url, headers=headers)
             data = response.json()["data"]
             for bank in data:
                 if bank.get("name") == bank_name:

@@ -267,7 +267,7 @@ async def create_product_review(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"An unexpected error occurred: {str(e)}",
         )
-
+        
 
 async def fetch_vendor_reviews(
     vendor_id: UUID, db: AsyncSession
@@ -279,7 +279,21 @@ async def fetch_vendor_reviews(
         reviews_data = json.loads(cached_reviews)
         return [ReviewResponse(**r) for r in reviews_data]
     
-    # DB fallback
+    # Subquery to get the latest review ID for each reviewer
+    latest_review_subquery = (
+        select(
+            Review.reviewer_id,
+            func.max(Review.created_at).label('latest_created_at')
+        )
+        .where(
+            Review.reviewee_id == vendor_id, 
+            Review.review_type == ReviewType.ORDER
+        )
+        .group_by(Review.reviewer_id)
+        .subquery()
+    )
+    
+    # Main query to get the full review details for the latest reviews
     stmt = (
         select(Review)
         .options(
@@ -287,11 +301,22 @@ async def fetch_vendor_reviews(
             .selectinload(User.profile)
             .selectinload(Profile.profile_image)
         )
-        .where(Review.reviewee_id == vendor_id)
+        .join(
+            latest_review_subquery,
+            and_(
+                Review.reviewer_id == latest_review_subquery.c.reviewer_id,
+                Review.created_at == latest_review_subquery.c.latest_created_at
+            )
+        )
+        .where(
+            Review.reviewee_id == vendor_id,
+            Review.review_type == ReviewType.ORDER
+        )
     )
     stmt = stmt.order_by(Review.created_at.desc())
     result = await db.execute(stmt)
     reviews = result.scalars().all()
+    
     response_list = [
         ReviewResponse(
             id=r.id,
@@ -314,11 +339,63 @@ async def fetch_vendor_reviews(
         )
         for r in reviews
     ]
-    # Only cache if we have a full page
+    
+    # Only cache if we have reviews
     if response_list:
         value = json.dumps([r.model_dump() for r in response_list], default=str)
         redis_client.setex(cache_key, 3600, value) 
     return response_list
+
+# async def fetch_vendor_reviews(
+#     vendor_id: UUID, db: AsyncSession
+# ) -> list[ReviewResponse]:
+#     cache_key = f"reviews:{vendor_id}"
+#     cached_reviews = redis_client.get(cache_key)
+#     if cached_reviews:
+#         # Parse the JSON string back to a list of dictionaries
+#         reviews_data = json.loads(cached_reviews)
+#         return [ReviewResponse(**r) for r in reviews_data]
+    
+#     # DB fallback
+#     stmt = (
+#         select(Review)
+#         .options(
+#             selectinload(Review.reviewer)
+#             .selectinload(User.profile)
+#             .selectinload(Profile.profile_image)
+#         )
+#         .where(Review.reviewee_id == vendor_id, Review.review_type==ReviewType.ORDER)
+#     )
+#     stmt = stmt.order_by(Review.created_at.desc())
+#     result = await db.execute(stmt)
+#     reviews = result.scalars().all()
+#     response_list = [
+#         ReviewResponse(
+#             id=r.id,
+#             rating=r.rating,
+#             comment=r.comment,
+#             created_at=r.created_at,
+#             reviewer=ReviewerProfile(
+#                 id=r.reviewer.id,
+#                 full_name=r.reviewer.profile.full_name
+#                 if r.reviewer.profile and r.reviewer.profile.full_name
+#                 else r.reviewer.profile.business_name
+#                 if r.reviewer.profile
+#                 else None,
+#                 profile_image_url=(
+#                     r.reviewer.profile.profile_image.profile_image_url
+#                     if r.reviewer.profile and r.reviewer.profile.profile_image
+#                     else None
+#                 ),
+#             ),
+#         )
+#         for r in reviews
+#     ]
+#     # Only cache if we have a full page
+#     if response_list:
+#         value = json.dumps([r.model_dump() for r in response_list], default=str)
+#         redis_client.setex(cache_key, 3600, value) 
+#     return response_list
 
 
 
@@ -344,7 +421,7 @@ async def fetch_item_reviews(
             .selectinload(User.profile)
             .selectinload(Profile.profile_image)
         )
-        .where(Review.item_id == item_id)
+        .where(Review.item_id == item_id, Review.review_type==ReviewType.PRODUCT)
     )
 
     stmt = stmt.order_by(Review.created_at.desc())
