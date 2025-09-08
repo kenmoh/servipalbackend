@@ -1231,12 +1231,12 @@ async def vendor_mark_order_delivered(
                 )
 
 
-                redis_client.delete(f"delivery:{order_id}")
-                redis_client.delete(f"{ALL_DELIVERY}")
-                redis_client.delete("paid_pending_deliveries")
-                redis_client.delete(f"user_related_orders:{current_user.id}")
+            redis_client.delete(f"delivery:{order_id}")
+            redis_client.delete(f"{ALL_DELIVERY}")
+            redis_client.delete("paid_pending_deliveries")
+            redis_client.delete(f"user_related_orders:{current_user.id}")
 
-                return DeliveryStatusUpdateSchema(order_status=order.order_status)
+            return DeliveryStatusUpdateSchema(order_status=order.order_status)
 
     except Exception as e:
         raise HTTPException(
