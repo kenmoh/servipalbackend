@@ -66,7 +66,7 @@ async def login_user(db: AsyncSession, login_data: UserLogin) -> User:
     result = await db.execute(stmt)
     user = result.scalar_one_or_none()
 
-    if user.is_blocked:
+    if user is not None and user.is_blocked:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="You account has been blocked. Contact support",
