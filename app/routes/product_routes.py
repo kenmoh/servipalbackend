@@ -163,6 +163,7 @@ async def update_existing_product(
     category_id: UUID = Form(...),
     sizes: Optional[str] = Form(None),
     colors: Optional[List[str]] = Form(None),
+    images: Optional[list[UploadFile]] = File(None),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -184,6 +185,7 @@ async def update_existing_product(
 
     updated_product = await product_service.update_product(
         db=db,
+        images=images,
         product_id=product_id,
         product_data=product_data,
         current_user=current_user,
