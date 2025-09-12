@@ -404,7 +404,9 @@ async def get_item_review_count(item_id: UUID, db) -> ReviewCount:
         select(func.count(Review.id)).where(Review.item_id == item_id)
     )
    
-   return reviews_count
+   return {
+        'reviews_count': reviews_count
+   }
 
 async def fetch_item_reviews(
     item_id: UUID, db: AsyncSession
