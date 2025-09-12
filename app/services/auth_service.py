@@ -62,7 +62,8 @@ async def login_user(db: AsyncSession, login_data: UserLogin) -> User:
     check_login_attempts(login_data.username, redis_client)
 
     # Find user by username
-    stmt = select(User).where(User.email == login_data.username)
+    # stmt = select(User).where(User.email == login_data.username)
+    stmt = select(User).where(func.lower(User.email) == login_data.username.lower())
     result = await db.execute(stmt)
     user = result.scalar_one_or_none()
 
