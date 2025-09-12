@@ -19,6 +19,7 @@ from app.schemas.review_schema import (
     ReportMessage,
     ReportIssueUpdate,
     ReportTag,
+    ReviewCount,
     ReviewCreate,
     ReviewFilter,
     ReviewStats,
@@ -398,8 +399,12 @@ async def fetch_vendor_reviews(
 #     return response_list
 
 
-
-
+async def get_item_review_count(item_id: UUID, db) -> ReviewCount:
+   reviews_count = await db.scalar(
+        select(func.count(Review.id)).where(Review.item_id == item_id)
+    )
+   
+   return reviews_count
 
 async def fetch_item_reviews(
     item_id: UUID, db: AsyncSession
@@ -427,6 +432,7 @@ async def fetch_item_reviews(
     stmt = stmt.order_by(Review.created_at.desc())
     result = await db.execute(stmt)
     reviews = result.scalars().all()
+
 
     response_list = [
         ReviewResponse(

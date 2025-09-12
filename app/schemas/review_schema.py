@@ -37,6 +37,8 @@ class ReviewerProfile(BaseModel):
     full_name: str
     profile_image_url: str
 
+class ReviewCount(BaseModel):
+    reviews_count: int
 
 class ReviewResponse(BaseModel):
     id: UUID

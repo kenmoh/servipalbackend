@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.auth.auth import get_db, get_current_user, get_current_admin_user
 from app.models.models import User
 from app.schemas.review_schema import (
+    ReviewCount,
     ReviewCreate,
     ReviewResponse,
     ReviewFilter,
@@ -73,9 +74,23 @@ async def fetch_item_reviews(
     db: AsyncSession = Depends(get_db),
 ) -> list[ReviewResponse]:
     """
-    Endpoint to get current user reviews
+    Endpoint to get item  reviews
     """
     return await review_service.fetch_item_reviews(db=db, item_id=item_id)
+
+
+@router.get(
+    "/{item_id}/item-reviews-count",
+    status_code=status.HTTP_200_OK,
+)
+async def get_item_review_count(
+    item_id: UUID,
+    db: AsyncSession = Depends(get_db),
+) -> ReviewCount:
+    """
+    Endpoint to get item  reviews count
+    """
+    return await review_service.get_item_review_count(db=db, item_id=item_id)
 
 
 @router.get("/admin/reviews", status_code=status.HTTP_200_OK)
