@@ -205,10 +205,10 @@ async def update_menu_item(
     - Returns 404 if the target category_id does not exist.
     """
     return await item_service.update_menu_item(
-        db,
-        current_user,
-        item_id,
-        item_data,
+        db=db,
+        current_user=current_user,
+        menu_item_id=item_id,
+        item_data=item_data,
         images=images,
     )
 

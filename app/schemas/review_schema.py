@@ -39,6 +39,7 @@ class ReviewerProfile(BaseModel):
 
 class ReviewCount(BaseModel):
     reviews_count: int
+    average_rating: float
 
 class ReviewResponse(BaseModel):
     id: UUID

@@ -399,14 +399,33 @@ async def fetch_vendor_reviews(
 #     return response_list
 
 
-async def get_item_review_count(item_id: UUID, db) -> ReviewCount:
-   reviews_count = await db.scalar(
-        select(func.count(Review.id)).where(Review.item_id == item_id)
-    )
+# async def get_item_review_count(item_id: UUID, db) -> ReviewCount:
+#    reviews_count = await db.scalar(
+#         select(func.count(Review.id)).where(Review.item_id == item_id)
+#     )
    
-   return {
-        'reviews_count': reviews_count
-   }
+#    return {
+#         'reviews_count': reviews_count
+#    }
+
+
+async def get_item_review_count(item_id: UUID, db: AsyncSession, decimal_places: int = 2) -> ReviewCount:
+    """
+    Get review count and average rating (rounded) for an item.
+    """
+    result = await db.execute(
+        select(
+            func.count(Review.id).label('reviews_count'),
+            func.round(func.avg(Review.rating), decimal_places).label('average_rating')
+        ).where(Review.item_id == item_id)
+    )
+    
+    row = result.first()
+    
+    return {
+        'reviews_count': row.reviews_count if row else 0,
+        'average_rating': float(row.average_rating) if row and row.average_rating else None
+    }
 
 async def fetch_item_reviews(
     item_id: UUID, db: AsyncSession
