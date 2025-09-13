@@ -173,7 +173,7 @@ async def update_existing_product(
     """
     processed_sizes = sizes if sizes else None
     
-    processed_colors = colors if colors else None
+    processed_colors = colors if colors else []
 
     product_data = ProductUpdate(
         name=name,
