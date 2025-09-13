@@ -150,7 +150,7 @@ async def get_user_items(
 @router.put(
     "/{product_id}",
     response_model=ProductResponse,
-    status_code=status.HTTP_200_OK,
+    status_code=status.HTTP_202_ACCEPTED,
     summary="Update a product",
     description="Allows the seller of a product to update its details.",
 )
