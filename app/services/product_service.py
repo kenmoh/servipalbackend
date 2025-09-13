@@ -347,8 +347,8 @@ async def update_product(
     product_id: UUID, 
     product_data: ProductUpdate, 
     current_user: User,
-    images: list[UploadFile] = None,
-) -> Optional[ProductResponse]:
+    images: list[UploadFile]
+) -> ProductResponse:
     """
     Updates an existing product if the current user is the seller.
     Handles both product data and image updates.
