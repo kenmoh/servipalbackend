@@ -31,7 +31,7 @@ class ProductCreate(BaseModel):
     stock: int
     category_id: UUID
     sizes: str | None = None
-    colors: str | None = None
+    colors: Optional[List[str]] = []
 
 
 # Schema for updating an existing product (input)
