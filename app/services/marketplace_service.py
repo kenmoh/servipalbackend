@@ -364,11 +364,11 @@ async def owner_mark_item_received(
             )
 
             # Update buyer wallet
-            await db.execute(
-                update(Wallet)
-                .where(Wallet.id == order.owner_id)
-                .values(escrow_balance=Wallet.escrow_balance - order.total_price)
-            )
+            # await db.execute(
+            #     update(Wallet)
+            #     .where(Wallet.id == order.owner_id)
+            #     .values(escrow_balance=Wallet.escrow_balance - order.total_price)
+            # )
 
             item_id = order.order_items[0].item_id
             item_quantity = order.order_items[0].quantity
@@ -392,6 +392,16 @@ async def owner_mark_item_received(
                     "balance_change": str(order.amount_due_vendor),
                 },
             )
+
+            await producer.publish_message(
+                service="wallet",
+                operation="update_wallet",
+                payload={
+                    "wallet_id": str(order.owner_id),
+                    "escrow_change": str(-order.total_price),
+                    "balance_change": '0'
+                },
+            )
             # vendor_transx = Transaction(
             #     wallet_id=order.vendor_id,
             #     amount=order.amount_due_vendor,
@@ -404,7 +414,7 @@ async def owner_mark_item_received(
             # )
 
             # db.add(vendor_transx)
-            # await db.commit()
+            await db.commit()
 
             token = await get_user_notification_token(db=db, user_id=order.vendor_id)
 
