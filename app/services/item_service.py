@@ -214,7 +214,7 @@ async def get_restaurant_menu(
         # Format menu with reviews
         menu_response = []
         for item in menu_items:
-            category = await get_category(db=db, category_id=item.category_id)
+            # category = await get_category(db=db, category_id=item.category_id)
             menu_response.append(
                 {
                     "id": str(item.id),
@@ -224,7 +224,7 @@ async def get_restaurant_menu(
                     "price": str(item.price),
                     "item_type": item.item_type,
                     "food_group": item.food_group,
-                    "category_name": category.name,
+                    "category_id": item.category_id,
                     "images": [
                         {"id": img.id, "url": img.url, "item_id": img.item_id}
                         for img in item.images
@@ -330,7 +330,7 @@ async def get_all_food_items(db: AsyncSession) -> list[MenuResponseSchema]:
         # Format response
         food_response = []
         for item in food_items:
-            category = await get_category(db=db, category_id=item.category_id)
+            # category = await get_category(db=db, category_id=item.category_id)
             food_response.append(
                 {
                     "id": str(item.id),
@@ -340,7 +340,7 @@ async def get_all_food_items(db: AsyncSession) -> list[MenuResponseSchema]:
                     "price": str(item.price),
                     "item_type": item.item_type,
                     "food_group": item.food_group,
-                    "category_name": category.name,
+                    "category_id": item.category_id,
                     "images": [
                         {"id": img.id, "url": img.url, "item_id": img.item_id}
                         for img in item.images

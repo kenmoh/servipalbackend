@@ -106,7 +106,7 @@ class MenuBase(BaseModel):
     id: UUID
     name: str
     description: str | None = None
-    category_name: str | None = None
+    category_id: UUID | None = None
     item_type: ItemType
     price: Decimal
     images: list[ItemImageSchema]
