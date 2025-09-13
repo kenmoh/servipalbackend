@@ -4,7 +4,7 @@ from typing import Optional
 
 from fastapi import HTTPException, status, UploadFile
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, update, delete
+from sqlalchemy import and_, select, update, delete
 from sqlalchemy.orm import selectinload
 from asyncpg.exceptions import UniqueViolationError
 from sqlalchemy.exc import IntegrityError
@@ -18,7 +18,7 @@ from app.schemas.product_schemas import (
 )
 from app.schemas.item_schemas import ItemType
 from app.config.config import redis_client, settings
-from app.utils.s3_service import upload_multiple_images
+from app.utils.s3_service import delete_s3_object, upload_multiple_images
 
 
 async def create_product(
