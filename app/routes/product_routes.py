@@ -171,17 +171,11 @@ async def update_existing_product(
     Endpoint to update an existing product. Requires authentication,
     and the user must be the seller of the product.
     """
-    # Service function handles checking ownership, category existence, and update logic
-
-    # Convert empty strings to None and handle colors parsing
-    processed_sizes = sizes if sizes and sizes.strip() else None
+    processed_sizes = sizes if sizes else None
     
-    # Parse colors from comma-separated string or None if empty
-    processed_colors = None
-    if colors and colors.strip():
-        processed_colors = [color.strip() for color in colors.split(",") if color.strip()]
+    processed_colors = colors if colors else None
 
-    product_data = ProductCreate(
+    product_data = ProductUpdate(
         name=name,
         description=description,
         price=price,

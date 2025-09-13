@@ -452,6 +452,7 @@ async def update_product(
         
         # Invalidate caches
         invalidate_product_cache(product_id, current_user.id)
+        redis_client.delete(f"product:{product_id}")
         
         return updated_product
         
