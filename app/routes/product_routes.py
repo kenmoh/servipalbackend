@@ -173,14 +173,22 @@ async def update_existing_product(
     """
     # Service function handles checking ownership, category existence, and update logic
 
+    # Convert empty strings to None and handle colors parsing
+    processed_sizes = sizes if sizes and sizes.strip() else None
+    
+    # Parse colors from comma-separated string or None if empty
+    processed_colors = None
+    if colors and colors.strip():
+        processed_colors = [color.strip() for color in colors.split(",") if color.strip()]
+
     product_data = ProductCreate(
         name=name,
         description=description,
         price=price,
         stock=stock,
         category_id=category_id,
-        sizes=sizes,
-        colors=colors,
+        sizes=processed_sizes,
+        colors=processed_colors,
     )
 
     updated_product = await product_service.update_product(

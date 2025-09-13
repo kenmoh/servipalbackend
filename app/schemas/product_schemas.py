@@ -24,8 +24,14 @@ class ProductBase(BaseModel):
 
 
 # Schema for creating a new product (input)
-class ProductCreate(ProductBase):
-    pass
+class ProductCreate(BaseModel):
+    name: str
+    description: str
+    price: Decimal
+    stock: int
+    category_id: UUID
+    sizes: str | None = None
+    colors: str | None = None
 
 
 # Schema for updating an existing product (input)
