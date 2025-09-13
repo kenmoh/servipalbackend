@@ -57,10 +57,10 @@ class ProductResponse(BaseModel):
     created_at: datetime
     updated_at: datetime
 
-    # @field_serializer('price')
-    # def serialize_price(self, price: Decimal) -> float:
-    #     """Convert to float to avoid scientific notation in JSON."""
-    #     return float(f"{price:.2f}")
+    @field_serializer('price')
+    def serialize_price(self, price: Decimal) -> float:
+        """Convert to float to avoid scientific notation in JSON."""
+        return float(f"{price:.2f}")
 
     class Config:
         from_attributes = True
