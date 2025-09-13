@@ -214,7 +214,7 @@ async def get_restaurant_menu(
         # Format menu with reviews
         menu_response = []
         for item in menu_items:
-            category = get_category(db=db, item.category_id)
+            category = await get_category(db=db, category_id=item.category_id)
             menu_response.append(
                 {
                     "id": str(item.id),
@@ -330,7 +330,7 @@ async def get_all_food_items(db: AsyncSession) -> list[MenuResponseSchema]:
         # Format response
         food_response = []
         for item in food_items:
-            category = get_category(db=db, category_id=item.category_id)
+            category = await get_category(db=db, category_id=item.category_id)
             food_response.append(
                 {
                     "id": str(item.id),
