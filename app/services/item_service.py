@@ -426,10 +426,10 @@ async def get_menu_item_by_id(
     cache_key = f"item:{menu_item_id}"
     
     # Try cache first
-    cached_item = redis_client.get(cache_key)
-    if cached_item:
-        item_dict = json.loads(cached_item)
-        return MenuResponseSchema(**item_dict)
+    # cached_item = redis_client.get(cache_key)
+    # if cached_item:
+    #     item_dict = json.loads(cached_item)
+    #     return MenuResponseSchema(**item_dict)
     
     # Query database
     stmt = (
