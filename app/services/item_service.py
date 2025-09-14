@@ -193,9 +193,12 @@ async def get_restaurant_menu(
     """
     try:
         # Try cache first
-        cached_menu = get_cached_menu(vendor_id, food_group)
+        # cached_menu = get_cached_menu(vendor_id, food_group)
+        key = f"restaurant_menu:{vendor_id}:{food_group}"
+        cached_menu = redis_client.get(key)
         if cached_menu:
-            return [MenuResponseSchema(**m) for m in cached_menu]
+            menu = json.loads(cached_menu)
+            return [MenuResponseSchema(**m) for m in menu]
 
         # Get menu items with their reviews
         menu_query = (
@@ -233,7 +236,8 @@ async def get_restaurant_menu(
             )
 
         # Cache the menu
-        set_cached_menu(vendor_id, food_group, menu_response)
+        # set_cached_menu(vendor_id, food_group, menu_response)
+        redis_client.setex(key, settings.REDIS_EX, json.dumps(menu_response, default=str))
 
         return MenuResponseSchema(**menu_response)
 
