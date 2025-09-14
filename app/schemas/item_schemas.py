@@ -114,4 +114,5 @@ class MenuBase(BaseModel):
 
 class MenuResponseSchema(MenuBase):
     user_id: UUID
+    side: str | None = None
     food_group: FoodGroup | None = None

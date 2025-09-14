@@ -453,6 +453,7 @@ async def get_menu_item_by_id(
         "item_type": menu_item.item_type,
         "user_id": menu_item.user_id,
         "category_id": menu_item.category_id,
+        "side": menu_item.side,
         "group": menu_item.food_group or None,
         "images": [
             {
