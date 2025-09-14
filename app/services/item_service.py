@@ -445,8 +445,8 @@ async def get_menu_item_by_id(
     
     # Prepare dict for caching and response
     item_dict = {
-        "id": menu_item.id,  
-        "vendor_id": menu_item.user_id,
+        "id": str(menu_item.id),
+        "vendor_id": str(menu_item.user_id),
         "name": menu_item.name,
         "description": menu_item.description or None,
         "price": str(menu_item.price),
@@ -454,15 +454,15 @@ async def get_menu_item_by_id(
         "group": menu_item.food_group or None,
         "image_url": [
             {
-                "id": img.id,
+                "id": str(img.id),
                 "url": img.url, 
-                "item_id": img.item_id
+                "item_id": str(img.item_id)
             }
             for img in menu_item.images
         ],
     }
     
-    # Cache the serialized item_dict
+    # Cache the serialized item_dict (not the menu_item object)
     redis_client.setex(cache_key, settings.REDIS_EX, json.dumps(item_dict, default=str))
     
     # Return response model
