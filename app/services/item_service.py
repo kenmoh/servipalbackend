@@ -454,7 +454,7 @@ async def get_menu_item_by_id(
         "user_id": menu_item.user_id,
         "category_id": menu_item.category_id,
         "group": menu_item.food_group or None,
-        "image_url": [
+        "images": [
             {
                 "id": str(img.id),
                 "url": img.url, 
