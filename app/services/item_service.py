@@ -423,34 +423,29 @@ async def get_menu_item_by_id(
     db: AsyncSession, menu_item_id: UUID
 ) -> MenuResponseSchema:
     """Retrieves a specific item by ID belonging to the current VENDOR user."""
-
     cache_key = f"item:{menu_item_id}"
-
+    
     # Try cache first
     cached_item = redis_client.get(cache_key)
     if cached_item:
         item_dict = json.loads(cached_item)
-
         return MenuResponseSchema(**item_dict)
-        # return MenuResponseSchema(**json.loads(cached_item)) or MenuResponseSchema(
-        #     **json.loads(cached_item)
-        # )
-
+    
     # Query database
     stmt = (
         select(Item).where(Item.id == menu_item_id).options(selectinload(Item.images))
     )
     result = await db.execute(stmt)
     menu_item = result.unique().scalar_one_or_none()
-
+    
     if not menu_item:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Item not found"
         )
-
+    
     # Prepare dict for caching and response
     item_dict = {
-        "id": menu_item.id,
+        "id": menu_item.id,  
         "vendor_id": menu_item.user_id,
         "name": menu_item.name,
         "description": menu_item.description or None,
@@ -458,17 +453,20 @@ async def get_menu_item_by_id(
         "item_type": menu_item.item_type,
         "group": menu_item.food_group or None,
         "image_url": [
-            {"id": img.id, "url": img.url, "item_id": img.item_id}
+            {
+                "id": img.id,
+                "url": img.url, 
+                "item_id": img.item_id
+            }
             for img in menu_item.images
         ],
     }
-
-    # Cache the serialized item
-    redis_client.setex(cache_key, settings.REDIS_EX, json.dumps(menu_item, default=str))
-
+    
+    # Cache the serialized item_dict
+    redis_client.setex(cache_key, settings.REDIS_EX, json.dumps(item_dict, default=str))
+    
     # Return response model
-    return item_dict
-
+    return MenuResponseSchema(**item_dict)
 
 async def update_menu_item(
     db: AsyncSession,
