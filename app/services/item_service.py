@@ -429,9 +429,12 @@ async def get_menu_item_by_id(
     # Try cache first
     cached_item = redis_client.get(cache_key)
     if cached_item:
-        return MenuResponseSchema(**json.loads(cached_item)) or MenuResponseSchema(
-            **json.loads(cached_item)
-        )
+        item_dict = json.loads(cached_item)
+
+        return MenuResponseSchema(**item_dict)
+        # return MenuResponseSchema(**json.loads(cached_item)) or MenuResponseSchema(
+        #     **json.loads(cached_item)
+        # )
 
     # Query database
     stmt = (
@@ -464,7 +467,7 @@ async def get_menu_item_by_id(
     redis_client.setex(cache_key, settings.REDIS_EX, json.dumps(menu_item, default=str))
 
     # Return response model
-    return MenuResponseSchema(**item_dict)
+    return item_dict
 
 
 async def update_menu_item(
