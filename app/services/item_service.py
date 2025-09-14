@@ -464,7 +464,7 @@ async def get_menu_item_by_id(
     redis_client.setex(cache_key, settings.REDIS_EX, json.dumps(menu_item, default=str))
 
     # Return response model
-    return MenuResponseSchema(**menu_item)
+    return MenuResponseSchema(**item_dict)
 
 
 async def update_menu_item(
