@@ -1876,6 +1876,7 @@ async def get_restaurant_menu(
                 "description": menu.description,
                 "price": menu.price,
                 "food_group": menu.food_group,
+                "category_id": menu.category_id,
                 "images": [
                     {"id": image.id, "item_id": image.item_id, "url": image.url}
                     for image in menu.images
