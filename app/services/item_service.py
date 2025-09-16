@@ -18,6 +18,8 @@ from app.schemas.item_schemas import (
     ItemType,
     CategoryType,
     MenuResponseSchema,
+    LaundryItemCreate,
+    LaundryMenuResponseSchema
 )
 from app.schemas.status_schema import AccountStatus, UserType
 from app.config.config import redis_client, settings
@@ -109,13 +111,10 @@ async def create_menu_item(
     images: list[UploadFile],
 ) -> MenuResponseSchema:
     """Creates a new item for the current VENDOR user."""
-    if current_user.user_type not in [
-        UserType.RESTAURANT_VENDOR,
-        UserType.LAUNDRY_VENDOR,
-    ]:
+    if current_user.user_type != UserType.RESTAURANT_VENDOR:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only Restaurant and Laundry vendors are allowed to perform this action ",
+            detail="Only Restaurant vendors are allowed to perform this action ",
         )
     if (
         current_user.is_blocked
@@ -126,7 +125,7 @@ async def create_menu_item(
             detail="Permission denied! You have either been blocked or your account is not confirmed.",
         )
     if (
-        current_user.user_type in [UserType.RESTAURANT_VENDOR, UserType.LAUNDRY_VENDOR]
+        current_user.user_type == UserType.RESTAURANT_VENDOR
         and not current_user.profile.business_name
         or not current_user.profile.phone_number
     ):
@@ -137,7 +136,7 @@ async def create_menu_item(
 
     try:
         # Create item first
-        new_item = Item(**item_data.model_dump(), user_id=current_user.id)
+        new_item = Item(**item_data.model_dump(), user_id=current_user.id, item_type=ItemType.FOOD)
         db.add(new_item)
         await db.flush()
 
@@ -182,6 +181,84 @@ async def create_menu_item(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to create item: {str(e)}",
         )
+
+
+
+async def create_laundry_item(
+    db: AsyncSession,
+    current_user: User,
+    item_data: LaundryItemCreate,
+    images: list[UploadFile],
+) -> LaundryMenuResponseSchema:
+    """Creates a new item for the current VENDOR user."""
+    if current_user.user_type != UserType.LAUNDRY_VENDOR:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only laundry vendors are allowed to perform this action ",
+        )
+    if (
+        current_user.is_blocked
+        or current_user.account_status != AccountStatus.CONFIRMED
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Permission denied! You have either been blocked or your account is not confirmed.",
+        )
+    if (
+        current_user.user_type == UserType.LAUNDRY_VENDOR
+        and not current_user.profile.business_name
+        or not current_user.profile.phone_number
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Please update your profile",
+        )
+
+    try:
+        # Create item first
+        new_item = Item(**item_data.model_dump(), user_id=current_user.id, item_type=ItemType.LAUNDRY)
+        db.add(new_item)
+        await db.flush()
+
+        # Upload images and create ItemImage records
+        urls = await upload_multiple_images(images)
+
+        for url in urls:
+            item_image = ItemImage(item_id=new_item.id, url=url)
+            db.add(item_image)
+
+        await db.commit()
+        await db.refresh(new_item)
+
+        # redis_client.delete(f"vendor_items:{current_user.id}")
+        redis_client.delete(f"laundry_menu:{current_user.id}")
+
+        return new_item
+
+    except IntegrityError as e:
+        # Check if it's a UniqueViolationError
+        if isinstance(e.orig, asyncpg.exceptions.UniqueViolationError):
+            if "uq_name_user_non_package" in str(
+                e
+            ) or "uq_name_user_non_package" in str(e):
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="You already have an item with this name.",
+                )
+        # If it's a different integrity error, let it fall through to the general exception
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Database integrity error: {str(e)}",
+        )
+
+    except Exception as e:
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to create item: {str(e)}",
+        )
+
 
 
 async def get_restaurant_menu(
@@ -252,7 +329,7 @@ async def get_restaurant_menu(
 async def get_laundry_menu(
     db: AsyncSession,
     vendor_id: UUID,
-) -> list[MenuResponseSchema]:
+) -> list[LaundryMenuResponseSchema]:
     """
     Get restaurant menu items with their individual reviews.
     This is for when customer visits a specific restaurant.
@@ -262,7 +339,7 @@ async def get_laundry_menu(
         key = f"laundry_menu:{vendor_id}"
         cached_menu = redis_client.get(key)
         if cached_menu:
-            return [MenuResponseSchema(**m) for m in json.loads(cached_menu)]
+            return [LaundryMenuResponseSchema(**m) for m in json.loads(cached_menu)]
 
         # Get menu items with their reviews
         menu_query = (
@@ -300,7 +377,7 @@ async def get_laundry_menu(
             key, settings.REDIS_EX, json.dumps(menu_response, default=str)
         )
 
-        return [MenuResponseSchema(**menu) for menu in menu_response]
+        return [LaundryMenuResponseSchema(**menu) for menu in menu_response]
 
     except Exception as e:
         logger.error(f"Error fetching restaurant menu {vendor_id}: {str(e)}")
@@ -367,7 +444,7 @@ async def get_all_food_items(db: AsyncSession) -> list[MenuResponseSchema]:
         )
 
 
-async def get_all_laundry_items(db: AsyncSession) -> list[MenuResponseSchema]:
+async def get_all_laundry_items(db: AsyncSession) -> list[LaundryMenuResponseSchema]:
     """
     Get all laundry items from all vendors.
     """
@@ -413,7 +490,7 @@ async def get_all_laundry_items(db: AsyncSession) -> list[MenuResponseSchema]:
             json.dumps(laundry_response, default=str),
         )
 
-        return [MenuResponseSchema(**laundry) for laundry in laundry_response]
+        return [LaundryMenuResponseSchema(**laundry) for laundry in laundry_response]
 
     except Exception as e:
         logger.error(f"Error fetching all laundry items: {str(e)}")
@@ -584,6 +661,119 @@ async def update_menu_item(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to update menu item: {str(e)}",
         )
+
+
+
+async def update_laumdry_item(
+    db: AsyncSession,
+    current_user: User,
+    item_id: UUID,
+    item_data: LaundryItemCreate,
+    images: list[UploadFile] = None,
+) -> LaundryMenuResponseSchema:
+    """Updates an existing item belonging to the current VENDOR user.
+    Handles both item data and image updates.
+    """
+    cache_key = f"laundry_item:{current_user.id}"
+  
+    # Fetch the current item from DB (not cache, to ensure accuracy)
+    db_item = await get_item_by_id(
+        db=db, item_id=item_id, current_user=current_user
+    )
+    if not db_item:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Item not found"
+        )
+
+    update_data = item_data.model_dump(exclude_unset=True)
+
+    # Only check for duplicate name if name is being changed
+    new_name = update_data.get("name")
+    if new_name and new_name != db_item.name:
+        # Check if another item with this name exists for this user
+        duplicate_stmt = select(Item).where(
+            and_(
+                Item.user_id == current_user.id,
+                Item.name == new_name,
+                Item.id != item_id,
+            )
+        )
+        duplicate_result = await db.execute(duplicate_stmt)
+        duplicate_item = duplicate_result.scalar_one_or_none()
+        if duplicate_item:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="You already have an item with this name.",
+            )
+
+    stmt = (
+        update(Item)
+        .where(Item.id == item_id, Item.user_id == current_user.id)
+        .values(**update_data)
+        .returning(Item)
+    )
+
+    try:
+        result = await db.execute(stmt)
+        updated_item = result.scalar_one()
+
+        # Handle image updates if provided
+        if images:
+            # Get existing image URLs
+            old_images = await db.execute(
+                select(ItemImage).where(ItemImage.item_id == menu_item_id)
+            )
+            old_urls = [img.url for img in old_images.scalars().all()]
+
+            # Upload new images
+            new_urls = await upload_multiple_images(images)
+
+            # Delete old images from database
+            await db.execute(delete(ItemImage).where(ItemImage.item_id == menu_item_id))
+
+            # Create new image records
+            for url in new_urls:
+                new_image = ItemImage(item_id=menu_item_id, url=url)
+                db.add(new_image)
+
+            # Delete old images from S3
+            for old_url in old_urls:
+                await delete_s3_object(old_url)
+
+        await db.commit()
+        await db.refresh(updated_item)
+
+        # Invalidate caches
+        invalidate_item_cache(item_id)
+        redis_client.delete(cache_key)
+        
+
+        return updated_item
+
+    except IntegrityError as e:
+        # Check if it's a UniqueViolationError for item name per user
+        if hasattr(e, "orig") and (
+            "uq_name_user_non_package" in str(e)
+            or "unique_name_user_non_package" in str(e)
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="You already have an item with this name.",
+            )
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Database integrity error: {str(e)}",
+        )
+
+    except Exception as e:
+        await db.rollback()
+        # Log the error e
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to update menu item: {str(e)}",
+        )
+
 
 
 async def delete_item(db: AsyncSession, current_user: User, item_id: UUID) -> None:

@@ -11,8 +11,10 @@ from app.schemas.item_schemas import (
     CategoryResponse,
     MenuItemCreate,
     MenuResponseSchema,
+    LaundryMenuResponseSchema,
     ItemType,
     FoodGroup,
+    LaundryItemCreate
 )
 from app.services import item_service
 from app.utils.limiter import limiter
@@ -48,12 +50,11 @@ async def create_new_category(
 async def create_menu_item(
     request: Request,
     name: str = Form(...),
-    description: str = Form(None),
+    description: str = Form(...),
     price: Decimal = Form(...),
     side: str = Form(None),
-    category_id: UUID | None = Form(None),
-    food_group: FoodGroup | None = Form(None),
-    item_type: ItemType = Form(...),
+    category_id: UUID  = Form(...),
+    food_group: FoodGroup  = Form(...),
     images: list[UploadFile] = File(...),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -66,10 +67,9 @@ async def create_menu_item(
 
     item_data = MenuItemCreate(
         name=name,
-        description=description or None,
+        description=description,
         price=price,
         images=images,
-        item_type=item_type,
         category_id=category_id,
         food_group=food_group,
         side=side or None,
@@ -80,34 +80,34 @@ async def create_menu_item(
     )
 
 
-# @router.post(
-#     "/laundry-item-create",
-#     status_code=status.HTTP_201_CREATED,
-# )
-# async def create_laundry_item(
-#     name: str = Form(...),
-#     description: str = Form(None),
-#     price: Decimal = Form(...),
-#     images: list[UploadFile] = File(...),
-#     db: AsyncSession = Depends(get_db),
-#     current_user: User = Depends(get_current_user),
-# ) -> LaundryMenuResponseSchema:
-#     """
-#     Endpoint to create a new laundry item.
-#     - Requires authenticated VENDOR user.
-#     - The specified category_id must exist.
-#     """
+@router.post(
+    "/laundry-item-create",
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_laundry_item(
+    name: str = Form(...),
+    description: str = Form(None),
+    price: Decimal = Form(...),
+    images: list[UploadFile] = File(...),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> LaundryMenuResponseSchema:
+    """
+    Endpoint to create a new laundry item.
+    - Requires authenticated VENDOR user.
+    - The specified category_id must exist.
+    """
 
-#     item_data = LaundryItemCreate(
-#         name=name,
-#         description=description,
-#         price=price,
-#         images=images,
-#     )
+    item_data = LaundryItemCreate(
+        name=name,
+        description=description,
+        price=price,
+        images=images,
+    )
 
-#     return await item_service.create_laundry_item(
-#         db=db, current_user=current_user, item_data=item_data, images=images
-#     )
+    return await item_service.create_laundry_item(
+        db=db, current_user=current_user, item_data=item_data, images=images
+    )
 
 
 @router.get("/categories", status_code=status.HTTP_200_OK)
@@ -185,6 +185,38 @@ async def get_menu_item_by_id(
     return await item_service.get_menu_item_by_id(db, item_id)
 
 
+
+@router.put(
+    "/{item_id}/laundry-item-update",
+    status_code=status.HTTP_202_ACCEPTED,
+)
+@limiter.limit("5/minute")
+async def update_laumdry_item(
+    request: Request,
+    item_id: UUID,
+    name: str = Form(...),
+    description: str = Form(None),
+    price: Decimal = Form(...),
+    db: AsyncSession = Depends(get_db),
+    images: list[UploadFile] = File(...),
+    current_user: User = Depends(get_current_user),
+) -> LaundryMenuResponseSchema:
+    """
+    Endpoint to update an existing item.
+    - Requires authenticated VENDOR user.
+    - Returns 404 if the item is not found or does not belong to the user.
+    - Returns 404 if the target category_id does not exist.
+    """
+    item_data = LaundryItemCreate(name=name, description=description, price=price)
+    return await item_service.update_laumdry_item(
+        db=db,
+        current_user=current_user,
+        item_id=item_id,
+        item_data=item_data,
+        images=images,
+    )
+
+
 @router.put(
     "/{item_id}/update",
     status_code=status.HTTP_202_ACCEPTED,
@@ -193,7 +225,6 @@ async def get_menu_item_by_id(
 async def update_menu_item(
     request: Request,
     item_id: UUID,
-    # item_data: MenuItemCreate,
     name: str = Form(...),
     item_type: str = Form(...),
     description: str = Form(...),
@@ -210,7 +241,7 @@ async def update_menu_item(
     - Returns 404 if the item is not found or does not belong to the user.
     - Returns 404 if the target category_id does not exist.
     """
-    item_data = MenuItemCreate(name=name, item_type=item_type, side=side, description=description, price=price, category_id=category_id)
+    item_data = MenuItemCreate(name=name, side=side, description=description, price=price, category_id=category_id)
     return await item_service.update_menu_item(
         db=db,
         current_user=current_user,

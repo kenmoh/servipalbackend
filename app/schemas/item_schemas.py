@@ -46,12 +46,17 @@ class ItemImageSchema(BaseModel):
 
 class MenuItemCreate(BaseModel):
     name: str
+    description: str
+    price: Decimal
+    side: str | None = None
+    category_id: UUID
+    food_group: FoodGroup 
+
+
+class LaundryItemCreate(BaseModel):
+    name: str
     description: str | None = None
     price: Decimal
-    item_type: ItemType
-    side: str | None = None
-    category_id: UUID | None = None
-    food_group: FoodGroup | None = None
 
 
 class ItemCreate(BaseModel):
@@ -106,8 +111,6 @@ class ItemResponse(ItemCreate):
 class MenuBase(BaseModel):
     id: UUID
     name: str
-    description: str | None = None
-    category_id: UUID | None = None
     item_type: ItemType
     price: Decimal
     images: list[ItemImageSchema]
@@ -115,5 +118,10 @@ class MenuBase(BaseModel):
 
 class MenuResponseSchema(MenuBase):
     user_id: UUID
+    category_id: UUID
     side: str | None = None
-    food_group: FoodGroup | None = None
+    food_group: FoodGroup
+    description: str
+
+class LaundryMenuResponseSchema(MenuBase):
+    pass
