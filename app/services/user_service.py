@@ -1892,8 +1892,7 @@ async def get_restaurant_menu(
         return [MenuResponseSchema(**item) for item in menu_list]
 
     except Exception as e:
-        # Log the error (you might want to use proper logging here)
-        print(f"Error fetching restaurant menu: {e}")
+        logger.error(f"Error fetching restaurant menu: {e}")
         raise
 
 

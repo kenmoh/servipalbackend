@@ -485,6 +485,8 @@ async def update_menu_item(
     """Updates an existing item belonging to the current VENDOR user.
     Handles both item data and image updates.
     """
+    cache_key = f"restaurant_menu:{current_user.id}:{item_data.food_group}"
+  
     # Fetch the current item from DB (not cache, to ensure accuracy)
     db_item = await get_item_by_id(
         db=db, item_id=menu_item_id, current_user=current_user
@@ -554,6 +556,8 @@ async def update_menu_item(
 
         # Invalidate caches
         invalidate_item_cache(menu_item_id)
+        redis_client.delete(cache_key)
+        
 
         return updated_item
 
