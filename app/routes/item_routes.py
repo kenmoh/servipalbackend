@@ -229,6 +229,7 @@ async def update_menu_item(
     item_type: str = Form(...),
     description: str = Form(...),
     price: Decimal = Form(...),
+    food_group: FoodGroup = Form(...),
     category_id: UUID = Form(...),
     side: str = Form(None),
     db: AsyncSession = Depends(get_db),
@@ -241,7 +242,7 @@ async def update_menu_item(
     - Returns 404 if the item is not found or does not belong to the user.
     - Returns 404 if the target category_id does not exist.
     """
-    item_data = MenuItemCreate(name=name, side=side, description=description, price=price, category_id=category_id)
+    item_data = MenuItemCreate(name=name, side=side, food_group=food_group, description=description, price=price, category_id=category_id)
     return await item_service.update_menu_item(
         db=db,
         current_user=current_user,
