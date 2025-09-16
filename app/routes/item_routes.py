@@ -226,7 +226,6 @@ async def update_menu_item(
     request: Request,
     item_id: UUID,
     name: str = Form(...),
-    item_type: str = Form(...),
     description: str = Form(...),
     price: Decimal = Form(...),
     food_group: FoodGroup = Form(...),
