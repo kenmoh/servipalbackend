@@ -280,11 +280,11 @@ async def get_restaurant_menu(
         # Get menu items with their reviews
         menu_query = (
             select(Item)
+            .where(Item.is_deleted == False)
             .where(
                 Item.user_id == vendor_id,
                 Item.item_type == ItemType.FOOD,
                 Item.food_group == food_group,
-                Item.is_deleted == False
             )
             .order_by(Item.name)
         )
@@ -459,7 +459,7 @@ async def get_all_laundry_items(db: AsyncSession) -> list[LaundryMenuResponseSch
         # Get all laundry items
         laundry_query = (
             select(Item)
-            .where(Item.item_type == ItemType.LAUNDRY)
+            .where(Item.item_type == ItemType.LAUNDRY, Item.is_deleted==False)
             .options(selectinload(Item.images))
             .order_by(Item.name)
         )
@@ -781,29 +781,32 @@ async def update_laumdry_item(
 async def delete_item(db: AsyncSession, current_user: User, item_id: UUID) -> None:
     """Deletes an item and its associated images belonging to the current VENDOR user."""
     # Check cache for item
-    cache_key = f"item:{item_id}"
+    # cache_key = f"item:{item_id}"
 
-    cached_item = get_cached_item(cache_key)
-    if cached_item:
-        if cached_item.get("user_id") != str(current_user.id):
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND, detail="Item not found"
-            )
-        # Continue to delete in DB for consistency
-    else:
-        # Not in cache, query DB
-        item = await get_item_by_id(db=db, current_user=current_user, item_id=item_id)
-        if not item or item.user_id != current_user.id:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND, detail="Item not found"
-            )
+    # cached_item = get_cached_item(cache_key)
+    # if cached_item:
+    #     if cached_item.get("user_id") != str(current_user.id):
+    #         raise HTTPException(
+    #             status_code=status.HTTP_404_NOT_FOUND, detail="Item not found"
+    #         )
+    #     # Continue to delete in DB for consistency
+    # else:
+    #     # Not in cache, query DB
+    #     item = await get_item_by_id(db=db, current_user=current_user, item_id=item_id)
+    #     if not item or item.user_id != current_user.id:
+    #         raise HTTPException(
+    #             status_code=status.HTTP_404_NOT_FOUND, detail="Item not found"
+    #         )
 
-        food_group = item.food_group
+    #     food_group = item.food_group
 
     try:
         # Get all image URLs before deleting the item
+        item = await get_item_by_id(db=db, current_user=current_user, item_id=item_id)
+        food_group = item.food_group
+
         image_result = await db.execute(
-            select(ItemImage).where(ItemImage.item_id == item_id)
+            select(ItemImage).where(ItemImage.item_id == item.id)
         )
         item_images = image_result.scalars().all()
 
