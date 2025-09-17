@@ -17,7 +17,6 @@ from app.schemas.item_schemas import (
     MenuItemCreate,
     ItemType,
     CategoryType,
-    MenuResponseSchema,
     LaundryItemCreate,
     LaundryMenuResponseSchema
 )
@@ -305,6 +304,7 @@ async def get_restaurant_menu(
                     "price": str(item.price),
                     "item_type": item.item_type,
                     "food_group": item.food_group,
+                    "is_deleted": item.is_deleted,
                     "category_id": item.category_id,
                     "images": [
                         {"id": img.id, "url": img.url, "item_id": img.item_id}
