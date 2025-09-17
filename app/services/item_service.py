@@ -721,7 +721,7 @@ async def update_laumdry_item(
         if images:
             # Get existing image URLs
             old_images = await db.execute(
-                select(ItemImage).where(ItemImage.item_id == menu_item_id)
+                select(ItemImage).where(ItemImage.item_id == item_id)
             )
             old_urls = [img.url for img in old_images.scalars().all()]
 
@@ -729,11 +729,11 @@ async def update_laumdry_item(
             new_urls = await upload_multiple_images(images)
 
             # Delete old images from database
-            await db.execute(delete(ItemImage).where(ItemImage.item_id == menu_item_id))
+            await db.execute(delete(ItemImage).where(ItemImage.item_id == item_id))
 
             # Create new image records
             for url in new_urls:
-                new_image = ItemImage(item_id=menu_item_id, url=url)
+                new_image = ItemImage(item_id=item_id, url=url)
                 db.add(new_image)
 
             # Delete old images from S3
@@ -796,6 +796,8 @@ async def delete_item(db: AsyncSession, current_user: User, item_id: UUID) -> No
                 status_code=status.HTTP_404_NOT_FOUND, detail="Item not found"
             )
 
+        food_group = item.food_group
+
     try:
         # Get all image URLs before deleting the item
         image_result = await db.execute(
@@ -817,6 +819,8 @@ async def delete_item(db: AsyncSession, current_user: User, item_id: UUID) -> No
         invalidate_item_cache(item_id)
         redis_client.delete(cache_key)
         redis_client.delete(f"vendor_items:{current_user.id}")
+        redis_client.delete(f"restaurant_menu:{current_user.id}:{food_group}")
+
 
         return None
     except Exception as e:
