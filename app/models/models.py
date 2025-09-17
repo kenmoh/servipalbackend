@@ -378,6 +378,7 @@ class Item(Base):
     stock: Mapped[int] = mapped_column(nullable=True)
     in_stock: Mapped[bool] = mapped_column(default=True)
     total_sold: Mapped[int] = mapped_column(nullable=True)
+    is_deleted: Mapped[bool] = mapped_column(default=False)
 
     category_id: Mapped[UUID] = mapped_column(
         ForeignKey("categories.id"), nullable=True
@@ -449,6 +450,7 @@ class Order(Base):
     amount_due_vendor: Mapped[Decimal] = mapped_column(nullable=False)
     payment_link: Mapped[str] = mapped_column(nullable=True)
     additional_info: Mapped[str] = mapped_column(nullable=True)
+    is_deleted: Mapped[bool] = mapped_column(default=False)
     order_payment_status: Mapped[PaymentStatus] = mapped_column(
         default=PaymentStatus.PENDING
     )

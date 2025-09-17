@@ -284,6 +284,7 @@ async def get_restaurant_menu(
                 Item.user_id == vendor_id,
                 Item.item_type == ItemType.FOOD,
                 Item.food_group == food_group,
+                Item.is_deleted == False
             )
             .order_by(Item.name)
         )
@@ -347,6 +348,7 @@ async def get_laundry_menu(
             .where(
                 Item.user_id == vendor_id,
                 Item.item_type == ItemType.LAUNDRY,
+                Item.is_deleted == False
             )
             .order_by(Item.name)
         )
@@ -806,12 +808,14 @@ async def delete_item(db: AsyncSession, current_user: User, item_id: UUID) -> No
         item_images = image_result.scalars().all()
 
         # Delete item (this will cascade delete ItemImage records due to FK constraint)
-        stmt = delete(Item).where(Item.id == item_id, Item.user_id == current_user.id)
-        await db.execute(stmt)
+        # stmt = delete(Item).where(Item.id == item_id, Item.user_id == current_user.id)
+        # await db.execute(stmt)
 
         # Delete images from S3
         for image in item_images:
             await delete_s3_object(image.url)
+
+        item.is_deleted = True
 
         await db.commit()
 
