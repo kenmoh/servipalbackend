@@ -113,6 +113,7 @@ class MenuBase(BaseModel):
     name: str
     item_type: ItemType
     price: Decimal
+    is_deleted: bool
     images: list[ItemImageSchema]
 
 
@@ -122,7 +123,7 @@ class MenuResponseSchema(MenuBase):
     side: str | None = None
     food_group: FoodGroup
     description: str
-    is_deleted: bool
+    # is_deleted: bool
 
 class LaundryMenuResponseSchema(MenuBase):
     pass

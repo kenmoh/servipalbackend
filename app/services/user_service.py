@@ -31,7 +31,7 @@ from app.models.models import (
 )
 from app.schemas.review_schema import ReviewType
 from app.utils.map import get_distance_between_addresses
-from app.schemas.item_schemas import MenuResponseSchema
+from app.schemas.item_schemas import MenuResponseSchema, LaundryMenuResponseSchema
 from app.services import ws_service
 from app.schemas.user_schemas import (
     Notification,
@@ -1859,6 +1859,7 @@ async def get_restaurant_menu(
                 Item.user_id == restaurant_id,
                 Item.item_type == ItemType.FOOD,
                 Item.food_group == food_group,
+                Item.is_deleted == False
             )
             .options(selectinload(Item.images))
         )
@@ -1875,6 +1876,7 @@ async def get_restaurant_menu(
                 "item_type": menu.item_type,
                 "description": menu.description,
                 "price": menu.price,
+                "is_deleted": menu.is_deleted,
                 "food_group": menu.food_group,
                 "category_id": menu.category_id,
                 "images": [
@@ -1899,7 +1901,7 @@ async def get_restaurant_menu(
 
 async def get_laundry_menu(
     db: AsyncSession, laundry_id: UUID
-) -> list[MenuResponseSchema]:
+) -> list[LaundryMenuResponseSchema]:
     """
     Retrieve all menu items for a specific restaurant with Redis caching.
 
@@ -1909,7 +1911,7 @@ async def get_laundry_menu(
 
 
     Returns:
-        List of MenuResponseSchema objects
+        List of LaundryMenuResponseSchema objects
 
     Raises:
         SQLAlchemyError: If database query fails
@@ -1921,12 +1923,12 @@ async def get_laundry_menu(
     if cached_data:
         menu_data = json.loads(cached_data)
         # Convert back to Pydantic models
-        return [MenuResponseSchema(**item) for item in menu_data]
+        return [LaundryMenuResponseSchema(**item) for item in menu_data]
     try:
         # Query menu items with eager loading of images
         menu_stmt = (
             select(Item)
-            .where(Item.user_id == laundry_id, Item.item_type == ItemType.LAUNDRY)
+            .where(Item.user_id == laundry_id, Item.item_type == ItemType.LAUNDRY, Item.is_deleted==True)
             .options(selectinload(Item.images))
         )
         result = await db.execute(menu_stmt)
@@ -1940,6 +1942,7 @@ async def get_laundry_menu(
                 "user_id": menu.user_id,
                 "name": menu.name,
                 "item_type": menu.item_type,
+                "is_deleted": menu.is_deleted,
                 "price": menu.price,
                 "images": [
                     {"id": image.id, "item_id": image.item_id, "url": image.url}
@@ -1954,7 +1957,7 @@ async def get_laundry_menu(
         )
 
         # Convert to Pydantic models for return
-        return [MenuResponseSchema(**item) for item in menu_list]
+        return [LaundryMenuResponseSchema(**item) for item in menu_list]
 
     except Exception as e:
         logger.error(f"Error fetching laundry menu: {e}")
