@@ -460,6 +460,7 @@ class Order(Base):
         default=RequireDeliverySchema.PICKUP
     )
     cancel_reason: Mapped[str] = mapped_column(nullable=True)
+    
     created_at: Mapped[datetime] = mapped_column(default=datetime.now)
     updated_at: Mapped[datetime] = mapped_column(
         default=datetime.now, onupdate=datetime.now
