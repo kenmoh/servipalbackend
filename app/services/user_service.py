@@ -1847,10 +1847,10 @@ async def get_restaurant_menu(
 
     # Check cache first
     cached_data = redis_client.get(cache_key)
-    if cached_data:
-        menu_data = json.loads(cached_data)
-        # Convert back to Pydantic models
-        return [MenuResponseSchema(**item) for item in menu_data]
+    # if cached_data:
+    #     menu_data = json.loads(cached_data)
+    #     # Convert back to Pydantic models
+    #     return [MenuResponseSchema(**item) for item in menu_data]
     try:
         # Query menu items with eager loading of images
         menu_stmt = (
