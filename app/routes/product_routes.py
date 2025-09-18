@@ -217,11 +217,8 @@ async def delete_existing_product(
     and the user must be the seller of the product.
     """
     # Service function handles checking ownership and deletion logic
-    deleted = await product_service.delete_product(
+    await product_service.delete_product(
         db=db, product_id=product_id, current_user=current_user
     )
-    if not deleted:
-        # This case is hit if the product wasn't found initially in the service
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Product not found"
-        )
+    
+    return None

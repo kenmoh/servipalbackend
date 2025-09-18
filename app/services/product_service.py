@@ -160,13 +160,13 @@ async def get_products(db: AsyncSession) -> list[ProductResponse]:
 
     cached_products = redis_client.get(cache_key)
     if cached_products:
-        print(f"Cache HIT for key: {cache_key}")
+       
         return [ProductResponse(**product) for product in json.loads(cached_products)]
 
     # Get ALL products and cache them
     stmt = (
         select(Item)
-        .where(Item.item_type == ItemType.PRODUCT)
+        .where(Item.item_type == ItemType.PRODUCT, Item.is_deleted == False)
         .options(selectinload(Item.images))
         .order_by(Item.created_at.desc())
     )
@@ -480,51 +480,89 @@ async def update_product(
         )
 
 
-async def delete_product(
-    db: AsyncSession, product_id: UUID, current_user: User
-) -> bool:
-    """
-    Deletes a product if the current user is the seller.
 
-    Args:
-        db: The database session.
-        product_id: The ID of the product to delete.
-        current_user: The authenticated user attempting the deletion.
+async def delete_product(db: AsyncSession, product_id: UUID, current_user: User) -> None:
+    """Deletes an item and its associated images belonging to the current VENDOR user."""
 
-    Returns:
-        True if deletion was successful, False otherwise.
-
-    Raises:
-        HTTPException: If product not found, permission denied, or deletion fails.
-    """
     product = await db.get(Item, product_id)
 
-    if not product:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Item not found",
-        )
-
     if product.user_id != current_user.id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Not authorized to delete this product",
-        )
-
-    stmt = delete(Item).where(Item.id == product_id)
-
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not allowed")
+ 
     try:
-        result = await db.execute(stmt)
+
+        image_result = await db.execute(
+            select(ItemImage).where(ItemImage.item_id == product.id)
+        )
+        product_images = image_result.scalars().all()
+
+
+        # Delete images from S3
+        for image in product_images:
+            await delete_s3_object(image.url)
+
+        product.is_deleted = True
+
         await db.commit()
+
+        # Invalidate caches
         invalidate_product_cache(product_id, current_user.id)
 
-        return True if result.rowcount > 0 else False
+
+        return None
+
     except Exception as e:
         await db.rollback()
+        logging.error(f"Failed to delete item and images: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to delete product: {str(e)}",
+            detail=f"Failed to delete item: {str(e)}",
         )
+
+
+# async def delete_product(
+#     db: AsyncSession, product_id: UUID, current_user: User
+# ) -> bool:
+#     """
+#     Deletes a product if the current user is the seller.
+
+#     Args:
+#         db: The database session.
+#         product_id: The ID of the product to delete.
+#         current_user: The authenticated user attempting the deletion.
+
+#     Returns:
+#         True if deletion was successful, False otherwise.
+
+#     Raises:
+#         HTTPException: If product not found, permission denied, or deletion fails.
+#     """
+#     product = await db.get(Item, product_id)
+
+#     if not product:
+#         raise HTTPException(
+#             status_code=status.HTTP_403_FORBIDDEN,
+#             detail="Item not found",
+#         )
+
+#     if product.user_id != current_user.id:
+#         raise HTTPException(
+#             status_code=status.HTTP_403_FORBIDDEN,
+#             detail="Not authorized to delete this product",
+#         )
+
+#     try:
+#         product.is_deleted = True
+#         await db.commit()
+#         invalidate_product_cache(product_id, current_user.id)
+
+#         return True if result.rowcount > 0 else False
+#     except Exception as e:
+#         await db.rollback()
+#         raise HTTPException(
+#             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+#             detail=f"Failed to delete product: {str(e)}",
+#         )
 
 
 # <<<<< ---------- CACHE UTILITY FOR PRODUCTS ---------- >>>>>
