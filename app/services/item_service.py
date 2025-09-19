@@ -824,7 +824,7 @@ async def delete_item(db: AsyncSession, current_user: User, item_id: UUID) -> No
 
         # Invalidate caches
         invalidate_item_cache(item_id)
-        redis_client.delete(cache_key)
+       
         redis_client.delete(f"vendor_items:{current_user.id}")
         redis_client.delete(f"restaurant_menu:{current_user.id}:{food_group}")
 

@@ -88,6 +88,7 @@ class User(Base):
     )
 
     is_email_verified: Mapped[bool] = mapped_column(default=False, nullable=True)
+    accept_terms_and_conditions: Mapped[bool] = mapped_column(default=True, nullable=True)
     email_verification_code: Mapped[str] = mapped_column(nullable=True)
     email_verification_expires: Mapped[datetime] = mapped_column(nullable=True)
     account_status: Mapped[AccountStatus] = mapped_column(default=AccountStatus.PENDING)
@@ -378,7 +379,7 @@ class Item(Base):
     stock: Mapped[int] = mapped_column(nullable=True)
     in_stock: Mapped[bool] = mapped_column(default=True)
     total_sold: Mapped[int] = mapped_column(nullable=True)
-    is_deleted: Mapped[bool] = mapped_column(default=False)
+    is_deleted: Mapped[bool] = mapped_column(default=False, nullable=True)
 
     category_id: Mapped[UUID] = mapped_column(
         ForeignKey("categories.id"), nullable=True
@@ -450,7 +451,7 @@ class Order(Base):
     amount_due_vendor: Mapped[Decimal] = mapped_column(nullable=False)
     payment_link: Mapped[str] = mapped_column(nullable=True)
     additional_info: Mapped[str] = mapped_column(nullable=True)
-    is_deleted: Mapped[bool] = mapped_column(default=False)
+    is_deleted: Mapped[bool] = mapped_column(default=False, nullable=True)
     order_payment_status: Mapped[PaymentStatus] = mapped_column(
         default=PaymentStatus.PENDING
     )
