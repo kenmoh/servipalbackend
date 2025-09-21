@@ -1859,6 +1859,7 @@ dependencies = [
     { name = "python-jose", extra = ["cryptography"] },
     { name = "python-multipart" },
     { name = "redis" },
+    { name = "resend" },
     { name = "sentry-sdk", extra = ["fastapi"] },
     { name = "slowapi" },
     { name = "sqlalchemy", extra = ["asyncio"] },
@@ -1893,6 +1894,7 @@ requires-dist = [
     { name = "python-jose", extras = ["cryptography"], specifier = ">=3.4.0" },
     { name = "python-multipart", specifier = ">=0.0.20" },
     { name = "redis" },
+    { name = "resend", specifier = ">=2.14.0" },
     { name = "sentry-sdk", extras = ["fastapi"], specifier = ">=2.24.1" },
     { name = "slowapi", specifier = ">=0.1.9" },
     { name = "sqlalchemy", extras = ["asyncio"], specifier = ">=2.0.40" },
@@ -1938,6 +1940,19 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/e1/0a/929373653770d8a0d7ea76c37de6e41f11eb07559b103b1c02cafb3f7cf8/requests-2.32.4.tar.gz", hash = "sha256:27d0316682c8a29834d3264820024b62a36942083d52caf2f14c0591336d3422", size = 135258 }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/7c/e4/56027c4a6b4ae70ca9de302488c5ca95ad4a39e190093d6c1a8ace08341b/requests-2.32.4-py3-none-any.whl", hash = "sha256:27babd3cda2a6d50b30443204ee89830707d396671944c998b5975b031ac2b2c", size = 64847 },
+]
+
+[[package]]
+name = "resend"
+version = "2.14.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "requests" },
+    { name = "typing-extensions" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/f9/31/957c143f433bfcaff30c733ee7a63484f2abb10c36521640619d1e44a7af/resend-2.14.0.tar.gz", hash = "sha256:2c5385ca8bc72aafc494e747818a6c514e51bb1199213ffd02d62f24aa78b3f2", size = 15762 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/46/f5/7039cbd5917d8518eba94950416af557fd1ab7f30e21aff8c35854e1d229/resend-2.14.0-py2.py3-none-any.whl", hash = "sha256:1f5aea2966b59695f3af8571d75fb4b769b6d2ecf6b8d0f8c6ca8de1dffb6c12", size = 22584 },
 ]
 
 [[package]]

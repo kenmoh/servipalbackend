@@ -105,6 +105,9 @@ class Settings(BaseSettings):
     # MAP BOX
     MAPBOX_API_KEY: str = os.getenv("MAPBOX_API_KEY")
 
+    # RESEND
+    RESEND_API_KEY: str = os.getenv("RESEND_API_KEY")
+
 
 settings = Settings()
 

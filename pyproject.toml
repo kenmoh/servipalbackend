@@ -28,6 +28,7 @@ dependencies = [
     "python-jose[cryptography]>=3.4.0",
     "python-multipart>=0.0.20",
     "redis",
+    "resend>=2.14.0",
     "sentry-sdk[fastapi]>=2.24.1",
     "slowapi>=0.1.9",
     "sqlalchemy[asyncio]>=2.0.40",

@@ -4,6 +4,7 @@ from datetime import datetime, timedelta, time
 import secrets
 from uuid import UUID
 from fastapi import HTTPException, Request, status
+import resend
 
 # from psycopg2 import IntegrityError
 from fastapi_mail import FastMail, MessageSchema
@@ -28,6 +29,7 @@ from app.models.models import AuditLog, Profile, Session, User, RefreshToken, Wa
 from app.services import ws_service
 from app.schemas.user_schemas import UpdateStaffSchema
 from app.config.config import settings, email_conf
+from app.templates import send_email_verification_code, send_password_request_email, send_welcome_email_template
 from app.utils.utils import (
     check_login_attempts,
     record_failed_attempt,
@@ -37,7 +39,17 @@ from app.utils.utils import (
 from app.config.config import redis_client
 from app.templating import templates
 
+resend.api_key = settings.RESEND_API_KEY
+
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+
+
+# send_message = resend.Emails.send({
+#     'from': 'servipal@servi-pal.com',
+#     'to': 'kenneth.aremoh@gmail.com',
+#     'subject': 'Welcome to ServiPal',
+#     'html': '<h1>Welcome to ServiPal<h1>'
+# })
 
 
 def hash_password(password: str) -> str:
@@ -181,6 +193,7 @@ async def create_user(db: AsyncSession, user_data: CreateUserSchema) -> UserBase
         await send_verification_codes(
             user=user, email_code=email_code, phone_code=phone_code, db=db
         )
+        
         redis_client.delete("all_users")
         await asyncio.sleep(0.1)
         await ws_service.broadcast_new_user(
@@ -653,22 +666,33 @@ async def recover_password(email: str, db: AsyncSession) -> dict:
     }
 
     # Send reset email
-    message = MessageSchema(
-        subject="Password Reset Request",
-        recipients=[email],
-        # template_body={
-        #     "url": settings.FRONTEND_URL,
-        #     "reset_token": reset_token,
-        #     "user": user.email,
-        #     "expires_in": "24 hours",
-        # },
-        template_body=template_body,
-        subtype="html",
-    )
+    # message = MessageSchema(
+    #     subject="Password Reset Request",
+    #     recipients=[email],
+    #     # template_body={
+    #     #     "url": settings.FRONTEND_URL,
+    #     #     "reset_token": reset_token,
+    #     #     "user": user.email,
+    #     #     "expires_in": "24 hours",
+    #     # },
+    #     template_body=template_body,
+    #     subtype="html",
+    # )
 
-    fm = FastMail(email_conf)
-    await fm.send_message(message, template_name="reset_password.html")
+    # fm = FastMail(email_conf)
+    # await fm.send_message(message, template_name="reset_password.html")
 
+    _html = send_password_request_email(user=user.email, 
+                                        expires_in="24 hours",
+                                        custom_url=f"servipal://reset-password?token={reset_token}", 
+                                        reset_url= f"https://api.servi-pal.com/api/auth/reset-password?token={reset_token}",)
+
+    resend.Emails.send({
+        'from': 'servipal@servi-pal.com',
+        'to': [user.email],
+        'subject': 'Password Reset Request',
+        'html': _html
+    })
     return {"message": "Password reset instructions sent to your email"}
 
 
@@ -1101,14 +1125,23 @@ async def send_verification_codes(
         )
 
     # Send email code
-    message = MessageSchema(
-        subject="Verify Your Email",
-        recipients=[user.email],
-        template_body={"code": email_code, "expires_in": "10 minutes"},
-        subtype="html",
-    )
-    fm = FastMail(email_conf)
-    await fm.send_message(message, template_name="email.html")
+    # message = MessageSchema(
+    #     subject="Verify Your Email",
+    #     recipients=[user.email],
+    #     template_body={"code": email_code, "expires_in": "10 minutes"},
+    #     subtype="html",
+    # )
+    # fm = FastMail(email_conf)
+    # await fm.send_message(message, template_name="email.html")
+
+    _html =  send_email_verification_code(code=email_code, expires_in='10 minutes')
+
+    resend.Emails.send({
+        'from': 'servipal@servi-pal.com',
+        'to' : [user.email],
+        'subject': 'Verification Code',
+        'html': _html
+    })
 
     # Send SMS code (using Termii)
     await send_sms(
@@ -1186,21 +1219,28 @@ def invalidate_rider_cache(dispatcher_id: UUID):
         # logger.info(f"Cache invalidated for pattern: {pattern}")
 
 
-async def send_welcome_email(user):
-    message = MessageSchema(
-        subject="Welcome to ServiPal!",
-        recipients=[user.email],
-        template_body={
-            "title": "Welcome to ServiPal",
-            "name": user.email.split("@")[0],
-            "body": "Thank you for joining our platform. We're excited to have you!",
-            "code": "",
-        },
-        subtype="html",
-    )
-    fm = FastMail(email_conf)
-    await fm.send_message(message, template_name="welcome_email.html")
-
+async def send_welcome_email(user: User):
+    # message = MessageSchema(
+    #     subject="Welcome to ServiPal!",
+    #     recipients=[user.email],
+    #     template_body={
+    #         "title": "Welcome to ServiPal",
+    #         "name": user.email.split("@")[0],
+    #         "body": "Thank you for joining our platform. We're excited to have you!",
+    #         "code": "",
+    #     },
+    #     subtype="html",
+    # )
+    # fm = FastMail(email_conf)
+    # await fm.send_message(message, template_name="welcome_email.html")
+    _html = send_welcome_email_template(title='Welcome to ServiPal', name=user.email.split("@")[0], 
+                                        body="Thank you for joining our platform. We're excited to have you!")
+    resend.Emails.send({
+        'from':'servipal@servi-pal.com',
+        'to': [user.email],
+        'subject': 'Welcome to ServiPal',
+        'html': _html
+    })
 
 async def update_staff_password(
     staff_id: UUID,
