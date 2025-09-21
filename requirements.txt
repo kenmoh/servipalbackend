@@ -103,6 +103,7 @@ pyyaml==6.0.2
 redis==6.2.0
 referencing==0.36.2
 requests==2.32.4
+resend==2.14.0
 rich==14.0.0
 rich-toolkit==0.14.8
 rignore==0.6.4
