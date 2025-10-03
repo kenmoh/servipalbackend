@@ -54,7 +54,7 @@ class ProductResponse(BaseModel):
     colors: list[str] = []
     in_stock: bool
     images: list[ProductImage]
-    # is_deleted: bool
+    is_deleted: bool = False
     created_at: datetime
     updated_at: datetime
 

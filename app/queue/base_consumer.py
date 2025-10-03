@@ -1,29 +1,19 @@
 import asyncio
-from typing import Dict, Any
 import json
 from uuid import UUID
-from typing import Optional, Dict, Any, Callable
+from typing import  Dict, Callable
 from aio_pika import (
     connect_robust,
-    Message,
-    DeliveryMode,
+
     ExchangeType,
     IncomingMessage,
 )
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, update, insert
 
-from app.models.models import Delivery, Order, Wallet
-from app.database.database import get_db
+
 from app.utils.logger_config import setup_logger
-from app.config.config import settings, redis_client
-from app.schemas.status_schema import (
-    OrderStatus,
-    DeliveryStatus,
-    PaymentStatus,
-    TransactionType,
-    TransactionDirection,
-)
+from app.config.config import settings
+
+
 
 logger = setup_logger()
 
