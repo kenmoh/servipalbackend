@@ -75,7 +75,7 @@ async def get_rider_profile(db: AsyncSession, user_id: UUID) -> RiderProfileSche
     cached_user = redis_client.get(f"rider_id:{user_id}")
     if cached_user:
         users_data = json.loads(cached_user)
-        return [UserProfileResponse(**user_data) for user_data in users_data]
+        return RiderProfileSchema(**users_data)
 
     stmt = (
         select(User)
@@ -101,7 +101,7 @@ async def get_rider_profile(db: AsyncSession, user_id: UUID) -> RiderProfileSche
         ex=settings.REDIS_EX,
     )
 
-    return rider_dict
+    return RiderProfileSchema(**rider_dict)
 
 
 async def get_current_user_details(

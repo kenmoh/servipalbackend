@@ -1552,7 +1552,7 @@ async def sender_confirm_delivery_or_order_received(
             await send_push_notification(
                 tokens=[rider_token],
                 title="Order Completed",
-                message=f"Congratulations! Order completed. ₦{order.delivery.amount_due_dispatch} has been released to your wallet.",
+                message=f"Congratulations! Your wallet has been updated.",
                 navigate_to="/(app)/delivery/orders",
             )
 
@@ -1560,7 +1560,7 @@ async def sender_confirm_delivery_or_order_received(
             await send_push_notification(
                 tokens=[vendor_token],
                 title="Order Completed",
-                message=f"Congratulations! Order completed. ₦{order.amount_due_vendor} has been released to your wallet.",
+                message=f"Congratulations! Your wallet has been updated",
                 navigate_to="/(app)/delivery/orders",
             )
 
