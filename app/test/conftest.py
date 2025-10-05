@@ -1,7 +1,8 @@
 import asyncio
 import pytest
 import pytest_asyncio
-from httpx import AsyncClient
+from fastapi.testclient import TestClient
+from httpx import AsyncClient, ASGITransport
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
 from sqlalchemy.pool import StaticPool
 from unittest.mock import AsyncMock, MagicMock
@@ -11,7 +12,8 @@ from app.database.database import get_db, Base
 from app.config.config import settings
 from app.models.models import User
 from app.schemas.status_schema import UserType, AccountStatus
-from app.auth.auth import create_access_token, get_password_hash
+from app.auth.auth import create_access_token
+from app.services.auth_service import hash_password
 
 
 # Use the existing test database from settings
@@ -56,7 +58,7 @@ async def client(db_session):
     
     app.dependency_overrides[get_db] = override_get_db
     
-    async with AsyncClient(app=app, base_url="http://test") as ac:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
         yield ac
     
     app.dependency_overrides.clear()
@@ -67,7 +69,7 @@ async def test_user(db_session):
     """Create a test user."""
     user = User(
         email="test@example.com",
-        password=get_password_hash("@Testpassword123"),
+        password=hash_password("@Testpassword123"),
         user_type=UserType.CUSTOMER,
         is_verified=True,
         is_email_verified=True,
@@ -84,7 +86,7 @@ async def test_vendor(db_session):
     """Create a test vendor user."""
     vendor = User(
         email="vendor@example.com",
-        password=get_password_hash("@Vendorpassword123"),
+        password=hash_password("@Vendorpassword123"),
         user_type=UserType.RESTAURANT_VENDOR,
         is_verified=True,
         is_email_verified=True,
@@ -101,7 +103,7 @@ async def test_rider(db_session):
     """Create a test rider user."""
     rider = User(
         email="rider@example.com",
-        password=get_password_hash("@Riderpassword123"),
+        password=hash_password("@Riderpassword123"),
         user_type=UserType.RIDER,
         is_verified=True,
         is_email_verified=True,

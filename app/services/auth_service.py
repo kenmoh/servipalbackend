@@ -1146,7 +1146,7 @@ async def send_verification_codes(
     # Send SMS code (using Termii)
     await send_sms(
         phone_number=user.profile.phone_number,
-        phone_code=f"Your verification code is: {phone_code}. This code will expire in 10 minutes.",
+        phone_code=phone_code,
     )
     return {"message": "Verification codes sent to your email and phone"}
 

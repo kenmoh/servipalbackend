@@ -1,7 +1,7 @@
 import asyncio
+from typing import Dict, Callable
 import json
-from uuid import UUID
-from typing import  Dict, Callable
+
 from aio_pika import (
     connect_robust,
 
@@ -10,10 +10,9 @@ from aio_pika import (
 )
 
 
+
 from app.utils.logger_config import setup_logger
 from app.config.config import settings
-
-
 
 logger = setup_logger()
 

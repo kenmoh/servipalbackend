@@ -36,4 +36,9 @@ dependencies = [
     "ua-parser>=1.0.1",
     "user-agents>=2.2.0",
     "websockets>=15.0.1",
+    "locust>=2.31.8",
+    "pytest-cov>=6.0.0",
+    "pytest-mock>=3.14.0",
+    "factory-boy>=3.3.1",
+    "faker>=30.8.2",
 ]
