@@ -134,6 +134,18 @@ wheels = [
 ]
 
 [[package]]
+name = "aiosqlite"
+version = "0.21.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "typing-extensions" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/13/7d/8bca2bf9a247c2c5dfeec1d7a5f40db6518f88d314b8bca9da29670d2671/aiosqlite-0.21.0.tar.gz", hash = "sha256:131bb8056daa3bc875608c631c678cda73922a2d4ba8aec373b19f18c17e7aa3", size = 13454 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/f5/10/6c25ed6de94c49f88a91fa5018cb4c0f3625f31d5be9f771ebe5cc7cd506/aiosqlite-0.21.0-py3-none-any.whl", hash = "sha256:2549cf4057f95f53dcba16f2b64e8e2791d7e1adedb13197dd8ed77bb226d7d0", size = 15792 },
+]
+
+[[package]]
 name = "alembic"
 version = "1.16.4"
 source = { registry = "https://pypi.org/simple" }
@@ -639,30 +651,6 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/42/ed/8c3120e29553bf1d669ab9c04511011c92924bcc7721dcd337c7d809f7c1/exponent_server_sdk_async-2.1.7.tar.gz", hash = "sha256:6e8e213009b4146336336a51a54e089072afffc8c5b01233b00c8030c97e9e94", size = 6787 }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/b7/46/7e9227c3ee902c5feb71267f32d2a27f33c971f00bb5b6f52442c0eb99d3/exponent_server_sdk_async-2.1.7-py3-none-any.whl", hash = "sha256:23f33cb49d53bc925b3538b2eda4b9ab4655bd825481a1fd4effd6b9d022f2a0", size = 8472 },
-]
-
-[[package]]
-name = "factory-boy"
-version = "3.3.3"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "faker" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/ba/98/75cacae9945f67cfe323829fc2ac451f64517a8a330b572a06a323997065/factory_boy-3.3.3.tar.gz", hash = "sha256:866862d226128dfac7f2b4160287e899daf54f2612778327dd03d0e2cb1e3d03", size = 164146 }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/27/8d/2bc5f5546ff2ccb3f7de06742853483ab75bf74f36a92254702f8baecc79/factory_boy-3.3.3-py2.py3-none-any.whl", hash = "sha256:1c39e3289f7e667c4285433f305f8d506efc2fe9c73aaea4151ebd5cdea394fc", size = 37036 },
-]
-
-[[package]]
-name = "faker"
-version = "37.8.0"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "tzdata" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/3a/da/1336008d39e5d4076dddb4e0f3a52ada41429274bf558a3cc28030d324a3/faker-37.8.0.tar.gz", hash = "sha256:090bb5abbec2b30949a95ce1ba6b20d1d0ed222883d63483a0d4be4a970d6fb8", size = 1912113 }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/f5/11/02ebebb09ff2104b690457cb7bc6ed700c9e0ce88cf581486bb0a5d3c88b/faker-37.8.0-py3-none-any.whl", hash = "sha256:b08233118824423b5fc239f7dd51f145e7018082b4164f8da6a9994e1f1ae793", size = 1953940 },
 ]
 
 [[package]]
@@ -2335,6 +2323,7 @@ version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
     { name = "aio-pika" },
+    { name = "aiosqlite" },
     { name = "alembic" },
     { name = "appwrite" },
     { name = "apscheduler" },
@@ -2342,8 +2331,6 @@ dependencies = [
     { name = "boto3" },
     { name = "dramatiq" },
     { name = "exponent-server-sdk-async" },
-    { name = "factory-boy" },
-    { name = "faker" },
     { name = "fastapi", extra = ["standard"] },
     { name = "fastapi-mail" },
     { name = "fastapi-mcp" },
@@ -2375,6 +2362,7 @@ dependencies = [
 [package.metadata]
 requires-dist = [
     { name = "aio-pika" },
+    { name = "aiosqlite", specifier = ">=0.21.0" },
     { name = "alembic", specifier = ">=1.15.2" },
     { name = "appwrite", specifier = ">=12.0.0" },
     { name = "apscheduler", specifier = ">=3.11.0" },
@@ -2382,8 +2370,6 @@ requires-dist = [
     { name = "boto3" },
     { name = "dramatiq", specifier = ">=1.18.0" },
     { name = "exponent-server-sdk-async", specifier = ">=2.1.7" },
-    { name = "factory-boy", specifier = ">=3.3.1" },
-    { name = "faker", specifier = ">=30.8.2" },
     { name = "fastapi", extras = ["standard"], specifier = ">=0.115.12" },
     { name = "fastapi-mail", specifier = ">=1.4.2" },
     { name = "fastapi-mcp", specifier = ">=0.3.4" },

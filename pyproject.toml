@@ -39,6 +39,5 @@ dependencies = [
     "locust>=2.31.8",
     "pytest-cov>=6.0.0",
     "pytest-mock>=3.14.0",
-    "factory-boy>=3.3.1",
-    "faker>=30.8.2",
+    "aiosqlite>=0.21.0",
 ]

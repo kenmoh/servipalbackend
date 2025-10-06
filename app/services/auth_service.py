@@ -183,11 +183,9 @@ async def create_user(db: AsyncSession, user_data: CreateUserSchema) -> UserBase
             db.add(wallet)
 
         await db.commit()
-        await db.refresh(profile)
-        await db.refresh(user)
 
         # Generate and send verification codes
-        email_code, phone_code = await generate_verification_codes(user, db)
+        email_code, phone_code = await generate_verification_codes(user, profile, db)
 
         # Send verification code to phone and email
         await send_verification_codes(
@@ -322,7 +320,7 @@ async def create_new_rider(
         }
 
         # Generate and send verification codes
-        email_code, phone_code = await generate_verification_codes(new_rider, db)
+        email_code, phone_code = await generate_verification_codes(new_rider, rider_profile, db)
 
         await send_verification_codes(
             user=new_rider, email_code=email_code, phone_code=phone_code, db=db
@@ -1087,7 +1085,7 @@ async def generate_resend_verification_code(email: str, db: AsyncSession):
     return user, email_code, phone_code
 
 
-async def generate_verification_codes(user: User, db: AsyncSession) -> tuple[str, str]:
+async def generate_verification_codes(user: User, profile: Profile, db: AsyncSession) -> tuple[str, str]:
     """Generate verification codes for both email and phone"""
 
     # Generate codes
@@ -1099,10 +1097,10 @@ async def generate_verification_codes(user: User, db: AsyncSession) -> tuple[str
 
     # Update user record with codes and expiration
     user.email_verification_code = email_code
-    user.profile.phone_verification_code = phone_code
+    profile.phone_verification_code = phone_code
 
     user.email_verification_expires = expires
-    user.profile.phone_verification_expires = expires
+    profile.phone_verification_expires = expires
 
     await db.commit()
 
@@ -1137,7 +1135,7 @@ async def send_verification_codes(
     _html =  send_email_verification_code(code=email_code, expires_in='10 minutes')
 
     resend.Emails.send({
-        'from': 'servipal@servi-pal.com',
+        'from': 'servipal@verification.servi-pal.com',
         'to' : [user.email],
         'subject': 'Verification Code',
         'html': _html
