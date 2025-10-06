@@ -281,8 +281,9 @@ async def send_sms(phone_number: str, phone_code: str) -> dict:
     """
 
 
-    api_key = settings.SMS_API_KEY
-    termii_url = "https://v3.api.termii.com/api/sms/send"
+   
+    base_url = 'https://v3.api.termii.com'
+    termii_url = f"{base_url}/api/sms/send"
 
     payload = {
         "to": phone_number,

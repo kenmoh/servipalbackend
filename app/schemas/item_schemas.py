@@ -123,7 +123,7 @@ class MenuResponseSchema(MenuBase):
     side: str | None = None
     food_group: FoodGroup
     description: str
-    # is_deleted: bool
+    is_deleted: bool = False
 
 class LaundryMenuResponseSchema(MenuBase):
     pass
