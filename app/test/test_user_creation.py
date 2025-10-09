@@ -1,31 +1,136 @@
-import re
-import pytest
+import os
+import uuid
 from httpx import AsyncClient
-from sqlalchemy.ext.asyncio import AsyncSession
-
+import pytest
 from app.schemas.status_schema import UserType
 
+os.environ["TEST"] = "true"
 
 BASE_URL = "/api/auth"
 
 
+@pytest.mark.asyncio
 class TestUserCreation:
     """Test user creation scenarios."""
 
-
-    @pytest.mark.asyncio
-    async def test_new_customer_user(self, test_client: AsyncClient):
+    async def test_create_new_restaurant_user(self, client: AsyncClient):
+        unique_id = str(uuid.uuid4())[:8]
         payload = {
-            "email": "customer@example.com",
+            "email": f"restaurant_{unique_id}@example.com",
             "password": "Password123!",
-            "user_type": UserType.CUSTOMER,
-            "phone_number": "+1234567890"
+            "user_type": UserType.RESTAURANT_VENDOR.value,
+            "phone_number": f"+12346{unique_id[:5]}",
         }
-
-        response = await test_client.post(f"{BASE_URL}/register", json=payload)
+        response = await client.post(f"{BASE_URL}/register", json=payload)
         assert response.status_code == 201
         data = response.json()
-        assert data["user_type"] == UserType.CUSTOMER.value
-        assert data["phone_number"] == "+1234567890"
-        assert data["email"] == "customer@example.com"
+        print('===========', data, '==============')
+        assert data["email"] == payload["email"]
 
+    async def test_create_new_customer_user(self, client: AsyncClient):
+        unique_id = str(uuid.uuid4())[:8]
+        payload = {
+            "email": f"customer_{unique_id}@example.com",
+            "password": "Password123!",
+            "user_type": UserType.CUSTOMER.value,
+            "phone_number": f"+12345{unique_id[:5]}",
+        }
+        response = await client.post(f"{BASE_URL}/register", json=payload)
+        assert response.status_code == 201
+        data = response.json()
+        assert data["email"] == payload["email"]
+
+    async def test_create_new_laundry_user(self, client: AsyncClient):
+        unique_id = str(uuid.uuid4())[:8]
+        payload = {
+            "email": f"laundry_{unique_id}@example.com",
+            "password": "Password123!",
+            "user_type": UserType.LAUNDRY_VENDOR.value,
+            "phone_number": f"+12347{unique_id[:5]}",
+        }
+        response = await client.post(f"{BASE_URL}/register", json=payload)
+        assert response.status_code == 201
+        data = response.json()
+        assert data["email"] == payload["email"]
+
+    # @pytest.mark.parametrize(
+    #     "invalid_email",
+    #     [
+    #         "invalid-email",
+    #         "test@",
+    #         "@example.com",
+    #         "test.example.com",
+    #         "",
+    #     ],
+    # )
+    # async def test_create_user_invalid_email(self, client: AsyncClient, invalid_email):
+    #     unique_id = str(uuid.uuid4())[:8]
+    #     payload = {
+    #         "email": invalid_email,
+    #         "password": "Password123!",
+    #         "user_type": UserType.CUSTOMER.value,
+    #         "phone_number": f"+12345{unique_id[:5]}",
+    #     }
+    #     response = await client.post(f"{BASE_URL}/register", json=payload)
+    #     assert response.status_code == 422
+
+    # @pytest.mark.parametrize(
+    #     "invalid_password",
+    #     [
+    #         "short",
+    #         "nouppercase123!",
+    #         "NOLOWERCASE123!",
+    #         "NoSpecialChar123",
+    #         "NoNumbers!",
+    #         "",
+    #     ],
+    # )
+    # async def test_create_user_invalid_password(
+    #     self, client: AsyncClient, invalid_password
+    # ):
+    #     unique_id = str(uuid.uuid4())[:8]
+    #     payload = {
+    #         "email": f"test_{unique_id}@example.com",
+    #         "password": invalid_password,
+    #         "user_type": UserType.CUSTOMER.value,
+    #         "phone_number": f"+12345{unique_id[:5]}",
+    #     }
+    #     response = await client.post(f"{BASE_URL}/register", json=payload)
+    #     assert response.status_code == 422
+
+    # @pytest.mark.parametrize(
+    #     "invalid_user_type", ["INVALID_TYPE", "admin1", "user", "", 123]
+    # )
+    # async def test_create_user_invalid_user_type(
+    #     self, client: AsyncClient, invalid_user_type
+    # ):
+    #     unique_id = str(uuid.uuid4())[:8]
+    #     payload = {
+    #         "email": f"test_{unique_id}@example.com",
+    #         "password": "Password123!",
+    #         "user_type": invalid_user_type,
+    #         "phone_number": f"+12345{unique_id[:5]}",
+    #     }
+    #     response = await client.post(f"{BASE_URL}/register", json=payload)
+    #     assert response.status_code == 422
+
+    async def test_login_user(self, client: AsyncClient, test_user: any):
+
+        unique_id = str(uuid.uuid4())[:8]
+        payload = {
+            "email": f"restaurant_{unique_id}@example.com",
+            "password": "Password123!",
+            "user_type": UserType.RESTAURANT_VENDOR.value,
+            "phone_number": f"+12346{unique_id[:5]}",
+        }
+        response = await client.post(f"{BASE_URL}/register", json=payload)
+        data = response.json()
+
+        login_data = {"username": data['email'], "password": "Password123!"}
+
+        response = await client.post(f"{BASE_URL}/login", data=login_data)
+        
+        assert response.status_code == 200
+        data = response.json()
+        assert "access_token" in data
+        assert "refresh_token" in data

@@ -188,9 +188,10 @@ async def create_user(db: AsyncSession, user_data: CreateUserSchema) -> UserBase
         email_code, phone_code = await generate_verification_codes(user, profile, db)
 
         # Send verification code to phone and email
-        await send_verification_codes(
-            user=user, email_code=email_code, phone_code=phone_code, db=db
-        )
+        if settings.TEST != 'true':
+            await send_verification_codes(
+                user=user, email_code=email_code, phone_code=phone_code, db=db
+            )
         
         redis_client.delete("all_users")
         await asyncio.sleep(0.1)
@@ -322,9 +323,10 @@ async def create_new_rider(
         # Generate and send verification codes
         email_code, phone_code = await generate_verification_codes(new_rider, rider_profile, db)
 
-        await send_verification_codes(
-            user=new_rider, email_code=email_code, phone_code=phone_code, db=db
-        )
+        if settings.TEST != 'true':
+            await send_verification_codes(
+                user=new_rider, email_code=email_code, phone_code=phone_code, db=db
+            )
 
         invalidate_rider_cache(current_user.id)
         redis_client.delete("all_users")
@@ -776,7 +778,6 @@ async def logout_user(db: AsyncSession, current_user: User) -> bool:
         return True
     except Exception:
         await db.rollback()
-        # Instead of raising, just return True for UI logout success
         return True
 
 
@@ -1072,7 +1073,7 @@ async def generate_resend_verification_code(email: str, db: AsyncSession):
     phone_code = f"{secrets.randbelow(1000000):06d}"
 
     # Set expiration time (25 minutes from now)
-    expires = datetime.now() + timedelta(minutes=25)
+    expires = datetime.now() + timedelta(hours=24)
 
     # Update user record with codes and expiration
     user.email_verification_code = email_code
@@ -1132,7 +1133,7 @@ async def send_verification_codes(
     # fm = FastMail(email_conf)
     # await fm.send_message(message, template_name="email.html")
 
-    _html =  send_email_verification_code(code=email_code, expires_in='10 minutes')
+    _html =  send_email_verification_code(code=email_code, expires_in='24 hours')
 
     resend.Emails.send({
         'from': 'servipal@verification.servi-pal.com',

@@ -14,7 +14,8 @@ services:
 
   app:
     build: .
-    command: uvicorn app.main:app --host 0.0.0.0 --port 8000
+    # command: uvicorn app.main:app --host 0.0.0.0 --port 8000
+    command: fastapi run
     volumes:
       - ./app:/app/app
       - ./migration:/app/migration
@@ -27,4 +28,3 @@ services:
       redis:
         condition: service_healthy
     restart: always
-# Note: Postgres is now external (Neon). Set DATABASE_URL in .env.docker accordingly.

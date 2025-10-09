@@ -23,6 +23,12 @@ class RequireDeliverySchema(str, Enum):
 #     CREDIT = "credit"
 
 
+# class UserType(str, Enum):
+#     CUSTOMER: str = 'customer'
+#     RESTAURANT_VENDOR: str = 'restaurant_vendor'
+#     LAUNDRY_VENDOR: str = 'laundry_vendor'
+
+
 class UserType(str, Enum):
     CUSTOMER: str = os.getenv("CUSTOMER")
     DISPATCH: str = os.getenv("DISPATCH")

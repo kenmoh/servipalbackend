@@ -66,3 +66,6 @@ ehthumbs.db
 .env
 .env.docker
 .dockerignore
+
+# Migrations
+migrations/
