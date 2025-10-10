@@ -154,6 +154,7 @@ async def get_current_user_details(
                 "bank_name": getattr(user.profile, "bank_name", None),
                 "full_name": user.profile.full_name,
                 "state": user.profile.state,
+                "review_count": review_count or None,
                 "store_name": user.profile.store_name,
                 "business_name": getattr(user.profile, "business_name", None),
                 "business_address": getattr(user.profile, "business_address", None),
