@@ -1,5 +1,4 @@
-# syntax=docker/dockerfile:1
-FROM python:3.11-alpine
+FROM python:3.12-alpine
 
 # Install system dependencies and build tools for Alpine
 RUN apk update && \
@@ -9,11 +8,6 @@ RUN apk update && \
 
 # Set work directory
 WORKDIR /app
-
-# Install pipenv or poetry if you use them (uncomment if needed)
-# RUN pip install pipenv
-# COPY Pipfile* ./
-# RUN pipenv install --deploy --ignore-pipfile
 
 # Install Python dependencies
 COPY requirements.txt ./
@@ -26,10 +20,6 @@ RUN apk del .build-deps
 COPY ./app ./app
 COPY ./alembic.ini ./
 COPY ./migration ./migration
-
-# Copy entrypoint script (for migrations, optional)
-# COPY ./docker-entrypoint.sh ./
-# RUN chmod +x /app/docker-entrypoint.sh
 
 # Expose port
 EXPOSE 8000

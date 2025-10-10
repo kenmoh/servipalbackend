@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta
+import requests
 import secrets
 import re
 from decimal import Decimal
@@ -549,3 +550,22 @@ async def get_full_name_or_business_name(db: AsyncSession, user_id: UUID) -> str
             detail="User name or business name not found in profile",
         )
     return name
+
+
+def sms_send():
+
+    base_url = 'https://v3.api.termii.com'
+    termii_url = f"{base_url}/api/sms/send"
+    payload = {
+              "to": "2347063692766",
+               "from": "ServiPal",
+               "sms": "Hi there, testing Termii ",
+               "type": "plain",
+               "channel": "dnd",
+               "api_key": settings.SMS_API_KEY,
+           }
+    headers = {
+    'Content-Type': 'application/json',
+    }
+    response = requests.request("POST", termii_url, headers=headers, json=payload)
+    print(response.text)
