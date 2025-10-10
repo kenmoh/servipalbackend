@@ -133,8 +133,15 @@ async def get_current_user_details(
         result = await db.execute(stmt)
         user = result.scalar_one_or_none()
 
-        review_count_result = await db.execute(select(func.count(Review.reviewee_id)).where(Review.reviewee_id==user.id))
-        review_count = review_count_result.scalar()
+        review_stmt = select(
+            func.count(Review.id).label('review_count'),
+            func.avg(Review.rating).label('avg_rating'),
+        ).where(Review.reviewee_id == user.id)
+
+        review_result = await db.execute(review_stmt)
+        stats = review_result.one()
+        review_count = stats.review_count or 0
+        avg_rating = round(stats.avg_rating, 2) if stats.avg_rating else 0.0
 
         # Convert response format
         user_profile_dict = {
@@ -142,7 +149,7 @@ async def get_current_user_details(
             "user_type": user.user_type,
             "account_status": user.account_status,
             "is_blocked": user.is_blocked,
-            "review_count": review_count or None,
+            # "review_count": review_count or None,
             "id": user.id,
             "profile": {
                 "phone_number": user.profile.phone_number,
@@ -155,6 +162,7 @@ async def get_current_user_details(
                 "full_name": user.profile.full_name,
                 "state": user.profile.state,
                 "review_count": review_count or None,
+                "avg_rating": avg_rating or None,
                 "store_name": user.profile.store_name,
                 "business_name": getattr(user.profile, "business_name", None),
                 "business_address": getattr(user.profile, "business_address", None),
@@ -826,8 +834,17 @@ async def get_user_with_profile(db: AsyncSession, user_id: UUID) -> ProfileSchem
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND, detail="Profile not found"
             )
-        review_count_result = await db.execute(select(func.count(Review.reviewee_id)).where(Review.reviewee_id==profile.user_id))
-        review_count = review_count_result.scalar()
+       
+        review_stmt = select(
+            func.count(Review.id).label('review_count'),
+            func.avg(Review.rating).label('avg_rating'),
+        ).where(Review.reviewee_id == profile.user_id)
+
+        review_result = await db.execute(review_stmt)
+        stats = review_result.one()
+        review_count = stats.review_count or 0
+        avg_rating = round(stats.avg_rating, 2) if stats.avg_rating else 0.0
+
 
         user_data = {
             "user_id": profile.user_id,
@@ -839,6 +856,7 @@ async def get_user_with_profile(db: AsyncSession, user_id: UUID) -> ProfileSchem
             "store_name": profile.store_name or None,
             "state": profile.state or None,
             "review_count": review_count or None,
+            "avg_rating": avg_rating or None,
             "business_name": profile.business_name or None,
             "business_address": profile.business_address or None,
             "business_registration_number": profile.business_registration_number
