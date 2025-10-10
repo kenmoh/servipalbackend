@@ -142,7 +142,7 @@ async def get_current_user_details(
             "user_type": user.user_type,
             "account_status": user.account_status,
             "is_blocked": user.is_blocked,
-            "review_count": review_count,
+            "review_count": review_count or None,
             "id": user.id,
             "profile": {
                 "phone_number": user.profile.phone_number,
