@@ -409,6 +409,7 @@ class ProfileSchema(BaseModel):
     backdrop_image_url: str | None = None
     state: str | None = None
     review_count: float | None = None
+    avg_rating: float | None = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -423,7 +424,7 @@ class UserProfileResponse(UserBase):
     id: UUID
     account_status: AccountStatus
     is_blocked: bool
-    review_count: float | None = None
+    # review_count: float | None = None
     profile: ProfileSchema | None
 
 
