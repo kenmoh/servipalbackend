@@ -59,10 +59,9 @@ class CreateUserSchema(BaseModel):
 class CreateUserResponseSchema(BaseModel):
     id: str
     email: EmailStr
-    phone_number: str
     user_type: UserType
-    created_at: datetime
-    updated_at: datetime
+    message: str
+    otp_sent: bool
 
     class Config:
         from_attributes = True

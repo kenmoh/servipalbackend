@@ -24,6 +24,7 @@ from app.schemas.user_schemas import (
     UserLogin,
     CreateUserSchema,
     UpdateStaffSchema,
+    CreateUserResponseSchema
 )
 from app.models.models import AuditLog, Profile, Session, User, RefreshToken, Wallet
 from app.services import ws_service
@@ -38,8 +39,10 @@ from app.utils.utils import (
 )
 from app.config.config import redis_client
 from app.templating import templates
+from app.utils.utils import generate_otp, validate_otp
 
 resend.api_key = settings.RESEND_API_KEY
+
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
@@ -140,7 +143,7 @@ async def login_admin_user(db: AsyncSession, login_data: UserLogin) -> User:
     return user
 
 
-async def create_user(db: AsyncSession, user_data: CreateUserSchema) -> UserBase:
+async def create_user1(db: AsyncSession, user_data: CreateUserSchema) -> UserBase:
     """
     Create a new user in the database.
     Optimized version using database constraints for validation.
@@ -752,14 +755,15 @@ async def change_password(
         )
 
 
-async def logout_user(db: AsyncSession, current_user: User) -> bool:
+async def logout_user(db: AsyncSession, current_user: User) -> dict:
     """
     Revokes all refresh tokens for a user, effectively logging them out of all devices
+    
     Args:
         db: Database session
-        user_id: ID of user to logout
+        current_user: Current authenticated user
     Returns:
-        bool: True if successful
+        dict: Response message
     """
     try:
         stmt = (
@@ -770,14 +774,57 @@ async def logout_user(db: AsyncSession, current_user: User) -> bool:
             )
             .values(is_revoked=True, revoked_at=datetime.now())
         )
-        await db.execute(stmt)
+        result = await db.execute(stmt)
         await db.commit()
-        redis_client.delete(f"current_useer_profile:{current_user.id}")
-        return True
-    except Exception:
+        
+        # Clear user cache (fix typo: current_useer -> current_user)
+        redis_client.delete(f"current_user_profile:{current_user.id}")
+        
+        # Get count of revoked tokens
+        revoked_count = result.rowcount
+        
+        return {
+            "status": "success",
+            "message": "Logged out successfully",
+            "revoked_tokens": revoked_count
+        }
+        
+    except Exception as e:
         await db.rollback()
-        # Instead of raising, just return True for UI logout success
-        return True
+        logger.error(f"Logout error: {str(e)}") 
+        
+        # Still return success for UI, but log the error
+        return {
+            "status": "success",
+            "message": "Logged out successfully"
+        }
+
+# async def logout_user(db: AsyncSession, current_user: User) -> bool:
+#     """
+#     Revokes all refresh tokens for a user, effectively logging them out of all devices
+#     Args:
+#         db: Database session
+#         user_id: ID of user to logout
+#     Returns:
+#         bool: True if successful
+#     """
+#     try:
+#         stmt = (
+#             update(RefreshToken)
+#             .where(
+#                 RefreshToken.user_id == current_user.id,
+#                 RefreshToken.is_revoked == False,
+#             )
+#             .values(is_revoked=True, revoked_at=datetime.now())
+#         )
+#         await db.execute(stmt)
+#         await db.commit()
+#         redis_client.delete(f"current_useer_profile:{current_user.id}")
+#         return True
+#     except Exception:
+#         await db.rollback()
+#         # Instead of raising, just return True for UI logout success
+#         return True
 
 
 async def reset_password(
@@ -1149,7 +1196,7 @@ async def send_verification_codes(
     return {"message": "Verification codes sent to your email and phone"}
 
 
-async def verify_user_contact(
+async def verify_user_contact1(
     email_code: str, phone_code: str, db: AsyncSession
 ) -> dict:
     """Verify both email and phone codes"""
@@ -1281,3 +1328,284 @@ async def update_staff_password(
     db.add(audit)
     await db.commit()
     return {"message": "Staff password updated successfully."}
+
+
+
+async def create_user(db: AsyncSession, user_data: CreateUserSchema) -> CreateUserResponseSchema:
+    """
+    Create a new user in the database with Flutterwave OTP verification.
+    
+    Args:
+        db: Database session
+        user_data: User data from request
+    Returns:
+        User data and OTP references for verification
+    """
+    # Validate password
+    validate_password(user_data.password)
+    
+    # Format the phone number to international format (+234...)
+    if user_data.phone_number.startswith('0'):
+        formatted_phone = f"234{user_data.phone_number[1:]}"
+    elif user_data.phone_number.startswith('234'):
+        formatted_phone = f"+{user_data.phone_number}"
+    elif user_data.phone_number.startswith('234'):
+        formatted_phone = user_data.phone_number
+    else:
+        formatted_phone = f"234{user_data.phone_number}"
+    
+    try:
+        # Create the user - let database constraints handle email uniqueness
+        user = User(
+            email=user_data.email.lower(),
+            password=hash_password(user_data.password),
+            user_type=user_data.user_type,
+            updated_at=datetime.now(),
+            account_status=AccountStatus.PENDING,  # Keep pending until OTP verified
+        )
+        
+        # Add user to database
+        db.add(user)
+        await db.flush()
+        
+        # Create profile
+        profile = Profile(
+            user_id=user.id,
+            phone_number=formatted_phone,
+        )
+        db.add(profile)
+        
+        # Create wallet for non-rider users
+        if user.user_type != UserType.RIDER:
+            wallet = Wallet(id=user.id, balance=0, escrow_balance=0)
+            db.add(wallet)
+        
+        await db.commit()
+        
+        # Generate Flutterwave OTP
+        otp_result = await generate_otp(user.email, formatted_phone)
+        
+        if otp_result["status"] == "success":
+            # Store OTP references in Redis with user_id as key
+            otp_data = {
+                "email_reference": otp_result["references"].get("email"),
+                "sms_reference": otp_result["references"].get("sms"),
+                "user_id": user.id,
+                "email": user.email
+            }
+            redis_client.setex(
+                f"otp_verification:{user.id}",
+                1800,  # 30 minutes expiry
+                json.dumps(otp_data)
+            )
+            
+            redis_client.delete("all_users")
+            await asyncio.sleep(0.1)
+            await ws_service.broadcast_new_user(
+                {"email": user.email, "user_type": user.user_type}
+            )
+            
+            return {
+                "id": user.id,
+                "user_type": user.user_type,
+                "email": user.email,
+                "message": "User created successfully. OTP sent to email and phone.",
+                "otp_sent": True
+            }
+        else:
+            # If OTP generation fails, rollback user creation
+            await db.rollback()
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Failed to send OTP: {otp_result.get('message')}"
+            )
+            
+    except IntegrityError as e:
+        await db.rollback()
+        # Parse the constraint violation to provide specific error messages
+        error_msg = str(e).lower()
+        if "email" in error_msg and "unique" in error_msg:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT, 
+                detail="Email already registered"
+            )
+        elif "phone_number" in error_msg and "unique" in error_msg:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Phone number already registered",
+            )
+        else:
+            # Generic fallback for other integrity errors
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Email or phone number already registered",
+            )
+
+
+async def verify_user_contact(
+    user_id: UUID,
+    email_otp: str,
+    phone_otp: str,
+    db: AsyncSession
+) -> dict:
+    """
+    Verify both email and phone OTPs using Flutterwave.
+    
+    Args:
+        user_id: User ID to verify
+        email_otp: OTP code sent to email
+        phone_otp: OTP code sent to phone
+        db: Database session
+    Returns:
+        Success message
+    """
+    # Get OTP references from Redis
+    otp_data_json = redis_client.get(f"otp_verification:{user_id}")
+    
+    if not otp_data_json:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="OTP session expired or not found. Please request a new OTP."
+        )
+
+    
+    otp_data = json.loads(otp_data_json)
+    
+    # Additional check: ensure the stored user_id matches
+    if otp_data["user_id"] != user_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Unauthorized verification attempt"
+        )
+    
+    # Get user with profile
+    user_query = (
+        select(User)
+        .options(selectinload(User.profile))
+        .where(User.id == user_id)
+    )
+    user = await db.scalar(user_query)
+    
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found"
+        )
+    
+    if user.account_status == AccountStatus.CONFIRMED:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="User already verified"
+        )
+    
+    # Validate email OTP
+    email_validation = await validate_otp(
+        otp_data["email_reference"], 
+        email_otp
+    )
+    
+    if email_validation["status"] != "success":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid email OTP: {email_validation.get('message')}"
+        )
+    
+    # Validate phone OTP
+    phone_validation = await validate_otp(
+        otp_data["sms_reference"], 
+        phone_otp
+    )
+    
+    if phone_validation["status"] != "success":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid phone OTP: {phone_validation.get('message')}"
+        )
+    
+    # Both OTPs are valid, update user verification status
+    user.is_email_verified = True
+    user.profile.is_phone_verified = True
+    user.account_status = AccountStatus.CONFIRMED
+    
+    await db.commit()
+    
+    # Clean up Redis
+    redis_client.delete(f"otp_verification:{user_id}")
+    
+    # Send welcome email
+    await send_welcome_email(user)
+    
+    return {
+        "message": "Email and phone verified successfully",
+        "user_id": user.id,
+        "email": user.email
+    }
+
+
+async def resend_otp(user_id: UUID, db: AsyncSession) -> dict:
+    """
+    Resend OTP to user's email and phone.
+    
+    Args:
+        user_id: User ID
+        db: Database session
+    Returns:
+        Success message
+    """
+    # Get user with profile
+    user_query = (
+        select(User)
+        .options(selectinload(User.profile))
+        .where(User.id == user_id)
+    )
+    user = await db.scalar(user_query)
+    
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found"
+        )
+    
+    if user.account_status == AccountStatus.CONFIRMED:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="User already verified"
+        )
+    
+    # Check rate limiting (optional)
+    rate_limit_key = f"otp_rate_limit:{user_id}"
+    if redis_client.exists(rate_limit_key):
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Please wait before requesting another OTP"
+        )
+    
+    # Generate new OTP
+    otp_result = await generate_otp(user.email, user.profile.phone_number)
+    
+    if otp_result["status"] == "success":
+        # Update OTP references in Redis
+        otp_data = {
+            "email_reference": otp_result["references"].get("email"),
+            "sms_reference": otp_result["references"].get("sms"),
+            "user_id": user.id,
+            "email": user.email
+        }
+        redis_client.setex(
+            f"otp_verification:{user.id}",
+            1800,  # 30 minutes expiry
+            json.dumps(otp_data)
+        )
+        
+        # Set rate limit (60 seconds cooldown)
+        redis_client.setex(rate_limit_key, 60, "1")
+        
+        return {
+            "message": "OTP resent successfully to email and phone",
+            "user_id": user.id
+        }
+    else:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to send OTP: {otp_result.get('message')}"
+        )

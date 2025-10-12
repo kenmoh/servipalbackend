@@ -32,6 +32,7 @@ from app.schemas.user_schemas import (
     VerificationSchema,
     CreateUserSchema,
     UpdateStaffSchema,
+    CreateUserResponseSchema
 )
 from app.services import auth_service
 from pydantic import BaseModel
@@ -146,7 +147,7 @@ async def create_user(
     request: Request,
     user_data: CreateUserSchema,
     db: AsyncSession = Depends(get_db),
-) -> UserBase:
+) -> CreateUserResponseSchema:
     """Logout user by revoking their refresh token"""
 
     return await auth_service.create_user(db=db, user_data=user_data)
@@ -161,7 +162,7 @@ async def create_user(
     data: RiderCreate,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
-) -> UserBase:
+) -> CreateUserResponseSchema:
     """Logout user by revoking their refresh token"""
 
     return await auth_service.create_new_rider(
@@ -220,30 +221,56 @@ async def verify_token(token: str, db: AsyncSession = Depends(get_db)):
     return await auth_service.verify_reset_token(token, db)
 
 
-@router.post("/verify-contacts")
+
+# @router.post("/verify-contacts")
+# @limiter.limit("5/minute")
+# async def verify_user_contacts(
+#     request: Request,
+#     verification_data: VerificationSchema,
+#     db: AsyncSession = Depends(get_db),
+# ) -> dict:
+#     """Verify user's email and phone"""
+#     return await auth_service.verify_user_contact(
+#         verification_data.email_code, verification_data.phone_code, db
+#     )
+
+
+@router.post("/{user_id}/verify-contacts")
 @limiter.limit("5/minute")
 async def verify_user_contacts(
     request: Request,
+    user_id: UUID,
     verification_data: VerificationSchema,
     db: AsyncSession = Depends(get_db),
 ) -> dict:
     """Verify user's email and phone"""
-    return await auth_service.verify_user_contact(
+    return await auth_service.verify_user_contact(user_id,
         verification_data.email_code, verification_data.phone_code, db
     )
 
+# @router.put("/resend-verification")
+# async def resend_verification_codes(
+#     email: EmailStr, db: AsyncSession = Depends(get_db)
+# ) -> dict:
+#     """Resend verification codes"""
+#     user, email_code, phone_code = await auth_service.generate_resend_verification_code(
+#         email=email, db=db
+#     )
+#     return await auth_service.send_verification_codes(
+#         user=user, email_code=email_code, phone_code=phone_code, db=db
+#     )
 
-@router.put("/resend-verification")
+
+@router.post("/{user_id}/resend-otp")
+@limiter.limit("5/minute")
 async def resend_verification_codes(
-    email: EmailStr, db: AsyncSession = Depends(get_db)
+    request: Request,
+    user_id: UUID, db: AsyncSession = Depends(get_db)
 ) -> dict:
     """Resend verification codes"""
-    user, email_code, phone_code = await auth_service.generate_resend_verification_code(
-        email=email, db=db
-    )
+    u
     return await auth_service.send_verification_codes(
-        user=user, email_code=email_code, phone_code=phone_code, db=db
-    )
+        user_id=user_id, db=db)
 
 
 # <<<<< ------------- PASSWORD CHANGE ------------ >>>>>
