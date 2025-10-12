@@ -24,8 +24,5 @@ COPY ./migration ./migration
 # Expose port
 EXPOSE 8000
 
-# Set environment variables (can be overridden by docker-compose)
-ENV PYTHONUNBUFFERED=1
-
-# Start the app with uvicorn
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"] 
+# Command to run the app
+CMD ["fastapi", "run"]

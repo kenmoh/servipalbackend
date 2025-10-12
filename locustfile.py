@@ -21,7 +21,7 @@ class APIUser(HttpUser):
         """Test user registration"""
         user_data = {
             "email": f"test{random.randint(1000, 9999)}@example.com",
-            "password": "testpass123",
+            "password": "@Testpass123",
             "first_name": "Test",
             "last_name": "User",
             "phone_number": f"+234{random.randint(7000000000, 8999999999)}"

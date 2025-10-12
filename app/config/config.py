@@ -6,6 +6,7 @@ from pydantic_settings import BaseSettings
 from dotenv import load_dotenv
 import redis
 from stream_chat import StreamChat
+from upstash_redis import Redis
 
 
 # Load environment variables from .env file
@@ -79,7 +80,9 @@ class Settings(BaseSettings):
     REDIS_PORT: int = 6379
     REDIS_DB: int = 0
     REDIS_EX: int = 3600
-    REDIS_PASSWORD: str | None = None  # Set this in production
+
+    UPSTASH_REDIS_URL: str = os.getenv("UPSTASH_REDIS_URL")
+    UPSTASH_TOKEN: str = os.getenv("UPSTASH_TOKEN")
 
     # API URL
     FRONTEND_URL: str = os.getenv("FRONTEND_URL")
@@ -87,6 +90,9 @@ class Settings(BaseSettings):
     TEST_API_URL: str = "http://localhost:8000"
 
     TEST_BASE_URL: str = "http://test"
+
+    # Test
+    TEST: bool = os.getenv("TEST", "false").lower() == "true"
 
     # Finger Print
     FINGER_PRINT: str = os.getenv("FINGER_PRINT")
@@ -109,6 +115,8 @@ class Settings(BaseSettings):
     RESEND_API_KEY: str = os.getenv("RESEND_API_KEY")
 
 
+
+
 settings = Settings()
 
 
@@ -123,16 +131,10 @@ else:
     redis_url = "rediss://red-d0hplaq4d50c73dc3cmg:LIimjEyTIacx9gSwjpGYcX9CNFfvmKZB@oregon-keyvalue.render.com:6379"
 
 redis_client = redis.Redis.from_url(redis_url, decode_responses=True)
+# redis_client = Redis(url=settings.UPSTASH_REDIS_URL, token=settings.UPSTASH_TOKEN)
 
 
-# redis_client = redis.Redis(
-#     host=settings.REDIS_HOST,
-#     port=settings.REDIS_PORT,
-#     db=settings.REDIS_DB,
-#     password=settings.REDIS_PASSWORD,
-#     decode_responses=True,
-#     ssl=True
-# )
+
 
 
 email_conf = ConnectionConfig(
