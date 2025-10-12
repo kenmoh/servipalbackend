@@ -794,6 +794,7 @@ async def logout_user(db: AsyncSession, current_user: User) -> dict:
     except Exception as e:
         await db.rollback()
 <<<<<<< HEAD
+<<<<<<< HEAD
         logger.error(f"Logout error: {str(e)}") 
         
         # Still return success for UI, but log the error
@@ -829,6 +830,8 @@ async def logout_user(db: AsyncSession, current_user: User) -> dict:
 #         # Instead of raising, just return True for UI logout success
 #         return True
 =======
+=======
+>>>>>>> main
         return True
 >>>>>>> main
 
