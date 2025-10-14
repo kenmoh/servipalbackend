@@ -330,3 +330,12 @@ async def get_push_notification(
     return await user_service.get_current_user_notification_token(
         db=db, current_user=current_user
     )
+
+
+@router.delete("/me", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_current_user(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+): 
+    """Delete current user account"""
+    return await user_service.delete_user(db=db, current_user=current_user)

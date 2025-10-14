@@ -53,6 +53,49 @@ from app.schemas.user_schemas import (
 logger = setup_logger()
 
 
+def _build_user_profile_response(user: User, review_count: int = 0, avg_rating: float = 0.0) -> dict:
+    """Helper function to build a user profile response dictionary."""
+    user_data = {
+        "email": user.email,
+        "user_type": getattr(user, "user_type", "customer"),
+        "id": str(user.id),
+        "is_blocked": user.is_blocked,
+        "account_status": user.account_status,
+    }
+
+    if user.profile:
+        profile_data = {
+            "user_id": user.id,
+            "phone_number": user.profile.phone_number,
+            "bike_number": getattr(user.profile, "bike_number", None),
+            "bank_account_number": getattr(user.profile, "bank_account_number", None),
+            "bank_name": getattr(user.profile, "bank_name", None),
+            "full_name": user.profile.full_name,
+            "state": user.profile.state,
+            "store_name": user.profile.store_name,
+            "business_name": getattr(user.profile, "business_name", None),
+            "business_address": getattr(user.profile, "business_address", None),
+            "business_registration_number": getattr(user.profile, "business_registration_number", None),
+            "closing_hours": str(user.profile.closing_hours.isoformat()) if getattr(user.profile, "closing_hours", None) else None,
+            "opening_hours": str(user.profile.opening_hours.isoformat()) if getattr(user.profile, "opening_hours", None) else None,
+            "review_count": review_count or None,
+            "avg_rating": avg_rating or None,
+        }
+
+        if hasattr(user.profile, "profile_image") and user.profile.profile_image:
+            profile_data["backdrop_image_url"] = getattr(user.profile.profile_image, "backdrop_image_url", None)
+            profile_data["profile_image_url"] = getattr(user.profile.profile_image, "profile_image_url", None)
+        else:
+            profile_data["backdrop_image_url"] = None
+            profile_data["profile_image_url"] = None
+            
+        user_data["profile"] = profile_data
+    else:
+        user_data["profile"] = None
+    
+    return user_data
+
+
 def get_cached_user(user_id: UUID) -> dict:
     """Helper function to get cached user data"""
     cached_user = redis_client.get(f"user:{user_id}")
@@ -144,45 +187,7 @@ async def get_current_user_details(
         avg_rating = round(stats.avg_rating, 2) if stats.avg_rating else 0.0
 
         # Convert response format
-        user_profile_dict = {
-            "email": user.email,
-            "user_type": user.user_type,
-            "account_status": user.account_status,
-            "is_blocked": user.is_blocked,
-            # "review_count": review_count or None,
-            "id": user.id,
-            "profile": {
-                "phone_number": user.profile.phone_number,
-                "user_id": user.id,
-                "bike_number": getattr(user.profile, "bike_number", None),
-                "bank_account_number": getattr(
-                    user.profile, "bank_account_number", None
-                ),
-                "bank_name": getattr(user.profile, "bank_name", None),
-                "full_name": user.profile.full_name,
-                "state": user.profile.state,
-                "review_count": review_count or None,
-                "avg_rating": avg_rating or None,
-                "store_name": user.profile.store_name,
-                "business_name": getattr(user.profile, "business_name", None),
-                "business_address": getattr(user.profile, "business_address", None),
-                "backdrop_image_url": getattr(
-                    user.profile.profile_image, "backdrop_image_url", None
-                ),
-                "profile_image_url": getattr(
-                    user.profile.profile_image, "profile_image_url", None
-                ),
-                "business_registration_number": getattr(
-                    user.profile, "business_registration_number", None
-                ),
-                "closing_hours": str(user.profile.closing_hours.isoformat())
-                if getattr(user.profile, "closing_hours", None)
-                else None,
-                "opening_hours": str(user.profile.opening_hours.isoformat())
-                if getattr(user.profile, "opening_hours", None)
-                else None,
-            },
-        }
+        user_profile_dict = _build_user_profile_response(user, review_count, avg_rating)
 
         # Cache the users data
         redis_client.set(
@@ -247,51 +252,7 @@ async def get_users(
             return []
 
         # Convert to  response format
-        users_data = []
-        for user in users:
-            user_data = {
-                "email": user.email,
-                "user_type": getattr(user, "user_type", "customer"),
-                "id": str(user.id),
-                "is_blocked": user.is_blocked,
-                "account_status": user.account_status,
-            }
-
-            # Add profile if exists
-            if user.profile:
-                user_data["profile"] = {
-                    "user_id": user.id,
-                    "phone_number": user.profile.phone_number,
-                    "bike_number": getattr(user.profile, "bike_number", None),
-                    "bank_account_number": getattr(
-                        user.profile, "bank_account_number", None
-                    ),
-                    "bank_name": getattr(user.profile, "bank_name", None),
-                    "full_name": user.profile.full_name,
-                    "state": user.profile.state,
-                    "store_name": user.profile.store_name,
-                    "business_name": getattr(user.profile, "business_name", None),
-                    "business_address": getattr(user.profile, "business_address", None),
-                    "backdrop_image_url": getattr(
-                        user.profile.profile_image, "backdrop_image_url", None
-                    ),
-                    "profile_image_url": getattr(
-                        user.profile.profile_image, "profile_image_url", None
-                    ),
-                    "business_registration_number": getattr(
-                        user.profile, "business_registration_number", None
-                    ),
-                    "closing_hours": str(user.profile.closing_hours.isoformat())
-                    if getattr(user.profile, "closing_hours", None)
-                    else None,
-                    "opening_hours": str(user.profile.opening_hours.isoformat())
-                    if getattr(user.profile, "opening_hours", None)
-                    else None,
-                }
-            else:
-                user_data["profile"] = None
-
-            users_data.append(user_data)
+        users_data = [_build_user_profile_response(user) for user in users]
 
         # Cache the users data
         redis_client.set(
@@ -346,48 +307,7 @@ async def get_active_users(
     users = result.scalars().all()
 
     # Format as UserProfileResponse
-    users_data = []
-    for user in users:
-        user_data = {
-            "email": user.email,
-            "user_type": getattr(user, "user_type", "customer"),
-            "id": str(user.id),
-            "is_blocked": user.is_blocked,
-            "account_status": user.account_status,
-        }
-        if user.profile:
-            user_data["profile"] = {
-                "user_id": user.id,
-                "phone_number": user.profile.phone_number,
-                "bike_number": getattr(user.profile, "bike_number", None),
-                "bank_account_number": getattr(
-                    user.profile, "bank_account_number", None
-                ),
-                "bank_name": getattr(user.profile, "bank_name", None),
-                "full_name": user.profile.full_name,
-                "store_name": user.profile.store_name,
-                "state": user.profile.state,
-                "business_name": getattr(user.profile, "business_name", None),
-                "business_address": getattr(user.profile, "business_address", None),
-                "backdrop_image_url": getattr(
-                    user.profile.profile_image, "backdrop_image_url", None
-                ),
-                "profile_image_url": getattr(
-                    user.profile.profile_image, "profile_image_url", None
-                ),
-                "business_registration_number": getattr(
-                    user.profile, "business_registration_number", None
-                ),
-                "closing_hours": str(user.profile.closing_hours.isoformat())
-                if getattr(user.profile, "closing_hours", None)
-                else None,
-                "opening_hours": str(user.profile.opening_hours.isoformat())
-                if getattr(user.profile, "opening_hours", None)
-                else None,
-            }
-        else:
-            user_data["profile"] = None
-        users_data.append(user_data)
+    users_data = [_build_user_profile_response(user) for user in users]
 
     return [UserProfileResponse(**user_data) for user_data in users_data]
 
@@ -992,7 +912,7 @@ async def get_restaurant_vendors(
         raise
 
 
-async def get_vendor_reviews(
+async def get_restaurant_reviews(
     db: AsyncSession, vendor_id: UUID, limit: int = 20, offset: int = 0
 ) -> List[CreateReviewSchema]:
     """
@@ -1044,6 +964,38 @@ async def get_vendor_reviews(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to fetch restaurant reviews",
         )
+
+
+async def delete_user(db: AsyncSession, current_user: User) -> None:
+    """
+    Deletes a user and all their related data.
+    """
+    try:
+        # Manually delete related records
+        await db.execute(delete(RefreshToken).where(RefreshToken.user_id == current_user.id))
+        await db.execute(delete(Session).where(Session.user_id == current_user.id))
+
+        # Finally delete the user
+        await db.delete(current_user)
+        await db.commit()
+
+        # Clear caches
+        try:
+            invalidate_user_cache(current_user.id)
+            redis_client.delete("all_users")
+        except Exception as cache_error:
+            logger.warning(f"Cache invalidation failed: {str(cache_error)}")
+
+        logger.info(f"User {current_user.id} ({current_user.email}) has been deleted.")
+
+    except Exception as e:
+        await db.rollback()
+        logger.error(f"Error deleting user {current_user.id}: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to delete user. Please try again.",
+        )
+
 
 
 async def upload_image_profile(
@@ -1779,50 +1731,7 @@ async def get_teams(db: AsyncSession) -> list[UserProfileResponse]:
             return []
 
         # Convert to  response format
-        users_data = []
-        for user in users:
-            user_data = {
-                "email": user.email,
-                "user_type": user.user_type,
-                "id": str(user.id),
-                "is_blocked": user.is_blocked,
-                "account_status": user.account_status,
-            }
-
-            # Add profile if exists
-            if user.profile:
-                user_data["profile"] = {
-                    "user_id": user.id,
-                    "phone_number": user.profile.phone_number,
-                    "bike_number": getattr(user.profile, "bike_number", None),
-                    "bank_account_number": getattr(
-                        user.profile, "bank_account_number", None
-                    ),
-                    "bank_name": getattr(user.profile, "bank_name", None),
-                    "full_name": user.profile.full_name,
-                    "store_name": user.profile.store_name,
-                    "business_name": getattr(user.profile, "business_name", None),
-                    "business_address": getattr(user.profile, "business_address", None),
-                    "backdrop_image_url": getattr(
-                        user.profile.profile_image, "backdrop_image_url", None
-                    ),
-                    "profile_image_url": getattr(
-                        user.profile.profile_image, "profile_image_url", None
-                    ),
-                    "business_registration_number": getattr(
-                        user.profile, "business_registration_number", None
-                    ),
-                    "closing_hours": user.profile.closing_hours.isoformat()
-                    if getattr(user.profile, "closing_hours", None)
-                    else None,
-                    "opening_hours": user.profile.opening_hours.isoformat()
-                    if getattr(user.profile, "opening_hours", None)
-                    else None,
-                }
-            else:
-                user_data["profile"] = None
-
-            users_data.append(user_data)
+        users_data = [_build_user_profile_response(user) for user in users]
 
         # Cache the users data
         redis_client.set(

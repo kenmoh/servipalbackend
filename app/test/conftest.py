@@ -32,11 +32,11 @@ def event_loop():
     loop.close()
 
 
-@pytest_asyncio.fixture(scope="function")
+@pytest_asyncio.fixture(scope="session")
 async def engine() -> AsyncGenerator[AsyncEngine, None]:
     """
-    Create a fresh database engine for each test function.
-    The schema is created and dropped for each test.
+    Create a fresh database engine for the entire test session.
+    The schema is created once and dropped after all tests are done.
     """
     test_engine = create_async_engine(
         url=settings.TEST_DATABASE_URL,
@@ -63,6 +63,7 @@ async def session(engine: AsyncEngine) -> AsyncGenerator[AsyncSession, None]:
         expire_on_commit=False,
     )
     async with async_session_factory() as test_session:
+        await test_session.begin_nested()
         yield test_session
         await test_session.rollback()
 

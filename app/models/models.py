@@ -84,7 +84,7 @@ class User(Base):
     reset_token: Mapped[Optional[str]] = mapped_column(nullable=True, unique=True)
     reset_token_expires: Mapped[Optional[datetime]] = mapped_column(nullable=True)
     user_type: Mapped[UserType] = mapped_column(
-        nullable=False, default=UserType.CUSTOMER
+        nullable=False, default=UserType.CUSTOMER, index=True
     )
 
     is_email_verified: Mapped[bool] = mapped_column(default=False, nullable=True)
@@ -301,9 +301,8 @@ class Transaction(Base):
 
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
     tx_ref: Mapped[UUID1] = mapped_column(default=uuid1, nullable=True)
-    wallet_id: Mapped[UUID] = mapped_column(ForeignKey("wallets.id"))
-    to_wallet_id: Mapped[UUID] = mapped_column(ForeignKey("users.id"), nullable=True)
-    # idempotency_key: Mapped[str] = mapped_column(nullable=True)
+    wallet_id: Mapped[UUID] = mapped_column(ForeignKey("wallets.id", ondelete="CASCADE"))
+    to_wallet_id: Mapped[UUID] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     amount: Mapped[Decimal] = mapped_column(default=0.00)
     from_user: Mapped[str] = mapped_column(nullable=True)
     to_user: Mapped[str] = mapped_column(nullable=True)
@@ -367,8 +366,8 @@ class Item(Base):
     __tablename__ = "items"
 
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
-    item_type: Mapped[ItemType]
-    user_id: Mapped[UUID] = mapped_column(ForeignKey("users.id"))
+    item_type: Mapped[ItemType] = mapped_column(index=True)
+    user_id: Mapped[UUID] = mapped_column(ForeignKey("users.id"), index=True)
     name: Mapped[str]
     store_name: Mapped[str] = mapped_column(nullable=True)
     description: Mapped[str] = mapped_column(nullable=True)
@@ -443,8 +442,8 @@ class Order(Base):
         nullable=True,
         unique=True,
     )
-    owner_id: Mapped[UUID] = mapped_column(ForeignKey("users.id"))
-    vendor_id: Mapped[UUID] = mapped_column(ForeignKey("users.id"))
+    owner_id: Mapped[Optional[UUID]] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    vendor_id: Mapped[Optional[UUID]] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
     order_type: Mapped[OrderType] = mapped_column(default=OrderType.PACKAGE)
     total_price: Mapped[Decimal] = mapped_column(default=0.00)
     grand_total: Mapped[Decimal] = mapped_column(default=0.00, nullable=True)
@@ -467,10 +466,10 @@ class Order(Base):
         default=datetime.now, onupdate=datetime.now
     )
 
-    owner: Mapped["User"] = relationship(
+    owner: Mapped[Optional["User"]] = relationship(
         back_populates="orders_placed", foreign_keys=[owner_id]
     )
-    vendor: Mapped["User"] = relationship(
+    vendor: Mapped[Optional["User"]] = relationship(
         back_populates="orders_received", foreign_keys=[vendor_id]
     )
     order_items: Mapped[list["OrderItem"]] = relationship(
@@ -728,7 +727,7 @@ class MessageReadStatus(Base):
 
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
     message_id: Mapped[UUID] = mapped_column(ForeignKey("messages.id"), nullable=False)
-    user_id: Mapped[UUID] = mapped_column(ForeignKey("users.id"), nullable=False)
+    user_id: Mapped[UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     read: Mapped[bool] = mapped_column(default=False)
     read_at: Mapped[Optional[datetime]] = mapped_column(
         default=datetime.now, onupdate=datetime.now
@@ -748,7 +747,7 @@ class UserReportReadStatus(Base):
     report_id: Mapped[UUID] = mapped_column(
         ForeignKey("user_reports.id"), nullable=False
     )
-    user_id: Mapped[UUID] = mapped_column(ForeignKey("users.id"), nullable=False)
+    user_id: Mapped[UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     is_read: Mapped[bool] = mapped_column(default=False)
     read_at: Mapped[Optional[datetime]] = mapped_column(
         default=datetime.now, onupdate=datetime.now
