@@ -26,10 +26,12 @@ cffi==1.17.1
 charset-normalizer==3.4.2
 click==8.2.1
 configargparse==1.7.1
+coverage==7.10.7
 cryptography==45.0.5
 decorator==5.2.1
 deprecated==1.2.18
 dnspython==2.7.0
+dramatiq==1.18.0
 ecdsa==0.19.1
 email-validator==2.2.0
 executing==2.2.0
@@ -39,6 +41,9 @@ fastapi-cli==0.0.8
 fastapi-cloud-cli==0.1.4
 fastapi-mail==1.5.0
 fastapi-mcp==0.3.7
+flask==3.1.2
+flask-cors==6.0.1
+flask-login==0.6.3
 frozenlist==1.7.0
 gevent==25.5.1
 geventhttpclient==2.3.4
@@ -67,6 +72,7 @@ loguru==0.7.3
 mako==1.3.10
 markdown-it-py==3.0.0
 markupsafe==3.0.2
+mcp==1.12.0
 mdurl==0.1.2
 moviepy==2.2.1
 msgpack==1.1.1
@@ -105,6 +111,8 @@ pygments==2.19.2
 pyjwt==2.10.1
 pytest==8.4.1
 pytest-asyncio==1.1.0
+pytest-cov==7.0.0
+pytest-mock==3.15.1
 python-dateutil==2.9.0.post0
 python-dotenv==1.1.1
 python-engineio==4.12.3
@@ -142,6 +150,7 @@ typing-inspection==0.4.1
 tzlocal==5.3.1
 ua-parser==1.0.1
 ua-parser-builtins==0.18.0.post1
+upstash-redis==1.4.0
 urllib3==2.5.0
 user-agents==2.2.0
 uvicorn==0.35.0
