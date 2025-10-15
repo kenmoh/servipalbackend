@@ -16,12 +16,12 @@ FROM base as builder
 
 WORKDIR /app
 
-# Copy only the necessary dependency files
-COPY requirements.txt uv.lock ./
+# Copy the dependency definition files
+COPY requirements.txt pyproject.toml ./
 
-# Install dependencies using uv for speed and to leverage the lock file
-# Using --system to install packages into the system site-packages, which is standard for containers
-RUN uv pip sync --system --no-cache --frozen-lockfile uv.lock
+# Install dependencies from requirements.txt. This is more reliable in a CI/CD
+# environment as it resolves dependencies for the target platform (Linux).
+RUN uv pip install -r requirements.txt --no-cache --system
 
 # ---- Final Stage ----
 FROM base as final
@@ -39,10 +39,9 @@ COPY --from=builder /usr/local/bin/uvicorn /usr/local/bin/uvicorn
 # Copy the application code, ensuring the non-root user has ownership
 COPY --chown=nonroot:nonroot app/ ./app/
 
-# Set the port for the application to run on
+# Set the port for the application to run on. Cloud Run will provide this.
 ENV PORT=8000
 EXPOSE 8000
 
 # The command to run the application using uvicorn
-# The port is explicitly set here to match the EXPOSE instruction
 CMD ["uvicorn", "app.main:app", "--host=0.0.0.0", "--port", "8000"]
