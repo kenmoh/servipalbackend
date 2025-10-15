@@ -317,10 +317,3 @@ app.include_router(settings_routes.router)
 app.include_router(stats_routes.router)
 app.include_router(ws_routes.router)
 app.include_router(audit_log_routes.router)
-
-
-if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 8080))
-    
-    import uvicorn
-    uvicorn.run("app.main:app", host="0.0.0.0", port=port)
