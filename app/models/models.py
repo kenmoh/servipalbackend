@@ -97,7 +97,7 @@ class User(Base):
     # Dispatcher-rider relationship with proper cascade
     dispatcher_id: Mapped[Optional[UUID]] = mapped_column(
         ForeignKey(
-            "users.id", ondelete="all, delete-orphan"
+            "users.id", ondelete="CASCADE"
         ),  
         # nullable=True,
     )
@@ -424,7 +424,7 @@ class ItemImage(Base):
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
     item_id: Mapped[UUID] = mapped_column(ForeignKey("items.id", ondelete="CASCADE"))
     url: Mapped[str]
-    is_primary: Mapped[bool] = mapped_column(default=False)
+    is_primary: Mapped[bool] = mapped_column(default=False, nullable=True)
     created_at: Mapped[datetime] = mapped_column(default=datetime.now)
     updated_at: Mapped[datetime] = mapped_column(
         default=datetime.now, onupdate=datetime.now
