@@ -8,7 +8,8 @@ from app.models.models import TransactionLog
 from fastapi import HTTPException, status
 
 from app.schemas.audit_logs import AuditLogResponse
-from app.schemas.status_schema import TransactionLogAction, TransactionLogStatus
+from app.schemas.order_schema import PaymentStatus
+from app.schemas.status_schema import TransactionLogAction
 
 
 class AuditLogService:
@@ -110,7 +111,7 @@ class TransactionLogService:
         vendor_id: UUID,
         amount: float,
         action: TransactionLogAction,
-        status: TransactionLogStatus,
+        status: PaymentStatus,
         details: Optional[dict] = None,
     ) -> TransactionLog:
         """
