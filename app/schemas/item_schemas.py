@@ -42,7 +42,7 @@ class ItemImageSchema(BaseModel):
     id: UUID
     item_id: UUID
     url: str
-    is_primary: bool
+    is_primary: bool = False
 
 
 class MenuItemCreate(BaseModel):
@@ -125,6 +125,7 @@ class MenuResponseSchema(MenuBase):
     food_group: FoodGroup
     description: str
     is_deleted: bool = False
+    is_primary: bool = False
 
 class LaundryMenuResponseSchema(MenuBase):
     pass
