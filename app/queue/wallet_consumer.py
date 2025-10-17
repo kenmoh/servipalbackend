@@ -2,7 +2,7 @@ from decimal import Decimal
 from typing import Dict, Any
 from uuid import UUID
 
-from pydantic import UUID1
+
 from sqlalchemy import insert, update, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -157,7 +157,7 @@ class WalletQueueConsumer(BaseQueueConsumer):
                             to_wallet_id=UUID(to_wallet_id)
                             if to_wallet_id is not None
                             else None,
-                            tx_ref=UUID1(tx_ref),
+                            tx_ref=UUID(tx_ref),
                             amount=Decimal(amount),
                             transaction_type=transaction_type,
                             transaction_direction=transaction_direction,
@@ -178,7 +178,7 @@ class WalletQueueConsumer(BaseQueueConsumer):
             try:
                 async with db.begin():
                     wallet_id = UUID(payload.get("wallet_id"))
-                    tx_ref = UUID1(payload.get("tx_ref"))
+                    tx_ref = UUID(payload.get("tx_ref"))
                     to_user = payload.get("to_user")
                     payment_status = payload.get("payment_status")
                     payment_method = payload.get("payment_method")

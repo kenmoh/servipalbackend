@@ -8,7 +8,7 @@ from uuid import UUID
 import uuid
 import uuid
 from fastapi import HTTPException, status
-from pydantic import UUID1
+
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 import httpx
@@ -67,7 +67,7 @@ async def verify_transaction_tx_ref(tx_ref: str):
 
 
 # GET PAYMENT LINK
-async def get_payment_link(tx_ref: UUID1, amount: Decimal, current_user: User):
+async def get_payment_link(tx_ref: UUID, amount: Decimal, current_user: User):
     try:
         headers = {"Authorization": f"Bearer {settings.FLW_SECRET_KEY}"}
         details = {

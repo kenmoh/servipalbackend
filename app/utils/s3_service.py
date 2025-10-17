@@ -1,4 +1,4 @@
-from uuid import uuid4, uuid1
+
 from app.config.config import settings
 import secrets
 import logging
@@ -96,7 +96,7 @@ async def upload_multiple_images(images: list[UploadFile]):
                 detail=f"File {image.filename} is not an image",
             )
         try:
-            file_key = f"{uuid1()}-{image.filename}"
+            file_key = f"{uuid4()}-{image.filename}"
             # file_name = f"{token_name}{image.filename}"
 
             bucket = s3.Bucket(aws_bucket_name)

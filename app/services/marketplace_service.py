@@ -233,7 +233,7 @@ async def buy_product(
         await db.flush()
 
         # Generate payment link
-        tx_ref = uuid.uuid1()
+        tx_ref = uuid.uuid()
         payment_link = await get_product_payment_link(
             id=tx_ref, current_user=buyer, amount=total_cost
         )

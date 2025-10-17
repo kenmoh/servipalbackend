@@ -1,8 +1,7 @@
 from typing import Optional
-from pydantic import UUID1
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 import random
-from uuid import UUID, uuid1, uuid4
+from uuid import UUID, uuid4
 import uuid
 from datetime import datetime, time
 from decimal import Decimal
@@ -302,7 +301,7 @@ class Transaction(Base):
     __tablename__ = "transactions"
 
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
-    tx_ref: Mapped[UUID1] = mapped_column(default=uuid1, nullable=True)
+    tx_ref: Mapped[UUID] = mapped_column(default=uuid4, nullable=True)
     wallet_id: Mapped[UUID] = mapped_column(ForeignKey("wallets.id", ondelete="CASCADE"))
     to_wallet_id: Mapped[UUID] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     amount: Mapped[Decimal] = mapped_column(default=0.00)
@@ -329,7 +328,7 @@ class RefreshToken(Base):
     __tablename__ = "refresh_tokens"
 
     id: Mapped[UUID] = mapped_column(
-        primary_key=True, nullable=False, default=uuid.uuid1, index=True
+        primary_key=True, nullable=False, default=uuid.uuid4, index=True
     )
     token: Mapped[str] = mapped_column(unique=True, index=True, nullable=False)
     account_status: Mapped[AccountStatus] = mapped_column(default=AccountStatus.PENDING)
@@ -437,7 +436,7 @@ class Order(Base):
     __tablename__ = "orders"
 
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
-    tx_ref: Mapped[UUID1] = mapped_column(default=uuid1)
+    tx_ref: Mapped[UUID] = mapped_column(default=uuid4)
     order_number: Mapped[int] = mapped_column(
         Integer,
         Sequence("order_number_seq", start=1000, increment=1),

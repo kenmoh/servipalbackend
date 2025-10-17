@@ -248,7 +248,7 @@ async def generate_new_payment_link(
     """
     transaction = await db.get(Transaction, id)
     order = await db.get(Order, id)
-    tx_ref = uuid.uuid1()
+    tx_ref = uuid.uuid()
 
     if not transaction:
         raise HTTPException(

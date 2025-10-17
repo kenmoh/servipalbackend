@@ -6,7 +6,6 @@ import logging
 import uuid
 from fastapi import BackgroundTasks, HTTPException, Request, status
 import httpx
-from pydantic import UUID1
 from sqlalchemy import insert, select, update, and_, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -561,7 +560,7 @@ async def top_up_wallet(
         # Create the transaction record
         transaction = Transaction(
             wallet_id=wallet.id,
-            tx_ref=uuid.uuid1(),
+            tx_ref=uuid.uuid4(),
             to_wallet_id=wallet.id,
             amount=topup_data.amount,
             transaction_type=TransactionType.FUND_WALLET,
@@ -1400,7 +1399,7 @@ async def fund_wallet_callback(request: Request, db: AsyncSession):
     transx_id = request.query_params["transaction_id"]
 
     # First get the transaction
-    stmt = select(Transaction).where(Transaction.tx_ref == UUID1(tx_ref)).with_for_update()
+    stmt = select(Transaction).where(Transaction.tx_ref == UUID(tx_ref)).with_for_update()
     result = await db.execute(stmt)
     transaction = result.scalar_one_or_none()
 
@@ -1554,7 +1553,7 @@ async def get_current_charge_settings(db: AsyncSession) -> ChargeAndCommission:
 #     # Fetch the order
 #     order_result = await db.execute(
 #         select(Order)
-#         .where(Order.tx_ref == UUID1(tx_ref))
+#         .where(Order.tx_ref == UUID(tx_ref))
 #         .where(
 #             Order.order_type.in_([OrderType.PACKAGE, OrderType.FOOD, OrderType.LAUNDRY])
 #         )
@@ -1809,7 +1808,7 @@ async def order_payment_callback_old(request: Request, db: AsyncSession):
     # Fetch the order
     order_result = await db.execute(
         select(Order)
-        .where(Order.tx_ref == UUID1(tx_ref))
+        .where(Order.tx_ref == UUID(tx_ref))
         .where(
             Order.order_type.in_([OrderType.PACKAGE, OrderType.FOOD, OrderType.LAUNDRY])
         )
@@ -2387,7 +2386,7 @@ async def product_order_payment_callback(request: Request, db: AsyncSession):
     # Fetch the order
     order_result = await db.execute(
         select(Order)
-        .where(Order.tx_ref == UUID1(tx_ref))
+        .where(Order.tx_ref == UUID(tx_ref))
         .where(Order.order_type == OrderType.PRODUCT)
         .options(selectinload(Order.order_items).selectinload(OrderItem.item))
         .with_for_update()

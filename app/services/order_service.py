@@ -26,7 +26,7 @@ from app.utils.map import get_distance_between_addresses
 
 import json
 from decimal import Decimal
-from uuid import UUID, uuid1
+from uuid import UUID
 
 from fastapi import HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -1765,7 +1765,7 @@ async def cancel_order_or_delivery(
                     operation="create_transaction",
                     payload={
                         "wallet_id": str(order.delivery.dispatch_id),
-                        "tx_ref": str(uuid.uuid1()),
+                        "tx_ref": str(uuid.uuid4()),
                         "amount": str(-order.delivery.amount_due_dispatch),
                         "transaction_type": TransactionType.ORDER_CANCELLATION,
                         "transaction_direction": TransactionDirection.DEBIT,
@@ -1868,7 +1868,7 @@ async def cancel_order_or_delivery(
                     operation="create_transaction",
                     payload={
                         "wallet_id": str(order.owner_id),
-                        "tx_ref": str(uuid.uuid1()),
+                        "tx_ref": str(uuid.uuid4()),
                         "amount": str(buyer_refund_amount),
                         "transaction_type": TransactionType.REFUND,
                         "transaction_direction": TransactionDirection.CREDIT,
