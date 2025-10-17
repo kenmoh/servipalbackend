@@ -515,7 +515,226 @@ async def create_package_order(
         )
 
 
+
 async def order_food_or_request_laundy_service(
+    current_user: User,
+    db: AsyncSession,
+    vendor_id: UUID,
+    order_item: OrderAndDeliverySchema,
+) -> DeliveryResponse:
+    """
+    Creates a meal or laundry order.
+    """
+
+    # Validate profile info based on user type
+    if current_user.user_type == UserType.CUSTOMER and not (
+        current_user.profile.full_name and current_user.profile.phone_number
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Phone number and full name are required. Please update your profile!",
+        )
+    if current_user.user_type in [
+        UserType.LAUNDRY_VENDOR,
+        UserType.RESTAURANT_VENDOR,
+    ] and not (
+        current_user.profile.business_name and current_user.profile.phone_number
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Phone number and business name are required. Please update your profile!",
+        )
+
+    if current_user.user_type in [UserType.RIDER, UserType.DISPATCH]:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You are not allowed to perform this action!",
+        )
+    
+    for item_order in order_item.order_items:
+        if current_user.id == item_order.vendor_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="You cannot order your own item(s)!",
+            )
+    
+    for vendor_item in order_item.order_items:
+        if vendor_item.vendor_id != vendor_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Item(s) must belong to the same vendor!",
+            )
+
+    # Batch fetch all items at once - filter by vendor_id for additional validation
+    item_ids = [
+        UUID(item.item_id) if isinstance(item.item_id, str) else item.item_id
+        for item in order_item.order_items
+    ]
+    items_result = await db.execute(
+        select(Item).where(Item.id.in_(item_ids)).where(Item.user_id == vendor_id)
+    )
+    items_data = {item.id: item for item in items_result.scalars().all()}
+
+    # Validate all items exist and belong to the vendor
+    if len(items_data) != len(item_ids):
+        found_items = set(items_data.keys())
+        missing_items = set(item_ids) - found_items
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Items not found or don't belong to this vendor: {missing_items}",
+        )
+
+    # Calculate totals
+    total_price = Decimal("0.00")
+    item_types = set()
+
+    for order_item_detail in order_item.order_items:
+        # Convert string UUID to UUID object for dictionary lookup
+        item_uuid = (
+            UUID(order_item_detail.item_id)
+            if isinstance(order_item_detail.item_id, str)
+            else order_item_detail.item_id
+        )
+        item_data = items_data[item_uuid]
+
+        # Price and type calculation
+        total_price += Decimal(item_data.price) * Decimal(order_item_detail.quantity)
+        item_types.add(item_data.item_type)
+
+    # Validate single item type
+    if len(item_types) > 1:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="All items in the order must be of the same type (either all food or all laundry items)",
+        )
+
+    item_type = item_types.pop()
+    # amount_due_vendor = await calculate_amount_due_vendor(db, order_item.order_items)
+
+    # Determine if delivery is required
+    requires_delivery = (
+        order_item.require_delivery == RequireDeliverySchema.VENDOR_PICKUP_AND_DROPOFF
+    )
+
+    # Calculate delivery charge based on require_delivery
+    vendor_pickup_dropoff_charge = Decimal("0.00")
+    
+    if requires_delivery:
+        # Fetch only the vendor's pickup/dropoff charge
+        charge_result = await db.execute(
+            select(Profile.vendor_pickup_dropoff_charge)
+            .where(Profile.user_id == vendor_id)
+        )
+        charge = charge_result.scalar_one_or_none()
+        
+        vendor_pickup_dropoff_charge = Decimal(charge)
+
+    try:
+
+        # Calculate final amount
+        final_amount = total_price + vendor_pickup_dropoff_charge
+
+        amount_due_vendor = await calculate_amount_due_vendor(db, total_price, vendor_pickup_dropoff_charge)
+
+        # Create the order
+        order_insert_result = await db.execute(
+            insert(Order)
+            .values(
+                {
+                    "owner_id": current_user.id,
+                    "vendor_id": vendor_id,
+                    "order_type": item_type,
+                    "require_delivery": order_item.require_delivery,
+                    "total_price": total_price,
+                    "grand_total": final_amount,
+                    "order_payment_status": PaymentStatus.PENDING,
+                    "order_status": OrderStatus.PENDING,
+                    "amount_due_vendor": amount_due_vendor,
+                    "vendor_pickup_dropoff_charge": vendor_pickup_dropoff_charge,
+                    "additional_info": order_item.additional_info,
+                    "pickup_location": order_item.destination if requires_delivery else None,
+                }
+            )
+            .returning(Order.id, Order.tx_ref, Order.grand_total)
+        )
+
+        order_id, tx_ref, grand_total = order_insert_result.fetchone()
+
+        # Create order items
+        order_items_payload = [
+            {
+                "order_id": order_id,
+                "item_id": item.item_id,
+                "quantity": item.quantity,
+            }
+            for item in order_item.order_items
+        ]
+        await db.execute(insert(OrderItem).values(order_items_payload))
+
+        # Generate payment link
+        payment_link = await get_payment_link(tx_ref, grand_total, current_user)
+        order_status = OrderStatus.PENDING
+
+        # Update order with payment link
+        await db.execute(
+            update(Order)
+            .where(Order.id == order_id)
+            .values({"payment_link": payment_link, "order_status": order_status})
+        )
+
+        await db.commit()
+
+        # Clear relevant caches
+        cache_keys = [
+            f"user_orders:{current_user.id}",
+            f"vendor_orders:{vendor_id}",
+            f"order_details:{order_id}",
+            f"user_related_orders:{current_user.id}",
+            "orders",
+        ]
+        redis_client.delete(*cache_keys)
+
+        # Fetch complete order data
+        stmt = (
+            select(Order)
+            .where(Order.id == order_id)
+            .options(
+                selectinload(Order.order_items).options(
+                    joinedload(OrderItem.item).options(selectinload(Item.images))
+                ),
+                joinedload(Order.vendor).joinedload(User.profile),
+            )
+        )
+        order = (await db.execute(stmt)).scalar_one()
+
+        # Broadcast new order notification
+        await ws_service.broadcast_new_order({"order_id": order.id})
+
+        # Send push notification to vendor
+        token = await get_user_notification_token(db=db, user_id=vendor_id)
+
+        if token:
+            await send_push_notification(
+                tokens=[token],
+                title="New Order",
+                message=f"You have a new order from {current_user.profile.full_name if current_user.profile.full_name else current_user.profile.business_name}",
+                navigate_to="/delivery/orders",
+            )
+
+        return format_delivery_response(order=order, delivery=None)
+
+    except HTTPException:
+        await db.rollback()
+        raise
+    except Exception as e:
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to create order - {e}",
+        )
+
+
+async def order_food_or_request_laundy_service_old(
     current_user: User,
     db: AsyncSession,
     vendor_id: UUID,
@@ -2714,7 +2933,38 @@ async def calculate_amount_due_dispatch(
     )
 
 
+
 async def calculate_amount_due_vendor(
+    db: AsyncSession, 
+    total_price: Decimal,
+    pickup_dropoff_fee: Decimal = Decimal("0.00")
+) -> Decimal:
+    """
+    Calculate the amount due to vendor after platform commission.
+    
+    Args:
+        db: Database session
+        total_price: Total price of items
+        pickup_dropoff_fee: Vendor's pickup/dropoff charge (if applicable)
+    
+    Returns:
+        Amount due to vendor after commission
+    """
+    # Add pickup/dropoff fee to total
+    total_with_fees = total_price + pickup_dropoff_fee
+    
+    # Get platform commission
+    charge = await get_charges(db)
+    
+    # Calculate vendor's amount after commission
+    commission_amount = total_with_fees * charge.food_laundry_commission_percentage
+    amount_due_vendor = total_with_fees - commission_amount
+    
+    return amount_due_vendor
+
+
+
+async def calculate_amount_due_vendor_old(
     db: AsyncSession, order_items: list[OrderItemCreate],
     pickup_dropoff_fee: Decimal = Decimal("0.00")
 ) -> Decimal:
