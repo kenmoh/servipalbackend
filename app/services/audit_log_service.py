@@ -4,7 +4,7 @@ from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, and_
 from app.models.models import AuditLog
-from app.models.models import TransactiontLogs
+from app.models.models import TransactiontLog
 from fastapi import HTTPException, status
 
 from app.schemas.audit_logs import AuditLogResponse
@@ -112,11 +112,11 @@ class TransactionLogService:
         action: TransactionLogAction,
         status: TransactionLogStatus,
         details: Optional[dict] = None,
-    ) -> TransactiontLogs:
+    ) -> TransactiontLog:
         """
         Create a transaction log entry.
         """
-        log = TransactiontLogs(
+        log = TransactiontLog(
             vendor_id=vendor_id,
             amount=amount,
             action=action,
@@ -136,27 +136,27 @@ class TransactionLogService:
         end_time: Optional[datetime] = None,
         limit: int = 50,
         offset: int = 0,
-    ) -> List[TransactiontLogs]:
+    ) -> List[TransactiontLog]:
         """
         Query transaction logs with optional filters.
         """
-        stmt = select(TransactiontLogs)
+        stmt = select(TransactiontLog)
         conditions = []
         if vendor_id:
-            conditions.append(TransactiontLogs.vendor_id == vendor_id)
+            conditions.append(TransactiontLog.vendor_id == vendor_id)
         if start_time:
-            conditions.append(TransactiontLogs.timestamp >= start_time)
+            conditions.append(TransactiontLog.timestamp >= start_time)
         if end_time:
-            conditions.append(TransactiontLogs.timestamp <= end_time)
+            conditions.append(TransactiontLog.timestamp <= end_time)
         if conditions:
             stmt = stmt.where(and_(*conditions))
-        stmt = stmt.order_by(TransactiontLogs.timestamp.desc()).offset(offset).limit(limit)
+        stmt = stmt.order_by(TransactiontLog.timestamp.desc()).offset(offset).limit(limit)
         result = await db.execute(stmt)
         return result.scalars().all()
 
     @staticmethod
-    async def get_log_by_id(db: AsyncSession, log_id: UUID) -> TransactiontLogs:
-        stmt = select(TransactiontLogs).where(TransactiontLogs.id == log_id)
+    async def get_log_by_id(db: AsyncSession, log_id: UUID) -> TransactiontLog:
+        stmt = select(TransactiontLog).where(TransactiontLog.id == log_id)
         result = await db.execute(stmt)
         log = result.scalar_one_or_none()
         if not log:

@@ -2469,7 +2469,7 @@ async def laundry_pickup(
     if sender_token:
         await send_push_notification(
             tokens=[sender_token],
-            title="Order Delivered",
+            title="Vendor Received Laundry",
             message=f"Laundry picked up by vendor. {current_user.profile.business_name}, {current_user.profile.phone_number}",
             navigate_to="/(app)/delivery/orders",
         )
@@ -2477,7 +2477,7 @@ async def laundry_pickup(
     return DeliveryStatusUpdateSchema(order_status=order.order_status)
 
 
-async def laundry_return(
+async def laundry_returned(
     db: AsyncSession, order_id: UUID, current_user: User
 ) -> DeliveryStatusUpdateSchema:
   

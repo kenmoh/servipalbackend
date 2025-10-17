@@ -163,6 +163,7 @@ async def get_delivery_by_order_id(
     return await order_service.get_delivery_by_order_id(db=db, order_id=order_id)
 
 
+
 @router.put(
     "/{order_id}/sender-confirm-delivery-or-order-received",
     status_code=status.HTTP_202_ACCEPTED,
@@ -174,6 +175,44 @@ async def sender_confirm_delivery_or_order_received(
 ) -> DeliveryStatusUpdateSchema:
     try:
         return await order_service.sender_confirm_delivery_or_order_received(
+            db=db,
+            current_user=current_user,
+            order_id=order_id,
+        )
+    except Exception as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    
+@router.put(
+    "/{order_id}/sender-confirm-order-received",
+    status_code=status.HTTP_202_ACCEPTED,
+)
+async def sender_confirm_order_received(
+    order_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> DeliveryStatusUpdateSchema:
+    try:
+        return await order_service.sender_confirm_order_received(
+            db=db,
+            current_user=current_user,
+            order_id=order_id,
+        )
+    except Exception as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+
+
+
+@router.put(
+    "/{order_id}/sender-confirm-package-received",
+    status_code=status.HTTP_202_ACCEPTED,
+)
+async def sender_confirm_package_received(
+    order_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> DeliveryStatusUpdateSchema:
+    try:
+        return await order_service.sender_confirm_package_received(
             db=db,
             current_user=current_user,
             order_id=order_id,
@@ -234,6 +273,34 @@ async def rider_accept_delivery(
 ) -> DeliveryStatusUpdateSchema:
     try:
         return await order_service.rider_accept_delivery_order(
+            db=db, current_user=current_user, order_id=order_id
+        )
+    except Exception as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    
+
+@router.put("/{order_id}/accept-laundry", status_code=status.HTTP_202_ACCEPTED)
+async def laundry_pickup(
+    order_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> DeliveryStatusUpdateSchema:
+    try:
+        return await order_service.laundry_pickup(
+            db=db, current_user=current_user, order_id=order_id
+        )
+    except Exception as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    
+    
+@router.put("/{order_id}/return-laundry", status_code=status.HTTP_202_ACCEPTED)
+async def laundry_returned(
+    order_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> DeliveryStatusUpdateSchema:
+    try:
+        return await order_service.laundry_returned(
             db=db, current_user=current_user, order_id=order_id
         )
     except Exception as e:
