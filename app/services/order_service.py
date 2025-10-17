@@ -795,7 +795,7 @@ async def order_food_or_request_laundy_service(
     item_type = item_types.pop()
     # amount_due_vendor = await calculate_amount_due_vendor(db, order_item.order_items)
 
-    # Determine if delivery is required
+    # Determine if vendor delivery is required
     requires_delivery = (
         order_item.require_delivery == RequireDeliverySchema.VENDOR_PICKUP_AND_DROPOFF
     )
@@ -3106,7 +3106,7 @@ async def sender_confirm_delivery_or_order_received(
             await db.rollback()
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
         
-    # Handle pickup orders laundry pickup
+    # Handle  laundry pickup
     if order.require_delivery == RequireDeliverySchema.VENDOR_PICKUP_AND_DROPOFF:
         if order.order_status != OrderStatus.DELIVERED:
             raise HTTPException(

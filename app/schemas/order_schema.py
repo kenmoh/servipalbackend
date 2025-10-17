@@ -127,7 +127,7 @@ class OrderResponseSchema(BaseModel):
     vendor_pickup_dropoff_charge: Decimal | None = None
     payment_link: str
     created_at: datetime
-    is_one_way_delivery: bool
+    is_one_way_delivery: bool = True
     order_items: list[OrderItemResponseSchema]
     cancel_reason: str | None = None
 
