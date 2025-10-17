@@ -77,3 +77,4 @@ ehthumbs.db
 migrations/
 logs/
 htmlcov/
+*.tar.gz
