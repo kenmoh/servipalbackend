@@ -334,7 +334,7 @@ async def get_all_pickup_delivery_orders(
     return response
 
 
-async def create_package_order(
+async def create_package_order_old(
     db: AsyncSession, data: PackageCreate, image: UploadFile, current_user: User
 ) -> DeliveryResponse:
     if current_user.user_type == UserType.CUSTOMER and not (
@@ -513,6 +513,186 @@ async def create_package_order(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to create package order: {e}",
         )
+
+
+async def _validate_package_order_request(current_user: User):
+    if current_user.user_type == UserType.CUSTOMER and not (
+        current_user.profile.full_name and current_user.profile.phone_number
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Phone number and full name are required. Please update your profile!",
+        )
+    if current_user.user_type in [
+        UserType.RESTAURANT_VENDOR,
+        UserType.LAUNDRY_VENDOR,
+    ] and not (
+        current_user.profile.business_name and current_user.profile.phone_number
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Phone number and business name are required. Please update your profile!",
+        )
+    if current_user.user_type in [UserType.RIDER, UserType.DISPATCH]:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You are not allowed to perform this action.",
+        )
+
+
+async def _create_package_item_and_image(db: AsyncSession, data: PackageCreate, image: UploadFile, current_user: User):
+    package_insert_result = await db.execute(
+        insert(Item)
+        .values(
+            {
+                "user_id": current_user.id,
+                "item_type": ItemType.PACKAGE,
+                "name": data.name,
+                "description": data.description,
+            }
+        )
+        .returning(Item.id, Item.user_id)
+    )
+    package_data = package_insert_result.fetchone()
+
+    image_url = await add_image(image)
+    item_image = ItemImage(item_id=package_data.id, url=image_url)
+    db.add(item_image)
+
+    return package_data
+
+
+async def _create_order_and_order_item(db: AsyncSession, package_data):
+    order_insert_result = await db.execute(
+        insert(Order)
+        .values(
+            {
+                "owner_id": package_data.user_id,
+                "vendor_id": package_data.user_id,  # Assuming sender is the vendor for packages
+                "order_type": DeliveryType.PACKAGE,
+                "amount_due_vendor": 0,
+                "order_status": OrderStatus.PENDING,
+                "order_payment_status": PaymentStatus.PENDING,
+                "require_delivery": RequireDeliverySchema.DELIVERY,
+            }
+        )
+        .returning(Order.id, Order.tx_ref, Order.owner_id, Order.vendor_id)
+    )
+    order_data = order_insert_result.fetchone()
+
+    package_item_payload = {
+        "order_id": order_data.id,
+        "item_id": package_data.id,
+        "quantity": 1,
+    }
+    await db.execute(insert(OrderItem).values(package_item_payload))
+
+    return order_data
+
+
+async def _create_delivery_and_calculate_fees(db: AsyncSession, data: PackageCreate, order_data, current_user: User):
+    delivery_fee = await calculate_delivery_fee(data.distance, db)
+    amount_due_dispatch = await calculate_amount_due_dispatch(db, delivery_fee)
+
+    delivery_values = {
+        "order_id": order_data.id,
+        "delivery_type": DeliveryType.PACKAGE,
+        "delivery_status": DeliveryStatus.PENDING,
+        "sender_id": current_user.id,
+        "vendor_id": current_user.id,
+        "pickup_coordinates": data.pickup_coordinates,
+        "dropoff_coordinates": data.dropoff_coordinates,
+        "delivery_fee": delivery_fee,
+        "amount_due_dispatch": amount_due_dispatch,
+        "distance": data.distance,
+        "duration": data.duration,
+        "origin": data.origin,
+        "destination": data.destination,
+        "sender_phone_number": current_user.profile.phone_number,
+    }
+    delivery_insert_result = await db.execute(
+        insert(Delivery).values(delivery_values).returning(Delivery.id, Delivery.delivery_fee, Delivery.vendor_id)
+    )
+    return delivery_insert_result.fetchone()
+
+
+async def _update_order_with_payment_link(db: AsyncSession, order_data, delivery_data, current_user: User):
+    total_amount_due = delivery_data.delivery_fee
+    payment_link = await get_payment_link(
+        tx_ref=order_data.tx_ref, amount=total_amount_due, current_user=current_user
+    )
+
+    await db.execute(
+        update(Order)
+        .where(Order.id == order_data.id)
+        .values(
+            {
+                "payment_link": payment_link,
+                "total_price": total_amount_due,
+                "grand_total": total_amount_due,
+            }
+        )
+    )
+
+
+async def _invalidate_package_order_caches(order_data, delivery_data, current_user: User):
+    redis_client.delete(f"user_orders:{current_user.id}")
+    redis_client.delete(f"user_orders:{order_data.owner_id}")
+    redis_client.delete(f"user_orders:{order_data.vendor_id}")
+    redis_client.delete(f"{ALL_DELIVERY}")
+    redis_client.delete("paid_pending_deliveries")
+    redis_client.delete(f"user_related_orders:{current_user.id}")
+    redis_client.delete("orders")
+    if hasattr(delivery_data, "vendor_id"):
+        redis_client.delete(f"vendor_orders:{delivery_data.vendor_id}")
+
+
+async def create_package_order(
+    db: AsyncSession, data: PackageCreate, image: UploadFile, current_user: User
+) -> DeliveryResponse:
+    """
+    Creates a package order by orchestrating validation, database operations, and post-creation actions.
+    """
+    await _validate_package_order_request(current_user)
+
+    try:
+        async with db.begin_nested():
+            package_data = await _create_package_item_and_image(db, data, image, current_user)
+            order_data = await _create_order_and_order_item(db, package_data)
+            delivery_data = await _create_delivery_and_calculate_fees(db, data, order_data, current_user)
+            await _update_order_with_payment_link(db, order_data, delivery_data, current_user)
+
+        await db.commit()
+
+        await _invalidate_package_order_caches(order_data, delivery_data, current_user)
+
+        # Fetch the final order and delivery to return the response
+        order_stmt = (
+            select(Order)
+            .where(Order.id == order_data.id)
+            .options(
+                selectinload(Order.order_items).options(
+                    joinedload(OrderItem.item).options(selectinload(Item.images))
+                )
+            )
+        )
+        order = (await db.execute(order_stmt)).scalar_one()
+
+        delivery_stmt = select(Delivery).where(Delivery.id == delivery_data.id)
+        delivery = (await db.execute(delivery_stmt)).scalar_one()
+
+        await ws_service.broadcast_new_order({"order_id": order.id})
+
+        return format_delivery_response(order=order, delivery=delivery)
+
+    except Exception as e:
+        await db.rollback()
+        logger_config.logger.error(f"Failed to create package order: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to create package order: {e}",
+        )
+
 
 
 
@@ -736,6 +916,271 @@ async def order_food_or_request_laundy_service(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to create order - {e}",
         )
+
+
+async def _validate_profile_and_authorization(
+    current_user: User, order_items: list[OrderItemCreate], vendor_id: UUID
+):
+    if current_user.user_type == UserType.CUSTOMER and not (
+        current_user.profile.full_name and current_user.profile.phone_number
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Phone number and full name are required. Please update your profile!",
+        )
+    if current_user.user_type in [
+        UserType.LAUNDRY_VENDOR,
+        UserType.RESTAURANT_VENDOR,
+    ] and not (
+        current_user.profile.business_name and current_user.profile.phone_number
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Phone number and business name are required. Please update your profile!",
+        )
+    if current_user.user_type in [UserType.RIDER, UserType.DISPATCH]:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You are not allowed to perform this action!",
+        )
+    for item_order in order_items:
+        if current_user.id == item_order.vendor_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="You cannot order your own item(s)!",
+            )
+    for vendor_item in order_items:
+        if vendor_item.vendor_id != vendor_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Item(s) must belong to the same vendor!",
+            )
+
+
+async def _validate_order_items(
+    db: AsyncSession, order_items: list[OrderItemCreate], vendor_id: UUID
+):
+    item_ids = [
+        UUID(item.item_id) if isinstance(item.item_id, str) else item.item_id
+        for item in order_items
+    ]
+    items_result = await db.execute(
+        select(Item).where(Item.id.in_(item_ids)).where(Item.user_id == vendor_id)
+    )
+    items_data = {item.id: item for item in items_result.scalars().all()}
+
+    if len(items_data) != len(item_ids):
+        found_items = set(items_data.keys())
+        missing_items = set(item_ids) - found_items
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Items not found or don't belong to this vendor: {missing_items}",
+        )
+
+    item_types = {items_data[item_id].item_type for item_id in item_ids}
+    if len(item_types) > 1:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="All items in the order must be of the same type (either all food or all laundry items)",
+        )
+
+    return items_data, item_types.pop()
+
+
+async def _calculate_order_costs(
+    db: AsyncSession,
+    order_item_details: list[OrderItemCreate],
+    items_data: dict,
+    vendor_id: UUID,
+    require_delivery: bool,
+    is_one_way: bool,
+):
+    total_price = sum(
+        Decimal(items_data[UUID(item.item_id) if isinstance(item.item_id, str) else item.item_id].price)
+        * Decimal(item.quantity)
+        for item in order_item_details
+    )
+
+    vendor_pickup_dropoff_charge = Decimal("0.00")
+    if require_delivery:
+        charge_result = await db.execute(
+            select(Profile.vendor_pickup_dropoff_charge).where(
+                Profile.user_id == vendor_id
+            )
+        )
+        charge = charge_result.scalar_one_or_none() or Decimal("0.00")
+        vendor_pickup_dropoff_charge = (
+            Decimal(charge) if is_one_way else Decimal(charge) * 2
+        )
+
+    final_amount = total_price + vendor_pickup_dropoff_charge
+    amount_due_vendor = await calculate_amount_due_vendor(
+        db, total_price, vendor_pickup_dropoff_charge
+    )
+
+    return (
+        total_price,
+        vendor_pickup_dropoff_charge,
+        final_amount,
+        amount_due_vendor,
+    )
+
+
+async def _create_order_in_database(
+    db: AsyncSession,
+    current_user: User,
+    vendor_id: UUID,
+    order_item: OrderAndDeliverySchema,
+    item_type: str,
+    total_price: Decimal,
+    final_amount: Decimal,
+    amount_due_vendor: Decimal,
+    vendor_pickup_dropoff_charge: Decimal,
+    requires_delivery: bool,
+):
+    order_values = {
+        "owner_id": current_user.id,
+        "vendor_id": vendor_id,
+        "order_type": item_type,
+        "require_delivery": order_item.require_delivery,
+        "is_one_way_delivery": order_item.is_one_way_delivery,
+        "total_price": total_price,
+        "grand_total": final_amount,
+        "order_payment_status": PaymentStatus.PENDING,
+        "order_status": OrderStatus.PENDING,
+        "amount_due_vendor": amount_due_vendor,
+        "vendor_pickup_dropoff_charge": vendor_pickup_dropoff_charge,
+        "additional_info": order_item.additional_info,
+        "pickup_location": order_item.destination if requires_delivery else None,
+    }
+    order_insert_result = await db.execute(
+        insert(Order)
+        .values(order_values)
+        .returning(Order.id, Order.tx_ref, Order.grand_total)
+    )
+    order_id, tx_ref, grand_total = order_insert_result.fetchone()
+
+    order_items_payload = [
+        {"order_id": order_id, "item_id": item.item_id, "quantity": item.quantity}
+        for item in order_item.order_items
+    ]
+    await db.execute(insert(OrderItem).values(order_items_payload))
+
+    payment_link = await get_payment_link(tx_ref, grand_total, current_user)
+    await db.execute(
+        update(Order)
+        .where(Order.id == order_id)
+        .values({"payment_link": payment_link, "order_status": OrderStatus.PENDING})
+    )
+
+    return order_id
+
+
+async def _handle_post_order_creation(
+    db: AsyncSession, order_id: UUID, vendor_id: UUID, current_user: User
+):
+    cache_keys = [
+        f"user_orders:{current_user.id}",
+        f"vendor_orders:{vendor_id}",
+        f"order_details:{order_id}",
+        f"user_related_orders:{current_user.id}",
+        "orders",
+    ]
+    redis_client.delete(*cache_keys)
+
+    stmt = (
+        select(Order)
+        .where(Order.id == order_id)
+        .options(
+            selectinload(Order.order_items).options(
+                joinedload(OrderItem.item).options(selectinload(Item.images))
+            ),
+            joinedload(Order.vendor).joinedload(User.profile),
+        )
+    )
+    order = (await db.execute(stmt)).scalar_one()
+
+    await ws_service.broadcast_new_order({"order_id": order.id})
+
+    token = await get_user_notification_token(db=db, user_id=vendor_id)
+    if token:
+        await send_push_notification(
+            tokens=[token],
+            title="New Order",
+            message=f"You have a new order from {current_user.profile.full_name or current_user.profile.business_name}",
+            navigate_to="/delivery/orders",
+        )
+
+    return format_delivery_response(order=order, delivery=None)
+
+
+async def create_food_or_laundry_order(
+    current_user: User,
+    db: AsyncSession,
+    vendor_id: UUID,
+    order_item: OrderAndDeliverySchema,
+) -> DeliveryResponse:
+    """
+    Creates a meal or laundry order by orchestrating validation, calculation,
+    database operations, and post-creation actions.
+    """
+    try:
+        await _validate_profile_and_authorization(
+            current_user, order_item.order_items, vendor_id
+        )
+
+        items_data, item_type = await _validate_order_items(
+            db, order_item.order_items, vendor_id
+        )
+
+        requires_delivery = (
+            order_item.require_delivery
+            == RequireDeliverySchema.VENDOR_PICKUP_AND_DROPOFF
+        )
+
+        (
+            total_price,
+            vendor_pickup_dropoff_charge,
+            final_amount,
+            amount_due_vendor,
+        ) = await _calculate_order_costs(
+            db,
+            order_item.order_items,
+            items_data,
+            vendor_id,
+            requires_delivery,
+            order_item.is_one_way_delivery,
+        )
+
+        async with db.begin_nested():
+            order_id = await _create_order_in_database(
+                db,
+                current_user,
+                vendor_id,
+                order_item,
+                item_type,
+                total_price,
+                final_amount,
+                amount_due_vendor,
+                vendor_pickup_dropoff_charge,
+                requires_delivery,
+            )
+
+        await db.commit()
+
+        return await _handle_post_order_creation(db, order_id, vendor_id, current_user)
+
+    except HTTPException:
+        await db.rollback()
+        raise
+    except Exception as e:
+        await db.rollback()
+        logger_config.logger.error(f"Failed to create order: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to create order - {e}",
+        )
+
 
 
 async def order_food_or_request_laundy_service_old(

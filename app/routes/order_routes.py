@@ -132,7 +132,7 @@ async def order_food_or_request_laundy_service(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> DeliveryResponse:
-    return await order_service.order_food_or_request_laundy_service(
+    return await order_service.create_food_or_laundry_order(
         db=db, current_user=current_user, order_item=order_item, vendor_id=vendor_id
     )
 
