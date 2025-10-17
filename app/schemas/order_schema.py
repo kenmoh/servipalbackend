@@ -88,6 +88,7 @@ class OrderAndDeliverySchema(BaseModel):
     dropoff_coordinates: list[float]
     distance: Decimal | None = None
     require_delivery: RequireDeliverySchema
+    is_one_way_delivery: bool = True
     duration: str | None = None
     origin: str | None = None
     destination: str | None = None
@@ -123,8 +124,10 @@ class OrderResponseSchema(BaseModel):
     order_status: OrderStatus | None = None
     order_number: int | None = None
     amount_due_vendor: Decimal
+    vendor_pickup_dropoff_charge: Decimal | None = None
     payment_link: str
     created_at: datetime
+    is_one_way_delivery: bool
     order_items: list[OrderItemResponseSchema]
     cancel_reason: str | None = None
 

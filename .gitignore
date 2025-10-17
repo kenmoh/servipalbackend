@@ -70,6 +70,10 @@ ehthumbs.db
 .env
 .env.docker
 .dockerignore
+.coverage
+
 
 # Migrations
 migrations/
+logs/
+htmlcov/

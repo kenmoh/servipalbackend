@@ -454,6 +454,7 @@ class Order(Base):
     additional_info: Mapped[str] = mapped_column(nullable=True)
     pickup_location: Mapped[str] = mapped_column(nullable=True)
     is_deleted: Mapped[bool] = mapped_column(default=False, nullable=True)
+    is_one_way_delivery: Mapped[bool] = mapped_column(default=True, nullable=True)
     vendor_pickup_dropoff_charge: Mapped[Decimal] = mapped_column(nullable=True, default=0.00)
     order_payment_status: Mapped[PaymentStatus] = mapped_column(
         default=PaymentStatus.PENDING

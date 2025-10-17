@@ -626,8 +626,11 @@ async def order_food_or_request_laundy_service(
             .where(Profile.user_id == vendor_id)
         )
         charge = charge_result.scalar_one_or_none()
-        
-        vendor_pickup_dropoff_charge = Decimal(charge)
+
+        if order_item.is_one_way_delivery is not True:
+            vendor_pickup_dropoff_charge = Decimal( Decimal(charge) * 2)
+        else:
+            vendor_pickup_dropoff_charge = Decimal(charge)
 
     try:
 
@@ -645,6 +648,7 @@ async def order_food_or_request_laundy_service(
                     "vendor_id": vendor_id,
                     "order_type": item_type,
                     "require_delivery": order_item.require_delivery,
+                    "is_one_way_delivery": order_item.is_one_way_delivery,
                     "total_price": total_price,
                     "grand_total": final_amount,
                     "order_payment_status": PaymentStatus.PENDING,
