@@ -1,4 +1,5 @@
 import asyncio
+import json
 from user_agents import parse
 from datetime import datetime, timedelta, time
 import secrets
@@ -31,6 +32,7 @@ from app.services import ws_service
 from app.schemas.user_schemas import UpdateStaffSchema
 from app.config.config import settings, email_conf
 from app.templates import send_email_verification_code, send_password_request_email, send_welcome_email_template
+from app.utils.logger_config import setup_logger
 from app.utils.utils import (
     check_login_attempts,
     record_failed_attempt,
@@ -46,6 +48,7 @@ resend.api_key = settings.RESEND_API_KEY
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
+logger = setup_logger()
 
 # send_message = resend.Emails.send({
 #     'from': 'servipal@servi-pal.com',
@@ -143,7 +146,7 @@ async def login_admin_user(db: AsyncSession, login_data: UserLogin) -> User:
     return user
 
 
-async def create_user1(db: AsyncSession, user_data: CreateUserSchema) -> UserBase:
+async def create_user(db: AsyncSession, user_data: CreateUserSchema) -> UserBase:
     """
     Create a new user in the database.
     Optimized version using database constraints for validation.
@@ -1198,7 +1201,7 @@ async def send_verification_codes(
     return {"message": "Verification codes sent to your email and phone"}
 
 
-async def verify_user_contact1(
+async def verify_user_contact(
     email_code: str, phone_code: str, db: AsyncSession
 ) -> dict:
     """Verify both email and phone codes"""
@@ -1333,7 +1336,7 @@ async def update_staff_password(
 
 
 
-async def create_user(db: AsyncSession, user_data: CreateUserSchema) -> CreateUserResponseSchema:
+async def create_user1(db: AsyncSession, user_data: CreateUserSchema) -> CreateUserResponseSchema:
     """
     Create a new user in the database with Flutterwave OTP verification.
     
@@ -1444,7 +1447,7 @@ async def create_user(db: AsyncSession, user_data: CreateUserSchema) -> CreateUs
             )
 
 
-async def verify_user_contact(
+async def verify_user_contact1(
     user_id: UUID,
     email_otp: str,
     phone_otp: str,

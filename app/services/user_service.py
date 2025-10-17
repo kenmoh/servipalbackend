@@ -75,6 +75,8 @@ def _build_user_profile_response(user: User, review_count: int = 0, avg_rating: 
             "store_name": user.profile.store_name,
             "business_name": getattr(user.profile, "business_name", None),
             "business_address": getattr(user.profile, "business_address", None),
+            "can_pickup_and_dropoff": getattr(user.profile, 'can_pickup_and_dropoff'),
+            "pickup_and_delivery_charge": getattr(user.profile, 'pickup_and_delivery_charge', None),
             "business_registration_number": getattr(user.profile, "business_registration_number", None),
             "closing_hours": str(user.profile.closing_hours.isoformat()) if getattr(user.profile, "closing_hours", None) else None,
             "opening_hours": str(user.profile.opening_hours.isoformat()) if getattr(user.profile, "opening_hours", None) else None,
@@ -243,15 +245,15 @@ async def get_users(
         result = await db.execute(stmt)
         users = result.scalars().all()
 
-        review_stmt = select(
-            func.count(Review.id).label('review_count'),
-            func.avg(Review.rating).label('avg_rating'),
-        ).where(Review.reviewee_id == user.id)
+        # review_stmt = select(
+        #     func.count(Review.id).label('review_count'),
+        #     func.avg(Review.rating).label('avg_rating'),
+        # ).where(Review.reviewee_id == user.id)
 
-        review_result = await db.execute(review_stmt)
-        stats = review_result.one()
-        review_count = stats.review_count or 0
-        avg_rating = round(stats.avg_rating, 2) if stats.avg_rating else 0.0
+        # review_result = await db.execute(review_stmt)
+        # stats = review_result.one()
+        # review_count = stats.review_count or 0
+        # avg_rating = round(stats.avg_rating, 2) if stats.avg_rating else 0.0
 
         if not users:
             # Cache empty result to avoid repeated DB queries
@@ -263,7 +265,7 @@ async def get_users(
             return []
 
         # Convert to  response format
-        users_data = [_build_user_profile_response(user,review_count, avg_rating) for user in users]
+        users_data = [_build_user_profile_response(user) for user in users]
 
         # Cache the users data
         redis_client.set(
@@ -791,6 +793,8 @@ async def get_user_with_profile(db: AsyncSession, user_id: UUID) -> ProfileSchem
             "avg_rating": avg_rating or 0,
             "business_name": profile.business_name or None,
             "business_address": profile.business_address or None,
+            "pickup_and_delivery_charge": profile.pickup_and_delivery_charge or None,
+            "can_pickup_and_dropoff": profile.can_pickup_and_dropoff,
             "business_registration_number": profile.business_registration_number
             or None,
             "closing_hours": profile.closing_hours or None,

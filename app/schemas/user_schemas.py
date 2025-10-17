@@ -406,6 +406,8 @@ class ProfileSchema(BaseModel):
     account_holder_name: str | None = None
     profile_image_url: str | None = None
     backdrop_image_url: str | None = None
+    can_pickup_and_dropoff: bool
+    pickup_and_delivery_charge: Decimal | None = None
     state: str | None = None
     review_count: float | None = None
     avg_rating: float | None = None

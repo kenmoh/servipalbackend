@@ -97,9 +97,9 @@ class User(Base):
     # Dispatcher-rider relationship with proper cascade
     dispatcher_id: Mapped[Optional[UUID]] = mapped_column(
         ForeignKey(
-            "users.id", ondelete="SET NULL"
-        ),  # SET NULL when dispatcher is deleted
-        nullable=True,
+            "users.id", ondelete="all, delete-orphan"
+        ),  
+        # nullable=True,
     )
 
     # Dispatcher-side - when dispatcher is deleted, riders become independent
@@ -108,7 +108,7 @@ class User(Base):
         back_populates="dispatcher",
         foreign_keys=[dispatcher_id],
         lazy="dynamic",
-        cascade="all, delete-orphan",  # This ensures proper cleanup
+        cascade="all, delete-orphan", 
         passive_deletes=True,  # Let database handle the cascade
     )
 
@@ -217,6 +217,8 @@ class Profile(Base):
     bank_account_number: Mapped[str] = mapped_column(nullable=True)
     business_address: Mapped[str] = mapped_column(nullable=True)
     state: Mapped[str] = mapped_column(nullable=True)
+    can_pickup_and_dropoff: Mapped[bool] = mapped_column(default=False, nullable=True)
+    pickup_and_delivery_charge: Mapped[Decimal] = mapped_column(nullable=True, default=0.00)
     business_registration_number: Mapped[str] = mapped_column(nullable=True)
     account_holder_name: Mapped[str] = mapped_column(nullable=True)
     opening_hours: Mapped[time] = mapped_column(nullable=True)
@@ -422,7 +424,7 @@ class ItemImage(Base):
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
     item_id: Mapped[UUID] = mapped_column(ForeignKey("items.id", ondelete="CASCADE"))
     url: Mapped[str]
-    # is_primary: Mapped[bool] = mapped_column(default=False)
+    is_primary: Mapped[bool] = mapped_column(default=False)
     created_at: Mapped[datetime] = mapped_column(default=datetime.now)
     updated_at: Mapped[datetime] = mapped_column(
         default=datetime.now, onupdate=datetime.now
@@ -450,14 +452,16 @@ class Order(Base):
     amount_due_vendor: Mapped[Decimal] = mapped_column(nullable=False)
     payment_link: Mapped[str] = mapped_column(nullable=True)
     additional_info: Mapped[str] = mapped_column(nullable=True)
+    pickup_location: Mapped[str] = mapped_column(nullable=True)
     is_deleted: Mapped[bool] = mapped_column(default=False, nullable=True)
+    vendor_pickup_dropoff_charge: Mapped[Decimal] = mapped_column(nullable=True, default=0.00)
     order_payment_status: Mapped[PaymentStatus] = mapped_column(
         default=PaymentStatus.PENDING
     )
     order_status: Mapped[OrderStatus] = mapped_column(nullable=True)
 
     require_delivery: Mapped[RequireDeliverySchema] = mapped_column(
-        default=RequireDeliverySchema.PICKUP
+        default=RequireDeliverySchema.PICKUP, nullable=True
     )
     cancel_reason: Mapped[str] = mapped_column(nullable=True)
     

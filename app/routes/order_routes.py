@@ -137,6 +137,24 @@ async def order_food_or_request_laundy_service(
     )
 
 
+@router.post(
+    "/{vendor_id}/laundry",
+    response_model=DeliveryResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+@limiter.limit("5/minute")
+async def request_laundry(
+    request: Request,
+    vendor_id: UUID,
+    order_item: OrderAndDeliverySchema,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> DeliveryResponse:
+    return await order_service.request_laundy_service(
+        db=db, current_user=current_user, order_item=order_item, vendor_id=vendor_id
+    )
+
+
 @router.get("/{order_id}", status_code=status.HTTP_200_OK)
 async def get_delivery_by_order_id(
     order_id: UUID,
@@ -179,6 +197,34 @@ async def vendor_mark_order_delivered(
         order_id=order_id,
     )
 
+
+# @router.put("/{order_id}/laundry-returned", status_code=status.HTTP_202_ACCEPTED)
+# async def rider_accept_delivery(
+#     order_id: UUID,
+#     db: AsyncSession = Depends(get_db),
+#     current_user: User = Depends(get_current_user),
+# ) -> DeliveryStatusUpdateSchema:
+#     try:
+#         return await order_service.laundry_return(
+#             db=db, current_user=current_user, order_id=order_id
+#         )
+#     except Exception as e:
+#         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    
+
+# @router.put("/{order_id}/laundry-pickup", status_code=status.HTTP_202_ACCEPTED)
+# async def rider_accept_delivery(
+#     order_id: UUID,
+#     db: AsyncSession = Depends(get_db),
+#     current_user: User = Depends(get_current_user),
+# ) -> DeliveryStatusUpdateSchema:
+#     try:
+#         return await order_service.laundry_pickup(
+#             db=db, current_user=current_user, order_id=order_id
+#         )
+#     except Exception as e:
+#         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    
 
 @router.put("/{order_id}/accept-delivery", status_code=status.HTTP_202_ACCEPTED)
 async def rider_accept_delivery(

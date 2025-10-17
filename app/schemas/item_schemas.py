@@ -42,6 +42,7 @@ class ItemImageSchema(BaseModel):
     id: UUID
     item_id: UUID
     url: str
+    is_primary: bool
 
 
 class MenuItemCreate(BaseModel):

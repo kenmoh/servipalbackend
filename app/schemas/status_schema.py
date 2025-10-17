@@ -16,6 +16,9 @@ class BankSchema(BaseModel):
 class RequireDeliverySchema(str, Enum):
     PICKUP = "pickup"
     DELIVERY = "delivery"
+    VENDOR_PICKUP_AND_DROPOFF = 'vendor-pickup-and-dropoff'
+    USER_DROPOFF_AND_PICKUP = 'user-dropoff-and-pickup'
+    
 
 
 # class TransactionType(str, Enum):
@@ -46,7 +49,7 @@ class DeliveryStatus(str, Enum):
     DELIVERED: str = "delivered"  # Rider/Dispatch ops
     RECEIVED: str = "received"  # Sender ops
     CANCELLED: str = "canceled"
-    VENDOR_RECEIVED_LAUNDRY_ITEM: str = "laundry_received"  # Vendor ops
+    # VENDOR_RECEIVED_LAUNDRY_ITEM: str = "laundry_received"  # Vendor ops
 
 
 class OrderStatus(str, Enum):
@@ -57,7 +60,7 @@ class OrderStatus(str, Enum):
     CANCELLED: str = "canceled"
     REJECTED: str = "rejected"
     RECEIVED_REJECTED_PRODUCT: str = "received_rejected_product"
-    VENDOR_RECEIVED_LAUNDRY_ITEM: str = "laundry_received"  # Vendor ops
+    # VENDOR_RECEIVED_LAUNDRY_ITEM: str = "laundry_received"  # Vendor ops
 
 
 class ProdductOrderStatusResponse(BaseModel):
