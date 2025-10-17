@@ -2124,7 +2124,7 @@ async def vendor_mark_order_delivered(
         )
 
 
-async def rider_accept_delivery_order(
+async def rider_accept_delivery_order_old(
     db: AsyncSession, order_id: UUID, current_user: User
 ) -> DeliveryStatusUpdateSchema:
     dispatch_id = get_dispatch_id(current_user)
@@ -2280,10 +2280,156 @@ async def rider_accept_delivery_order(
     return DeliveryStatusUpdateSchema(delivery_status=order.delivery.delivery_status)
 
 
+async def _validate_delivery_acceptance(db: AsyncSession, order_id: UUID, rider: User) -> Order:
+    """Validates all preconditions for a rider to accept a delivery."""
+    if rider.user_type != UserType.RIDER:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only a rider can accept orders.",
+        )
+
+    if rider.profile.profile_image is None or not rider.profile.profile_image.profile_image_url:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Profile image is missing. Please update your profile.",
+        )
+
+    if rider.rider_is_suspended_for_order_cancel:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Your account is suspended due to too many cancellations.",
+        )
+
+    # Check for existing active deliveries
+    existing_delivery = await db.scalar(
+        select(Delivery).where(
+            Delivery.rider_id == rider.id, Delivery.delivery_status == DeliveryStatus.ACCEPTED
+        )
+    )
+    if existing_delivery:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="You already have an active delivery.",
+        )
+
+    # Fetch and lock the order to prevent race conditions
+    order = await db.scalar(
+        select(Order).where(Order.id == order_id).options(selectinload(Order.delivery)).with_for_update()
+    )
+
+    if not order or not order.delivery:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Delivery not found."
+        )
+
+    if order.delivery.rider_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="This order has already been assigned to a rider.",
+        )
+
+    return order
+
+
+async def _assign_rider_and_update_db(db: AsyncSession, order: Order, rider: User, dispatch_id: UUID):
+    """Atomically updates the database to assign the rider and update statuses."""
+    order.delivery.delivery_status = DeliveryStatus.ACCEPTED
+    order.delivery.rider_id = rider.id
+    order.delivery.dispatch_id = dispatch_id
+    order.delivery.rider_phone_number = rider.profile.phone_number
+    order.order_status = OrderStatus.ACCEPTED
+    db.add(order)
+    db.add(order.delivery)
+
+
+async def _dispatch_post_acceptance_tasks(order: Order, rider: User, db: AsyncSession):
+    """Handles tasks that should occur after the database transaction is committed."""
+    # 1. Publish a single high-level event for financial processing
+    await producer.publish_message(
+        service="wallet",
+        operation="process_delivery_acceptance",
+        payload={
+            "order_id": str(order.id),
+            "tx_ref": str(order.tx_ref),
+            "dispatch_id": str(order.delivery.dispatch_id),
+            "amount_due_dispatch": str(order.delivery.amount_due_dispatch),
+            "sender_id": str(order.owner_id),
+        },
+    )
+
+    # 2. Invalidate Caches
+    keys_to_delete = {
+        f"user_related_orders:{rider.id}",
+        f"user_related_orders:{order.delivery.dispatch_id}",
+        f"user_related_orders:{order.owner_id}",
+        f"delivery:{order.delivery.id}",
+        ALL_DELIVERY,
+        "paid_pending_deliveries",
+    }
+    redis_client.delete(*keys_to_delete)
+
+    # 3. Broadcast WebSocket updates
+    await ws_service.broadcast_delivery_status_update(
+        delivery_id=order.delivery.id, new_status=DeliveryStatus.ACCEPTED
+    )
+    await ws_service.broadcast_order_status_update(
+        order_id=order.id, new_status=OrderStatus.ACCEPTED
+    )
+
+    # 4. Send Push Notification to customer
+    sender_token = await get_user_notification_token(db=db, user_id=order.owner_id)
+    if sender_token:
+        await send_push_notification(
+            tokens=[sender_token],
+            title="Order Assigned",
+            message=f"Your order has been assigned to {rider.profile.full_name}, {rider.profile.phone_number}",
+            navigate_to="/(app)/delivery/orders",
+        )
+
+
+async def rider_accept_delivery_order(
+    db: AsyncSession, order_id: UUID, current_user: User
+) -> DeliveryStatusUpdateSchema:
+    """
+    Allows a rider to accept a delivery order using an atomic transaction and decoupled post-processing.
+    """
+    try:
+        # 1. Validate all preconditions
+        order = await _validate_delivery_acceptance(db, order_id, current_user)
+        dispatch_id = get_dispatch_id(current_user)
+
+        # 2. Perform all database updates in a single atomic transaction
+        async with db.begin_nested():
+            await _assign_rider_and_update_db(db, order, current_user, dispatch_id)
+        
+        await db.commit()
+
+        # 3. Dispatch post-acceptance tasks (financial, notifications, etc.) after commit
+        await _dispatch_post_acceptance_tasks(order, current_user, db)
+
+        return DeliveryStatusUpdateSchema(delivery_status=order.delivery.delivery_status)
+
+    except HTTPException: # Re-raise known exceptions
+        await db.rollback()
+        raise
+    except Exception as e: # Catch unexpected errors
+        await db.rollback()
+        logger_config.logger.error(f"Failed to accept delivery for order {order_id}: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="An unexpected error occurred while accepting the delivery.",
+        )
+
+
+
 
 async def laundry_pickup(
     db: AsyncSession, order_id: UUID, current_user: User
 ) -> DeliveryStatusUpdateSchema:
+
+    """
+    Laundry vendor pickup laundry from user
+    """
   
     
     result = await db.execute(
@@ -2297,7 +2443,7 @@ async def laundry_pickup(
         )
 
    
-    order.order_status = OrderStatus.ACCEPTED
+    order.order_status = OrderStatus.VENDOR_RECEIVED_LAUNDRY_ITEM
     await db.commit()
     await db.refresh(order)
 
@@ -2341,13 +2487,13 @@ async def laundry_return(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Order not found."
         )
-    if order.order_status != OrderStatus.ACCEPTED:
+    if order.order_status != OrderStatus.VENDOR_RECEIVED_LAUNDRY_ITEM:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="You can only return an order that is in accepted state.",
+            detail="You can only return an order that is in vendor received state.",
         )
    
-    order.order_status = OrderStatus.DELIVERED
+    order.order_status = OrderStatus.VENDOR_RETURNED_LAUNDRY_ITEM
     await db.commit()
     await db.refresh(order)
 

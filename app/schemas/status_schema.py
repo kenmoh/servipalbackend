@@ -61,7 +61,8 @@ class OrderStatus(str, Enum):
     CANCELLED: str = "canceled"
     REJECTED: str = "rejected"
     RECEIVED_REJECTED_PRODUCT: str = "received_rejected_product"
-    # VENDOR_RECEIVED_LAUNDRY_ITEM: str = "laundry_received"  # Vendor ops
+    VENDOR_RECEIVED_LAUNDRY_ITEM: str = "laundry_received"  # Vendor ops
+    VENDOR_RETURNED_LAUNDRY_ITEM: str = "laundry_returned"  # Vendor ops
 
 
 class ProdductOrderStatusResponse(BaseModel):

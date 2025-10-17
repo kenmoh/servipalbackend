@@ -123,12 +123,12 @@ settings = Settings()
 # redis_url = "redis://localhost"
 
 
-redis_url = None
+# redis_url = None
 
-if settings.ENVIRONMENT == "development":
-    redis_url = "redis://localhost:6379"
-else:
-    redis_url = "rediss://red-d0hplaq4d50c73dc3cmg:LIimjEyTIacx9gSwjpGYcX9CNFfvmKZB@oregon-keyvalue.render.com:6379"
+# if settings.ENVIRONMENT == "development":
+#     redis_url = "redis://localhost:6379"
+# else:
+#     redis_url = "rediss://red-d0hplaq4d50c73dc3cmg:LIimjEyTIacx9gSwjpGYcX9CNFfvmKZB@oregon-keyvalue.render.com:6379"
 
 # redis_client = redis.Redis.from_url(redis_url, decode_responses=True)
 redis_client = Redis(url=settings.UPSTASH_REDIS_URL, token=settings.UPSTASH_TOKEN)
