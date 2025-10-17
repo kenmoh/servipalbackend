@@ -293,18 +293,18 @@ async def laundry_pickup(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     
     
-@router.put("/{order_id}/return-laundry", status_code=status.HTTP_202_ACCEPTED)
-async def laundry_returned(
-    order_id: UUID,
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-) -> DeliveryStatusUpdateSchema:
-    try:
-        return await order_service.laundry_returned(
-            db=db, current_user=current_user, order_id=order_id
-        )
-    except Exception as e:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+# @router.put("/{order_id}/return-laundry", status_code=status.HTTP_202_ACCEPTED)
+# async def laundry_returned(
+#     order_id: UUID,
+#     db: AsyncSession = Depends(get_db),
+#     current_user: User = Depends(get_current_user),
+# ) -> DeliveryStatusUpdateSchema:
+#     try:
+#         return await order_service.laundry_returned(
+#             db=db, current_user=current_user, order_id=order_id
+#         )
+#     except Exception as e:
+#         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
 
 @router.put("/{delivery_id}/re-list-item", status_code=status.HTTP_202_ACCEPTED)

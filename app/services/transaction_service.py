@@ -1156,15 +1156,21 @@ async def _verify_webhook_signature(request: Request):
     signature = request.headers.get("verif-hash")
     if not signature or not hmac.compare_digest(signature, secret_hash):
         logger.error("Invalid webhook signature received.")
-        raise HTTPException(status_code=401, detail="Invalid signature")
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid signature")
 
 async def _process_successful_payment(db: AsyncSession, order: Order, payment_data: dict):
     """Handles the logic for a successfully paid order."""
-    async with db.begin_nested(): # Use nested transaction
+    
+    try:
+        # async with db.begin_nested(): # Use nested transaction
         order.order_payment_status = PaymentStatus.PAID
         db.add(order)
+        await db.commit()
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,detail=str(e))
 
-    await db.commit() # Commit the status change
+    # await db.commit() # Commit the status change
 
     # Dispatch background tasks after successful commit
     # This uses the message queue, which is great for decoupling
@@ -1194,11 +1200,15 @@ async def _process_successful_payment(db: AsyncSession, order: Order, payment_da
 
 async def _process_failed_payment(db: AsyncSession, order: Order, new_status: PaymentStatus):
     """Handles the logic for a failed or cancelled payment."""
-    async with db.begin_nested():
+    try:
+    # async with db.begin_nested():
         order.order_payment_status = new_status
         db.add(order)
-    await db.commit()
-    await _dispatch_post_payment_tasks(order, new_status, db)
+        await db.commit()
+        await _dispatch_post_payment_tasks(order, new_status, db)
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
 async def _dispatch_post_payment_tasks(order: Order, status: PaymentStatus, db: AsyncSession):
     """Dispatches notifications and cache invalidation tasks."""

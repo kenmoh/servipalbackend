@@ -2088,38 +2088,34 @@ async def vendor_mark_order_delivered(
                 detail="You already mark this order as delivered.",
             )
 
-        if (
-            order.vendor_id == current_user.id
-            and order.order_status == OrderStatus.PENDING
-        ):
-            await db.execute(
-                update(Order)
-                .where(Order.id == order_id)
-                .values({"order_status": OrderStatus.DELIVERED})
-                .returning(Order.order_status)
+        # if (
+        #     order.vendor_id == current_user.id
+        #     and order.order_status in [OrderStatus.VENDOR_RECEIVED_LAUNDRY_ITEM, OrderStatus.ACCEPTED]
+        # ):
+        await db.execute(
+            update(Order)
+            .where(Order.id == order_id)
+            .values({"order_status": OrderStatus.DELIVERED})
+            .returning(Order.order_status)
+        )
+        await db.commit()
+        await db.refresh(order)
+
+        owner_token = await get_user_notification_token(
+            db=db, user_id=order.owner_id
+        )
+
+        if owner_token:
+            await send_push_notification(
+                tokens=[owner_token],
+                title="Order Delivered",
+                message="Your order has been marked as delivered by the vendor, please verify before marking as received.",
+                navigate_to="/(app)/delivery/orders",
             )
-            await db.commit()
-            await db.refresh(order)
 
-            owner_token = await get_user_notification_token(
-                db=db, user_id=order.owner_id
-            )
+            redis_client.delete(f"user_related_orders:{current_user.id}")
 
-            if owner_token:
-                await send_push_notification(
-                    tokens=[owner_token],
-                    title="Order Delivered",
-                    message="Your order has been marked as delivered by the vendor, please verify before marking as received.",
-                    navigate_to="/(app)/delivery/orders",
-                )
-
-
-                redis_client.delete(f"delivery:{order_id}")
-                redis_client.delete(f"{ALL_DELIVERY}")
-                redis_client.delete("paid_pending_deliveries")
-                redis_client.delete(f"user_related_orders:{current_user.id}")
-
-                return DeliveryStatusUpdateSchema(order_status=order.order_status)
+            return DeliveryStatusUpdateSchema(order_status=order.order_status)
 
     except Exception as e:
         raise HTTPException(
