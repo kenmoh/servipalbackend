@@ -40,6 +40,8 @@ from app.schemas.status_schema import (
     PaymentStatus,
     RequireDeliverySchema,
     TransactionDirection,
+    TransactionLogAction,
+    
     TransactionType,
     UserType,
 )
@@ -809,3 +811,19 @@ class AuditLog(Base):
     changes: Mapped[dict] = mapped_column(JSON, nullable=True)
     ip_address: Mapped[str] = mapped_column(String(64), nullable=True)
     extra_metadata: Mapped[dict] = mapped_column(JSON, nullable=True)
+
+
+
+class TransactionLog(Base):
+    __tablename__ = "transaction_logs"
+
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    vendor_id: Mapped[UUID]
+    order_id: Mapped[UUID]
+    amount: Mapped[Decimal] 
+    action: Mapped[TransactionLogAction] = mapped_column(nullable=True)
+    status: Mapped[PaymentStatus] = mapped_column(nullable=True)
+    details: Mapped[dict] = mapped_column(JSON, nullable=True)
+    timestamp: Mapped[datetime] = mapped_column(default=datetime.now, nullable=False)
+   
+  

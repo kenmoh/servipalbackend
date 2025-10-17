@@ -20,3 +20,14 @@ class AuditLogBase(BaseModel):
 
 class AuditLogResponse(AuditLogBase):
     id: UUID
+
+
+class TransactionLogResponse(BaseModel):
+    id: UUID
+    timestamp: datetime
+    vendor_id: UUID
+    order_id: UUID
+    amount: float
+    action: str
+    status: str
+    details: Optional[Dict[str, Any]] = None

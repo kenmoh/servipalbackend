@@ -14,10 +14,12 @@ from app.models.models import (
     Order,
     OrderItem,
     Transaction,
+    TransactionLog,
     User,
     Wallet,
     ItemImage,
     Profile,
+    
 )
 from app.services import ws_service
 from app.queue.producer import producer
@@ -34,6 +36,8 @@ from app.schemas.status_schema import (
     OrderStatus,
     PaymentMethod,
     TransactionDirection,
+    TransactionLogAction,
+   
     TransactionType,
 )
 
@@ -2523,6 +2527,491 @@ async def laundry_return(
     return DeliveryStatusUpdateSchema(order_status=order.order_status)
 
 
+
+
+async def sender_confirm_package_received_old(
+    db: AsyncSession, order_id: UUID, current_user: User
+) -> DeliveryStatusUpdateSchema:
+    result = await db.execute(
+        select(Order).where(Order.id == order_id).options(selectinload(Order.delivery)).with_for_update()
+    )
+    order = result.scalar_one_or_none()
+
+    if not order:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Order not found."
+        )
+
+    if order.owner_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You are not allowed to perform this action.",
+        )
+
+    # Ensure tx_ref exists
+    if not order.tx_ref:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No transaction reference found for this order.",
+        )
+
+    
+
+    # Handle delivery orders
+    if not order.delivery:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No delivery found for this order.",
+        )
+
+    if order.delivery.delivery_status != DeliveryStatus.DELIVERED:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Delivery is not yet completed.",
+        )
+
+    if order.delivery.delivery_status == DeliveryStatus.RECEIVED:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="You have already marked this delivery as received.",
+        )
+
+    dispatch_profile = await get_user_profile(order.delivery.dispatch_id, db=db)
+  
+    total_spent = order.grand_total
+
+    to_user = dispatch_profile.full_name or dispatch_profile.business_name
+    try:
+        order.order_status = OrderStatus.RECEIVED
+        order.delivery.delivery_status = DeliveryStatus.RECEIVED
+        tx_ref = order.tx_ref
+
+        await db.commit()
+        await db.refresh(order)
+
+        await ws_service.broadcast_delivery_status_update(
+            delivery_id=order.delivery.id, new_status=order.delivery.delivery_status
+        )
+        await ws_service.broadcast_order_status_update(
+            order_id=order.id, new_status=order.order_status
+        )
+
+        rider_token = await get_user_notification_token(
+            db=db, user_id=order.delivery.rider_id
+        )
+        
+
+        if rider_token:
+            await send_push_notification(
+                tokens=[rider_token],
+                title="Order Completed",
+                message=f"Congratulations! Your wallet has been updated.",
+                navigate_to="/(app)/delivery/orders",
+            )
+
+        # Update dispatch wallet (move from escrow to balance)
+        
+        await producer.publish_message(
+            service="wallet",
+            operation="update_wallet",
+            payload={
+                "wallet_id": str(order.delivery.dispatch_id),
+                "balance_change": str(order.delivery.amount_due_dispatch),
+                "escrow_change": str(-order.delivery.amount_due_dispatch),
+            },
+        )
+
+        # Update sender wallet (move from escrow)
+        await producer.publish_message(
+            service="wallet",
+            operation="update_wallet",
+            payload={
+                "wallet_id": str(order.owner_id),
+                "tx_ref": str(tx_ref),
+                "balance_change": str(0),
+                "escrow_change": str(-total_spent),
+            },
+        )
+
+        # Update sender transaction
+        await producer.publish_message(
+            service="wallet",
+            operation="update_transaction",
+            payload={
+                "wallet_id": str(order.owner_id),
+                "tx_ref": str(order.tx_ref),
+                "to_user": to_user,
+            },
+        )
+
+
+        redis_client.delete(f"{ALL_DELIVERY}")
+        redis_client.delete("paid_pending_deliveries")
+        redis_client.delete(f"user_related_orders:{current_user.id}")
+        redis_client.delete(f"user_related_orders:{order.vendor_id}")
+        redis_client.delete(f"user_related_orders:{order.delivery.dispatch_id}")
+        redis_client.delete(f"user_related_orders:{order.delivery.rider_id}")
+
+
+        return DeliveryStatusUpdateSchema(
+            delivery_status=order.delivery.delivery_status,
+            order_status=order.order_status,
+        )
+
+    except Exception as e:
+        await db.rollback()
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+
+
+async def _validate_confirmation(order: Order, current_user: User):
+    if not order:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Order not found."
+        )
+
+    if order.owner_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You are not allowed to perform this action.",
+        )
+
+    if not order.tx_ref:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No transaction reference found for this order.",
+        )
+
+    if not order.delivery:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No delivery found for this order.",
+        )
+
+    if order.delivery.delivery_status != DeliveryStatus.DELIVERED:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Delivery is not yet completed.",
+        )
+
+    if order.delivery.delivery_status == DeliveryStatus.RECEIVED:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="You have already marked this delivery as received.",
+        )
+
+
+async def _update_statuses(order: Order, db: AsyncSession):
+    order.order_status = OrderStatus.RECEIVED
+    order.delivery.delivery_status = DeliveryStatus.RECEIVED
+    db.add(order)
+    db.add(order.delivery)
+
+
+async def _settle_payments(order: Order):
+    # Combine wallet updates into a single message
+    await producer.publish_message(
+        service="wallet",
+        operation="process_package_delivery_completion",
+        payload={
+            "order_id": str(order.id),
+            "tx_ref": str(order.tx_ref),
+            "dispatch_id": str(order.delivery.dispatch_id),
+            "sender_id": str(order.owner_id),
+            "amount_due_dispatch": str(order.delivery.amount_due_dispatch),
+            "total_spent": str(order.grand_total),
+            "to_user": order.delivery.dispatch.profile.full_name
+            or order.delivery.dispatch.profile.business_name,
+        },
+    )
+
+
+
+
+async def _send_notifications(order: Order, db: AsyncSession):
+    await ws_service.broadcast_delivery_status_update(
+        delivery_id=order.delivery.id, new_status=order.delivery.delivery_status
+    )
+    await ws_service.broadcast_order_status_update(
+        order_id=order.id, new_status=order.order_status
+    )
+
+    rider_token = await get_user_notification_token(
+        db=db, user_id=order.delivery.rider_id
+    )
+
+    if rider_token:
+        await send_push_notification(
+            tokens=[rider_token],
+            title="Order Completed",
+            message="Congratulations! Your wallet has been updated.",
+            navigate_to="/(app)/delivery/orders",
+        )
+
+
+def _invalidate_caches(order: Order, current_user: User):
+    redis_client.delete(f"{ALL_DELIVERY}")
+    redis_client.delete("paid_pending_deliveries")
+    redis_client.delete(f"user_related_orders:{current_user.id}")
+    redis_client.delete(f"user_related_orders:{order.vendor_id}")
+    redis_client.delete(f"user_related_orders:{order.delivery.dispatch_id}")
+    redis_client.delete(f"user_related_orders:{order.delivery.rider_id}")
+
+
+async def sender_confirm_package_received(
+    db: AsyncSession, order_id: UUID, current_user: User
+) -> DeliveryStatusUpdateSchema:
+    try:
+        result = await db.execute(
+            select(Order)
+            .where(Order.id == order_id)
+            .options(
+                selectinload(Order.delivery)
+                .selectinload(Delivery.dispatch)
+                .selectinload(User.profile)
+            )
+            .with_for_update()
+        )
+        order = result.scalar_one_or_none()
+
+        await _validate_confirmation(order, current_user)
+        
+        await _update_statuses(order, db)
+
+        await _settle_payments(order)
+        await _send_notifications(order, db)
+        _invalidate_caches(order, current_user)
+
+        return DeliveryStatusUpdateSchema(
+            delivery_status=order.delivery.delivery_status,
+            order_status=order.order_status,
+        )
+    except HTTPException:
+        await db.rollback()
+        raise
+    except Exception as e:
+        await db.rollback()
+        logger_config.logger.error(
+            f"Failed to confirm package received for order {order_id}: {e}",
+            exc_info=True,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="An unexpected error occurred while confirming the package reception.",
+        )
+
+
+
+async def sender_confirm_order_received_old(
+    db: AsyncSession, order_id: UUID, current_user: User
+) -> DeliveryStatusUpdateSchema:
+    result = await db.execute(
+        select(Order).where(Order.id == order_id).options(selectinload(Order.delivery)).with_for_update()
+    )
+    order = result.scalar_one_or_none()
+
+    if not order:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Order not found."
+        )
+
+    if order.owner_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You are not allowed to perform this action.",
+        )
+
+    # Ensure tx_ref exists
+    if not order.tx_ref:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No transaction reference found for this order.",
+        )
+
+
+    if order.order_status != OrderStatus.DELIVERED:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Order is not yet delivered.",
+        )
+
+    if order.order_status == OrderStatus.RECEIVED:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="You have already marked this order as received.",
+        )
+
+  
+    try:
+        order.order_status = OrderStatus.RECEIVED
+        await db.commit()
+        await db.refresh(order)
+
+        # Broadcast WebSocket update
+        await ws_service.broadcast_order_status_update(
+            order_id=order.id, new_status=order.order_status
+        )
+
+        # Notify vendor
+        vendor_token = await get_user_notification_token(
+            db=db, user_id=order.vendor_id
+        )
+        if vendor_token:
+            await send_push_notification(
+                tokens=[vendor_token],
+                title="Order Completed",
+                message=f"Congratulations! Order completed. ₦{order.amount_due_vendor} has been credited to your wallet.",
+                navigate_to="/(app)/delivery/orders",
+            )
+
+        # Release funds from escrow
+        # Update vendor wallet (move from escrow to balance)
+        await producer.publish_message(
+            service="wallet",
+            operation="update_wallet",
+            payload={
+                "wallet_id": str(order.vendor_id),
+                "balance_change": str(order.amount_due_vendor),
+                "escrow_change": str(-order.amount_due_vendor),
+            },
+        )
+
+        # Update sender wallet (clear escrow)
+        await producer.publish_message(
+            service="wallet",
+            operation="update_wallet",
+            payload={
+                "wallet_id": str(order.owner_id),
+                "balance_change": str(0),
+                "escrow_change": str(-order.total_price),
+            },
+        )
+
+        # Clear caches
+        redis_client.delete(f"user_related_orders:{current_user.id}")
+        redis_client.delete(f"user_related_orders:{order.vendor_id}")           
+
+        return DeliveryStatusUpdateSchema(order_status=order.order_status)
+
+    except Exception as e:
+        await db.rollback()
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+
+
+async def _validate_order_confirmation(order: Order, current_user: User):
+    if not order:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Order not found."
+        )
+
+    if order.owner_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You are not allowed to perform this action.",
+        )
+
+    if not order.tx_ref:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No transaction reference found for this order.",
+        )
+
+    if order.order_status != OrderStatus.DELIVERED:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Order is not yet delivered.",
+        )
+
+    if order.order_status == OrderStatus.RECEIVED:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="You have already marked this order as received.",
+        )
+
+
+async def _update_order_status(order: Order, db: AsyncSession):
+    order.order_status = OrderStatus.RECEIVED
+    db.add(order)
+
+
+async def _settle_vendor_payment(db: AsyncSession, order: Order):
+    await producer.publish_message(
+        service="wallet",
+        operation="process_pickup_order_completion",
+        payload={
+            "order_id": str(order.id),
+            "vendor_id": str(order.vendor_id),
+            "sender_id": str(order.owner_id),
+            "amount_due_vendor": str(order.amount_due_vendor),
+            "grand_total": str(order.grand_total),
+        },
+    )
+
+    income = order.grand_total - order.amount_due_vendor
+
+    tranx_log = TransactionLog(
+        vendor_id=order.vendor_id,
+        order_id=order.id,
+        amount=income,
+        action=TransactionLogAction.RECEIVED              ,
+        status=order.order_payment_status,
+        details={"order_id": str(order.id), "total_amount": str(order.grand_total), "vendor_amount": str(order.amount_due_vendor)},
+    )
+
+    db.add(tranx_log)
+    await db.commit()
+
+async def _notify_vendor_of_completion(order: Order, db: AsyncSession):
+    await ws_service.broadcast_order_status_update(
+        order_id=order.id, new_status=order.order_status
+    )
+
+    vendor_token = await get_user_notification_token(db=db, user_id=order.vendor_id)
+    if vendor_token:
+        await send_push_notification(
+            tokens=[vendor_token],
+            title="Order Completed",
+            message=f"Congratulations! Order completed. ₦{order.amount_due_vendor} has been credited to your wallet.",
+            navigate_to="/(app)/delivery/orders",
+        )
+
+
+def _invalidate_order_caches(order: Order, current_user: User):
+    redis_client.delete(f"user_related_orders:{current_user.id}")
+    redis_client.delete(f"user_related_orders:{order.vendor_id}")
+
+
+async def sender_confirm_order_received(
+    db: AsyncSession, order_id: UUID, current_user: User
+) -> DeliveryStatusUpdateSchema:
+    try:
+        result = await db.execute(
+            select(Order).where(Order.id == order_id).with_for_update()
+        )
+        order = result.scalar_one_or_none()
+
+        await _validate_order_confirmation(order, current_user)
+        await _update_order_status(order, db)
+        await _settle_vendor_payment(db, order)
+        await _notify_vendor_of_completion(order, db)
+        _invalidate_order_caches(order, current_user)
+
+        return DeliveryStatusUpdateSchema(order_status=order.order_status)
+    except HTTPException:
+        await db.rollback()
+        raise
+    except Exception as e:
+        await db.rollback()
+        logger_config.logger.error(
+            f"Failed to confirm order received for order {order_id}: {e}",
+            exc_info=True,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="An unexpected error occurred while confirming the order reception.",
+        )
+
+
+
 async def sender_confirm_delivery_or_order_received(
     db: AsyncSession, order_id: UUID, current_user: User
 ) -> DeliveryStatusUpdateSchema:
@@ -2821,7 +3310,6 @@ async def sender_confirm_delivery_or_order_received(
     except Exception as e:
         await db.rollback()
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
-
 
 # async def vendor_mark_laundry_item_received(
 #     db: AsyncSession, order_id: UUID, current_user: User

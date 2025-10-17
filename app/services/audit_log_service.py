@@ -4,9 +4,11 @@ from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, and_
 from app.models.models import AuditLog
+from app.models.models import TransactiontLogs
 from fastapi import HTTPException, status
 
 from app.schemas.audit_logs import AuditLogResponse
+from app.schemas.status_schema import TransactionLogAction, TransactionLogStatus
 
 
 class AuditLogService:
@@ -98,3 +100,67 @@ class AuditLogService:
         logs = result.scalars().all()
 
         return logs
+
+
+class TransactionLogService:
+    @staticmethod
+    async def create_log(
+        db: AsyncSession,
+        *,
+        vendor_id: UUID,
+        amount: float,
+        action: TransactionLogAction,
+        status: TransactionLogStatus,
+        details: Optional[dict] = None,
+    ) -> TransactiontLogs:
+        """
+        Create a transaction log entry.
+        """
+        log = TransactiontLogs(
+            vendor_id=vendor_id,
+            amount=amount,
+            action=action,
+            status=status,
+            details=details or {},
+        )
+        db.add(log)
+        await db.flush()
+        return log
+
+    @staticmethod
+    async def get_logs(
+        db: AsyncSession,
+        *,
+        vendor_id: Optional[UUID] = None,
+        start_time: Optional[datetime] = None,
+        end_time: Optional[datetime] = None,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> List[TransactiontLogs]:
+        """
+        Query transaction logs with optional filters.
+        """
+        stmt = select(TransactiontLogs)
+        conditions = []
+        if vendor_id:
+            conditions.append(TransactiontLogs.vendor_id == vendor_id)
+        if start_time:
+            conditions.append(TransactiontLogs.timestamp >= start_time)
+        if end_time:
+            conditions.append(TransactiontLogs.timestamp <= end_time)
+        if conditions:
+            stmt = stmt.where(and_(*conditions))
+        stmt = stmt.order_by(TransactiontLogs.timestamp.desc()).offset(offset).limit(limit)
+        result = await db.execute(stmt)
+        return result.scalars().all()
+
+    @staticmethod
+    async def get_log_by_id(db: AsyncSession, log_id: UUID) -> TransactiontLogs:
+        stmt = select(TransactiontLogs).where(TransactiontLogs.id == log_id)
+        result = await db.execute(stmt)
+        log = result.scalar_one_or_none()
+        if not log:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="Transaction log not found"
+            )
+        return log

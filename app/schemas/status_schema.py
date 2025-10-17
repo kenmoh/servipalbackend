@@ -132,3 +132,10 @@ class DisputeStatus(str, Enum):
 
 class ChangeUserType(BaseModel):
     user_type: UserType
+
+  
+
+class TransactionLogAction(str, Enum):
+      RECEIVED: str = "received"
+      REFUNDED: str = "refunded"
+   
