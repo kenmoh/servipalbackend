@@ -58,7 +58,7 @@ class ProductOrderResponse(BaseModel):
     additional_info: str | None = None
     amount_due_vendor: Decimal
     payment_link: str
-    created_at: datetime
+    # created_at: datetime
     order_items: list[ProductOrderItemResponse]
 
     class Config:
