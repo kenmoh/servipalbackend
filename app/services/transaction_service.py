@@ -712,6 +712,258 @@ async def handle_charge_completed_callback(
 
             # --- FOOD/LAUNDRY ORDER ---
             elif order.order_type in [OrderType.FOOD, OrderType.LAUNDRY]:
+                total_paid = order.grand_total
+              
+                # Move total paid to customer escrow
+                customer_wallet_result = await db.execute(
+                    select(Wallet).where(Wallet.id == order.owner_id).with_for_update()
+                )
+                customer_wallet = customer_wallet_result.scalar_one_or_none()
+                if customer_wallet:
+                    customer_wallet.escrow_balance += total_paid
+
+                # Move order amount to vendor escrow
+                vendor_wallet_result = await db.execute(
+                    select(Wallet).where(Wallet.id == order.vendor_id).with_for_update()
+                )
+                vendor_wallet = vendor_wallet_result.scalar_one_or_none()
+                if vendor_wallet:
+                    vendor_wallet.escrow_balance += order.total_paid
+                    
+                # Get customer and vendor names
+                customer_name = None
+                if (
+                    order.owner
+                    and hasattr(order.owner, "profile")
+                    and order.owner.profile
+                ):
+                    customer_name = (
+                        order.owner.profile.full_name
+                        or order.owner.profile.business_name
+                    )
+                vendor_name = None
+                if (
+                    order.vendor
+                    and hasattr(order.vendor, "profile")
+                    and order.vendor.profile
+                ):
+                    vendor_name = (
+                        order.vendor.profile.business_name
+                        or order.vendor.profile.full_name
+                    )
+                # Create customer transaction (DEBIT)
+                transaction_values.append(
+                    {
+                        "wallet_id": order.owner_id,
+                        "amount": total_paid,
+                        "transaction_type": TransactionType.DEBIT,
+                        "payment_status": PaymentStatus.PAID,
+                        "created_at": current_time,
+                        "payment_method": payment_type,
+                        "payment_by": vendor_name,
+                        "updated_at": current_time,
+                    }
+                )
+                # Create vendor transaction (CREDIT)
+                if vendor_wallet:
+                    transaction_values.append(
+                        {
+                            "wallet_id": order.vendor_id,
+                            "amount": order.total_price,
+                            "transaction_type": TransactionType.CREDIT,
+                            "payment_status": PaymentStatus.PAID,
+                            "created_at": current_time,
+                            "payment_method": payment_type,
+                            "payment_by": customer_name,
+                            "updated_at": current_time,
+                        }
+                    )
+                await db.execute(insert(Transaction), transaction_values)
+                await db.commit()
+
+            # Send notifications
+            customer_token = await get_user_notification_token(
+                db=db, user_id=order.owner_id
+            )
+            vendor_token = await get_user_notification_token(
+                db=db, user_id=order.vendor_id
+            )
+            amount_str = (
+                f"₦{amount_paid}" if currency == "NGN" else f"{amount_paid} {currency}"
+            )
+            if customer_token:
+                await send_push_notification(
+                    tokens=[customer_token],
+                    title="Payment Successful",
+                    message=f"Your payment of {amount_str} was successful.",
+                )
+            if vendor_token:
+                await send_push_notification(
+                    tokens=[vendor_token],
+                    title="Order Paid",
+                    message=f"You have received a new order payment of {amount_str}.",
+                )
+
+            # Clear relevant caches
+            redis_client.delete(f"user_related_orders:{order.owner_id}")
+            redis_client.delete(f"user_orders:{order.owner_id}")
+            redis_client.delete(f"user_orders:{order.vendor_id}")
+            redis_client.delete("paid_pending_deliveries")
+            redis_client.delete("orders")
+
+            return {
+                "status": "success",
+                "order_id": str(order.id),
+                "payment_type": payment_type,
+            }
+
+        # --- If not an order, try as a wallet top-up transaction ---
+        transaction = None
+        if tx_ref:
+            result = await db.execute(
+                select(Transaction).where(Transaction.id == UUID(tx_ref)).with_for_update()
+            )
+            transaction = result.scalar_one_or_none()
+
+        if transaction:
+            if transaction.payment_status == PaymentStatus.PAID:
+                transaction.payment_method = payment_type
+                await db.commit()
+
+            # Mark transaction as paid
+            transaction.payment_status = PaymentStatus.PAID
+            transaction.payment_method = payment_type
+
+            # Update wallet balance
+            wallet = await db.get(Wallet, transaction.wallet_id)
+            if wallet:
+                charge = await get_current_charge_settings(db)
+                amount_to_add = calculate_net_amount(transaction.amount, charge)
+                wallet.balance += amount_to_add
+
+            await db.commit()
+
+            # Notify user
+            token = await get_user_notification_token(db=db, user_id=wallet.id)
+            if token:
+                await send_push_notification(
+                    tokens=[token],
+                    title="Wallet Top-up",
+                    message=f"Your wallet top-up of ₦{amount_paid} was successful.",
+                )
+
+            return {
+                "status": "success",
+                "transaction_id": str(transaction.id),
+                "payment_type": payment_type,
+            }
+
+        # If neither order nor transaction found
+        return {"status": "ignored", "reason": "Order/Transaction not found"}
+
+    return {"status": "ignored", "reason": "Not a successful charge.completed event"}
+
+
+
+
+# --- Fallback webhook handler for charge.completed with custom escrow/wallet/transaction logic ---
+async def handle_charge_completed_callback_old(
+    request: Request, db: AsyncSession, payload=None
+):
+    if payload is None:
+        payload = await request.json()
+    event = payload.get("event")
+    data = payload.get("data", {})
+
+    if event == "charge.completed" and data.get("status") == "successful":
+        payment_type = data.get("payment_type") or data.get("paymentType")
+        tx_ref = data.get("tx_ref") or data.get("txRef") or data.get("reference")
+        amount_paid = data.get("amount")
+        currency = data.get("currency")
+
+        # Try to get Order first
+        order = None
+        if tx_ref:
+            result = await db.execute(
+                select(Order)
+                .where(Order.id == UUID(tx_ref))
+                .options(
+                    selectinload(Order.owner).selectinload(User.profile),
+                    selectinload(Order.vendor).selectinload(User.profile),
+                ).with_for_update()
+            )
+            order = result.scalar_one_or_none()
+
+        if order:
+            if order.order_payment_status == PaymentStatus.PAID:
+                await db.execute(
+                    update(Transaction)
+                    .where(Transaction.id == order.id)
+                    .values(payment_method=payment_type)
+                )
+                await db.commit()
+                return {"status": "ignored", "reason": "Order already paid"}
+
+            # Mark order as paid
+            order.order_payment_status = PaymentStatus.PAID
+            await db.execute(
+                update(Transaction)
+                .where(Transaction.id == order.id)
+                .values(payment_method=payment_type)
+            )
+            await db.commit()
+
+            # --- Custom escrow/wallet/transaction logic ---
+            current_time = datetime.now()
+            transaction_values = []
+
+            # --- PACKAGE ORDER ---
+            if order.order_type == OrderType.PACKAGE:
+                delivery_fee = None
+                if order.delivery_id:
+                    delivery_result = await db.execute(
+                        select(Order.delivery).where(Order.id == order.id)
+                    )
+                    delivery = delivery_result.scalar_one_or_none()
+                    if delivery and hasattr(delivery, "delivery_fee"):
+                        delivery_fee = delivery.delivery_fee
+                if not delivery_fee:
+                    delivery_fee = order.total_price
+                # Move delivery fee to customer escrow
+                customer_wallet_result = await db.execute(
+                    select(Wallet).where(Wallet.id == order.owner_id).with_for_update()
+                )
+                customer_wallet = customer_wallet_result.scalar_one_or_none()
+                if customer_wallet:
+                    customer_wallet.escrow_balance += delivery_fee
+                # Create customer transaction (DEBIT)
+                customer_name = None
+                if (
+                    order.owner
+                    and hasattr(order.owner, "profile")
+                    and order.owner.profile
+                ):
+                    customer_name = (
+                        order.owner.profile.full_name
+                        or order.owner.profile.business_name
+                    )
+                transaction_values.append(
+                    {
+                        "wallet_id": order.owner_id,
+                        "amount": delivery_fee,
+                        "transaction_type": TransactionType.DEBIT,
+                        "payment_status": PaymentStatus.PAID,
+                        "created_at": current_time,
+                        "payment_method": payment_type,
+                        "payment_by": customer_name,
+                        "updated_at": current_time,
+                    }
+                )
+                await db.execute(insert(Transaction), transaction_values)
+                await db.commit()
+
+            # --- FOOD/LAUNDRY ORDER ---
+            elif order.order_type in [OrderType.FOOD, OrderType.LAUNDRY]:
                 total_paid = order.total_price
                 delivery_fee = 0
                 if order.require_delivery == RequireDeliverySchema.DELIVERY:
@@ -871,6 +1123,8 @@ async def handle_charge_completed_callback(
         return {"status": "ignored", "reason": "Order/Transaction not found"}
 
     return {"status": "ignored", "reason": "Not a successful charge.completed event"}
+
+
 
 
 async def handle_payment_webhook(request: Request, db: AsyncSession):
