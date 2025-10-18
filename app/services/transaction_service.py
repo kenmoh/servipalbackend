@@ -63,7 +63,7 @@ logger = setup_logger()
 
 
 
-def clear_order_caches(order):
+async def clear_order_caches(order):
     """Clear all caches related to an order."""
     try:
         redis_client.delete(f"user_related_orders:{order.owner_id}")
@@ -1619,7 +1619,7 @@ async def order_payment_callback(request: Request, db: AsyncSession):
             await db.refresh(order)
 
             # Clear caches
-            clear_order_caches(order)
+            await clear_order_caches(order)
 
             return templates.TemplateResponse(
                 "payment-status.html",
