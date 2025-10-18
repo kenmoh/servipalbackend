@@ -28,7 +28,7 @@ from app.utils.logger_config import setup_logger
 
 flutterwave_base_url = "https://api.flutterwave.com/v3" 
 # https://api.flutterwave.com/v3/otps
-servipal_base_url = "https://servipalbackend.onrender.com/api"
+servipal_base_url = "https://api.servi-pal.com/api"
 bank_url = "https://api.flutterwave.com/v3/banks/NG"
 
 logger = setup_logger()

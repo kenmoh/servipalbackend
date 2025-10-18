@@ -233,7 +233,7 @@ async def buy_product(
         await db.flush()
 
         # Generate payment link
-        tx_ref = uuid.uuid()
+        tx_ref = uuid.uuid4()
         payment_link = await get_product_payment_link(
             id=tx_ref, current_user=buyer, amount=total_cost
         )
@@ -446,8 +446,11 @@ async def get_user_orders(
     # Try cache first with error handling
 
     cached_user_items = redis_client.get(cache_key)
-    if cached_user_items:
-        return [ProductOrderResponse(**o) for o in json.loads(cached_user_items)]
+    # if cached_user_items:
+    #     print('50'*50)
+    #     print("Cache hit")
+    #     print('*'*50)
+    #     return [ProductOrderResponse(**o) for o in json.loads(cached_user_items)]
 
     stmt = (
         select(Order)

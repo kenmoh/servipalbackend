@@ -1,6 +1,6 @@
 from enum import Enum
 from datetime import datetime
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 from uuid import UUID
 from datetime import datetime
 from decimal import Decimal
@@ -47,6 +47,13 @@ class ProductOrderItemResponse(BaseModel):
 
 
 class ProductOrderResponse(BaseModel):
+
+    model_config = ConfigDict(
+        json_encoders={
+            datetime: lambda v: v.isoformat(),
+            Decimal: lambda v: str(v),
+        }
+    )
     id: UUID
     user_id: UUID  # owner_id
     vendor_id: UUID
@@ -61,8 +68,8 @@ class ProductOrderResponse(BaseModel):
     # created_at: datetime
     order_items: list[ProductOrderItemResponse]
 
-    class Config:
-        from_attributes = True
+    # class Config:
+    #     from_attributes = True
 
 
 class TopUpRequestSchema(BaseModel):

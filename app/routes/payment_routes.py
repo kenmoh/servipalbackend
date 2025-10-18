@@ -1,5 +1,6 @@
 from uuid import UUID
 import uuid
+from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status, Query
 from fastapi.responses import HTMLResponse
@@ -184,6 +185,15 @@ async def process_webhook(
         request=request,
         db=db,
     )
+
+@router.get("/api/payment/webhook-test")
+async def webhook_test(request: Request):
+    return {
+        "status": "webhook_endpoint_is_reachable",
+        "timestamp": datetime.now(),
+        
+    }
+
 
 
 @router.post("/fund-wallet", status_code=status.HTTP_200_OK)
