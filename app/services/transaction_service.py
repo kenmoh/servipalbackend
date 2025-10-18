@@ -1619,7 +1619,7 @@ async def order_payment_callback(request: Request, db: AsyncSession):
             await db.refresh(order)
 
             # Clear caches
-            await clear_order_caches(order)
+            clear_order_caches(order)
 
             return templates.TemplateResponse(
                 "payment-status.html",

@@ -186,15 +186,6 @@ async def process_webhook(
         db=db,
     )
 
-@router.get("/api/payment/webhook-test")
-async def webhook_test(request: Request):
-    return {
-        "status": "webhook_endpoint_is_reachable",
-        "timestamp": datetime.now(),
-        
-    }
-
-
 
 @router.post("/fund-wallet", status_code=status.HTTP_200_OK)
 async def fund_wallet(
