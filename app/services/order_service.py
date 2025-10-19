@@ -15,7 +15,6 @@ from app.models.models import (
     Order,
     OrderItem,
     Transaction,
-    TransactionLog,
     User,
     Wallet,
     ItemImage,
@@ -24,6 +23,7 @@ from app.models.models import (
 )
 from app.services import ws_service
 from app.queue.producer import producer
+from app.services.audit_log_service import TransactionLogService
 from app.utils.map import get_distance_between_addresses
 
 
@@ -38,6 +38,7 @@ from app.schemas.status_schema import (
     PaymentMethod,
     TransactionDirection,
     TransactionLogAction,
+   
    
     TransactionType,
 )
@@ -1502,7 +1503,17 @@ async def cancel_order(db: AsyncSession, order_id: UUID, current_user: User, rea
                 },
             )
 
-        
+        await TransactionLogService.create_log(
+            vendor_id=current_user.id,
+            amount=order.grand_total,
+            action=TransactionLogAction.REFUNDED,
+            status=order.order_payment_status,
+            details={"order_type": order.order_type, 
+                    "order_number" :order.order_number,
+                    "canceled_by": current_user.profile.full_name or current_user.profile.bank_name,
+                    "phone_number": current_user.profile.phone_number
+                    }
+        )
         return DeliveryStatusUpdateSchema(
               order_status=order.order_status,
         )
@@ -1514,6 +1525,18 @@ async def cancel_order(db: AsyncSession, order_id: UUID, current_user: User, rea
 
 async def cancel_delivery(db: AsyncSession, order_id: UUID, current_user: User, reason: CancelOrderSchema):
     order = await _order_to_cancel(db=db, order_id=order_id)
+
+    await TransactionLogService.create_log(
+        vendor_id=current_user.id,
+        amount=order.grand_total,
+        action=TransactionLogAction.REFUNDED,
+        status=order.order_payment_status,
+        details={"order_type": order.order_type, 
+                 "order_number" :order.order_number,
+                 "canceled_by": current_user.profile.full_name or current_user.profile.bank_name,
+                 "phone_number": current_user.profile.phone_number
+                 }
+    )
 
     # --- Check authorization ---
     await _cancel_delivery_validation(order, current_user)
@@ -2909,6 +2932,18 @@ async def sender_confirm_package_received(
         await _send_notifications(order, db)
         _invalidate_caches(order, current_user)
 
+        await TransactionLogService.create_log(
+        vendor_id=current_user.id,
+        amount=order.delivery.delivery_fee - order.delivery.amount_due_dispatch,
+        action=TransactionLogAction.RECEIVED,
+        status=order.order_payment_status,
+        details={"order_type": order.order_type, 
+                 "order_number" :order.order_number,
+                 "canceled_by": current_user.profile.full_name or current_user.profile.bank_name,
+                 "phone_number": current_user.profile.phone_number
+                 }
+    )
+
         return DeliveryStatusUpdateSchema(
             delivery_status=order.delivery.delivery_status,
             order_status=order.order_status,
@@ -3007,7 +3042,19 @@ async def customer_confirm_order_received(
         await _order_settlement(order)
 
         # Clear caches
-        _invalidate_order_caches(current_user)       
+        _invalidate_order_caches(current_user)  
+
+        await TransactionLogService.create_log(
+            vendor_id=current_user.id,
+            amount=order.grand_total - order.amount_due_vendor,
+            action=TransactionLogAction.RECEIVED,
+            status=order.order_payment_status,
+            details={"order_type": order.order_type, 
+                    "order_number" :order.order_number,
+                    "canceled_by": current_user.profile.full_name or current_user.profile.bank_name,
+                    "phone_number": current_user.profile.phone_number
+                    }
+        )     
 
         return DeliveryStatusUpdateSchema(order_status=order.order_status)
 
@@ -4085,63 +4132,6 @@ async def get_paid_pending_deliveries(db: AsyncSession, current_user: User) -> l
         )
     
     return delivery_responses
-
-
-# async def get_paid_pending_deliveries(db: AsyncSession, current_user: User) -> list[DeliveryResponse]:
-#     """
-#     Returns deliveries where:
-#       - order_payment_status == 'paid'
-#       - delivery.delivery_status == 'pending'
-#       - order.require_delivery == 'delivery'
-#     """
-
-#     cache_key = "paid_pending_deliveries"
-    
-#     # Try cache first with error handling
-#     cached_deliveries = redis_client.get(cache_key)
-#     if cached_deliveries:
-#         return [DeliveryResponse(**d) for d in json.loads(cached_deliveries)]
-
-#     stmt = (
-#         select(Order)
-#         .where(
-#             and_(
-#                 Order.order_payment_status == "paid",
-#                 Order.require_delivery == "delivery",
-#                 Order.delivery.has(delivery_status="pending"),
-#             )
-#         )
-#         .options(
-#             selectinload(Order.order_items).options(
-#                 joinedload(OrderItem.item).options(selectinload(Item.images))
-#             ),
-#             joinedload(Order.delivery),
-#             joinedload(Order.vendor).joinedload(User.profile),
-#         )
-#         .order_by(Order.created_at.desc())
-#     )
-#     result = await db.execute(stmt)
-#     orders = result.unique().scalars().all()
-
-#     distance = None
-#     for order in orders:
-#         distance_km = await get_distance_between_addresses(
-#                         vendor_address=order.delivery.origin,
-#                         current_user=current_user
-#                     )
-#         print('XXXXXXXXXXXXXXXXXXXXX', distance_km, order.delivery.origin, 'XXXXXXXXXXXXXXXXXXXXX')
-#         if distance_km:
-#             distance = distance_km
-#     delivery_responses = [
-#         format_delivery_response(order=order, delivery=order.delivery, distance=distance) for order in orders if distance and distance <= 35.0
-#     ]
-
-#     redis_client.setex(
-#         cache_key,
-#         timedelta(seconds=settings.REDIS_EX),
-#         json.dumps([d.model_dump() for d in delivery_responses], default=str),
-#     )
-#     return delivery_responses
 
 
 async def get_user_related_orders(
