@@ -7,6 +7,7 @@ from dotenv import load_dotenv
 import redis
 from stream_chat import StreamChat
 from upstash_redis import Redis
+from typing import Optional
 
 
 # Load environment variables from .env file
@@ -14,56 +15,164 @@ from upstash_redis import Redis
 load_dotenv()
 
 
+# class Settings(BaseSettings):
+#     # Application settings
+#     APP_NAME: str = "ServiPal"
+#     DEBUG: bool = os.getenv("DEBUG", False) == True
+#     ENVIRONMENT: str = os.getenv("ENVIRONMENT")
+
+#     # RabbitMQ settings
+#     RABBITMQ_URL: str = os.getenv("RABBITMQ_URL")
+
+#     # Database settings
+#     DATABASE_URL: str = os.getenv("DATABASE_URL")
+#     TEST_DATABASE_URL: str = os.getenv("TEST_DATABASE_URL")
+
+#     # LOGFIRE
+#     LOGFIRE_TOKEN: str = os.getenv("LOGFIRE_TOKEN")
+
+#     # FLUTTERWAVE
+#     FLW_PUBLIC_KEY: str = os.getenv("FLW_PUBLIC_KEY")
+#     FLW_SECRET_KEY: str = os.getenv("FLW_SECRET_KEY")
+#     FLW_SECRET_HASH: str = os.getenv("FLW_SECRET_HASH")
+
+#     # JWT settings
+#     JWT_SECRET_KEY: str = os.getenv("JWT_SECRET_KEY")
+#     JWT_ALGORITHM: str = "HS256"
+#     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
+#     REFRESH_TOKEN_EXPIRE_DAYS: int = 7
+
+#     # AWS
+#     AWS_SECRET_KEY: str = os.getenv("AWSSecretKey")
+#     AWS_ACCESS_KEY_ID: str = os.getenv("AWSAccessKeyId")
+#     S3_BUCKET_NAME: str = os.getenv("S3_BUCKET_NAME")
+
+#     # # Appwrite
+#     # APPWRITE_ENDPOINT: str = os.getenv("APPWRITE_ENDPOINT", "https://fra.cloud.appwrite.io/v1")
+#     # APPWRITE_PROJECT_ID: str = os.getenv("APPWRITE_PROJECT_ID", "6874f7f090f71072dad4")
+#     # APPWRITE_API_KEY: str = os.getenv("APPWRITE_API_KEY")
+#     # APPWRITE_BUCKET_ID: str = os.getenv("APPWRITE_BUCKET_ID", "default")
+
+#     # Email Settings
+#     MAIL_USERNAME: str = os.getenv("MAIL_USERNAME")
+#     MAIL_PASSWORD: str = os.getenv("MAIL_PASSWORD")
+#     MAIL_FROM: EmailStr = os.getenv("MAIL_FROM")
+#     MAIL_FROM_NAME: str = os.getenv("MAIL_FROM_NAME")
+#     MAIL_PORT: int = os.getenv("MAIL_PORT")
+#     MAIL_SERVER: str = os.getenv("MAIL_SERVER")
+#     MAIL_SSL_TLS: bool = os.getenv("MAIL_SSL_TLS")
+#     MAIL_STARTTLS: bool = os.getenv("MAIL_STARTTLS")
+#     USE_CREDENTIALS: bool = os.getenv("USE_CREDENTIALS")
+#     EMAIL_TEMPLATES_DIR: str = str(Path(__file__).parent.parent / "templates" / "email")
+
+#     # Database connection settings
+#     DB_POOL_SIZE: int = 20
+#     DB_MAX_OVERFLOW: int = 20
+#     DB_POOL_TIMEOUT: int = 60
+#     DB_POOL_RECYCLE: int = 1800
+#     DB_MAX_RETRIES: int = 3
+#     DB_RETRY_DELAY: int = 1
+
+#     # Termii
+#     SMS_API_KEY: str = os.getenv("SMS_API_KEY")
+
+#     # Redis
+#     REDIS_HOST: str = "localhost"
+#     REDIS_PORT: int = 6379
+#     REDIS_DB: int = 0
+#     REDIS_EX: int = 3600
+
+#     UPSTASH_REDIS_URL: str = os.getenv("UPSTASH_REDIS_URL")
+#     UPSTASH_TOKEN: str = os.getenv("UPSTASH_TOKEN")
+
+#     # API URL
+#     FRONTEND_URL: str = os.getenv("FRONTEND_URL")
+#     API_URL: str = "http://localhost:8000"
+#     TEST_API_URL: str = "http://localhost:8000"
+
+#     TEST_BASE_URL: str = "http://test"
+
+#     # Test
+#     TEST: bool = os.getenv("TEST", "false").lower() == "true"
+
+#     # Finger Print
+#     FINGER_PRINT: str = os.getenv("FINGER_PRINT")
+#     PACKAGE_NAME: str = os.getenv("PACKAGE_NAME")
+
+#     # Stream Chat
+#     STREAM_API_KEY: str = os.getenv("STREAM_API_KEY")
+#     STREAM_API_SECRET: str = os.getenv("STREAM_API_SECRET")
+
+#     # Timezone
+#     TZ: str = os.getenv("TZ", "Etc/UTC")
+
+#     # GOOGLE
+#     GOOGLE_MAP_API_KEY: str = os.getenv("GOOGLE_MAP_API_KEY")
+
+#     # MAP BOX
+#     MAPBOX_API_KEY: str = os.getenv("MAPBOX_API_KEY")
+
+#     # RESEND
+#     RESEND_API_KEY: str = os.getenv("RESEND_API_KEY")
+
+
+
+
+# settings = Settings()
+
+
+
+
+
 class Settings(BaseSettings):
+    """
+    Application settings loaded from environment variables.
+    Pydantic automatically loads these from env vars - no need for os.getenv()!
+    """
+    
     # Application settings
     APP_NAME: str = "ServiPal"
-    DEBUG: bool = os.getenv("DEBUG", False) == True
-    ENVIRONMENT: str = os.getenv("ENVIRONMENT")
-
+    DEBUG: bool = False
+    ENVIRONMENT: str
+    
     # RabbitMQ settings
-    RABBITMQ_URL: str = os.getenv("RABBITMQ_URL")
-
+    RABBITMQ_URL: str
+    
     # Database settings
-    DATABASE_URL: str = os.getenv("DATABASE_URL")
-    TEST_DATABASE_URL: str = os.getenv("TEST_DATABASE_URL")
-
+    DATABASE_URL: str
+    TEST_DATABASE_URL: str
+    
     # LOGFIRE
-    LOGFIRE_TOKEN: str = os.getenv("LOGFIRE_TOKEN")
-
+    LOGFIRE_TOKEN: str
+    
     # FLUTTERWAVE
-    FLW_PUBLIC_KEY: str = os.getenv("FLW_PUBLIC_KEY")
-    FLW_SECRET_KEY: str = os.getenv("FLW_SECRET_KEY")
-    FLW_SECRET_HASH: str = os.getenv("FLW_SECRET_HASH")
-
+    FLW_PUBLIC_KEY: str
+    FLW_SECRET_KEY: str
+    FLW_SECRET_HASH: str
+    
     # JWT settings
-    JWT_SECRET_KEY: str = os.getenv("JWT_SECRET_KEY")
+    JWT_SECRET_KEY: str
     JWT_ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
     REFRESH_TOKEN_EXPIRE_DAYS: int = 7
-
+    
     # AWS
     AWS_SECRET_KEY: str = os.getenv("AWSSecretKey")
     AWS_ACCESS_KEY_ID: str = os.getenv("AWSAccessKeyId")
-    S3_BUCKET_NAME: str = os.getenv("S3_BUCKET_NAME")
-
-    # # Appwrite
-    # APPWRITE_ENDPOINT: str = os.getenv("APPWRITE_ENDPOINT", "https://fra.cloud.appwrite.io/v1")
-    # APPWRITE_PROJECT_ID: str = os.getenv("APPWRITE_PROJECT_ID", "6874f7f090f71072dad4")
-    # APPWRITE_API_KEY: str = os.getenv("APPWRITE_API_KEY")
-    # APPWRITE_BUCKET_ID: str = os.getenv("APPWRITE_BUCKET_ID", "default")
-
+    S3_BUCKET_NAME: str
+    
     # Email Settings
-    MAIL_USERNAME: str = os.getenv("MAIL_USERNAME")
-    MAIL_PASSWORD: str = os.getenv("MAIL_PASSWORD")
-    MAIL_FROM: EmailStr = os.getenv("MAIL_FROM")
-    MAIL_FROM_NAME: str = os.getenv("MAIL_FROM_NAME")
-    MAIL_PORT: int = os.getenv("MAIL_PORT")
-    MAIL_SERVER: str = os.getenv("MAIL_SERVER")
-    MAIL_SSL_TLS: bool = os.getenv("MAIL_SSL_TLS")
-    MAIL_STARTTLS: bool = os.getenv("MAIL_STARTTLS")
-    USE_CREDENTIALS: bool = os.getenv("USE_CREDENTIALS")
+    MAIL_USERNAME: str
+    MAIL_PASSWORD: str
+    MAIL_FROM: EmailStr
+    MAIL_FROM_NAME: str
+    MAIL_PORT: int
+    MAIL_SERVER: str
+    MAIL_SSL_TLS: bool
+    MAIL_STARTTLS: bool
+    USE_CREDENTIALS: bool
     EMAIL_TEMPLATES_DIR: str = str(Path(__file__).parent.parent / "templates" / "email")
-
+    
     # Database connection settings
     DB_POOL_SIZE: int = 20
     DB_MAX_OVERFLOW: int = 20
@@ -71,54 +180,68 @@ class Settings(BaseSettings):
     DB_POOL_RECYCLE: int = 1800
     DB_MAX_RETRIES: int = 3
     DB_RETRY_DELAY: int = 1
-
+    
     # Termii
-    SMS_API_KEY: str = os.getenv("SMS_API_KEY")
-
+    SMS_API_KEY: str
+    
     # Redis
     REDIS_HOST: str = "localhost"
     REDIS_PORT: int = 6379
     REDIS_DB: int = 0
     REDIS_EX: int = 3600
-
-    UPSTASH_REDIS_URL: str = os.getenv("UPSTASH_REDIS_URL")
-    UPSTASH_TOKEN: str = os.getenv("UPSTASH_TOKEN")
-
+    UPSTASH_REDIS_URL: str
+    UPSTASH_TOKEN: str
+    
     # API URL
-    FRONTEND_URL: str = os.getenv("FRONTEND_URL")
+    FRONTEND_URL: str
     API_URL: str = "http://localhost:8000"
     TEST_API_URL: str = "http://localhost:8000"
-
     TEST_BASE_URL: str = "http://test"
-
+    
     # Test
-    TEST: bool = os.getenv("TEST", "false").lower() == "true"
-
+    TEST: bool = False
+    
     # Finger Print
-    FINGER_PRINT: str = os.getenv("FINGER_PRINT")
-    PACKAGE_NAME: str = os.getenv("PACKAGE_NAME")
-
+    FINGER_PRINT: str
+    PACKAGE_NAME: str
+    
     # Stream Chat
-    STREAM_API_KEY: str = os.getenv("STREAM_API_KEY")
-    STREAM_API_SECRET: str = os.getenv("STREAM_API_SECRET")
-
+    STREAM_API_KEY: str
+    STREAM_API_SECRET: str
+    
     # Timezone
-    TZ: str = os.getenv("TZ", "Etc/UTC")
-
+    TZ: str = "Etc/UTC"
+    
     # GOOGLE
-    GOOGLE_MAP_API_KEY: str = os.getenv("GOOGLE_MAP_API_KEY")
-
+    GOOGLE_MAP_API_KEY: str
+    
     # MAP BOX
-    MAPBOX_API_KEY: str = os.getenv("MAPBOX_API_KEY")
-
+    MAPBOX_API_KEY: str
+    
     # RESEND
-    RESEND_API_KEY: str = os.getenv("RESEND_API_KEY")
+    RESEND_API_KEY: str
+    
+    # Customer types (from your Cloud Run env vars)
+    CUSTOMER: Optional[str] = None
+    RESTAURANT_VENDOR: Optional[str] = None
+    LAUNDRY_VENDOR: Optional[str] = None
+    RIDER: Optional[str] = None
+    DISPATCH: Optional[str] = None
+    ADMIN: Optional[str] = None
+    SUPER_ADMIN: Optional[str] = None
+    MODERATOR:Optional[str] = None
+    
+    class Config:
+        # This tells Pydantic to load from .env file in development
+        env_file = ".env"
+        env_file_encoding = "utf-8"
+        case_sensitive = True
+        # Allow extra fields from environment
+        extra = "ignore"
 
 
-
-
+# Create a single instance
 settings = Settings()
-
 
 # redis_url = "redis://localhost"
 
