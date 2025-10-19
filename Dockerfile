@@ -1,14 +1,14 @@
 # ---- Base Stage ----
 FROM python:3.12.5-slim as base
 
-# Set environment variables to make Python and pip run in a container-friendly way
+# Set environment variables
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=off \
     PIP_DISABLE_PIP_VERSION_CHECK=on \
     PIP_DEFAULT_TIMEOUT=100
 
-# Install uv, the package manager
+# Install uv
 RUN pip install uv
 
 # ---- Builder Stage ----
@@ -16,35 +16,37 @@ FROM base as builder
 
 WORKDIR /app
 
-# Copy the dependency definition files
+# Copy dependency files
 COPY requirements.txt pyproject.toml ./
 
-# Install dependencies from requirements.txt. This is more reliable in a CI/CD
-# environment as it resolves dependencies for the target platform (Linux).
+# Install dependencies using uv
 RUN uv pip install -r requirements.txt --no-cache --system
 
 # ---- Final Stage ----
 FROM base as final
 
-# Create a dedicated, non-root user for running the application to enhance security
-RUN addgroup --system nonroot && adduser --system --ingroup nonroot nonroot
-USER nonroot
-
+# Install only runtime dependencies (not build tools)
 WORKDIR /app
 
-# Copy the installed dependencies from the builder stage
+# Copy installed packages from builder
 COPY --from=builder /usr/local/lib/python3.12/site-packages /usr/local/lib/python3.12/site-packages
-COPY --from=builder /usr/local/bin/uvicorn /usr/local/bin/uvicorn
+COPY --from=builder /usr/local/bin /usr/local/bin
 
-# Copy the application code, ensuring the non-root user has ownership
+# Create non-root user
+RUN addgroup --system nonroot && adduser --system --ingroup nonroot nonroot
+
+# Copy application code with proper ownership
 COPY --chown=nonroot:nonroot app/ ./app/
 
-# Set the port for the application to run on. Cloud Run will provide this.
-ENV PORT=8000
-EXPOSE 8000
+# Switch to non-root user
+USER nonroot
 
-# The command to run the application using uvicorn
-CMD uvicorn app.main:app --host=0.0.0.0 --port $PORT
+# Cloud Run will set PORT dynamically, default to 8080
+ENV PORT=8080
+EXPOSE 8080
 
+# Health check (optional but recommended)
+HEALTHCHECK CMD curl --fail http://localhost:${PORT}/ || exit 1
 
-
+# Run uvicorn with dynamic port
+CMD exec uvicorn app.main:app --host 0.0.0.0 --port ${PORT} --workers 1
