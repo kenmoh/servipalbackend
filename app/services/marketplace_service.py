@@ -354,20 +354,13 @@ async def owner_mark_item_received(
             await db.refresh(order)
 
             # Update vendor wallet
-            await db.execute(
-                update(Wallet)
-                .where(Wallet.id == order.vendor_id)
-                .values(
-                    balance=Wallet.balance + order.amount_due_vendor,
-                    escrow_balance=Wallet.escrow_balance - order.amount_due_vendor,
-                )
-            )
-
-            # Update buyer wallet
             # await db.execute(
             #     update(Wallet)
-            #     .where(Wallet.id == order.owner_id)
-            #     .values(escrow_balance=Wallet.escrow_balance - order.total_price)
+            #     .where(Wallet.id == order.vendor_id)
+            #     .values(
+            #         balance=Wallet.balance + order.amount_due_vendor,
+            #         escrow_balance=Wallet.escrow_balance - order.grand_total,
+            #     )
             # )
 
             item_id = order.order_items[0].item_id
@@ -389,7 +382,7 @@ async def owner_mark_item_received(
                 payload={
                     "wallet_id": str(order.vendor_id),
                     "escrow_change": str(-order.amount_due_vendor),
-                    "balance_change": str(order.amount_due_vendor),
+                    "balance_change": str(order.grand_total),
                 },
             )
 
@@ -402,17 +395,7 @@ async def owner_mark_item_received(
                     "balance_change": '0'
                 },
             )
-            # vendor_transx = Transaction(
-            #     wallet_id=order.vendor_id,
-            #     amount=order.amount_due_vendor,
-            #     payment_status=PaymentStatus.PAID,
-            #     transaction_type=TransactionType.USER_TO_USER,
-            #     transaction_direction=TransactionDirection.CREDIT,
-            #     to_user=vendor_profile.full_name or vendor_profile.business_name,
-            #     from_user=current_user.profile.full_name
-            #     or current_user.profile.business_name,
-            # )
-
+           
             # db.add(vendor_transx)
             await db.commit()
 

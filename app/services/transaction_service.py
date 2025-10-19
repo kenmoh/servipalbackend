@@ -1519,13 +1519,13 @@ async def order_payment_callback(request: Request, db: AsyncSession):
                     },
                 )
 
-                # Vendor wallet update (add vendor amount to escrow)
+                # Vendor wallet update (add full amount to escrow)
                 await producer.publish_message(
                     service="wallet",
                     operation="update_wallet",
                     payload={
                         "wallet_id": str(order.vendor_id),
-                        "escrow_change": str(order.amount_due_vendor),
+                        "escrow_change": str(charged_amount),
                         "balance_change": str(0),
                     },
                 )
@@ -1561,7 +1561,7 @@ async def order_payment_callback(request: Request, db: AsyncSession):
                     payload={
                         "wallet_id": str(order.vendor_id),
                         "tx_ref": tx_ref,
-                        "amount": str(order.amount_due_vendor),
+                        "amount": str(charged_amount),
                         "payment_status": PaymentStatus.ESCROWED,
                         "transaction_type": TransactionType.USER_TO_USER,
                         "transaction_direction": TransactionDirection.CREDIT,
@@ -2458,7 +2458,7 @@ async def product_order_payment_callback(request: Request, db: AsyncSession):
 
         # Update order payment status
         order.order_payment_status = new_status
-        order.updated_at = datetime.now(timezone.utc)
+        order.updated_at = datetime.now()
         
         # Commit status update
         await db.commit()
@@ -2488,7 +2488,7 @@ async def product_order_payment_callback(request: Request, db: AsyncSession):
                     operation='update_wallet',
                     payload={
                         "wallet_id": str(order.vendor_id),
-                        "escrow_change": f"{order.amount_due_vendor:.2f}",
+                        "escrow_change": f"{order.grand_total:.2f}",
                         "balance_change": '0',
                     }
                 )
@@ -2540,7 +2540,7 @@ async def product_order_payment_callback(request: Request, db: AsyncSession):
                         'wallet_id': str(order.vendor_id),
                         'tx_ref': str(order.tx_ref),
                         'from_wallet_id': str(order.owner_id),
-                        'amount': f'{order.amount_due_vendor:.2f}',
+                        'amount': f'{order.grand_total:.2f}',
                         'transaction_type': TransactionType.USER_TO_USER,
                         'transaction_direction': TransactionDirection.CREDIT,
                         'payment_status': PaymentStatus.ESCROWED,
@@ -2567,7 +2567,7 @@ async def product_order_payment_callback(request: Request, db: AsyncSession):
                 "request": request,
                 "payment_status": order.order_payment_status,
                 "amount": f"{order.grand_total:.2f}", 
-                "date": datetime.now(timezone.utc).strftime("%b %d, %Y"),
+                "date": datetime.now().strftime("%b %d, %Y"),
                 "transaction_id": transx_id,
                 "order_number": order.order_number,
             },
