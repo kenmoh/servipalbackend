@@ -1,3 +1,4 @@
+from typing import Optional
 import uuid
 from fastapi import Body, Form, File, Request, UploadFile, HTTPException
 from uuid import UUID
@@ -17,8 +18,9 @@ from app.schemas.order_schema import (
     DeliveryStatusUpdateSchema,
 )
 from app.schemas.schemas import PaymentLinkSchema, ReviewSchema
-from app.schemas.status_schema import OrderType, PaymentStatus
+from app.schemas.status_schema import DeliveryStatus, OrderStatus, OrderType, PaymentStatus
 from app.services import order_service
+from app.utils import logger_config
 from app.utils.limiter import limiter
 from app.utils.utils import get_payment_link, get_product_payment_link
 from app.config.config import redis_client
@@ -364,23 +366,38 @@ async def laundry_vendor_mark_item_received(
 
 
 @router.put(
-    "/{delivery_id}/admin-update-order-status",
+    "/{order_id}/admin-modify-status",
     status_code=status.HTTP_202_ACCEPTED,
 )
 async def admin_modify_order_status(
     order_id: UUID,
+    new_order_status: Optional[OrderStatus] = None,
+    new_delivery_status: Optional[DeliveryStatus] = None,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> DeliveryStatusUpdateSchema:
+    """
+    Admin endpoint to modify order and/or delivery status
+    """
     try:
         return await order_service.admin_modify_order_status(
-            db=db, current_user=current_user, order_id=order_id
+            db=db,
+            current_user=current_user,
+            order_id=order_id,
+            new_order_status=new_order_status,
+            new_delivery_status=new_delivery_status
         )
-
+    except HTTPException as e:
+        raise
     except Exception as e:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
-    
-
+        logger_config.logger.error(
+            f"Error in admin status modification: {str(e)}",
+            exc_info=True
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="An unexpected error occurred while modifying status"
+        )
 
 
 @router.put(

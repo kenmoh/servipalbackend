@@ -122,6 +122,7 @@ async def lifespan(application: FastAPI):
         logger.info("Database connection successful")
 
         # Check Redis connection
+        logger.info("Starting Redis connection...")
         redis_client.ping()
         logger.info("Redis connection successful")
 
@@ -217,7 +218,7 @@ logfire.debug("App Debug mode on")
 logfire.instrument_fastapi(app=app)
 logfire.instrument_sqlalchemy(engine=engine)
 
-origins = ["http://localhost:3000", "https://servi-pal.com"]
+origins = ["https://servi-pal.com"]
 
 
 app.add_middleware(
@@ -250,6 +251,8 @@ async def check_db_health(db: AsyncSession = Depends(get_db)):
     try:
         # Simple query to check connection
         await db.execute(text("SELECT 1"))
+        redis_client.ping()
+        
         return {"status": "healthy", "database": "connected"}
     except Exception as e:
         return {"status": "unhealthy", "database": "disconnected", "error": str(e)}
