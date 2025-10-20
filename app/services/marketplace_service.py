@@ -50,13 +50,18 @@ from app.config.config import redis_client
 
 async def get_marketplace_items(db: AsyncSession) -> list[ItemResponse]:
     """Retrieves all marketplace items"""
-
+    cache_key = "marketplace_items"
+    
     # Try cache first
-    cached_items = redis_client.get("marketplace_items")
+    cached_items = redis_client.get(cache_key)
+    print('*'*50)
+    print('Cache hit')
+    print('*'*50)
     if cached_items:
         item_dicts = json.loads(cached_items)
         return [ItemResponse(**item) for item in item_dicts]
-
+    
+    # Query database
     stmt = (
         select(Item)
         .where(Item.item_type == ItemType.PRODUCT, Item.stock > 0)
@@ -64,82 +69,155 @@ async def get_marketplace_items(db: AsyncSession) -> list[ItemResponse]:
     )
     result = await db.execute(stmt)
     items = result.unique().scalars().all()
-
-    item_list_dict = []
-    for item in items:
-        item_dict = {
-            "name": item.name,
-            "description": item.description,
-            "price": item.price,
-            "item_type": item.item_type,
-            "category_id": item.category_id,
-            "colors": item.colors,
-            "stock": item.stock,
-            "sizes": item.sizes,
-            "id": item.id,
-            "user_id": item.user_id,
-            "images": [
-                {"id": img.id, "url": img.url, "item_id": img.item_id}
-                for img in item.images
-            ],
-        }
-        item_list_dict.append(item_dict)
-
+    
+    # Convert to Pydantic models
+    item_responses = [ItemResponse.model_validate(item) for item in items]
+    
     # Cache the results
-    if item_list_dict:
+    if item_responses:
         redis_client.setex(
-            "marketplace_items",
+            cache_key,
             CACHE_TTL,
-            json.dumps(item_list_dict, default=str),
+            json.dumps([item.model_dump() for item in item_responses], default=str),
         )
-
-    return [ItemResponse(**item) for item in item_list_dict]
+    
+    return item_responses
 
 
 async def get_marketplace_item(item_id: UUID, db: AsyncSession) -> ItemResponse:
-    """Retrieves all marketplace items"""
-
+    """Retrieves a single marketplace item"""
+    cache_key = f"marketplace_items:{item_id}"
+    
     # Try cache first
-    cached_item = redis_client.get(f"marketplace_items:{item_id}")
+    cached_item = redis_client.get(cache_key)
     if cached_item:
+        print('*'*50)
+        print('Cache hit')
+        print('*'*50)
         item_dict = json.loads(cached_item)
         return ItemResponse(**item_dict)
-
+    
+    # Query database
     stmt = (
         select(Item)
-        .where(Item.id == item_id)
-        .where(Item.item_type == ItemType.PRODUCT)
+        .where(Item.id == item_id, Item.item_type == ItemType.PRODUCT)
         .options(joinedload(Item.images))
     )
     result = await db.execute(stmt)
     item = result.unique().scalar_one_or_none()
-
-    item_dict = {
-        "name": item.name,
-        "description": item.description,
-        "price": item.price,
-        "item_type": item.item_type,
-        "category_id": item.category_id,
-        "colors": item.colors,
-        "stock": item.stock,
-        "sizes": item.sizes,
-        "id": item.id,
-        "user_id": item.user_id,
-        "images": [
-            {"id": img.id, "url": img.url, "item_id": img.item_id}
-            for img in item.images
-        ],
-    }
-
-    # Cache the results
-    if item_dict:
-        redis_client.setex(
-            f"marketplace_items:{item_id}",
-            CACHE_TTL,
-            json.dumps(item_dict, default=str),
+    
+    if not item:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, 
+            detail="Item not found"
         )
+    
+    # Convert to Pydantic model
+    item_response = ItemResponse.model_validate(item)
+    
+    # Cache the result
+    redis_client.setex(
+        cache_key,
+        CACHE_TTL,
+        json.dumps(item_response.model_dump(), default=str),
+    )
+    
+    return item_response
 
-    return ItemResponse(**item_dict)
+
+
+# async def get_marketplace_items(db: AsyncSession) -> list[ItemResponse]:
+#     """Retrieves all marketplace items"""
+
+#     # Try cache first
+#     cached_items = redis_client.get("marketplace_items")
+#     if cached_items:
+#         item_dicts = json.loads(cached_items)
+#         return [ItemResponse(**item) for item in item_dicts]
+
+#     stmt = (
+#         select(Item)
+#         .where(Item.item_type == ItemType.PRODUCT, Item.stock > 0)
+#         .options(joinedload(Item.images))
+#     )
+#     result = await db.execute(stmt)
+#     items = result.unique().scalars().all()
+
+#     item_list_dict = []
+#     for item in items:
+#         item_dict = {
+#             "name": item.name,
+#             "description": item.description,
+#             "price": item.price,
+#             "item_type": item.item_type,
+#             "category_id": item.category_id,
+#             "colors": item.colors,
+#             "stock": item.stock,
+#             "sizes": item.sizes,
+#             "id": item.id,
+#             "user_id": item.user_id,
+#             "images": [
+#                 {"id": img.id, "url": img.url, "item_id": img.item_id}
+#                 for img in item.images
+#             ],
+#         }
+#         item_list_dict.append(item_dict)
+
+#     # Cache the results
+#     if item_list_dict:
+#         redis_client.setex(
+#             "marketplace_items",
+#             CACHE_TTL,
+#             json.dumps(item_list_dict, default=str),
+#         )
+
+#     return [ItemResponse(**item) for item in item_list_dict]
+
+
+# async def get_marketplace_item(item_id: UUID, db: AsyncSession) -> ItemResponse:
+#     """Retrieves all marketplace items"""
+
+#     # Try cache first
+#     cached_item = redis_client.get(f"marketplace_items:{item_id}")
+#     if cached_item:
+#         item_dict = json.loads(cached_item)
+#         return ItemResponse(**item_dict)
+
+#     stmt = (
+#         select(Item)
+#         .where(Item.id == item_id)
+#         .where(Item.item_type == ItemType.PRODUCT)
+#         .options(joinedload(Item.images))
+#     )
+#     result = await db.execute(stmt)
+#     item = result.unique().scalar_one_or_none()
+
+#     item_dict = {
+#         "name": item.name,
+#         "description": item.description,
+#         "price": item.price,
+#         "item_type": item.item_type,
+#         "category_id": item.category_id,
+#         "colors": item.colors,
+#         "stock": item.stock,
+#         "sizes": item.sizes,
+#         "id": item.id,
+#         "user_id": item.user_id,
+#         "images": [
+#             {"id": img.id, "url": img.url, "item_id": img.item_id}
+#             for img in item.images
+#         ],
+#     }
+
+#     # Cache the results
+#     if item_dict:
+#         redis_client.setex(
+#             f"marketplace_items:{item_id}",
+#             CACHE_TTL,
+#             json.dumps(item_dict, default=str),
+#         )
+
+#     return ItemResponse(**item_dict)
 
 
 async def buy_product(
@@ -626,93 +704,6 @@ def format_order_response(order) -> ProductOrderResponse:
     Factory function to create ProductOrderResponse from SQLAlchemy Order model
     """
     return ProductOrderResponse.model_validate(order)
-
-
-# def format_order_response(order) -> ProductOrderResponse:
-#     """
-#     Factory function to create ProductOrderResponse from SQLAlchemy Order model
-#     """
-#     order_items = []
-#     for order_item in order.order_items:
-#         item = order_item.item
-#         order_items.append(
-#             OrderItem(
-#                 item_id=order_item.item_id,
-#                 order_id=order_item.order_id,
-#                 quantity=order_item.quantity,
-#                 sizes=order_item.sizes,
-#                 colors=order_item.colors or [],
-#                 created_at=order_item.created_at,
-#                 item=Item(
-#                     id=item.id,
-#                     user_id=item.user_id,
-#                     name=item.name,
-#                     description=item.description,
-#                     price=item.price,
-#                     images=[
-#                     ItemImageResponse(id=img.id, item_id=img.item_id, url=img.url)
-#                     for img in item.images
-#                 ],
-                
-#                 )
-#             )
-#         )
-    
-#     return ProductOrderResponse(
-#         id=order.id,
-#         owner_id=order.owner_id,
-#         vendor_id=order.vendor_id,
-#         order_number=order.order_number,
-#         order_status=order.order_status,
-#         order_payment_status=order.order_payment_status,
-#         total_price=order.total_price,
-#         grand_total=order.grand_total,
-#         amount_due_vendor=order.amount_due_vendor,
-#         payment_link=order.payment_link,
-#         additional_info=order.additional_info,
-#         order_items=order_items,
-#         created_at=order.created_at,
-#         updated_at=order.updated_at,
-#     )
-
-# def format_order_response(order) -> ProductOrderResponse:
-#     """
-#     Factory function to create OrderResponse from SQLAlchemy Order model
-#     """
-#     order_items = []
-#     for order_item in order.order_items:
-#         item = order_item.item
-#         order_items.append(
-#             ProductOrderItemResponse(
-#                 item_id=item.id,
-#                 user_id=item.user_id,  # vendor's user_id
-#                 name=item.name,
-#                 price=item.price,
-#                 images=[
-#                     ItemImageResponse(id=img.id, item_id=img.item_id, url=img.url)
-#                     for img in item.images
-#                 ],
-#                 description=item.description,
-#                 quantity=order_item.quantity,
-#             )
-#         )
-
-#     return ProductOrderResponse(
-#         id=order.id,
-#         user_id=order.owner_id,
-#         vendor_id=order.vendor_id,
-#         order_type=order.order_type,
-#         total_price=order.total_price,
-#         additional_info=order.additional_info,
-#         order_payment_status=order.order_payment_status,
-#         require_delivery=order.require_delivery,
-#         order_status=order.order_status,
-#         order_number=order.order_number,
-#         amount_due_vendor=order.amount_due_vendor,
-#         payment_link=order.payment_link,
-#         created_at=order.created_at,
-#         order_items=order_items,
-#     )
 
 
 # <<<<< ---------- CACHE UTILITY ---------- >>>>>

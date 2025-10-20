@@ -1,7 +1,7 @@
 from uuid import UUID
 from decimal import Decimal
 from enum import Enum
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 
 class FoodGroup(str, Enum):
@@ -39,10 +39,12 @@ class ItemType(str, Enum):
 
 
 class ItemImageSchema(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    
     id: UUID
     item_id: UUID
     url: str
-    is_primary: bool = False
+    # is_primary: bool = False
 
 
 class MenuItemCreate(BaseModel):
