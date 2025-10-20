@@ -1,4 +1,3 @@
-from datetime import timedelta
 from typing import Optional
 import json
 from uuid import UUID
@@ -23,7 +22,6 @@ from app.queue.producer import producer
 from app.schemas.marketplace_schemas import (
     ItemImageResponse,
     ProductBuyRequest,
-    ProductOrderItemResponse,
     ProductOrderResponse,
 )
 from app.schemas.item_schemas import ItemType, ItemResponse
@@ -429,11 +427,8 @@ async def get_user_orders(
     # Try cache first with error handling
 
     cached_user_items = redis_client.get(cache_key)
-    # if cached_user_items:
-    #     print('50'*50)
-    #     print("Cache hit")
-    #     print('*'*50)
-    #     return [ProductOrderResponse(**o) for o in json.loads(cached_user_items)]
+    if cached_user_items:
+        return [ProductOrderResponse(**o) for o in json.loads(cached_user_items)]
 
     stmt = (
         select(Order)
@@ -450,18 +445,15 @@ async def get_user_orders(
     result = await db.execute(stmt)
     orders = result.unique().scalars().all()
 
-    # Format responses - delivery will be None for orders without delivery
     products_order_response = [format_order_response(order) for order in orders]
-
-    # Cache the formatted responses with error handling
 
     redis_client.setex(
         cache_key,
-        timedelta(seconds=CACHE_TTL),
+        CACHE_TTL,
         json.dumps([d.model_dump() for d in products_order_response], default=str),
     )
 
-    return products_order_response
+    return orders
 
 
 async def get_product_order_details(
@@ -492,16 +484,18 @@ async def get_product_order_details(
     result = await db.execute(stmt)
     order = result.scalar_one_or_none()
 
+    if not order:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Order not found.")
+
     # Format responses - delivery will be None for orders without delivery
     products_order_response = format_order_response(order)
 
-    # Cache the formatted responses with error handling
-
     redis_client.setex(
         cache_key,
-        timedelta(seconds=CACHE_TTL),
+        CACHE_TTL,
         json.dumps(products_order_response.model_dump(), default=str),
     )
+
 
     return products_order_response
 
@@ -625,44 +619,100 @@ async def vendor_mark_rejected_item_received(
         )
 
 
+
+
 def format_order_response(order) -> ProductOrderResponse:
     """
-    Factory function to create OrderResponse from SQLAlchemy Order model
+    Factory function to create ProductOrderResponse from SQLAlchemy Order model
     """
-    order_items = []
-    for order_item in order.order_items:
-        item = order_item.item
-        order_items.append(
-            ProductOrderItemResponse(
-                item_id=item.id,
-                user_id=item.user_id,  # vendor's user_id
-                name=item.name,
-                price=item.price,
-                images=[
-                    ItemImageResponse(id=img.id, item_id=img.item_id, url=img.url)
-                    for img in item.images
-                ],
-                description=item.description,
-                quantity=order_item.quantity,
-            )
-        )
+    return ProductOrderResponse.model_validate(order)
 
-    return ProductOrderResponse(
-        id=order.id,
-        user_id=order.owner_id,
-        vendor_id=order.vendor_id,
-        order_type=order.order_type,
-        total_price=order.total_price,
-        additional_info=order.additional_info,
-        order_payment_status=order.order_payment_status,
-        require_delivery=order.require_delivery,
-        order_status=order.order_status,
-        order_number=order.order_number,
-        amount_due_vendor=order.amount_due_vendor,
-        payment_link=order.payment_link,
-        created_at=order.created_at,
-        order_items=order_items,
-    )
+
+# def format_order_response(order) -> ProductOrderResponse:
+#     """
+#     Factory function to create ProductOrderResponse from SQLAlchemy Order model
+#     """
+#     order_items = []
+#     for order_item in order.order_items:
+#         item = order_item.item
+#         order_items.append(
+#             OrderItem(
+#                 item_id=order_item.item_id,
+#                 order_id=order_item.order_id,
+#                 quantity=order_item.quantity,
+#                 sizes=order_item.sizes,
+#                 colors=order_item.colors or [],
+#                 created_at=order_item.created_at,
+#                 item=Item(
+#                     id=item.id,
+#                     user_id=item.user_id,
+#                     name=item.name,
+#                     description=item.description,
+#                     price=item.price,
+#                     images=[
+#                     ItemImageResponse(id=img.id, item_id=img.item_id, url=img.url)
+#                     for img in item.images
+#                 ],
+                
+#                 )
+#             )
+#         )
+    
+#     return ProductOrderResponse(
+#         id=order.id,
+#         owner_id=order.owner_id,
+#         vendor_id=order.vendor_id,
+#         order_number=order.order_number,
+#         order_status=order.order_status,
+#         order_payment_status=order.order_payment_status,
+#         total_price=order.total_price,
+#         grand_total=order.grand_total,
+#         amount_due_vendor=order.amount_due_vendor,
+#         payment_link=order.payment_link,
+#         additional_info=order.additional_info,
+#         order_items=order_items,
+#         created_at=order.created_at,
+#         updated_at=order.updated_at,
+#     )
+
+# def format_order_response(order) -> ProductOrderResponse:
+#     """
+#     Factory function to create OrderResponse from SQLAlchemy Order model
+#     """
+#     order_items = []
+#     for order_item in order.order_items:
+#         item = order_item.item
+#         order_items.append(
+#             ProductOrderItemResponse(
+#                 item_id=item.id,
+#                 user_id=item.user_id,  # vendor's user_id
+#                 name=item.name,
+#                 price=item.price,
+#                 images=[
+#                     ItemImageResponse(id=img.id, item_id=img.item_id, url=img.url)
+#                     for img in item.images
+#                 ],
+#                 description=item.description,
+#                 quantity=order_item.quantity,
+#             )
+#         )
+
+#     return ProductOrderResponse(
+#         id=order.id,
+#         user_id=order.owner_id,
+#         vendor_id=order.vendor_id,
+#         order_type=order.order_type,
+#         total_price=order.total_price,
+#         additional_info=order.additional_info,
+#         order_payment_status=order.order_payment_status,
+#         require_delivery=order.require_delivery,
+#         order_status=order.order_status,
+#         order_number=order.order_number,
+#         amount_due_vendor=order.amount_due_vendor,
+#         payment_link=order.payment_link,
+#         created_at=order.created_at,
+#         order_items=order_items,
+#     )
 
 
 # <<<<< ---------- CACHE UTILITY ---------- >>>>>

@@ -1,8 +1,9 @@
 from enum import Enum
+from typing import Optional, List
 from datetime import datetime
-from pydantic import BaseModel, Field, ConfigDict
+from pydantic import BaseModel, Field, ConfigDict, field_serializer
 from uuid import UUID
-from datetime import datetime
+from datetime import datetime, timedelta
 from decimal import Decimal
 
 from app.schemas.order_schema import OrderType
@@ -19,57 +20,64 @@ class PaymentMethod(str, Enum):
 
 class ProductBuyRequest(BaseModel):
     quantity: int = Field(1, gt=0, description="Number of units to purchase")
+
     sizes: str | None = None
     colors: list[str] = []
     additional_info: str
 
 
+
 class ItemImageResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     id: UUID
     item_id: UUID
     url: str
+    is_primary: Optional[bool] = None
 
-    class Config:
-        from_attributes = True
+class Item(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
 
-
-class ProductOrderItemResponse(BaseModel):
-    item_id: UUID
-    user_id: UUID  # This is the vendor's user_id from the item
+    id: UUID
+    user_id: UUID
     name: str
-    price: Decimal
-    images: list[ItemImageResponse]
     description: str
-    quantity: int
+    price: float
+    sizes: str | None = None
+    colors: List[str] = []
+    images: List[ItemImageResponse] = []
 
-    class Config:
-        from_attributes = True
+class OrderItem(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    item_id: UUID
+    order_id: UUID
+    quantity: int
+    sizes: List = []
+    colors: List = []
+    created_at: datetime
+    item: Item
 
 
 class ProductOrderResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
 
-    model_config = ConfigDict(
-        json_encoders={
-            datetime: lambda v: v.isoformat(),
-            Decimal: lambda v: str(v),
-        }
-    )
     id: UUID
-    user_id: UUID  # owner_id
+    owner_id: UUID
     vendor_id: UUID
-    order_type: OrderType
-    total_price: Decimal
-    order_payment_status: PaymentStatus
-    order_status: OrderStatus
     order_number: int
-    additional_info: str | None = None
-    amount_due_vendor: Decimal
+    order_status: str
+    order_payment_status: str
+    total_price: float
+    grand_total: float
+    amount_due_vendor: float
     payment_link: str
-    # created_at: datetime
-    order_items: list[ProductOrderItemResponse]
+    additional_info: str
+    order_items: List[OrderItem]
+    created_at: datetime
+    updated_at: datetime
 
-    # class Config:
-    #     from_attributes = True
+  
 
 
 class TopUpRequestSchema(BaseModel):

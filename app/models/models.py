@@ -1,5 +1,6 @@
 from typing import Optional
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
+from sqlalchemy import func
 import random
 from uuid import UUID, uuid4
 import uuid
@@ -122,10 +123,10 @@ class User(Base):
         lazy="joined",
     )
 
-    created_at: Mapped[datetime] = mapped_column(default=datetime.now)
+    created_at: Mapped[datetime] = mapped_column(server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
-        default=datetime.now, onupdate=datetime.now
-    )
+    server_default=func.now(), onupdate=func.now()
+)
 
     # Relationships with cascade
     profile: Mapped["Profile"] = relationship(
@@ -231,10 +232,10 @@ class Profile(Base):
     is_phone_verified: Mapped[bool] = mapped_column(default=False, nullable=True)
     phone_verification_code: Mapped[str] = mapped_column(nullable=True)
     phone_verification_expires: Mapped[datetime] = mapped_column(nullable=True)
-    created_at: Mapped[datetime] = mapped_column(default=datetime.now)
+    created_at: Mapped[datetime] = mapped_column(server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
-        default=datetime.now, onupdate=datetime.now
-    )
+    server_default=func.now(), onupdate=func.now()
+)
 
     user: Mapped["User"] = relationship(back_populates="profile")
     profile_image: Mapped["ProfileImage"] = relationship(
@@ -253,10 +254,10 @@ class ProfileImage(Base):
     )
     profile_image_url: Mapped[str] = mapped_column(nullable=True)
     backdrop_image_url: Mapped[str] = mapped_column(nullable=True)
-    created_at: Mapped[datetime] = mapped_column(default=datetime.now)
+    created_at: Mapped[datetime] = mapped_column(server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
-        default=datetime.now, onupdate=datetime.now
-    )
+    server_default=func.now(), onupdate=func.now()
+)
 
     profile: Mapped["Profile"] = relationship(back_populates="profile_image")
 
@@ -286,10 +287,10 @@ class Wallet(Base):
     balance: Mapped[Decimal] = mapped_column(default=0.00)
     escrow_balance: Mapped[Decimal] = mapped_column(default=0.00)
     # idempotency_key: Mapped[str] = mapped_column(nullable=True)
-    created_at: Mapped[datetime] = mapped_column(default=datetime.now)
+    created_at: Mapped[datetime] = mapped_column(server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
-        default=datetime.now, onupdate=datetime.now
-    )
+    server_default=func.now(), onupdate=func.now()
+)
 
     user: Mapped["User"] = relationship(back_populates="wallet")
     transactions: Mapped[list["Transaction"]] = relationship(
@@ -314,10 +315,10 @@ class Transaction(Base):
     payment_status: Mapped[PaymentStatus] = mapped_column(default=PaymentStatus.PENDING)
     payment_method: Mapped[PaymentMethod] = mapped_column(nullable=True)
     payment_link: Mapped[str] = mapped_column(nullable=True)
-    created_at: Mapped[datetime] = mapped_column(default=datetime.now)
+    created_at: Mapped[datetime] = mapped_column(server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
-        default=datetime.now, onupdate=datetime.now
-    )
+    server_default=func.now(), onupdate=func.now()
+)
     wallet: Mapped["Wallet"] = relationship(back_populates="transactions")
 
     # __table_args__ = (
@@ -390,10 +391,10 @@ class Item(Base):
         Enum(FoodGroup, name="foodgroup", create_constraint=True), nullable=True
     )
 
-    created_at: Mapped[datetime] = mapped_column(default=datetime.now)
+    created_at: Mapped[datetime] = mapped_column(server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
-        default=datetime.now, onupdate=datetime.now
-    )
+    server_default=func.now(), onupdate=func.now()
+)
 
     vendor: Mapped["User"] = relationship(back_populates="items")
     category: Mapped["Category"] = relationship(back_populates="items")
@@ -426,10 +427,10 @@ class ItemImage(Base):
     item_id: Mapped[UUID] = mapped_column(ForeignKey("items.id", ondelete="CASCADE"))
     url: Mapped[str]
     is_primary: Mapped[bool] = mapped_column(default=False, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(default=datetime.now)
+    created_at: Mapped[datetime] = mapped_column(server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
-        default=datetime.now, onupdate=datetime.now
-    )
+    server_default=func.now(), onupdate=func.now()
+)
 
     item: Mapped["Item"] = relationship(back_populates="images")
 
@@ -467,10 +468,10 @@ class Order(Base):
     )
     cancel_reason: Mapped[str] = mapped_column(nullable=True)
     
-    created_at: Mapped[datetime] = mapped_column(default=datetime.now)
+    created_at: Mapped[datetime] = mapped_column(server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
-        default=datetime.now, onupdate=datetime.now
-    )
+    server_default=func.now(), onupdate=func.now()
+)
 
     owner: Mapped[Optional["User"]] = relationship(
         back_populates="orders_placed", foreign_keys=[owner_id]
@@ -541,10 +542,10 @@ class Delivery(Base):
     )
     delivery_type: Mapped[DeliveryType]
     amount_due_dispatch: Mapped[Decimal] = mapped_column(nullable=False)
-    created_at: Mapped[datetime] = mapped_column(default=datetime.now)
+    created_at: Mapped[datetime] = mapped_column(server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
-        default=datetime.now, onupdate=datetime.now
-    )
+    server_default=func.now(), onupdate=func.now()
+)
 
     order: Mapped["Order"] = relationship(
         back_populates="delivery",
@@ -600,10 +601,10 @@ class Review(Base):
     review_type: Mapped[ReviewType] = mapped_column(nullable=False)
     comment: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
-    created_at: Mapped[datetime] = mapped_column(default=datetime.now)
+    created_at: Mapped[datetime] = mapped_column(server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
-        default=datetime.now, onupdate=datetime.now
-    )
+    server_default=func.now(), onupdate=func.now()
+)
 
     # RELATIONSHIPS
     reviewer: Mapped["User"] = relationship(
@@ -647,10 +648,10 @@ class UserReport(Base):
     report_status: Mapped[ReportStatus] = mapped_column(default=ReportStatus.PENDING)
     is_read: Mapped[bool] = mapped_column(default=False)
 
-    created_at: Mapped[datetime] = mapped_column(default=datetime.now)
+    created_at: Mapped[datetime] = mapped_column(server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
-        default=datetime.now, onupdate=datetime.now
-    )
+    server_default=func.now(), onupdate=func.now()
+)
 
     # Relationships
     defendant: Mapped["User"] = relationship(
@@ -708,10 +709,10 @@ class Message(Base):
     )
     role: Mapped[Optional[UserType]] = mapped_column(nullable=True)
 
-    created_at: Mapped[datetime] = mapped_column(default=datetime.now)
+    created_at: Mapped[datetime] = mapped_column(server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
-        default=datetime.now, onupdate=datetime.now
-    )
+    server_default=func.now(), onupdate=func.now()
+)
 
     # Relationships
     sender: Mapped["User"] = relationship(
@@ -800,7 +801,7 @@ class AuditLog(Base):
             This can include any additional context useful for auditing, such as request headers, geo-location, etc.
     """
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
-    timestamp: Mapped[datetime] = mapped_column(default=datetime.now, nullable=False)
+    timestamp: Mapped[datetime] = mapped_column(default=func.now(), nullable=False)
     actor_id: Mapped[UUID]
     actor_name: Mapped[str]
     actor_role: Mapped[str]
@@ -824,6 +825,6 @@ class TransactionLog(Base):
     action: Mapped[TransactionLogAction] = mapped_column(nullable=True)
     status: Mapped[PaymentStatus] = mapped_column(nullable=True)
     details: Mapped[dict] = mapped_column(JSON, nullable=True)
-    timestamp: Mapped[datetime] = mapped_column(default=datetime.now, nullable=False)
+    timestamp: Mapped[datetime] = mapped_column(default=func.now(), nullable=False)
    
   

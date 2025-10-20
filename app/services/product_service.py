@@ -262,86 +262,6 @@ async def get_user_products(db: AsyncSession, user_id: UUID) -> list[ProductResp
     return product_responses
 
 
-# async def update_product(
-#     db: AsyncSession, 
-#     product_id: UUID, 
-#     product_data: ProductUpdate, 
-#     current_user: User,
-#     images: list[UploadFile],
-# ) -> Optional[ProductResponse]:
-#     """
-#     Updates an existing product if the current user is the seller.
-
-#     Args:
-#         db: The database session.
-#         product_id: The ID of the product to update.
-#         product_data: The updated product data.
-#         current_user: The authenticated user attempting the update.
-
-#     Returns:
-#         The updated product details or None if not found/not authorized.
-
-#     Raises:
-#         HTTPException: If category not found, product not found, permission denied, or update fails.
-#     """
-#     product = await db.get(Item, product_id)
-
-#     if not product:
-#         raise HTTPException(
-#             status_code=status.HTTP_404_NOT_FOUND,
-#             detail="Item not found!",
-#         )
-
-#     if product.user_id != current_user.id:
-#         raise HTTPException(
-#             status_code=status.HTTP_403_FORBIDDEN,
-#             detail="Not authorized to update this product",
-#         )
-
-#     update_values = product_data.model_dump(exclude_unset=True)
-
-#     # If category is being updated, check if the new one exists
-#     if "category_id" in update_values and update_values["category_id"] is not None:
-#         category = await db.get(Category, update_values["category_id"])
-#         if not category:
-#             raise HTTPException(
-#                 status_code=status.HTTP_404_NOT_FOUND,
-#                 detail=f"Category with id {update_values['category_id']} not found.",
-#             )
-
-#     # Update 'in_stock' based on 'stock' if 'stock' is provided
-#     if "stock" in update_values:
-#         update_values["in_stock"] = update_values["stock"] > 0
-
-#     if not update_values:
-#         raise HTTPException(
-#             status_code=status.HTTP_400_BAD_REQUEST, detail="No update data provided"
-#         )
-
-#     stmt = (
-#         update(Item)
-#         .where(Item.id == product_id)
-#         .values(**update_values)
-#         .returning(Item)
-#     )
-
-#     try:
-#         result = await db.execute(stmt)
-#         updated_product = result.scalar_one()
-#         await db.commit()
-
-#         invalidate_product_cache(product_id, current_user.id)
-
-#         return updated_product
-#     except Exception as e:
-#         await db.rollback()
-#         # Log error e
-#         raise HTTPException(
-#             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-#             detail=f"Failed to update product: {str(e)}",
-#         )
-
-
 async def update_product(
     db: AsyncSession, 
     product_id: UUID, 
@@ -519,54 +439,7 @@ async def delete_product(db: AsyncSession, product_id: UUID, current_user: User)
             detail=f"Failed to delete item: {str(e)}",
         )
 
-
-# async def delete_product(
-#     db: AsyncSession, product_id: UUID, current_user: User
-# ) -> bool:
-#     """
-#     Deletes a product if the current user is the seller.
-
-#     Args:
-#         db: The database session.
-#         product_id: The ID of the product to delete.
-#         current_user: The authenticated user attempting the deletion.
-
-#     Returns:
-#         True if deletion was successful, False otherwise.
-
-#     Raises:
-#         HTTPException: If product not found, permission denied, or deletion fails.
-#     """
-#     product = await db.get(Item, product_id)
-
-#     if not product:
-#         raise HTTPException(
-#             status_code=status.HTTP_403_FORBIDDEN,
-#             detail="Item not found",
-#         )
-
-#     if product.user_id != current_user.id:
-#         raise HTTPException(
-#             status_code=status.HTTP_403_FORBIDDEN,
-#             detail="Not authorized to delete this product",
-#         )
-
-#     try:
-#         product.is_deleted = True
-#         await db.commit()
-#         invalidate_product_cache(product_id, current_user.id)
-
-#         return True if result.rowcount > 0 else False
-#     except Exception as e:
-#         await db.rollback()
-#         raise HTTPException(
-#             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-#             detail=f"Failed to delete product: {str(e)}",
-#         )
-
-
 # <<<<< ---------- CACHE UTILITY FOR PRODUCTS ---------- >>>>>
-
 
 def invalidate_product_cache(product_id: UUID, seller_id: UUID = None) -> None:
     """Invalidate product related caches"""
