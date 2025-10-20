@@ -54,9 +54,7 @@ async def get_marketplace_items(db: AsyncSession) -> list[ItemResponse]:
     
     # Try cache first
     cached_items = redis_client.get(cache_key)
-    print('*'*50)
-    print('Cache hit')
-    print('*'*50)
+    
     if cached_items:
         item_dicts = json.loads(cached_items)
         return [ItemResponse(**item) for item in item_dicts]
@@ -91,9 +89,6 @@ async def get_marketplace_item(item_id: UUID, db: AsyncSession) -> ItemResponse:
     # Try cache first
     cached_item = redis_client.get(cache_key)
     if cached_item:
-        print('*'*50)
-        print('Cache hit')
-        print('*'*50)
         item_dict = json.loads(cached_item)
         return ItemResponse(**item_dict)
     

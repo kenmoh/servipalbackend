@@ -71,6 +71,7 @@ ehthumbs.db
 .env.docker
 .dockerignore
 .coverage
+.env.test
 
 
 # Migrations
