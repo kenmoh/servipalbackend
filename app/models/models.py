@@ -1,4 +1,5 @@
 from typing import Optional
+import secrets
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 from sqlalchemy import func
 import random
@@ -23,10 +24,10 @@ from sqlalchemy import (
     Index,
     Text,
     Enum,
+    Boolean
 )
 from sqlalchemy.schema import Sequence
 from sqlalchemy.orm import mapped_column, Mapped, relationship
-
 
 from app.database.database import Base
 
@@ -89,10 +90,7 @@ class User(Base):
         nullable=False, default=UserType.CUSTOMER, index=True
     )
 
-    is_email_verified: Mapped[bool] = mapped_column(default=False, nullable=True)
     accept_terms_and_conditions: Mapped[bool] = mapped_column(default=True, nullable=True)
-    email_verification_code: Mapped[str] = mapped_column(nullable=True)
-    email_verification_expires: Mapped[datetime] = mapped_column(nullable=True)
     account_status: Mapped[AccountStatus] = mapped_column(default=AccountStatus.PENDING)
     current_user_location_coords: Mapped[dict] = mapped_column(JSON, nullable=True)
 
@@ -140,7 +138,7 @@ class User(Base):
         back_populates="user",
         uselist=False,
         lazy="selectin",
-        cascade="all, delete-orphan",  # Delete wallet when user is deleted
+        cascade="all, delete-orphan"  # Delete wallet when user is deleted
     )
 
     items: Mapped[list["Item"]] = relationship(
@@ -219,7 +217,7 @@ class Profile(Base):
     bank_account_number: Mapped[str] = mapped_column(nullable=True)
     business_address: Mapped[str] = mapped_column(nullable=True)
     state: Mapped[str] = mapped_column(nullable=True)
-    can_pickup_and_dropoff: Mapped[bool] = mapped_column(default=False, nullable=True)
+    can_pickup_and_dropoff: Mapped[bool] = mapped_column(default=False)
     pickup_and_delivery_charge: Mapped[Decimal] = mapped_column(nullable=True, default=0.00)
     business_registration_number: Mapped[str] = mapped_column(nullable=True)
     account_holder_name: Mapped[str] = mapped_column(nullable=True)
@@ -229,9 +227,6 @@ class Profile(Base):
     phone_number: Mapped[str] = mapped_column(unique=True, nullable=False)
     store_name: Mapped[str] = mapped_column(unique=True, nullable=True)
     bike_number: Mapped[str] = mapped_column(unique=True, nullable=True)
-    is_phone_verified: Mapped[bool] = mapped_column(default=False, nullable=True)
-    phone_verification_code: Mapped[str] = mapped_column(nullable=True)
-    phone_verification_expires: Mapped[datetime] = mapped_column(nullable=True)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
     server_default=func.now(), onupdate=func.now()
@@ -261,6 +256,29 @@ class ProfileImage(Base):
 
     profile: Mapped["Profile"] = relationship(back_populates="profile_image")
 
+class VerificationCode(Base):
+    __tablename__ = "verification_codes"
+    
+    user_id: Mapped[UUID] = mapped_column(ForeignKey("users.id"), nullable=False, primary_key=True)
+    email_code: Mapped[str] = mapped_column(
+        String(6), 
+        nullable=False, 
+        default=lambda: ''.join([str(secrets.randbelow(10)) for _ in range(6)])
+    )
+    phone_code: Mapped[str] = mapped_column(
+        String(6), 
+        nullable=False, 
+        default=lambda: ''.join([str(secrets.randbelow(10)) for _ in range(6)])
+    )
+    email_verified: Mapped[bool] = mapped_column(Boolean, default=False)
+    phone_verified: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    expires_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    
+    # Add indexes for faster lookups
+    __table_args__ = (
+        Index('idx_user_id', 'user_id'),
+    )
 
 class Session(Base):
     __tablename__ = "sessions"
@@ -321,10 +339,6 @@ class Transaction(Base):
 )
     wallet: Mapped["Wallet"] = relationship(back_populates="transactions")
 
-    # __table_args__ = (
-    #     # Prevent duplicate transactions for the same tx_ref, wallet, and direction
-    #     UniqueConstraint('tx_ref', 'wallet_id', 'transaction_direction', name='unique_tx_per_wallet_direction'),
-    # )
 
 
 class RefreshToken(Base):

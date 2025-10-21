@@ -27,7 +27,7 @@ from app.schemas.user_schemas import (
     UpdateStaffSchema,
     CreateUserResponseSchema
 )
-from app.models.models import AuditLog, Profile, Session, User, RefreshToken, Wallet
+from app.models.models import AuditLog, Profile, Session, User, RefreshToken, Wallet,VerificationCode
 from app.services import ws_service
 from app.schemas.user_schemas import UpdateStaffSchema
 from app.config.config import settings, email_conf
@@ -146,7 +146,7 @@ async def login_admin_user(db: AsyncSession, login_data: UserLogin) -> User:
     return user
 
 
-async def create_user(db: AsyncSession, user_data: CreateUserSchema) -> UserBase:
+async def create_user1(db: AsyncSession, user_data: CreateUserSchema) -> UserBase:
     """
     Create a new user in the database.
     Optimized version using database constraints for validation.
@@ -163,10 +163,33 @@ async def create_user(db: AsyncSession, user_data: CreateUserSchema) -> UserBase
     # Format the phone number
     formatted_phone = f"234{user_data.phone_number[1:] if user_data.phone_number.startswith('0') else user_data.phone_number}"
 
+    # Check for existing email and phone BEFORE creating user
+    email_lower = user_data.email.lower()
+    
+    # Check email
+    existing_email = await db.execute(
+        select(User).where(User.email == email_lower)
+    )
+    if existing_email.scalar_one_or_none():
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Email already registered"
+        )
+    
+    # Check phone number
+    existing_phone = await db.execute(
+        select(Profile).where(Profile.phone_number == formatted_phone)
+    )
+    if existing_phone.scalar_one_or_none():
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Phone number already registered"
+        )
+
     try:
-        # Create the user - let database constraints handle email uniqueness
+        # Create the user
         user = User(
-            email=user_data.email.lower(),
+            email=email_lower,
             password=hash_password(user_data.password),
             user_type=user_data.user_type,
             updated_at=datetime.now(),
@@ -194,7 +217,7 @@ async def create_user(db: AsyncSession, user_data: CreateUserSchema) -> UserBase
         email_code, phone_code = await generate_verification_codes(user, profile, db)
 
         # Send verification code to phone and email
-        if settings.TEST != 'true':
+        if settings.TEST is not True:
             await send_verification_codes(
                 user=user, email_code=email_code, phone_code=phone_code, db=db
             )
@@ -209,26 +232,31 @@ async def create_user(db: AsyncSession, user_data: CreateUserSchema) -> UserBase
 
     except IntegrityError as e:
         await db.rollback()
-
-        # Parse the constraint violation to provide specific error messages
-        error_msg = str(e).lower()
-
-        if "email" in error_msg and "unique" in error_msg:
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT, detail="Email already registered"
-            )
-        elif "phone_number" in error_msg and "unique" in error_msg:
+        
+        # Fallback error handling - should rarely hit this due to pre-checks
+        # But keeps it as a safety net for race conditions
+        error_msg = str(e.orig if hasattr(e, 'orig') else e).lower()
+        
+        if "email" in error_msg or "user.email" in error_msg or "users_email" in error_msg:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
-                detail="Phone number already registered",
+                detail="Email already registered"
+            )
+        elif "phone" in error_msg or "profile.phone" in error_msg or "profiles_phone" in error_msg:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Phone number already registered"
             )
         else:
-            # Generic fallback for other integrity errors
+            # Log the actual error for debugging
+            print(f"Unexpected IntegrityError: {e}")
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
-                detail="Email or phone number already registered",
+                detail="Email or phone number already registered"
             )
-
+    except Exception as e:
+        await db.rollback()
+        raise
 
 async def create_new_rider(
     data: RiderCreate,
@@ -1184,7 +1212,7 @@ async def send_verification_codes(
     # fm = FastMail(email_conf)
     # await fm.send_message(message, template_name="email.html")
 
-    _html =  send_email_verification_code(code=email_code, expires_in='24 hours')
+    _html =  send_email_verification_code(code=email_code, expires_in='30 minutes')
 
     resend.Emails.send({
         'from': 'servipal@verification.servi-pal.com',
@@ -1206,57 +1234,123 @@ async def verify_user_contact(
 ) -> dict:
     """Verify both email and phone codes"""
     now = datetime.now()
-
-    # Single query to get user with profile and verify both codes exist
-    user_query = (
-        select(User)
-        .options(selectinload(User.profile))
-        .where(User.email_verification_code == email_code)
+    
+    # Query to get verification code with user and profile
+    verification_query = (
+        select(VerificationCode)
+        .join(User, VerificationCode.user_id == User.id)
+        .options(
+            selectinload(VerificationCode.user).selectinload(User.profile)
+        )
+        .where(
+            VerificationCode.email_code == email_code,
+            VerificationCode.phone_code == phone_code,
+        )
     )
-
-    user = await db.scalar(user_query)
-
-    if not user:
+    
+    verification = await db.scalar(verification_query)
+    
+    if not verification:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Invalid email verification code",
+            detail="Invalid verification codes",
         )
-
-    if not user.profile or user.profile.phone_verification_code != phone_code:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invalid phone verification code",
-        )
-
+    
     # Check if codes are expired
-    email_expired = (
-        user.email_verification_expires is not None
-        and user.email_verification_expires < now
-    )
-    phone_expired = (
-        user.profile.phone_verification_expires is not None
-        and user.profile.phone_verification_expires < now
-    )
-
-    if email_expired or phone_expired:
+    if verification.expires_at < now:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Verification codes have expired",
         )
-
+    
+    # Check if already verified
+    if verification.email_verified and verification.phone_verified:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Account already verified",
+        )
+    
+    # Get the user
+    user = verification.user
+    if not user or not user.profile:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found",
+        )
+    
     # Update verification status
+    verification.email_verified = True
+    verification.phone_verified = True
     user.is_email_verified = True
     user.profile.is_phone_verified = True
     user.account_status = AccountStatus.CONFIRMED
-    user.email_verification_code = None
-    user.profile.phone_verification_code = None
-    user.email_verification_expires = None
-    user.profile.phone_verification_expires = None
-
+    
     await db.commit()
-    await send_welcome_email(user)
-
+    
+    # Send welcome email (best effort)
+    try:
+        await send_welcome_email(user)
+    except Exception as e:
+        logger.error(f"Failed to send welcome email: {str(e)}")
+    
     return {"message": "Email and phone verified successfully"}
+
+# async def verify_user_contact(
+#     email_code: str, phone_code: str, db: AsyncSession
+# ) -> dict:
+#     """Verify both email and phone codes"""
+#     now = datetime.now()
+
+#     # Single query to get user with profile and verify both codes exist
+#     user_query = (
+#         select(User)
+#         .options(selectinload(User.profile))
+#         .where(User.email_verification_code == email_code)
+#     )
+
+#     user = await db.scalar(user_query)
+
+#     if not user:
+#         raise HTTPException(
+#             status_code=status.HTTP_404_NOT_FOUND,
+#             detail="Invalid email verification code",
+#         )
+
+#     if not user.profile or user.profile.phone_verification_code != phone_code:
+#         raise HTTPException(
+#             status_code=status.HTTP_400_BAD_REQUEST,
+#             detail="Invalid phone verification code",
+#         )
+
+#     # Check if codes are expired
+#     email_expired = (
+#         user.email_verification_expires is not None
+#         and user.email_verification_expires < now
+#     )
+#     phone_expired = (
+#         user.profile.phone_verification_expires is not None
+#         and user.profile.phone_verification_expires < now
+#     )
+
+#     if email_expired or phone_expired:
+#         raise HTTPException(
+#             status_code=status.HTTP_400_BAD_REQUEST,
+#             detail="Verification codes have expired",
+#         )
+
+#     # Update verification status
+#     user.is_email_verified = True
+#     user.profile.is_phone_verified = True
+#     user.account_status = AccountStatus.CONFIRMED
+#     user.email_verification_code = None
+#     user.profile.phone_verification_code = None
+#     user.email_verification_expires = None
+#     user.profile.phone_verification_expires = None
+
+#     await db.commit()
+#     await send_welcome_email(user)
+
+#     return {"message": "Email and phone verified successfully"}
 
 
 # Function to invalidate cache when rider data changes
@@ -1335,8 +1429,112 @@ async def update_staff_password(
     return {"message": "Staff password updated successfully."}
 
 
-
-async def create_user1(db: AsyncSession, user_data: CreateUserSchema) -> CreateUserResponseSchema:
+async def register_user(db: AsyncSession, user_data: CreateUserSchema) -> CreateUserResponseSchema:
+    """
+    Create a new user in the database with verification codes.
+    
+    Args:
+        db: Database session
+        user_data: User data from request
+    Returns:
+        User data with verification codes
+    """
+    # Validate password
+    validate_password(user_data.password)
+    
+    # Format the phone number to international format (+234...)
+    if user_data.phone_number.startswith('0'):
+        formatted_phone = f"234{user_data.phone_number[1:]}"
+    elif user_data.phone_number.startswith('+234'):
+        formatted_phone = user_data.phone_number[1:]
+    elif user_data.phone_number.startswith('234'):
+        formatted_phone = user_data.phone_number
+    else:
+        formatted_phone = f"234{user_data.phone_number}"
+    
+    try:
+        # Create the user
+        user = User(
+            email=user_data.email.lower(),
+            password=hash_password(user_data.password),
+            user_type=user_data.user_type,
+            updated_at=datetime.now(),
+            account_status=AccountStatus.PENDING,
+        )
+        db.add(user)
+        await db.flush()  # Get user.id
+        
+        # Create profile
+        profile = Profile(
+            user_id=user.id,
+            phone_number=formatted_phone,
+        )
+        db.add(profile)
+        
+        # Create wallet for non-rider users
+        if user.user_type != UserType.RIDER:
+            wallet = Wallet(id=user.id, balance=0, escrow_balance=0)
+            db.add(wallet)
+        
+        # Create verification codes (auto-generated by database)
+        verification = VerificationCode(
+            user_id=user.id,
+            expires_at=datetime.now() + timedelta(minutes=30)
+        )
+        db.add(verification)
+        await db.flush()  # Trigger code generation
+        
+        # Commit everything
+        await db.commit()
+        
+        # Refresh to get the generated codes
+        await db.refresh(verification)
+        
+        # Send verification codes
+        if settings.TEST is not True:
+            try:
+                await send_verification_codes(
+                    user=user,
+                    profile=profile,
+                    email_code=verification.email_code,
+                    phone_code=verification.phone_code
+                )
+            except Exception as e:
+                logger.error(f"Failed to send verification codes: {str(e)}")
+        
+        return {
+            "id": user.id,
+            "email": user.email,
+            "user_type": user.user_type
+        }
+        
+    except IntegrityError as e:
+        await db.rollback()
+        error_msg = str(e.orig).lower()
+        
+        if 'email' in error_msg or 'users.email' in error_msg:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Email already registered!"
+            )
+        elif 'phone' in error_msg or 'phone_number' in error_msg:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Phone number already registered!"
+            )
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Email or phone number already registered!"
+            )
+    except Exception as e:
+        await db.rollback()
+        logger.error(f"Error during user registration: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="An error occurred during registration"
+        )
+async def create_user(db: AsyncSession, user_data: CreateUserSchema) -> CreateUserResponseSchema:
     """
     Create a new user in the database with Flutterwave OTP verification.
     
@@ -1386,44 +1584,55 @@ async def create_user1(db: AsyncSession, user_data: CreateUserSchema) -> CreateU
             db.add(wallet)
         
         await db.commit()
+
+         # Generate and send verification codes
+        email_code, phone_code = await generate_verification_codes(user, profile, db)
+
+        # Send verification code to phone and email
+        if settings.TEST is not True:
+            await send_verification_codes(
+                user=user, email_code=email_code, phone_code=phone_code, db=db
+            )
+
+        return user
         
         # Generate Flutterwave OTP
-        otp_result = await generate_otp(user.email, formatted_phone)
+        # otp_result = await generate_otp(user.email, formatted_phone)
         
-        if otp_result["status"] == "success":
-            # Store OTP references in Redis with user_id as key
-            otp_data = {
-                "email_reference": otp_result["references"].get("email"),
-                "sms_reference": otp_result["references"].get("sms"),
-                "user_id": user.id,
-                "email": user.email
-            }
-            redis_client.setex(
-                f"otp_verification:{user.id}",
-                1800,  # 30 minutes expiry
-                json.dumps(otp_data)
-            )
+        # if otp_result["status"] == "success":
+        #     # Store OTP references in Redis with user_id as key
+        #     otp_data = {
+        #         "email_reference": otp_result["references"].get("email"),
+        #         "sms_reference": otp_result["references"].get("sms"),
+        #         "user_id": user.id,
+        #         "email": user.email
+        #     }
+        #     redis_client.setex(
+        #         f"otp_verification:{user.id}",
+        #         1800,  # 30 minutes expiry
+        #         json.dumps(otp_data)
+        #     )
             
-            redis_client.delete("all_users")
-            await asyncio.sleep(0.1)
-            await ws_service.broadcast_new_user(
-                {"email": user.email, "user_type": user.user_type}
-            )
+        #     redis_client.delete("all_users")
+        #     await asyncio.sleep(0.1)
+        #     await ws_service.broadcast_new_user(
+        #         {"email": user.email, "user_type": user.user_type}
+        #     )
             
-            return {
-                "id": user.id,
-                "user_type": user.user_type,
-                "email": user.email,
-                "message": "User created successfully. OTP sent to email and phone.",
-                "otp_sent": True
-            }
-        else:
-            # If OTP generation fails, rollback user creation
-            await db.rollback()
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"Failed to send OTP: {otp_result.get('message')}"
-            )
+        #     return {
+        #         "id": user.id,
+        #         "user_type": user.user_type,
+        #         "email": user.email,
+        #         "message": "User created successfully. OTP sent to email and phone.",
+        #         "otp_sent": True
+        #     }
+        # else:
+        #     # If OTP generation fails, rollback user creation
+        #     await db.rollback()
+        #     raise HTTPException(
+        #         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        #         detail=f"Failed to send OTP: {otp_result.get('message')}"
+        #     )
             
     except IntegrityError as e:
         await db.rollback()

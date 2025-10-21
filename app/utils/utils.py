@@ -289,8 +289,8 @@ async def send_sms(phone_number: str, phone_code: str) -> dict:
 
     payload = {
         "to": phone_number,
-        "from": " N-Alert",
-        "sms": f"Your verification code from ServiPal is: {phone_code}. This code will expire in 25 minutes.",
+        "from": "N-Alert",
+        "sms": f"Your verification code from ServiPal is: {phone_code}. This code will expire in 30 minutes.",
         "type": "plain",
         "channel": "dnd",
         "api_key": settings.SMS_API_KEY,

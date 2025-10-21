@@ -199,7 +199,7 @@ class Settings(BaseSettings):
     TEST_BASE_URL: str = "http://test"
     
     # Test
-    TEST: bool = False
+    TEST: bool = True
     
     # Finger Print
     FINGER_PRINT: str

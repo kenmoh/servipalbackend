@@ -57,11 +57,11 @@ class CreateUserSchema(BaseModel):
 
 
 class CreateUserResponseSchema(BaseModel):
-    id: str
+    id: UUID
     email: EmailStr
     user_type: UserType
-    message: str
-    otp_sent: bool
+    # message: str
+    # otp_sent: bool
 
     class Config:
         from_attributes = True

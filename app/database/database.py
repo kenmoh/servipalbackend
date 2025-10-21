@@ -1,6 +1,7 @@
 from contextlib import asynccontextmanager
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import AsyncGenerator
+from sqlalchemy.pool import NullPool
 
 from sqlalchemy.orm import DeclarativeBase
 from sqlalchemy.ext.asyncio import (
@@ -19,16 +20,24 @@ from urllib.parse import urlparse
 DEBUG = settings.DEBUG
 
 
-# Parse and clean test database URL
-test_db_url = settings.TEST_DATABASE_URL
-parsed_url = urlparse(test_db_url)
-cleaned_test_url = f"{parsed_url.scheme}://{parsed_url.netloc}{parsed_url.path}"
 
-# Create test engine
-test_engine = create_async_engine(cleaned_test_url, echo=True, future=True)
-TestingSessionLocal = async_sessionmaker(
-    test_engine, class_=AsyncSession, expire_on_commit=False
-)
+# def create_test_engine():
+#     return create_async_engine(settings.TEST_DATABASE_URL, future=True)
+
+def create_test_session(engine):
+    return async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
+
+def create_test_engine():
+    """Create test database engine with prepared statements disabled."""
+    return create_async_engine(
+        settings.TEST_DATABASE_URL,  # or your test DB URL
+        poolclass=NullPool,  # Don't pool connections in tests
+        echo=False,
+        connect_args={
+            "prepared_statement_cache_size": 0,  # CRITICAL: Disable prepared statement cache
+            "statement_cache_size": 0,  # Also disable statement cache
+        }
+    )
 
 
 engine = create_async_engine(
