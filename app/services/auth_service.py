@@ -217,7 +217,7 @@ async def create_user1(db: AsyncSession, user_data: CreateUserSchema) -> UserBas
         email_code, phone_code = await generate_verification_codes(user, profile, db)
 
         # Send verification code to phone and email
-        if settings.TEST == False:
+        if settings.TEST == False or settings.TEST == "False":
             await send_verification_codes(
                 user=user, email_code=email_code, phone_code=phone_code, db=db
             )
@@ -1755,7 +1755,7 @@ async def create_user(db: AsyncSession, user_data: CreateUserSchema) -> CreateUs
 #     }
 
 
-async def resend_otp(user_id: UUID, db: AsyncSession) -> dict:
+async def resend_otp(email: str, db: AsyncSession) -> dict:
     """
     Resend OTP to user's email and phone.
     
@@ -1766,11 +1766,12 @@ async def resend_otp(user_id: UUID, db: AsyncSession) -> dict:
         Success message
     """
     # Get user with profile
-    user_query = (
-        select(User)
-        .options(selectinload(User.profile))
-        .where(User.id == user_id)
-    )
+    # user_query = (
+    #     select(User)
+    #     .options(selectinload(User.profile))
+    #     .where(User.id == user_id)
+    # )
+    user_query = select(User).where(User.email == email)
     user = await db.scalar(user_query)
     
     if not user:
@@ -1785,7 +1786,7 @@ async def resend_otp(user_id: UUID, db: AsyncSession) -> dict:
             detail="User already verified"
         )
     
-    # Check rate limiting (optional)
+    # Check rate limiting
     rate_limit_key = f"otp_rate_limit:{user_id}"
     if redis_client.exists(rate_limit_key):
         raise HTTPException(
@@ -1794,31 +1795,64 @@ async def resend_otp(user_id: UUID, db: AsyncSession) -> dict:
         )
     
     # Generate new OTP
-    otp_result = await generate_otp(user.email, user.profile.phone_number)
-    
-    if otp_result["status"] == "success":
-        # Update OTP references in Redis
-        otp_data = {
-            "email_reference": otp_result["references"].get("email"),
-            "sms_reference": otp_result["references"].get("sms"),
-            "user_id": user.id,
-            "email": user.email
-        }
-        redis_client.setex(
-            f"otp_verification:{user.id}",
-            1800,  # 30 minutes expiry
-            json.dumps(otp_data)
+    # otp_result = await generate_otp(user.email, user.profile.phone_number)
+
+    email_code = lambda: ''.join([str(secrets.randbelow(10)) for _ in range(6)])
+    phone_code = lambda: ''.join([str(secrets.randbelow(10)) for _ in range(6)])
+    expires_at = datetime.now() + timedelta(minutes=30)
+
+
+    codes = await db.execute(update(VerificationCode).where(VerificationCode.user_id=user.id).values(email_code=email_code, phone_code=phone_code, expires_at=expires_at))
+    await db.commit()
+
+    # Check rate limiting
+    rate_limit_key = f"otp_rate_limit:{user_id}"
+    if redis_client.exists(rate_limit_key):
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Please wait before requesting another OTP"
         )
-        
-        # Set rate limit (60 seconds cooldown)
-        redis_client.setex(rate_limit_key, 60, "1")
-        
-        return {
-            "message": "OTP resent successfully to email and phone",
-            "user_id": user.id
-        }
+
+    if codes.email_code and codes.phone_code:    
+        await send_verification_codes(
+                    user=user, email_code=codes.email_code, phone_code=codes.phone_code, db=db
+                )
+
+            # Set rate limit (60 seconds cooldown)
+            redis_client.setex(rate_limit_key, 60, "1")
+
     else:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to send OTP: {otp_result.get('message')}"
         )
+
+
+    
+    # Flutterwave option
+    # if otp_result["status"] == "success":
+    #     # Update OTP references in Redis
+    #     otp_data = {
+    #         "email_reference": otp_result["references"].get("email"),
+    #         "sms_reference": otp_result["references"].get("sms"),
+    #         "user_id": user.id,
+    #         "email": user.email
+    #     }
+    #     redis_client.setex(
+    #         f"otp_verification:{user.id}",
+    #         1800,  # 30 minutes expiry
+    #         json.dumps(otp_data)
+    #     )
+        
+    #     # Set rate limit (60 seconds cooldown)
+    #     redis_client.setex(rate_limit_key, 60, "1")
+        
+    #     return {
+    #         "message": "OTP resent successfully to email and phone",
+    #         "user_id": user.id
+    #     }
+    # else:
+    #     raise HTTPException(
+    #         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+    #         detail=f"Failed to send OTP: {otp_result.get('message')}"
+    #     )
