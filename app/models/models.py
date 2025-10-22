@@ -258,8 +258,9 @@ class ProfileImage(Base):
 
 class VerificationCode(Base):
     __tablename__ = "verification_codes"
-    
-    user_id: Mapped[UUID] = mapped_column(ForeignKey("users.id"), nullable=False, primary_key=True)
+
+
+    user_id: Mapped[UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, primary_key=True)
     email_code: Mapped[str] = mapped_column(
         String(6), 
         nullable=False, 
@@ -284,7 +285,7 @@ class Session(Base):
     __tablename__ = "sessions"
 
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
-    user_id: Mapped[UUID] = mapped_column(ForeignKey("users.id"))
+    user_id: Mapped[UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
     terminated_by: Mapped[Optional[UUID]] = mapped_column(
         ForeignKey("users.id"), nullable=True
     )
@@ -301,7 +302,7 @@ class Session(Base):
 class Wallet(Base):
     __tablename__ = "wallets"
 
-    id: Mapped[UUID] = mapped_column(ForeignKey("users.id"), primary_key=True)
+    id: Mapped[UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
     balance: Mapped[Decimal] = mapped_column(default=0.00)
     escrow_balance: Mapped[Decimal] = mapped_column(default=0.00)
     # idempotency_key: Mapped[str] = mapped_column(nullable=True)
@@ -385,7 +386,7 @@ class Item(Base):
 
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
     item_type: Mapped[ItemType] = mapped_column(index=True)
-    user_id: Mapped[UUID] = mapped_column(ForeignKey("users.id"), index=True)
+    user_id: Mapped[UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
     name: Mapped[str]
     store_name: Mapped[str] = mapped_column(nullable=True)
     description: Mapped[str] = mapped_column(nullable=True)
@@ -512,8 +513,8 @@ class Order(Base):
 class OrderItem(Base):
     __tablename__ = "order_items"
 
-    order_id: Mapped[UUID] = mapped_column(ForeignKey("orders.id"), primary_key=True)
-    item_id: Mapped[UUID] = mapped_column(ForeignKey("items.id"), primary_key=True)
+    order_id: Mapped[UUID] = mapped_column(ForeignKey("orders.id", ondelete="SET NULL"), primary_key=True)
+    item_id: Mapped[UUID] = mapped_column(ForeignKey("items.id", ondelete="SET NULL"), primary_key=True)
     quantity: Mapped[int] = mapped_column(default=1)
     sizes: Mapped[str] = mapped_column(ARRAY(String), nullable=True)
     colors: Mapped[list[str]] = mapped_column(ARRAY(String), nullable=True)
@@ -527,7 +528,7 @@ class Delivery(Base):
     __tablename__ = "deliveries"
 
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
-    order_id: Mapped[UUID] = mapped_column(ForeignKey("orders.id"))
+    order_id: Mapped[UUID] = mapped_column(ForeignKey("orders.id", ondelete="SET NULL"))
     rider_id: Mapped[UUID] = mapped_column(
         ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )
@@ -598,13 +599,13 @@ class Review(Base):
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
 
     reviewer_id: Mapped[UUID] = mapped_column(
-        ForeignKey("users.id")
+        ForeignKey("users.id", ondelete="SET NULL")
     )  # Who wrote the review
     order_id: Mapped[Optional[UUID]] = mapped_column(
-        ForeignKey("orders.id"), nullable=True
+        ForeignKey("orders.id", ondelete="SET NULL"), nullable=True
     )
     item_id: Mapped[Optional[UUID]] = mapped_column(
-        ForeignKey("items.id"), nullable=True
+        ForeignKey("items.id", ondelete="CASCADE"), nullable=True
     )
 
     reviewee_id: Mapped[Optional[UUID]] = mapped_column(
@@ -652,8 +653,8 @@ class UserReport(Base):
         ForeignKey("orders.id"), nullable=True
     )
 
-    complainant_id: Mapped[UUID] = mapped_column(ForeignKey("users.id"), nullable=False)
-    defendant_id: Mapped[UUID] = mapped_column(ForeignKey("users.id"), nullable=False)
+    complainant_id: Mapped[UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    defendant_id: Mapped[UUID] = mapped_column(ForeignKey("users.id",  ondelete="CASCADE"), nullable=False)
 
     reported_user_type: Mapped[ReportedUserType]
     report_tag: Mapped[ReportTag]
@@ -715,11 +716,11 @@ class Message(Base):
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
     message_type: Mapped[MessageType] = mapped_column(default=MessageType.REPORT)
     content: Mapped[str] = mapped_column(Text)
-    sender_id: Mapped[UUID] = mapped_column(ForeignKey("users.id"), nullable=True)
+    sender_id: Mapped[UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=True)
 
     # For report messages
     report_id: Mapped[Optional[UUID]] = mapped_column(
-        ForeignKey("user_reports.id"), nullable=True
+        ForeignKey("user_reports.id", ondelete="CASCADE"), nullable=True
     )
     role: Mapped[Optional[UserType]] = mapped_column(nullable=True)
 
