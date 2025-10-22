@@ -1802,7 +1802,7 @@ async def resend_otp(email: str, db: AsyncSession) -> dict:
     expires_at = datetime.now() + timedelta(minutes=30)
 
 
-    codes = await db.execute(update(VerificationCode).where(VerificationCode.user_id=user.id).values(email_code=email_code, phone_code=phone_code, expires_at=expires_at))
+    codes = await db.execute(update(VerificationCode).where(VerificationCode.user_id==user.id).values(email_code=email_code, phone_code=phone_code, expires_at=expires_at))
     await db.commit()
 
     # Check rate limiting
