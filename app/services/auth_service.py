@@ -262,7 +262,7 @@ async def create_new_rider(
     data: RiderCreate,
     db: AsyncSession,
     current_user: User,
-) -> UserBase:
+) -> CreateUserResponseSchema:
     """
     Creates a new rider user and assigns them to the current dispatch user.
     Ultra-optimized version using database constraints for validation.
@@ -349,15 +349,10 @@ async def create_new_rider(
         await db.commit()
         await db.refresh(new_rider)
 
-        rider_dict = {
-            "user_type": new_rider.user_type,
-            "email": new_rider.email,
-        }
-
         # Generate and send verification codes
         email_code, phone_code = await generate_verification_codes(new_rider, rider_profile, db)
 
-        if settings.TEST != 'true':
+        if settings.TEST is not True:
             await send_verification_codes(
                 user=new_rider, email_code=email_code, phone_code=phone_code, db=db
             )
@@ -369,7 +364,11 @@ async def create_new_rider(
             {"email": new_rider.email, "user_type": new_rider.user_type}
         )
 
-        return UserBase(**rider_dict)
+        return CreateUserResponseSchema(
+            id=new_rider.id,
+            email=new_rider.email,
+            user_type=new_rider.user_type,
+        )
 
     except IntegrityError as e:
         await db.rollback()
@@ -1656,104 +1655,104 @@ async def create_user(db: AsyncSession, user_data: CreateUserSchema) -> CreateUs
             )
 
 
-async def verify_user_contact1(
-    user_id: UUID,
-    email_otp: str,
-    phone_otp: str,
-    db: AsyncSession
-) -> dict:
-    """
-    Verify both email and phone OTPs using Flutterwave.
+# async def verify_user_contact1(
+#     user_id: UUID,
+#     email_otp: str,
+#     phone_otp: str,
+#     db: AsyncSession
+# ) -> dict:
+#     """
+#     Verify both email and phone OTPs using Flutterwave.
     
-    Args:
-        user_id: User ID to verify
-        email_otp: OTP code sent to email
-        phone_otp: OTP code sent to phone
-        db: Database session
-    Returns:
-        Success message
-    """
-    # Get OTP references from Redis
-    otp_data_json = redis_client.get(f"otp_verification:{user_id}")
+#     Args:
+#         user_id: User ID to verify
+#         email_otp: OTP code sent to email
+#         phone_otp: OTP code sent to phone
+#         db: Database session
+#     Returns:
+#         Success message
+#     """
+#     # Get OTP references from Redis
+#     otp_data_json = redis_client.get(f"otp_verification:{user_id}")
     
-    if not otp_data_json:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="OTP session expired or not found. Please request a new OTP."
-        )
+#     if not otp_data_json:
+#         raise HTTPException(
+#             status_code=status.HTTP_404_NOT_FOUND,
+#             detail="OTP session expired or not found. Please request a new OTP."
+#         )
 
     
-    otp_data = json.loads(otp_data_json)
+#     otp_data = json.loads(otp_data_json)
     
-    # Additional check: ensure the stored user_id matches
-    if otp_data["user_id"] != user_id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Unauthorized verification attempt"
-        )
+#     # Additional check: ensure the stored user_id matches
+#     if otp_data["user_id"] != user_id:
+#         raise HTTPException(
+#             status_code=status.HTTP_403_FORBIDDEN,
+#             detail="Unauthorized verification attempt"
+#         )
     
-    # Get user with profile
-    user_query = (
-        select(User)
-        .options(selectinload(User.profile))
-        .where(User.id == user_id)
-    )
-    user = await db.scalar(user_query)
+#     # Get user with profile
+#     user_query = (
+#         select(User)
+#         .options(selectinload(User.profile))
+#         .where(User.id == user_id)
+#     )
+#     user = await db.scalar(user_query)
     
-    if not user:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="User not found"
-        )
+#     if not user:
+#         raise HTTPException(
+#             status_code=status.HTTP_404_NOT_FOUND,
+#             detail="User not found"
+#         )
     
-    if user.account_status == AccountStatus.CONFIRMED:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="User already verified"
-        )
+#     if user.account_status == AccountStatus.CONFIRMED:
+#         raise HTTPException(
+#             status_code=status.HTTP_400_BAD_REQUEST,
+#             detail="User already verified"
+#         )
     
-    # Validate email OTP
-    email_validation = await validate_otp(
-        otp_data["email_reference"], 
-        email_otp
-    )
+#     # Validate email OTP
+#     email_validation = await validate_otp(
+#         otp_data["email_reference"], 
+#         email_otp
+#     )
     
-    if email_validation["status"] != "success":
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Invalid email OTP: {email_validation.get('message')}"
-        )
+#     if email_validation["status"] != "success":
+#         raise HTTPException(
+#             status_code=status.HTTP_400_BAD_REQUEST,
+#             detail=f"Invalid email OTP: {email_validation.get('message')}"
+#         )
     
-    # Validate phone OTP
-    phone_validation = await validate_otp(
-        otp_data["sms_reference"], 
-        phone_otp
-    )
+#     # Validate phone OTP
+#     phone_validation = await validate_otp(
+#         otp_data["sms_reference"], 
+#         phone_otp
+#     )
     
-    if phone_validation["status"] != "success":
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Invalid phone OTP: {phone_validation.get('message')}"
-        )
+#     if phone_validation["status"] != "success":
+#         raise HTTPException(
+#             status_code=status.HTTP_400_BAD_REQUEST,
+#             detail=f"Invalid phone OTP: {phone_validation.get('message')}"
+#         )
     
-    # Both OTPs are valid, update user verification status
-    user.is_email_verified = True
-    user.profile.is_phone_verified = True
-    user.account_status = AccountStatus.CONFIRMED
+#     # Both OTPs are valid, update user verification status
+#     user.is_email_verified = True
+#     user.profile.is_phone_verified = True
+#     user.account_status = AccountStatus.CONFIRMED
     
-    await db.commit()
+#     await db.commit()
     
-    # Clean up Redis
-    redis_client.delete(f"otp_verification:{user_id}")
+#     # Clean up Redis
+#     redis_client.delete(f"otp_verification:{user_id}")
     
-    # Send welcome email
-    await send_welcome_email(user)
+#     # Send welcome email
+#     await send_welcome_email(user)
     
-    return {
-        "message": "Email and phone verified successfully",
-        "user_id": user.id,
-        "email": user.email
-    }
+#     return {
+#         "message": "Email and phone verified successfully",
+#         "user_id": user.id,
+#         "email": user.email
+#     }
 
 
 async def resend_otp(user_id: UUID, db: AsyncSession) -> dict:

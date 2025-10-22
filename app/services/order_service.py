@@ -64,7 +64,9 @@ from app.schemas.item_schemas import ItemType
 
 from app.schemas.status_schema import RequireDeliverySchema, DeliveryStatus
 from app.schemas.user_schemas import UserType, WalletRespose
-from app.utils import logger_config
+from app.utils.logger_config import setup_logger
+
+
 from app.utils.utils import (
     get_dispatch_id,
     get_payment_link,
@@ -74,7 +76,7 @@ from app.utils.utils import (
 from app.config.config import redis_client, settings
 from app.utils.s3_service import add_image
 
-
+logger = setup_logger()
 ALL_DELIVERY = "orders"
 
 
@@ -691,7 +693,7 @@ async def create_package_order(
 
     except Exception as e:
         await db.rollback()
-        logger_config.logger.error(f"Failed to create package order: {e}", exc_info=True)
+        logger.error(f"Failed to create package order: {e}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to create package order: {e}",
@@ -1179,7 +1181,7 @@ async def create_food_or_laundry_order(
         raise
     except Exception as e:
         await db.rollback()
-        logger_config.logger.error(f"Failed to create order: {e}", exc_info=True)
+        logger.error(f"Failed to create order: {e}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to create order - {e}",
@@ -1597,7 +1599,7 @@ async def cancel_order(db: AsyncSession, order_id: UUID, current_user: User, rea
                     navigate_to="/delivery/orders"
                 )
         except Exception as e:
-            logger_config.logger.warning(f"Failed to send cancellation notification: {e}")
+            logger.warning(f"Failed to send cancellation notification: {e}")
 
         # Broadcast status update
         await ws_service.broadcast_order_status_update(
@@ -1623,7 +1625,7 @@ async def cancel_order(db: AsyncSession, order_id: UUID, current_user: User, rea
         raise
     except Exception as e:
         await db.rollback()
-        logger_config.logger.error(
+        logger.error(
             f"Failed to cancel order {order_id}: {str(e)}",
             exc_info=True
         )
@@ -1690,7 +1692,7 @@ async def cancel_delivery(db: AsyncSession, order_id: UUID, current_user: User, 
         raise
     except Exception as e:
         await db.rollback()
-        logger_config.logger.error(
+        logger.error(
             f"Failed to cancel delivery {order_id}: {str(e)}", 
             exc_info=True
         )
@@ -1811,7 +1813,7 @@ async def _order_to_cancel(db: AsyncSession, order_id: UUID) -> Order:
     except HTTPException:
         raise
     except Exception as e:
-        logger_config.logger.error(f"Error fetching order {order_id}: {str(e)}", exc_info=True)
+        logger.error(f"Error fetching order {order_id}: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to retrieve order: {str(e)}"
@@ -1898,7 +1900,7 @@ async def _rider_or_dispatch_cancel_delivery(
     except HTTPException:
         raise
     except Exception as e:
-        logger_config.logger.error(
+        logger.error(
             f"Error in rider/dispatch cancellation for order {order.id}: {str(e)}", 
             exc_info=True
         )
@@ -2039,7 +2041,7 @@ async def _process_post_delivery_cancellation_rider(
                         navigate_to="/delivery/orders"
                     )
         except Exception as e:
-            logger_config.logger.warning(f"Failed to send cancellation notifications: {e}")
+            logger.warning(f"Failed to send cancellation notifications: {e}")
 
         # 6. Broadcast WebSocket updates
         await ws_service.broadcast_order_status_update(
@@ -2057,7 +2059,7 @@ async def _process_post_delivery_cancellation_rider(
         )
 
     except Exception as e:
-        logger_config.logger.error(
+        logger.error(
             f"Error in rider cancellation processing for order {order.id}: {str(e)}", 
             exc_info=True
         )
@@ -2145,7 +2147,7 @@ async def _process_post_delivery_cancellation_sender(
                     navigate_to="/delivery/orders",
                 )
         except Exception as e:
-            logger_config.logger.warning(f"Failed to send cancellation notification: {e}")
+            logger.warning(f"Failed to send cancellation notification: {e}")
 
         # 5. Broadcast status updates
         await ws_service.broadcast_order_status_update(
@@ -2163,7 +2165,7 @@ async def _process_post_delivery_cancellation_sender(
         )
 
     except Exception as e:
-        logger_config.logger.error(
+        logger.error(
             f"Error in sender cancellation processing for order {order.id}: {str(e)}", 
             exc_info=True
         )
@@ -2327,7 +2329,7 @@ async def cancel_order_or_delivery(
                     )
             except HTTPException as e:
                 if e.status_code == status.HTTP_404_NOT_FOUND:
-                    logger_config.logger.warning(f"Could not send rider cancellation notification: {e.detail}")
+                    logger.warning(f"Could not send rider cancellation notification: {e.detail}")
                 else:
                     raise
 
@@ -2446,7 +2448,7 @@ async def cancel_order_or_delivery(
                         )
             except HTTPException as e:
                 if e.status_code == 404 and "Notification token not found" in e.detail:
-                    logger_config.logger.warning(f"Could not send cancellation notification: {e.detail}")
+                    logger.warning(f"Could not send cancellation notification: {e.detail}")
                 else:
                     raise
 
@@ -2569,7 +2571,7 @@ async def re_list_item_for_delivery(
                     )
             except HTTPException as e:
                 if e.status_code == 404:
-                    logger_config.logger.warning(
+                    logger.warning(
                         f"Could not send re-list notification: {e.detail}"
                     )
                 else:
@@ -2615,7 +2617,7 @@ async def vendor_mark_order_delivered(
 
         # Comprehensive validation
         if not order:
-            logger_config.logger.error(f"Order {order_id} not found for vendor {current_user.id}")
+            logger.error(f"Order {order_id} not found for vendor {current_user.id}")
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND, 
                 detail="Order not found or has been deleted."
@@ -2623,7 +2625,7 @@ async def vendor_mark_order_delivered(
             
         # Authorization validation
         if order.vendor_id != current_user.id:
-            logger_config.logger.warning(
+            logger.warning(
                 f"Unauthorized order status update attempt by vendor {current_user.id} "
                 f"for order {order_id}"
             )
@@ -2665,7 +2667,7 @@ async def vendor_mark_order_delivered(
         try:
             await _notify_order_pickup_delivered(order, db)
         except Exception as e:
-            logger_config.logger.error(
+            logger.error(
                 f"Failed to send notifications for order {order_id}: {str(e)}",
                 exc_info=True
             )
@@ -2675,7 +2677,7 @@ async def vendor_mark_order_delivered(
         try:
             _invalidate_pickup_order_caches(order, current_user)
         except Exception as e:
-            logger_config.logger.error(
+            logger.error(
                 f"Failed to invalidate caches for order {order_id}: {str(e)}",
                 exc_info=True
             )
@@ -2687,7 +2689,7 @@ async def vendor_mark_order_delivered(
             new_status=order.order_status
         )
 
-        logger_config.logger.info(
+        logger.info(
             f"Successfully marked order {order_id} as delivered by vendor {current_user.id}"
         )
             
@@ -2698,7 +2700,7 @@ async def vendor_mark_order_delivered(
         raise
     except Exception as e:
         await db.rollback()
-        logger_config.logger.error(
+        logger.error(
             f"Unexpected error marking order {order_id} as delivered: {str(e)}",
             exc_info=True
         )
@@ -2741,7 +2743,7 @@ async def _notify_order_pickup_delivered(order: Order, db: AsyncSession):
             except Exception as e:
                 retry_count += 1
                 if retry_count == MAX_RETRIES:
-                    logger_config.logger.error(
+                    logger.error(
                         f"Failed to send notification to {role} after {MAX_RETRIES} attempts: {str(e)}",
                         exc_info=True
                     )
@@ -2765,7 +2767,7 @@ def _invalidate_pickup_order_caches(order: Order, current_user: User):
         try:
             redis_client.delete(key)
         except Exception as e:
-            logger_config.logger.error(f"Failed to invalidate cache key {key}: {str(e)}")
+            logger.error(f"Failed to invalidate cache key {key}: {str(e)}")
             continue  # Continue with other cache invalidations
 
 async def rider_accept_delivery_order_old(
@@ -3101,7 +3103,7 @@ async def rider_accept_delivery_order(
         raise
     except Exception as e: # Catch unexpected errors
         await db.rollback()
-        logger_config.logger.error(f"Failed to accept delivery for order {order_id}: {e}", exc_info=True)
+        logger.error(f"Failed to accept delivery for order {order_id}: {e}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="An unexpected error occurred while accepting the delivery.",
@@ -3345,7 +3347,7 @@ async def _validate_delivery(order: Order, current_user: User):
     try:
         # 1. Existence check
         if not order:
-            logger_config.logger.error(f"Attempted to validate non-existent order")
+            logger.error(f"Attempted to validate non-existent order")
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Order not found"
@@ -3353,7 +3355,7 @@ async def _validate_delivery(order: Order, current_user: User):
 
         # 2. Authorization check
         if order.owner_id != current_user.id:
-            logger_config.logger.warning(
+            logger.warning(
                 f"Unauthorized confirmation attempt: User {current_user.id} tried to confirm "
                 f"order {order.id} owned by {order.owner_id}"
             )
@@ -3364,7 +3366,7 @@ async def _validate_delivery(order: Order, current_user: User):
 
         # 3. Transaction reference check
         if not order.tx_ref:
-            logger_config.logger.error(
+            logger.error(
                 f"Order {order.id} missing transaction reference"
             )
             raise HTTPException(
@@ -3377,7 +3379,7 @@ async def _validate_delivery(order: Order, current_user: User):
 
         # 4. Delivery existence check
         if not order.delivery:
-            logger_config.logger.error(
+            logger.error(
                 f"Order {order.id} has no associated delivery"
             )
             raise HTTPException(
@@ -3387,7 +3389,7 @@ async def _validate_delivery(order: Order, current_user: User):
 
         # 5. Payment status check
         if order.order_payment_status != PaymentStatus.PAID:
-            logger_config.logger.warning(
+            logger.warning(
                 f"Attempted to confirm unpaid delivery for order {order.id}"
             )
             raise HTTPException(
@@ -3397,7 +3399,7 @@ async def _validate_delivery(order: Order, current_user: User):
 
         # 6. Delivery status validation
         if order.delivery.delivery_status == DeliveryStatus.RECEIVED:
-            logger_config.logger.warning(
+            logger.warning(
                 f"Duplicate confirmation attempt for order {order.id}"
             )
             raise HTTPException(
@@ -3406,7 +3408,7 @@ async def _validate_delivery(order: Order, current_user: User):
             )
 
         if order.delivery.delivery_status != DeliveryStatus.DELIVERED:
-            logger_config.logger.warning(
+            logger.warning(
                 f"Invalid status transition attempt for order {order.id}: "
                 f"from {order.delivery.delivery_status} to RECEIVED"
             )
@@ -3418,14 +3420,14 @@ async def _validate_delivery(order: Order, current_user: User):
                 )
             )
 
-        logger_config.logger.info(
+        logger.info(
             f"Delivery validation successful for order {order.id}"
         )
 
     except HTTPException:
         raise
     except Exception as e:
-        logger_config.logger.error(
+        logger.error(
             f"Unexpected error validating delivery for order: {str(e)}",
             exc_info=True
         )
@@ -3452,12 +3454,12 @@ async def _update_order_status(order: Order, db: AsyncSession, status: OrderStat
         order.order_status = status
         db.add(order)
                 
-        logger_config.logger.info(
+        logger.info(
             f"Order {order.id} status updated: {old_status} -> {status}"
         )
         
     except Exception as e:
-        logger_config.logger.error(
+        logger.error(
             f"Failed to update status for order {order.id}: {str(e)}",
             exc_info=True
         )
@@ -3511,13 +3513,13 @@ async def _update_delivery_status(
         db.add(order.delivery)
         
         
-        logger_config.logger.info(
+        logger.info(
             f"Updated order {order.id} delivery status: "
             f"{old_delivery_status} -> {delivery_status}"
         )
         
     except ValueError as e:
-        logger_config.logger.warning(
+        logger.warning(
             f"Invalid status transition for order {order.id}: {str(e)}"
         )
         raise HTTPException(
@@ -3525,7 +3527,7 @@ async def _update_delivery_status(
             detail=str(e)
         )
     except Exception as e:
-        logger_config.logger.error(
+        logger.error(
             f"Failed to update delivery status for order {order.id}: {str(e)}",
             exc_info=True
         )
@@ -3601,12 +3603,12 @@ async def _send_notifications(order: Order, db: AsyncSession):
                     navigate_to="/delivery/orders"
                 )
 
-        logger_config.logger.info(
+        logger.info(
             f"Successfully sent completion notifications for order {order.id}"
         )
 
     except Exception as e:
-        logger_config.logger.error(
+        logger.error(
             f"Failed to send some notifications for order {order.id}: {str(e)}",
             exc_info=True
         )
@@ -3661,12 +3663,12 @@ def _invalidate_caches(order: Order, current_user: User):
         # Batch delete all keys
         deleted = redis_client.delete(*cache_keys)
         
-        logger_config.logger.info(
+        logger.info(
             f"Successfully invalidated {deleted} cache keys for order {order.id}"
         )
         
     except Exception as e:
-        logger_config.logger.warning(
+        logger.warning(
             f"Failed to invalidate some caches for order {order.id}: {str(e)}. "
             "This is non-critical and caches will expire naturally.",
             exc_info=True
@@ -3731,7 +3733,7 @@ async def sender_confirm_package_received(
             try:
                 await _package_settlement(order)
             except Exception as e:
-                logger_config.logger.error(
+                logger.error(
                     f"Settlement failed for order {order.id}: {str(e)}",
                     exc_info=True
                 )
@@ -3770,13 +3772,13 @@ async def sender_confirm_package_received(
             _invalidate_caches(order, current_user)
             
         except Exception as e:
-            logger_config.logger.warning(
+            logger.warning(
                 f"Non-critical post-confirmation operations failed for order {order.id}: {str(e)}",
                 exc_info=True
             )
 
         # 8. Log successful completion
-        logger_config.logger.info(
+        logger.info(
             f"Package delivery confirmation completed successfully for order {order.id}"
         )
 
@@ -3790,7 +3792,7 @@ async def sender_confirm_package_received(
         raise
     except Exception as e:
         await db.rollback()
-        logger_config.logger.error(
+        logger.error(
             f"Failed to confirm package received for order {order_id}: {str(e)}",
             exc_info=True
         )
@@ -3886,14 +3888,14 @@ async def _order_settlement(order: Order):
             )
 
             settlement_succeeded = True
-            logger_config.logger.info(
+            logger.info(
                 f"Order settlement completed for order {order.id}: "
                 f"vendor_amount={order.amount_due_vendor}, total={order.grand_total}"
             )
 
         except Exception as e:
             retry_count += 1
-            logger_config.logger.error(
+            logger.error(
                 f"Order settlement attempt {retry_count} failed for order {order.id}: {str(e)}",
                 exc_info=True
             )
@@ -3990,14 +3992,14 @@ async def _package_settlement(order: Order):
             )
 
             settlement_succeeded = True
-            logger_config.logger.info(
+            logger.info(
                 f"Package settlement completed for order {order.id}: "
                 f"dispatch_amount={dispatch_amount}, total_spent={total_spent}"
             )
 
         except Exception as e:
             retry_count += 1
-            logger_config.logger.error(
+            logger.error(
                 f"Package settlement attempt {retry_count} failed for order {order.id}: {str(e)}",
                 exc_info=True
             )
@@ -4046,7 +4048,7 @@ async def customer_confirm_order_received(
         try:
             await _update_order_status(order, db, OrderStatus.RECEIVED)
         except Exception as e:
-            logger_config.logger.error(
+            logger.error(
                 f"Failed to update order status for {order.id}: {str(e)}",
                 exc_info=True
             )
@@ -4059,7 +4061,7 @@ async def customer_confirm_order_received(
         try:
             await _order_settlement(order)
         except Exception as e:
-            logger_config.logger.error(
+            logger.error(
                 f"Settlement failed for order {order.id}: {str(e)}",
                 exc_info=True
             )
@@ -4087,7 +4089,7 @@ async def customer_confirm_order_received(
                 }
             )
         except Exception as e:
-            logger_config.logger.error(
+            logger.error(
                 f"Failed to create audit log for order {order.id}: {str(e)}",
                 exc_info=True
             )
@@ -4103,13 +4105,13 @@ async def customer_confirm_order_received(
             _invalidate_order_caches(order, current_user)
             
         except Exception as e:
-            logger_config.logger.warning(
+            logger.warning(
                 f"Non-critical post-confirmation tasks failed for order {order.id}: {str(e)}",
                 exc_info=True
             )
 
         # 7. Log successful completion
-        logger_config.logger.info(
+        logger.info(
             f"Order confirmation completed successfully for order {order.id}"
         )
 
@@ -4120,7 +4122,7 @@ async def customer_confirm_order_received(
         raise
     except Exception as e:
         await db.rollback()
-        logger_config.logger.error(
+        logger.error(
             f"Failed to confirm order {order_id}: {str(e)}",
             exc_info=True
         )
@@ -4147,7 +4149,7 @@ async def _validate_order_confirmation(order: Order, current_user: User):
     try:
         # Basic validation
         if not order:
-            logger_config.logger.error(f"Attempted to confirm non-existent order")
+            logger.error(f"Attempted to confirm non-existent order")
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Order not found"
@@ -4155,7 +4157,7 @@ async def _validate_order_confirmation(order: Order, current_user: User):
         
         # Authorization check
         if order.owner_id != current_user.id:
-            logger_config.logger.warning(
+            logger.warning(
                 f"Unauthorized confirmation attempt: User {current_user.id} "
                 f"tried to confirm order {order.id} owned by {order.owner_id}"
             )
@@ -4166,7 +4168,7 @@ async def _validate_order_confirmation(order: Order, current_user: User):
         
         # Order type validation
         if order.order_type not in [OrderType.FOOD, OrderType.LAUNDRY]:
-            logger_config.logger.error(
+            logger.error(
                 f"Invalid order type {order.order_type} for confirmation"
             )
             raise HTTPException(
@@ -4176,7 +4178,7 @@ async def _validate_order_confirmation(order: Order, current_user: User):
         
         # Payment validation
         if order.order_payment_status != PaymentStatus.PAID:
-            logger_config.logger.warning(
+            logger.warning(
                 f"Attempted to confirm unpaid order {order.id}"
             )
             raise HTTPException(
@@ -4186,7 +4188,7 @@ async def _validate_order_confirmation(order: Order, current_user: User):
 
         # Transaction reference check
         if not order.tx_ref:
-            logger_config.logger.error(
+            logger.error(
                 f"Order {order.id} missing transaction reference"
             )
             raise HTTPException(
@@ -4196,7 +4198,7 @@ async def _validate_order_confirmation(order: Order, current_user: User):
 
         # Status validation
         if order.order_status == OrderStatus.RECEIVED:
-            logger_config.logger.warning(
+            logger.warning(
                 f"Duplicate confirmation attempt for order {order.id}"
             )
             raise HTTPException(
@@ -4205,7 +4207,7 @@ async def _validate_order_confirmation(order: Order, current_user: User):
             )
 
         if order.order_status != OrderStatus.DELIVERED:
-            logger_config.logger.warning(
+            logger.warning(
                 f"Invalid status transition attempt for order {order.id}: "
                 f"from {order.order_status} to RECEIVED"
             )
@@ -4216,7 +4218,7 @@ async def _validate_order_confirmation(order: Order, current_user: User):
             
         # Amount validation
         if order.amount_due_vendor <= 0 or order.grand_total <= 0:
-            logger_config.logger.error(
+            logger.error(
                 f"Invalid amounts for order {order.id}: "
                 f"due_vendor={order.amount_due_vendor}, total={order.grand_total}"
             )
@@ -4225,14 +4227,14 @@ async def _validate_order_confirmation(order: Order, current_user: User):
                 detail="Invalid order amounts"
             )
 
-        logger_config.logger.info(
+        logger.info(
             f"Order validation successful for confirmation of order {order.id}"
         )
 
     except HTTPException:
         raise
     except Exception as e:
-        logger_config.logger.error(
+        logger.error(
             f"Unexpected error validating order confirmation: {str(e)}",
             exc_info=True
         )
@@ -4296,12 +4298,12 @@ async def _notify_order_completion(order: Order, db: AsyncSession):
                 }
             )
 
-        logger_config.logger.info(
+        logger.info(
             f"Successfully sent completion notifications for order {order.id}"
         )
 
     except Exception as e:
-        logger_config.logger.error(
+        logger.error(
             f"Failed to send some notifications for order {order.id}: {str(e)}",
             exc_info=True
         )
@@ -4641,7 +4643,7 @@ async def rider_mark_package_delivered(
         
         # Comprehensive validation
         if not delivery:
-            logger_config.logger.error(f"Delivery {delivery_id} not found for rider {current_user.id}")
+            logger.error(f"Delivery {delivery_id} not found for rider {current_user.id}")
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND, 
                 detail="Delivery not found or has been deleted."
@@ -4649,7 +4651,7 @@ async def rider_mark_package_delivered(
         
         # Authorization validation
         if current_user.user_type != UserType.RIDER and delivery.rider_id != current_user.id:
-            logger_config.logger.warning(
+            logger.warning(
                 f"Unauthorized delivery status update attempt by user {current_user.id} "
                 f"for delivery {delivery_id}"
             )
@@ -4681,7 +4683,7 @@ async def rider_mark_package_delivered(
         try:
             await _notify_delivery_completion(delivery, db)
         except Exception as e:
-            logger_config.logger.error(
+            logger.error(
                 f"Failed to send notifications for delivery {delivery_id}: {str(e)}",
                 exc_info=True
             )
@@ -4691,13 +4693,13 @@ async def rider_mark_package_delivered(
         try:
             _invalidate_delivery_caches(delivery, current_user)
         except Exception as e:
-            logger_config.logger.error(
+            logger.error(
                 f"Failed to invalidate caches for delivery {delivery_id}: {str(e)}",
                 exc_info=True
             )
             # Don't raise - cache invalidation should not block main flow
 
-        logger_config.logger.info(
+        logger.info(
             f"Successfully marked delivery {delivery_id} as delivered by rider {current_user.id}"
         )
             
@@ -4711,7 +4713,7 @@ async def rider_mark_package_delivered(
         raise
     except Exception as e:
         await db.rollback()
-        logger_config.logger.error(
+        logger.error(
             f"Unexpected error marking delivery {delivery_id} as delivered: {str(e)}",
             exc_info=True
         )
@@ -4754,7 +4756,7 @@ async def _notify_delivery_completion(delivery: Delivery, db: AsyncSession):
             except Exception as e:
                 retry_count += 1
                 if retry_count == MAX_RETRIES:
-                    logger_config.logger.error(
+                    logger.error(
                         f"Failed to send notification to {role} after {MAX_RETRIES} attempts: {str(e)}",
                         exc_info=True
                     )
@@ -4779,7 +4781,7 @@ async def _invalidate_delivery_caches(delivery: Delivery, current_user: User):
         try:
             redis_client.delete(key)
         except Exception as e:
-            logger_config.logger.error(f"Failed to invalidate cache key {key}: {str(e)}")
+            logger.error(f"Failed to invalidate cache key {key}: {str(e)}")
             continue  # Continue with other cache invalidations
 
     await ws_service.broadcast_delivery_status_update(
@@ -4825,7 +4827,7 @@ async def admin_modify_order_status(
     """
     # Admin authorization check
     if not current_user.is_admin:  # Fixed: Using proper attribute
-        logger_config.logger.warning(
+        logger.warning(
             f"Non-admin user {current_user.id} attempted to modify status for order {order_id}",
             extra={
                 "user_id": str(current_user.id),
@@ -4853,7 +4855,7 @@ async def admin_modify_order_status(
         order = result.scalar_one_or_none()
 
         if not order:
-            logger_config.logger.error(f"Order {order_id} not found during admin status modification")
+            logger.error(f"Order {order_id} not found during admin status modification")
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=f"Order {order_id} not found."
@@ -4948,14 +4950,14 @@ async def admin_modify_order_status(
                     )
                     
                     settlement_succeeded = True
-                    logger_config.logger.info(
+                    logger.info(
                         f"Successfully processed wallet settlements for order {order.id}"
                     )
                     
                 except Exception as e:
                     retry_count += 1
                     if retry_count == MAX_RETRIES:
-                        logger_config.logger.error(
+                        logger.error(
                             f"Failed to process wallet settlements after {MAX_RETRIES} retries: {str(e)}",
                             exc_info=True
                         )
@@ -5004,7 +5006,7 @@ async def admin_modify_order_status(
                 if key:  # Skip empty keys
                     redis_client.delete(key)
             except Exception as e:
-                logger_config.logger.warning(
+                logger.warning(
                     f"Failed to invalidate cache key {key}: {str(e)}",
                     exc_info=True
                 )
@@ -5111,7 +5113,7 @@ async def admin_modify_order_status(
 
     except HTTPException:
         await db.rollback()
-        logger_config.logger.error(
+        logger.error(
             "Admin order status modification failed with HTTP exception",
             exc_info=True,
             extra={
@@ -5123,7 +5125,7 @@ async def admin_modify_order_status(
         raise
     except Exception as e:
         await db.rollback()
-        logger_config.logger.error(
+        logger.error(
             f"Unexpected error in admin order status modification: {str(e)}",
             exc_info=True,
             extra={
@@ -5702,7 +5704,7 @@ async def cancel_order_old(
     except Exception as e:
         # Rollback on error
         await db.rollback()
-        logger_config.error(f"Error cancelling order {order_id}: {str(e)}")
+        logger.error(f"Error cancelling order {order_id}: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to cancel order",

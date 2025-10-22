@@ -428,3 +428,45 @@ async def update_multiple_images(
 #             detail="Failed to check conversion status"
 #         )
 
+
+
+
+# WORkING ENGINE
+# @pytest_asyncio.fixture(scope="session")
+# async def test_engine():
+#     """Create test engine once per session with proper connection settings."""
+#     engine = create_async_engine(
+#         settings.TEST_DATABASE_URL,
+#         poolclass=NullPool,
+#         echo=False,
+#         # Critical: Disable statement caching and use fresh connections
+#         connect_args={
+#             "statement_cache_size": 0,
+#             "prepared_statement_cache_size": 0,
+#             "command_timeout": 60,
+#         }
+#     )
+    
+#     # Clean database before creating schema
+#     async with engine.begin() as conn:
+#         # Drop all connections first
+#         await conn.execute(text("""
+#             SELECT pg_terminate_backend(pg_stat_activity.pid)
+#             FROM pg_stat_activity
+#             WHERE pg_stat_activity.datname = current_database()
+#             AND pid <> pg_backend_pid()
+#         """))
+        
+#         # Drop all objects
+#         await conn.execute(text("DROP SCHEMA public CASCADE"))
+#         await conn.execute(text("CREATE SCHEMA public"))
+#         await conn.execute(text("GRANT ALL ON SCHEMA public TO public"))
+    
+#     # Create tables
+#     async with engine.begin() as conn:
+#         await conn.run_sync(Base.metadata.create_all)
+    
+#     yield engine
+    
+#     # Cleanup
+#     await engine.dispose()

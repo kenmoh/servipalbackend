@@ -222,31 +222,31 @@ async def verify_token(token: str, db: AsyncSession = Depends(get_db)):
 
 
 
-# @router.post("/verify-contacts")
-# @limiter.limit("5/minute")
-# async def verify_user_contacts(
-#     request: Request,
-#     verification_data: VerificationSchema,
-#     db: AsyncSession = Depends(get_db),
-# ) -> dict:
-#     """Verify user's email and phone"""
-#     return await auth_service.verify_user_contact(
-#         verification_data.email_code, verification_data.phone_code, db
-#     )
-
-
-@router.post("/{user_id}/verify-contacts")
+@router.post("/verify-contacts")
 @limiter.limit("5/minute")
 async def verify_user_contacts(
     request: Request,
-    user_id: UUID,
     verification_data: VerificationSchema,
     db: AsyncSession = Depends(get_db),
 ) -> dict:
     """Verify user's email and phone"""
-    return await auth_service.verify_user_contact(user_id,
+    return await auth_service.verify_user_contact(
         verification_data.email_code, verification_data.phone_code, db
     )
+
+
+# @router.post("/{user_id}/verify-contacts")
+# @limiter.limit("5/minute")
+# async def verify_user_contacts(
+#     request: Request,
+#     user_id: UUID,
+#     verification_data: VerificationSchema,
+#     db: AsyncSession = Depends(get_db),
+# ) -> dict:
+#     """Verify user's email and phone"""
+#     return await auth_service.verify_user_contact(user_id,
+#         verification_data.email_code, verification_data.phone_code, db
+#     )
 
 # @router.put("/resend-verification")
 # async def resend_verification_codes(
@@ -268,7 +268,6 @@ async def resend_verification_codes(
     user_id: UUID, db: AsyncSession = Depends(get_db)
 ) -> dict:
     """Resend verification codes"""
-    u
     return await auth_service.send_verification_codes(
         user_id=user_id, db=db)
 

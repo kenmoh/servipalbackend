@@ -3,6 +3,7 @@ import uuid
 from unittest.mock import AsyncMock, patch
 from httpx import AsyncClient
 import pytest
+import pytest_asyncio
 from app.schemas.status_schema import UserType
 
 os.environ["TEST"] = "true"
@@ -21,6 +22,35 @@ class TestUserCreation:
             "email": f"restaurant_{unique_id}@example.com",
             "password": "Password123!",
             "user_type": UserType.RESTAURANT_VENDOR.value,
+            "phone_number": f"+12346{unique_id[:5]}",
+        }
+        response = await async_client.post(f"{BASE_URL}/register", json=payload)
+
+        assert response.status_code == 201
+        data = response.json()
+        assert data["email"] == payload["email"]
+    async def test_create_new_restaurant_user(self, async_client: AsyncClient):
+        """Test creating a new restaurant vendor user."""
+        unique_id = str(uuid.uuid4())[:8]
+        payload = {
+            "email": f"restaurant_{unique_id}@example.com",
+            "password": "Password123!",
+            "user_type": UserType.RESTAURANT_VENDOR.value,
+            "phone_number": f"+12346{unique_id[:5]}",
+        }
+        response = await async_client.post(f"{BASE_URL}/register", json=payload)
+
+        assert response.status_code == 201
+        data = response.json()
+        assert data["email"] == payload["email"]
+
+    async def test_create_new_dispatch_user(self, async_client: AsyncClient):
+        """Test creating a new dispatch user."""
+        unique_id = str(uuid.uuid4())[:8]
+        payload = {
+            "email": f"dispatch_{unique_id}@example.com",
+            "password": "Password123!",
+            "user_type": UserType.DISPATCH.value,
             "phone_number": f"+12346{unique_id[:5]}",
         }
         response = await async_client.post(f"{BASE_URL}/register", json=payload)
@@ -63,6 +93,36 @@ class TestUserCreation:
         assert data["email"] == payload["email"]
         assert data["user_type"] == payload["user_type"]
         assert "password" not in data
+
+
+  
+    async def test_create_rider(self, authenticated_dispatch_admin, async_client: AsyncClient):
+        """
+        Test to create a rider (by a dispatch admin).
+        """
+        headers = {"Authorization": f"Bearer {authenticated_dispatch_admin['access_token']}"}
+
+        unique_id = str(uuid.uuid4())[:8]
+        rider_payload = {
+            "email": f"rider_{unique_id}@example.com",
+            "password": "Password123!",
+            "phone_number": f"+12349{unique_id[:5]}",
+            "bike_number": f"BIKE{unique_id[:5]}",
+            "full_name": f"Rider {unique_id}",
+        }
+
+        register_response = await async_client.post(
+            f"{BASE_URL}/register-rider",
+            json=rider_payload,
+            headers=headers
+        )
+        
+        rider_data = register_response.json()
+        print('*'*50)
+        print(rider_data)
+        print('*'*50)
+        assert register_response.status_code == 201
+        assert rider_data.get("email") == rider_payload["email"]
 
     @pytest.mark.parametrize(
         "invalid_email",
