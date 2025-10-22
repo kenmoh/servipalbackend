@@ -217,7 +217,7 @@ async def create_user1(db: AsyncSession, user_data: CreateUserSchema) -> UserBas
         email_code, phone_code = await generate_verification_codes(user, profile, db)
 
         # Send verification code to phone and email
-        if settings.TEST is not True:
+        if settings.TEST == False:
             await send_verification_codes(
                 user=user, email_code=email_code, phone_code=phone_code, db=db
             )
@@ -352,7 +352,7 @@ async def create_new_rider(
         # Generate and send verification codes
         email_code, phone_code = await generate_verification_codes(new_rider, rider_profile, db)
 
-        if settings.TEST is not True:
+        if settings.TEST == False:
             await send_verification_codes(
                 user=new_rider, email_code=email_code, phone_code=phone_code, db=db
             )
@@ -1490,7 +1490,7 @@ async def register_user(db: AsyncSession, user_data: CreateUserSchema) -> Create
         await db.refresh(verification)
         
         # Send verification codes
-        if settings.TEST is not True:
+        if settings.TEST == False:
             try:
                 await send_verification_codes(
                     user=user,
@@ -1588,7 +1588,7 @@ async def create_user(db: AsyncSession, user_data: CreateUserSchema) -> CreateUs
         email_code, phone_code = await generate_verification_codes(user, profile, db)
 
         # Send verification code to phone and email
-        if settings.TEST is not True:
+        if settings.TEST == False:
             await send_verification_codes(
                 user=user, email_code=email_code, phone_code=phone_code, db=db
             )

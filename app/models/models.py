@@ -134,6 +134,13 @@ class User(Base):
         cascade="all, delete-orphan",  # Delete profile when user is deleted
     )
 
+    verification: Mapped["VerificationCode"] = relationship(
+        back_populates="user",
+        uselist=False,
+        lazy="selectin",
+        cascade="all, delete-orphan",  # Delete verification when user is deleted
+    )
+
     wallet: Mapped["Wallet"] = relationship(
         back_populates="user",
         uselist=False,
@@ -275,6 +282,7 @@ class VerificationCode(Base):
     phone_verified: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     expires_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    user: Mapped["User"] = relationship(back_populates="verification")
     
     # Add indexes for faster lookups
     __table_args__ = (
