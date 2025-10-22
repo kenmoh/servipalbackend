@@ -1813,13 +1813,14 @@ async def resend_otp(email: str, db: AsyncSession) -> dict:
             detail="Please wait before requesting another OTP"
         )
 
-    if codes.email_code and codes.phone_code:    
+    if codes.email_code and codes.phone_code:
+
         await send_verification_codes(
                     user=user, email_code=codes.email_code, phone_code=codes.phone_code, db=db
                 )
 
-            # Set rate limit (60 seconds cooldown)
-            redis_client.setex(rate_limit_key, 60, "1")
+        # Set rate limit (60 seconds cooldown)
+        redis_client.setex(rate_limit_key, 60, "1")
 
     else:
         raise HTTPException(
