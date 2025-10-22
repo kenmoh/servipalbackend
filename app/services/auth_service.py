@@ -217,7 +217,7 @@ async def create_user1(db: AsyncSession, user_data: CreateUserSchema) -> UserBas
         email_code, phone_code = await generate_verification_codes(user, profile, db)
 
         # Send verification code to phone and email
-        if settings.TEST == False or settings.TEST == "False":
+        if settings.TEST == "false":
             await send_verification_codes(
                 user=user, email_code=email_code, phone_code=phone_code, db=db
             )
