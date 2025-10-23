@@ -5,6 +5,7 @@ from pydantic import EmailStr
 from pydantic_settings import BaseSettings
 from dotenv import load_dotenv
 import redis
+from pydantic import Field
 from stream_chat import StreamChat
 from upstash_redis import Redis
 from typing import Optional
@@ -199,7 +200,7 @@ class Settings(BaseSettings):
     TEST_BASE_URL: str = "http://test"
     
     # Test
-    TEST: bool =  bool(os.getenv("TEST"))
+    TEST: bool = Field(default=True, env="TEST")
     
     # Finger Print
     FINGER_PRINT: str
