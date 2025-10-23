@@ -141,11 +141,7 @@ async def lifespan(application: FastAPI):
         logger.info("Shutting down services...")
         scheduler.shutdown()
         logger.info("Services shutdown complete")
-        print('*'*50)
-        print(f"os.getenv('TEST'): {os.getenv('TEST')}")  # "False" (string)
-        print(f"bool(os.getenv('TEST')): {bool(os.getenv('TEST'))}")  # True (wrong!)
-        print(f"settings.TEST: {settings.TEST}") 
-        print('*'*50)
+      
     finally:
         # Shutdown: Stop consumers and close producer
         await wallet_queue_consumer.stop_consuming()

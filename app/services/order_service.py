@@ -86,6 +86,13 @@ async def get_delivery_by_order_id(
 ) -> DeliveryResponse:
     """Get delivery by order ID"""
 
+    cache_key = f"delivery_order_by_id: {order_id}"
+
+    cached_delivery = redis_client.get(cache_key)
+    if cached_delivery:
+        delivery = json.loads(cached_delivery)
+        return DeliveryResponse(**delivery) 
+
     try:
         order_stmt = (
             select(Order)
@@ -108,6 +115,12 @@ async def get_delivery_by_order_id(
             )
 
         oder_response = format_delivery_response(order=order, delivery=order.delivery)
+
+        redis_client.setex(
+        cache_key,
+        CACHE_TTL,
+        json.dumps(oder_response.model_dump(), default=str),
+    )
 
         return oder_response
 
@@ -167,64 +180,14 @@ async def get_user_orders(db: AsyncSession, user_id: UUID) -> list[DeliveryRespo
     return delivery_responses
 
 
-async def get_all_orders(
-    db: AsyncSession, skip: int = 0, limit: int = 20
-) -> list[DeliveryResponse]:
-    """
-    Get all orders with their deliveries (if any) with caching
-    """
-    cache_key = f"ALL_DELIVERY-{skip}-{limit}"
 
-    # Try cache first with error handling
-
-    cached_deliveries = redis_client.get(cache_key)
-    if cached_deliveries:
-        return [DeliveryResponse(**d) for d in json.loads(cached_deliveries)]
-
-    stmt = (
-        select(Order)
-        .offset(skip)
-        .limit(limit)
-        .options(
-            selectinload(Order.order_items).options(
-                joinedload(OrderItem.item).options(selectinload(Item.images))
-            ),
-            joinedload(Order.delivery),
-            joinedload(Order.vendor).joinedload(User.profile),
-        )
-        .where(Order.require_delivery == RequireDeliverySchema.PICKUP)
-        .where(
-            Order.order_type.in_([OrderType.FOOD, OrderType.LAUNDRY, OrderType.PACKAGE])
-        )
-        .order_by(Order.created_at.desc())
-    )
-
-    result = await db.execute(stmt)
-    orders = result.unique().scalars().all()
-
-    # Format responses - delivery will be None for orders without delivery
-    delivery_responses = [
-        format_delivery_response(order=order, delivery=order.delivery) for order in orders
-    ]
-
-    # Cache the formatted responses with error handling
-
-    redis_client.setex(
-        cache_key,
-        CACHE_TTL,
-        json.dumps([d.model_dump() for d in delivery_responses], default=str),
-    )
-
-    return delivery_responses
-
-
-async def get_all_require_delivery_orders(
+async def get_all_delivery_orders(
     db: AsyncSession, skip: int = 0, limit: int = 20
 ) -> PaginatedDeliveryResponse:
     """
     Get all orders with their deliveries (if any) with caching and total count
     """
-    cache_key = f"require_delivery_orders-{skip}-{limit}"
+    cache_key = f"delivery_orders-{skip}-{limit}"
 
     # Try cache first with error handling
     cached_deliveries = redis_client.get(cache_key)
@@ -236,7 +199,7 @@ async def get_all_require_delivery_orders(
     total_stmt = (
         select(func.count())
         .select_from(Order)
-        .where(Order.require_delivery == RequireDeliverySchema.DELIVERY)
+        .where(Order.order_type == OrderType.PACKAGE)
     )
     total_result = await db.execute(total_stmt)
     total = total_result.scalar_one()
@@ -275,69 +238,6 @@ async def get_all_require_delivery_orders(
 
     return response
 
-
-async def get_all_pickup_delivery_orders(
-    db: AsyncSession, skip: int = 0, limit: int = 20
-) -> PaginatedDeliveryResponse:
-    """
-    Get all orders with their deliveries (if any) with caching and total count
-    """
-    cache_key = f"pickup_delivery_orders-{skip}-{limit}"
-
-    # Try cache first with error handling
-    cached_deliveries = redis_client.get(cache_key)
-    if cached_deliveries:
-        cached = json.loads(cached_deliveries)
-        return cached
-
-    # 1. Get total count (without skip/limit)
-    total_stmt = (
-        select(func.count())
-        .select_from(Order)
-        .where(Order.require_delivery == RequireDeliverySchema.DELIVERY)
-        .where(
-            Order.order_type.in_([OrderType.FOOD, OrderType.LAUNDRY, OrderType.PACKAGE])
-        )
-    )
-    total_result = await db.execute(total_stmt)
-    total = total_result.scalar_one()
-
-    # 2. Get paginated data
-    stmt = (
-        select(Order)
-        .offset(skip)
-        .limit(limit)
-        .options(
-            selectinload(Order.order_items).options(
-                joinedload(OrderItem.item).options(selectinload(Item.images))
-            ),
-            joinedload(Order.delivery),
-            joinedload(Order.vendor).joinedload(User.profile),
-        )
-        .where(Order.require_delivery == RequireDeliverySchema.PICKUP)
-        .where(
-            Order.order_type.in_([OrderType.FOOD, OrderType.LAUNDRY])
-        )
-        .order_by(Order.created_at.desc())
-    )
-
-    result = await db.execute(stmt)
-    orders = result.unique().scalars().all()
-
-    delivery_responses = [
-        format_delivery_response(order=order, delivery=order.delivery) for order in orders
-    ]
-
-    response = {"data": [d.model_dump() for d in delivery_responses], "total": total}
-
-    # Cache the formatted responses with error handling
-    redis_client.setex(
-        cache_key,
-        CACHE_TTL,
-        json.dumps(response, default=str),
-    )
-
-    return response
 
 
 async def create_package_order_old(
@@ -863,13 +763,12 @@ async def order_food_or_request_laundy_service(
 
         # Generate payment link
         payment_link = await get_payment_link(tx_ref, grand_total, current_user)
-        order_status = OrderStatus.PENDING
-
+        
         # Update order with payment link
         await db.execute(
             update(Order)
             .where(Order.id == order_id)
-            .values({"payment_link": payment_link, "order_status": order_status})
+            .values({"payment_link": payment_link})
         )
 
         await db.commit()
@@ -907,7 +806,7 @@ async def order_food_or_request_laundy_service(
             await send_push_notification(
                 tokens=[token],
                 title="New Order",
-                message=f"You have a new order from {current_user.profile.full_name if current_user.profile.full_name else current_user.profile.business_name}",
+                message=f"You have a new order from {current_user.profile.full_name if current_user.profile.full_name else current_user.profile.business_name}. Pending Payment",
                 navigate_to="/delivery/orders",
             )
 
@@ -1436,6 +1335,8 @@ async def order_food_or_request_laundy_service_old(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to create order - {e}",
         )
+
+
 async def cancel_order(db: AsyncSession, order_id: UUID, current_user: User, reason: CancelOrderSchema) -> DeliveryStatusUpdateSchema:
     """
     Cancel an order and process associated refunds and notifications.
@@ -1684,7 +1585,7 @@ async def cancel_delivery(db: AsyncSession, order_id: UUID, current_user: User, 
                 "reason": reason.reason
             }
         )
-        
+        redis_client.delete(f"delivery_order_by_id:{order_id}")
         return status_update
 
     except HTTPException:
@@ -2009,6 +1910,7 @@ async def _process_post_delivery_cancellation_rider(
             f"order_details:{order.id}",
             f"delivery:{order.delivery.id}",
             f"user_related_orders:{current_user.id}",
+            f"delivery_order_by_id:{order.id}"
             "paid_pending_deliveries",
             ALL_DELIVERY,
             "orders"
@@ -2314,6 +2216,7 @@ async def cancel_order_or_delivery(
                 "orders",
                 f"delivery:{order.delivery.id}",
                 f"user_related_orders:{current_user.id}",
+                f"delivery_order_by_id:{order.id}"
             ]
             redis_client.delete(*cache_keys_to_delete)
 
@@ -2414,6 +2317,7 @@ async def cancel_order_or_delivery(
                 f"user_orders:{order.vendor_id}",
                 f"order_details:{order.id}",
                 "paid_pending_deliveries",
+                f"delivery_order_by_id:{order.id}",
                 ALL_DELIVERY,
                 "orders",
             ]
@@ -2553,6 +2457,7 @@ async def re_list_item_for_delivery(
         redis_client.delete(ALL_DELIVERY)
         redis_client.delete("paid_pending_deliveries")
         redis_client.delete(f"user_related_orders:{current_user.id}")
+        redis_client.delete(f"delivery_order_by_id:{order.id}")
         if order.vendor_id:
             redis_client.delete(f"user_related_orders:{order.vendor_id}")
 
@@ -2662,6 +2567,7 @@ async def vendor_mark_order_delivered(
             )
 
         order.order_status = OrderStatus.DELIVERED
+        await db.commit()
         
         # Send notifications to all stakeholders
         try:
@@ -3636,7 +3542,9 @@ def _invalidate_caches(order: Order, current_user: User):
             f"user_related_orders:{current_user.id}",
             f"user_orders:{current_user.id}",
             f"order_details:{order.id}",
-            f"delivery:{order.delivery.id}"
+            f"delivery:{order.delivery.id}",
+            f"delivery_order_by_id:{order.id}"
+
         ]
         
         # Add vendor-related caches if exists
@@ -4677,6 +4585,8 @@ async def rider_mark_package_delivered(
         # Update delivery status
         delivery.delivery_status = DeliveryStatus.DELIVERED
         delivery.order.order_status = OrderStatus.DELIVERED
+
+        db.commit()
         
 
         # Send notifications to all stakeholders
@@ -4702,7 +4612,8 @@ async def rider_mark_package_delivered(
         logger.info(
             f"Successfully marked delivery {delivery_id} as delivered by rider {current_user.id}"
         )
-            
+        
+        redis_client.delete(f"delivery_order_by_id:{order.id}")    
         return DeliveryStatusUpdateSchema(
             delivery_status=delivery.delivery_status,
             order_status=delivery.order.order_status,
@@ -5396,6 +5307,7 @@ async def get_paid_pending_deliveries(db: AsyncSession, current_user: User) -> l
             and_(
                 Order.order_payment_status == "paid",
                 Order.require_delivery == "delivery",
+                Order.order_type == 'package',
                 Order.delivery.has(delivery_status="pending"),
             )
         )

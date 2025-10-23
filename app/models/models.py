@@ -484,7 +484,7 @@ class Order(Base):
     order_payment_status: Mapped[PaymentStatus] = mapped_column(
         default=PaymentStatus.PENDING
     )
-    order_status: Mapped[OrderStatus] = mapped_column(nullable=True)
+    order_status: Mapped[OrderStatus] = mapped_column(default=OrderStatus.PENDING)
 
     require_delivery: Mapped[RequireDeliverySchema] = mapped_column(
         default=RequireDeliverySchema.PICKUP, nullable=True
