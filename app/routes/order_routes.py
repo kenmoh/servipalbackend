@@ -121,31 +121,12 @@ async def order_food_or_request_laundy_service(
 
 
 @router.get("/{order_id}", status_code=status.HTTP_200_OK)
-async def get_delivery_by_order_id(
+async def get_order_by_id(
     order_id: UUID,
     db: AsyncSession = Depends(get_db),
 ) -> DeliveryResponse:
-    return await order_service.get_delivery_by_order_id(db=db, order_id=order_id)
+    return await order_service.get_order_by_id(db=db, order_id=order_id)
 
-
-
-# @router.put(
-#     "/{order_id}/sender-confirm-delivery-or-order-received",
-#     status_code=status.HTTP_202_ACCEPTED,
-# )
-# async def sender_confirm_delivery_or_order_received(
-#     order_id: UUID,
-#     db: AsyncSession = Depends(get_db),
-#     current_user: User = Depends(get_current_user),
-# ) -> DeliveryStatusUpdateSchema:
-#     try:
-#         return await order_service.sender_confirm_delivery_or_order_received(
-#             db=db,
-#             current_user=current_user,
-#             order_id=order_id,
-#         )
-#     except Exception as e:
-#         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
 @router.put(
     "/{order_id}/customer-confirm-order-received",
@@ -165,24 +146,6 @@ async def customer_confirm_order_received(
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     
-# @router.put(
-#     "/{order_id}/sender-confirm-order-received",
-#     status_code=status.HTTP_202_ACCEPTED,
-# )
-# async def sender_confirm_order_received(
-#     order_id: UUID,
-#     db: AsyncSession = Depends(get_db),
-#     current_user: User = Depends(get_current_user),
-# ) -> DeliveryStatusUpdateSchema:
-#     try:
-#         return await order_service.sender_confirm_order_received(
-#             db=db,
-#             current_user=current_user,
-#             order_id=order_id,
-#         )
-#     except Exception as e:
-#         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
-
 
 
 @router.put(
@@ -220,33 +183,6 @@ async def vendor_mark_order_delivered(
     )
 
 
-# @router.put("/{order_id}/laundry-returned", status_code=status.HTTP_202_ACCEPTED)
-# async def rider_accept_delivery(
-#     order_id: UUID,
-#     db: AsyncSession = Depends(get_db),
-#     current_user: User = Depends(get_current_user),
-# ) -> DeliveryStatusUpdateSchema:
-#     try:
-#         return await order_service.laundry_return(
-#             db=db, current_user=current_user, order_id=order_id
-#         )
-#     except Exception as e:
-#         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
-    
-
-# @router.put("/{order_id}/laundry-pickup", status_code=status.HTTP_202_ACCEPTED)
-# async def rider_accept_delivery(
-#     order_id: UUID,
-#     db: AsyncSession = Depends(get_db),
-#     current_user: User = Depends(get_current_user),
-# ) -> DeliveryStatusUpdateSchema:
-#     try:
-#         return await order_service.laundry_pickup(
-#             db=db, current_user=current_user, order_id=order_id
-#         )
-#     except Exception as e:
-#         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
-    
 
 @router.put("/{order_id}/accept-delivery", status_code=status.HTTP_202_ACCEPTED)
 async def rider_accept_delivery(

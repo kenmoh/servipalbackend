@@ -80,18 +80,18 @@ logger = setup_logger()
 ALL_DELIVERY = "orders"
 
 
-async def get_delivery_by_order_id(
+async def get_order_by_id(
     order_id: UUID,
     db: AsyncSession,
 ) -> DeliveryResponse:
     """Get delivery by order ID"""
 
-    cache_key = f"delivery_order_by_id: {order_id}"
+    cache_key = f"order_by_id: {order_id}"
 
     cached_delivery = redis_client.get(cache_key)
-    if cached_delivery:
-        delivery = json.loads(cached_delivery)
-        return DeliveryResponse(**delivery) 
+    # if cached_delivery:
+    #     delivery = json.loads(cached_delivery)
+    #     return DeliveryResponse(**delivery) 
 
     try:
         order_stmt = (
@@ -1585,7 +1585,7 @@ async def cancel_delivery(db: AsyncSession, order_id: UUID, current_user: User, 
                 "reason": reason.reason
             }
         )
-        redis_client.delete(f"delivery_order_by_id:{order_id}")
+        redis_client.delete(f"order_by_id:{order_id}")
         return status_update
 
     except HTTPException:
@@ -1910,7 +1910,7 @@ async def _process_post_delivery_cancellation_rider(
             f"order_details:{order.id}",
             f"delivery:{order.delivery.id}",
             f"user_related_orders:{current_user.id}",
-            f"delivery_order_by_id:{order.id}"
+            f"order_by_id:{order.id}"
             "paid_pending_deliveries",
             ALL_DELIVERY,
             "orders"
@@ -2216,7 +2216,7 @@ async def cancel_order_or_delivery(
                 "orders",
                 f"delivery:{order.delivery.id}",
                 f"user_related_orders:{current_user.id}",
-                f"delivery_order_by_id:{order.id}"
+                f"order_by_id:{order.id}"
             ]
             redis_client.delete(*cache_keys_to_delete)
 
@@ -2317,7 +2317,7 @@ async def cancel_order_or_delivery(
                 f"user_orders:{order.vendor_id}",
                 f"order_details:{order.id}",
                 "paid_pending_deliveries",
-                f"delivery_order_by_id:{order.id}",
+                f"order_by_id:{order.id}",
                 ALL_DELIVERY,
                 "orders",
             ]
@@ -2457,7 +2457,7 @@ async def re_list_item_for_delivery(
         redis_client.delete(ALL_DELIVERY)
         redis_client.delete("paid_pending_deliveries")
         redis_client.delete(f"user_related_orders:{current_user.id}")
-        redis_client.delete(f"delivery_order_by_id:{order.id}")
+        redis_client.delete(f"order_by_id:{order.id}")
         if order.vendor_id:
             redis_client.delete(f"user_related_orders:{order.vendor_id}")
 
@@ -2595,6 +2595,7 @@ async def vendor_mark_order_delivered(
             new_status=order.order_status
         )
 
+        redis_client.delete(f'order_by_id:{order_id}')
         logger.info(
             f"Successfully marked order {order_id} as delivered by vendor {current_user.id}"
         )
@@ -3543,7 +3544,7 @@ def _invalidate_caches(order: Order, current_user: User):
             f"user_orders:{current_user.id}",
             f"order_details:{order.id}",
             f"delivery:{order.delivery.id}",
-            f"delivery_order_by_id:{order.id}"
+            f"order_by_id:{order.id}"
 
         ]
         
@@ -3689,7 +3690,7 @@ async def sender_confirm_package_received(
         logger.info(
             f"Package delivery confirmation completed successfully for order {order.id}"
         )
-
+        redis_client.delete(f'order_by_id:{order_id}')
         return DeliveryStatusUpdateSchema(
             delivery_status=order.delivery.delivery_status,
             order_status=order.order_status,
@@ -4019,6 +4020,7 @@ async def customer_confirm_order_received(
             )
 
         # 7. Log successful completion
+        redis_client.delete(f'order_by_id:{order_id}')
         logger.info(
             f"Order confirmation completed successfully for order {order.id}"
         )
@@ -4613,7 +4615,7 @@ async def rider_mark_package_delivered(
             f"Successfully marked delivery {delivery_id} as delivered by rider {current_user.id}"
         )
         
-        redis_client.delete(f"delivery_order_by_id:{order.id}")    
+        redis_client.delete(f"order_by_id:{order.id}")    
         return DeliveryStatusUpdateSchema(
             delivery_status=delivery.delivery_status,
             order_status=delivery.order.order_status,
