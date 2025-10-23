@@ -8,6 +8,7 @@ from fastapi import (
     Request,
     Response,
     status,
+    BackgroundTasks,
 )
 from fastapi.security import OAuth2PasswordRequestForm
 
@@ -146,27 +147,30 @@ async def logout(
 async def create_user(
     request: Request,
     user_data: CreateUserSchema,
+    background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
 ) -> CreateUserResponseSchema:
     """Logout user by revoking their refresh token"""
 
-    return await auth_service.register_user(db=db, user_data=user_data)
+    return await auth_service.register_user(db=db, user_data=user_data, background_tasks=background_tasks)
 
 
 @router.post(
     "/register-rider", include_in_schema=False, status_code=status.HTTP_201_CREATED
 )
 @limiter.limit("5/minute")
-async def create_user(
+async def create_rider(
     request: Request,
     data: RiderCreate,
+    background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    
 ) -> CreateUserResponseSchema:
     """Logout user by revoking their refresh token"""
 
     return await auth_service.create_new_rider(
-        db=db, data=data, current_user=current_user
+        db=db, data=data, current_user=current_user, background_tasks=background_tasks
     )
 
 
