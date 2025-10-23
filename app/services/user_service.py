@@ -76,12 +76,13 @@ def _build_user_profile_response(user: User, review_count: int = 0, avg_rating: 
             "business_name": getattr(user.profile, "business_name", None),
             "business_address": getattr(user.profile, "business_address", None),
             "can_pickup_and_dropoff": getattr(user.profile, 'can_pickup_and_dropoff'),
-            "pickup_and_delivery_charge": getattr(user.profile, 'pickup_and_delivery_charge', None),
+            "pickup_and_delivery_charge": str(user.profile.pickup_and_delivery_charge) or None,
             "business_registration_number": getattr(user.profile, "business_registration_number", None),
             "closing_hours": str(user.profile.closing_hours.isoformat()) if getattr(user.profile, "closing_hours", None) else None,
             "opening_hours": str(user.profile.opening_hours.isoformat()) if getattr(user.profile, "opening_hours", None) else None,
             "review_count": review_count or 0,
             "avg_rating": avg_rating or 0,
+
         }
 
         if hasattr(user.profile, "profile_image") and user.profile.profile_image:
@@ -590,6 +591,9 @@ async def update_profile(
             for i, value in enumerate(values):
                 if isinstance(value, (datetime, time)):
                     values[i] = value.isoformat()
+                if isinstance(value, (Decimal)):
+                    values[i] = str(value)
+
 
         audit = AuditLog(
             actor_id=current_user.id,
