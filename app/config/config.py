@@ -199,7 +199,7 @@ class Settings(BaseSettings):
     TEST_BASE_URL: str = "http://test"
     
     # Test
-    TEST: str =  os.getenv("AWSAccessKeyId")
+    TEST: bool =  bool(os.getenv("TEST"))
     
     # Finger Print
     FINGER_PRINT: str

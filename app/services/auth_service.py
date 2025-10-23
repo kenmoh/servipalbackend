@@ -217,10 +217,10 @@ async def create_user1(db: AsyncSession, user_data: CreateUserSchema) -> UserBas
         email_code, phone_code = await generate_verification_codes(user, profile, db)
 
         # Send verification code to phone and email
-        # if settings.TEST == "false":
-        await send_verification_codes(
-                user=user, email_code=email_code, phone_code=phone_code, db=db
-            )
+        if settings.TEST == False:
+            await send_verification_codes(
+                    user=user, email_code=email_code, phone_code=phone_code, db=db
+                )
         
         redis_client.delete("all_users")
         await asyncio.sleep(0.1)
