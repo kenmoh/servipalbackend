@@ -1,5 +1,5 @@
 import asyncio
-from datetime import timedelta, datetime
+from datetime import datetime
 from signal import raise_signal
 from typing import Optional
 import uuid
@@ -160,7 +160,7 @@ async def get_user_orders(db: AsyncSession, user_id: UUID) -> list[DeliveryRespo
 
     redis_client.setex(
         cache_key,
-        timedelta(seconds=CACHE_TTL),
+        CACHE_TTL,
         json.dumps([d.model_dump() for d in delivery_responses], default=str),
     )
 
@@ -211,7 +211,7 @@ async def get_all_orders(
 
     redis_client.setex(
         cache_key,
-        timedelta(seconds=CACHE_TTL),
+        CACHE_TTL,
         json.dumps([d.model_dump() for d in delivery_responses], default=str),
     )
 
@@ -269,7 +269,7 @@ async def get_all_require_delivery_orders(
     # Cache the formatted responses with error handling
     redis_client.setex(
         cache_key,
-        timedelta(seconds=CACHE_TTL),
+        CACHE_TTL,
         json.dumps(response, default=str),
     )
 
@@ -333,7 +333,7 @@ async def get_all_pickup_delivery_orders(
     # Cache the formatted responses with error handling
     redis_client.setex(
         cache_key,
-        timedelta(seconds=CACHE_TTL),
+        CACHE_TTL,
         json.dumps(response, default=str),
     )
 
@@ -5341,7 +5341,7 @@ def set_cached_order(order_id: UUID, order_data: dict) -> None:
     """Set order in cache"""
     redis_client.setex(
         f"order:{order_id}",
-        timedelta(seconds=CACHE_TTL),
+        CACHE_TTL,
         json.dumps(order_data, default=str),
     )
 
@@ -5440,7 +5440,7 @@ async def get_paid_pending_deliveries(db: AsyncSession, current_user: User) -> l
     if delivery_responses:
         redis_client.setex(
             cache_key,
-            timedelta(seconds=settings.REDIS_EX),
+            settings.REDIS_EX,
             json.dumps([d.model_dump() for d in delivery_responses], default=str),
         )
     
@@ -5497,7 +5497,7 @@ async def get_user_related_orders(
 
     redis_client.setex(
         cache_key,
-        timedelta(seconds=settings.REDIS_EX),
+       settings.REDIS_EX,
         json.dumps([d.model_dump() for d in delivery_responses], default=str),
     )
 
