@@ -3177,6 +3177,7 @@ async def _update_order_status(order: Order, db: AsyncSession, status: OrderStat
         old_status = order.order_status
         order.order_status = status
         db.add(order)
+        await db.commit()
                 
         logger.info(
             f"Order {order.id} status updated: {old_status} -> {status}"
@@ -3235,7 +3236,7 @@ async def _update_delivery_status(
         order.delivery.delivery_status = delivery_status
         db.add(order)
         db.add(order.delivery)
-        
+        await db.commit()
         
         logger.info(
             f"Updated order {order.id} delivery status: "
@@ -3296,7 +3297,7 @@ async def _send_notifications(order: Order, db: AsyncSession):
                         f"Delivery for order #{order.order_number} has been confirmed. "
                         "Your payment has been processed."
                     ),
-                    navigate_to="/delivery/orders"
+                    navigate_to="/(app)/delivery/orders"
                 )
 
         # 3. Notify dispatch company
@@ -3310,7 +3311,7 @@ async def _send_notifications(order: Order, db: AsyncSession):
                         f"Delivery for order #{order.order_number} has been confirmed. "
                         "Payment has been credited to your wallet."
                     ),
-                    navigate_to="/delivery/orders"
+                    navigate_to="/(app)/delivery/orders"
                 )
 
         # 4. Notify vendor (if applicable)
@@ -3470,6 +3471,7 @@ async def sender_confirm_package_received(
 
             # 5. Create detailed audit log
             await TransactionLogService.create_log(
+                db=db,
                 vendor_id=current_user.id,
                 amount=order.delivery.delivery_fee - order.delivery.amount_due_dispatch,
                 action=TransactionLogAction.RECEIVED,
@@ -3598,7 +3600,7 @@ async def _order_settlement(order: Order):
                     "wallet_id": str(order.vendor_id),
                     "tx_ref": str(uuid.uuid4()),
                     "amount": str(order.amount_due_vendor),
-                    "transaction_type": TransactionType.SETTLEMENT,
+                    "transaction_type": TransactionType.USER_TO_USER,
                     "transaction_direction": TransactionDirection.CREDIT,
                     "payment_status": PaymentStatus.PAID,
                     "payment_method": PaymentMethod.ESCROW_SETTLEMENT,
@@ -3997,12 +3999,7 @@ async def _notify_order_completion(order: Order, db: AsyncSession):
                     f"₦{order.amount_due_vendor} has been credited to your wallet."
                 ),
                 navigate_to="/delivery/orders",
-                data={
-                    "order_id": str(order.id),
-                    "order_number": order.order_number,
-                    "amount": str(order.amount_due_vendor),
-                    "order_type": order.order_type.value
-                }
+               
             )
             
         # 3. Notify customer (confirmation receipt)
@@ -4017,12 +4014,6 @@ async def _notify_order_completion(order: Order, db: AsyncSession):
                     f"order #{order.order_number} from {business_name}. Thank you for using our service!"
                 ),
                 navigate_to="/delivery/orders",
-                data={
-                    "order_id": str(order.id),
-                    "order_number": order.order_number,
-                    "vendor": business_name,
-                    "order_type": order.order_type.value
-                }
             )
 
         logger.info(

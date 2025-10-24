@@ -63,24 +63,24 @@ class OrderStatusQueueConsumer(BaseQueueConsumer):
                 raise
 
     async def process_order_payment_status_update(self, payload: Dict[str, Any]):
-        """Process order status update"""
+        """Process order payment status update"""
         async for db in get_db():
             try:
                 async with db.begin():
                     order_id = UUID(payload.get("order_id"))
                     new_status = payload.get("new_status")
-                    order_status = payload.get('order_status')
+                    
                     result = await db.execute(
                         update(Order)
                         .where(Order.id == order_id)
-                        .values(order_payment_status=new_status, order_status=order_status)
+                        .values(order_payment_status=new_status)
                     )
 
                     if result.rowcount == 0:
                         logger.error(f"ERROR updating order payment status")
                         raise ValueError(f"Order {order_id} not found")
             except Exception as db_error:
-                logger.error(f"Order status update error: {str(db_error)}")
+                logger.error(f"Order payment status update error: {str(db_error)}")
                 raise
 
 

@@ -744,7 +744,7 @@ async def handle_charge_completed_callback(
                 )
                 vendor_wallet = vendor_wallet_result.scalar_one_or_none()
                 if vendor_wallet:
-                    vendor_wallet.escrow_balance += order.total_paid
+                    vendor_wallet.escrow_balance += order.grand_total
 
                 # Get customer and vendor names
                 customer_name = None
@@ -2363,8 +2363,7 @@ async def pay_with_wallet(
             operation='order_payment_status',
             payload={
                 "order_id": str(order.id),
-                "new_status": PaymentStatus.PAID,
-                "order_status": OrderStatus.PENDING
+                "new_status": PaymentStatus.PAID
             }
         )
 
@@ -2468,8 +2467,7 @@ async def pay_with_wallet(
             operation='order_payment_status',
             payload={
                 "order_id": str(order.id),
-                "new_status": PaymentStatus.PAID,
-                "order_status": OrderStatus.PENDING
+                "new_status": PaymentStatus.PAID
             }
         )    
 

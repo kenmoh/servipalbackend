@@ -521,7 +521,7 @@ class Order(Base):
 class OrderItem(Base):
     __tablename__ = "order_items"
 
-    order_id: Mapped[UUID] = mapped_column(ForeignKey("orders.id", ondelete="SET NULL"), primary_key=True)
+    order_id: Mapped[UUID] = mapped_column(ForeignKey("orders.id", ondelete="CASCADE"), primary_key=True)
     item_id: Mapped[UUID] = mapped_column(ForeignKey("items.id", ondelete="SET NULL"), primary_key=True)
     quantity: Mapped[int] = mapped_column(default=1)
     sizes: Mapped[str] = mapped_column(ARRAY(String), nullable=True)
