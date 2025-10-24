@@ -554,6 +554,7 @@ class Delivery(Base):
     image_url: Mapped[str] = mapped_column(nullable=True)
     pickup_coordinates: Mapped[Tuple[float, float]] = mapped_column(ARRAY(Float))
     dropoff_coordinates: Mapped[Tuple[float, float]] = mapped_column(ARRAY(Float))
+    last_known_rider_coordinates: Mapped[Tuple[float, float]] = mapped_column(ARRAY(Float), nullable=True)
     delivery_fee: Mapped[Decimal] = mapped_column(nullable=False)
     distance: Mapped[Decimal] = mapped_column(nullable=True)
     duration: Mapped[str] = mapped_column(nullable=True)

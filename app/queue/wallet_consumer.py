@@ -33,7 +33,6 @@ class WalletQueueConsumer(BaseQueueConsumer):
     ) -> None:
         """Perform atomic wallet update"""
         # Get wallet with row lock for update
-        # stmt = "SELECT * FROM wallets WHERE id = :wallet_id FOR UPDATE"
         result = await db.execute(
             select(Wallet).where(Wallet.id == wallet_id).with_for_update()
         )
@@ -69,6 +68,14 @@ class WalletQueueConsumer(BaseQueueConsumer):
                     wallet_id = payload.get("wallet_id")
                     balance_change = payload.get("balance_change", 0)
                     escrow_change = payload.get("escrow_change", 0)
+                    operation = payload.get("details", {}).get("operation", "unknown")
+
+                    # Add debugging logs
+                    logger.info(
+                        f"Processing wallet update for wallet {wallet_id}: "
+                        f"balance_change={balance_change}, escrow_change={escrow_change}, "
+                        f"operation={operation}"
+                    )
 
                     await self._safe_wallet_update(
                         db=db,
@@ -76,64 +83,12 @@ class WalletQueueConsumer(BaseQueueConsumer):
                         balance_change=Decimal(balance_change),
                         escrow_change=Decimal(escrow_change),
                     )
+                    
+                    logger.info(f"Successfully processed wallet update for wallet {wallet_id}")
             except Exception as db_error:
                 logger.error(f"Wallet update error: {str(db_error)}")
                 raise
 
-
-    # async def process_wallet_update(self, payload: Dict[str, Any]):
-    #     """Process wallet balance update with idempotency protection"""
-    #     async for db in get_db():
-    #         try:
-    #             async with db.begin():
-    #                 wallet_id = payload.get("wallet_id")
-    #                 balance_change = payload.get("balance_change", 0)
-    #                 escrow_change = payload.get("escrow_change", 0)
-    #                 idempotency_key = payload.get("idempotency_key")
-                    
-    #                 # IDEMPOTENCY CHECK: Prevent duplicate wallet updates
-    #                 if idempotency_key:
-    #                     processed_key = f"wallet_update:{idempotency_key}"
-                        
-    #                     # Check if this operation was already processed
-    #                     if redis_client.get(processed_key):
-    #                         logger.info(f"Wallet update already processed: {idempotency_key}")
-    #                         return {
-    #                             "status": "already_processed",
-    #                             "message": f"Wallet update for {idempotency_key} already completed"
-    #                         }
-                        
-    #                     # Mark as processing (with short TTL to handle failures)
-    #                     redis_client.setex(f"{processed_key}:processing", 60, "processing")
-                    
-    #                 # Perform the wallet update
-    #                 result = await self._safe_wallet_update(
-    #                     db=db,
-    #                     wallet_id=wallet_id,
-    #                     balance_change=Decimal(balance_change),
-    #                     escrow_change=Decimal(escrow_change),
-    #                 )
-                    
-    #                 # Mark operation as completed after successful update
-    #                 if idempotency_key:
-    #                     redis_client.setex(processed_key, 3600, "completed")  # 1 hour TTL
-    #                     redis_client.delete(f"{processed_key}:processing")  # Clean up processing flag
-                    
-    #                 logger.info(f"Wallet update completed for wallet {wallet_id}: balance_change={balance_change}, escrow_change={escrow_change}")
-    #                 return {
-    #                     "status": "completed",
-    #                     "wallet_id": wallet_id,
-    #                     "balance_change": str(balance_change),
-    #                     "escrow_change": str(escrow_change)
-    #                 }
-                    
-    #         except Exception as db_error:
-    #             # Clean up processing flag on error
-    #             if idempotency_key:
-    #                 redis_client.delete(f"wallet_update:{idempotency_key}:processing")
-                
-    #             logger.error(f"Wallet update error: {str(db_error)}")
-    #             raise
 
     async def process_create_transaction(self, payload: Dict[str, Any]):
         """Process transaction creation"""

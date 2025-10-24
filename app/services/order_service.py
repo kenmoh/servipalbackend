@@ -238,189 +238,6 @@ async def get_all_delivery_orders(
 
     return response
 
-
-
-async def create_package_order_old(
-    db: AsyncSession, data: PackageCreate, image: UploadFile, current_user: User
-) -> DeliveryResponse:
-    if current_user.user_type == UserType.CUSTOMER and not (
-        current_user.profile.full_name and current_user.profile.phone_number
-    ):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Phone number and full name are required. Please update your profile!",
-        )
-    if current_user.user_type in [
-        UserType.RESTAURANT_VENDOR,
-        UserType.LAUNDRY_VENDOR,
-    ] and not (
-        current_user.profile.business_name and current_user.profile.phone_number
-    ):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Phone number and business name are required. Please update your profile!",
-        )
-    if current_user.user_type in [UserType.RIDER, UserType.DISPATCH]:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="You are not allowed to perform this action.",
-        )
-    try:
-        # --- 1. Insert into 'packages' table ---
-        package_insert_result = await db.execute(
-            insert(Item)
-            .values(
-                {
-                    "user_id": current_user.id,
-                    "item_type": ItemType.PACKAGE,
-                    "name": data.name,
-                    "description": data.description,
-                }
-            )
-            .returning(Item.name, Item.id, Item.user_id)
-        )
-
-        package_data = package_insert_result.fetchone()
-
-        image_url = await add_image(image)
-
-        item_image = ItemImage(item_id=package_data.id, url=image_url)
-        db.add(item_image)
-
-        order_insert_result = await db.execute(
-            insert(Order)
-            .values(
-                {
-                    "owner_id": package_data.user_id,
-                    "vendor_id": package_data.user_id,  # Review this logic
-                    "order_type": DeliveryType.PACKAGE,
-                    "amount_due_vendor": 0,
-                    "order_status": OrderStatus.PENDING,
-                    "order_payment_status": PaymentStatus.PENDING,
-                    "require_delivery": RequireDeliverySchema.DELIVERY,
-                }
-            )
-            .returning(Order.id, Order.tx_ref, Order.owner_id, Order.vendor_id)
-        )
-
-        order_data = order_insert_result.fetchone()
-        package_item_payload = [
-            {
-                "order_id": order_data.id,
-                "item_id": package_data.id,
-                "quantity": 1,
-            }
-        ]
-
-        # Insert all items in one go
-        await db.execute(insert(OrderItem).values(package_item_payload))
-
-        # --- 3. Calculate Delivery Fee (Needs distance!) ---
-        delivery_fee = await calculate_delivery_fee(data.distance, db)
-        amount_due_dispatch = await calculate_amount_due_dispatch(db, delivery_fee)
-
-        # --- 4. Insert into 'deliveries' table ---
-
-        delivery_insert_result = await db.execute(
-            insert(Delivery)
-            .values(
-                {
-                    "order_id": order_data.id,
-                    "delivery_type": DeliveryType.PACKAGE,
-                    "delivery_status": DeliveryStatus.PENDING,
-                    "sender_id": current_user.id,
-                    "vendor_id": current_user.id,
-                    "pickup_coordinates": data.pickup_coordinates,
-                    "dropoff_coordinates": data.dropoff_coordinates,
-                    "delivery_fee": delivery_fee,
-                    "amount_due_dispatch": amount_due_dispatch,
-                    "distance": data.distance,
-                    "duration": data.duration,
-                    "origin": data.origin,
-                    "destination": data.destination,
-                    "sender_phone_number": current_user.profile.phone_number,
-                }
-            )
-            .returning(
-                Delivery.id,
-                Delivery.order_id,
-                Delivery.delivery_fee,
-                Delivery.vendor_id,
-            )
-        )
-
-        delivery_data = delivery_insert_result.fetchone()
-
-        # --- 5. Generate Payment Link ---
-        total_amount_due = delivery_data.delivery_fee
-
-        payment_link = await get_payment_link(
-            tx_ref=order_data.tx_ref,
-            amount=total_amount_due,
-            current_user=current_user,
-        )
-
-        # --- 6. Update Order with payment link and total price ---
-
-        await db.execute(
-            update(Order)
-            .where(Order.id == delivery_data.order_id)
-            .values(
-                {
-                    "payment_link": payment_link,
-                    "total_price": total_amount_due,
-                    "grand_total": total_amount_due,
-                }
-            )
-        )
-
-        await db.commit()
-
-        invalidate_order_cache(delivery_data.order_id)
-
-        redis_client.delete(f"user_orders:{current_user.id}")
-        redis_client.delete(f"user_orders:{order_data.owner_id}")
-        redis_client.delete(f"user_orders:{order_data.vendor_id}")
-        redis_client.delete(f"{ALL_DELIVERY}")
-        redis_client.delete("paid_pending_deliveries")
-        redis_client.delete(f"user_related_orders:{current_user.id}")
-        redis_client.delete("orders")
-        if hasattr(delivery_data, "vendor_id"):
-            redis_client.delete(f"vendor_orders:{delivery_data.vendor_id}")
-        else:
-            redis_client.delete(f"vendor_orders:{current_user.id}")
-
-        stmt = (
-            select(Order)
-            .where(Order.id == delivery_data.order_id)
-            .options(
-                selectinload(Order.order_items).options(
-                    joinedload(OrderItem.item).options(selectinload(Item.images))
-                )
-            )
-        )
-        order = (await db.execute(stmt)).scalar_one()
-
-        delivery_stmt = select(Delivery).where(Delivery.id == delivery_data.id)
-        delivery = (await db.execute(delivery_stmt)).scalar_one()
-
-        redis_client.delete("paid_pending_deliveries")
-        redis_client.delete(f"user_related_orders:{current_user.id}")
-
-        await ws_service.broadcast_new_order({"order_id": order.id})
-
-        # REUSE the formatting function
-        return format_delivery_response(order=order, delivery=delivery)
-
-    except Exception as e:
-        # Rollback
-        await db.rollback()
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to create package order: {e}",
-        )
-
-
 async def _validate_package_order_request(current_user: User):
     if current_user.user_type == UserType.CUSTOMER and not (
         current_user.profile.full_name and current_user.profile.phone_number
@@ -3738,13 +3555,13 @@ async def _order_settlement(order: Order):
                 raise ValueError("Vendor amount cannot exceed total")
 
             # 1. Update vendor wallet - move from escrow to balance
-            vendor_result = await producer.publish_message(
+            await producer.publish_message(
                 service="wallet",
                 operation="update_wallet",
                 payload={
                     "wallet_id": str(order.vendor_id),
                     "balance_change": str(order.amount_due_vendor),
-                    "escrow_change": str(-order.grand_total),
+                    "escrow_change": str(-abs(order.grand_total)),
                     "details": {
                         "order_id": str(order.id),
                         "operation": "order_settlement",
@@ -3753,17 +3570,18 @@ async def _order_settlement(order: Order):
                 },
             )
 
-            if not vendor_result:
-                raise ValueError("Failed to update vendor wallet")
-
             # 2. Update customer wallet - clear escrow
-            customer_result = await producer.publish_message(
+            logger.info(
+                f"Sending customer wallet update for order {order.id}: "
+                f"wallet_id={order.owner_id}, escrow_change={-abs(order.grand_total)}"
+            )
+            await producer.publish_message(
                 service="wallet",
                 operation="update_wallet",
                 payload={
                     "wallet_id": str(order.owner_id),
                     "balance_change": "0",
-                    "escrow_change": str(-order.total_price),
+                    "escrow_change": str(-abs(order.grand_total)),
                     "details": {
                         "order_id": str(order.id),
                         "operation": "order_settlement",
@@ -3771,9 +3589,6 @@ async def _order_settlement(order: Order):
                     }
                 },
             )
-
-            if not customer_result:
-                raise ValueError("Failed to update customer wallet")
 
             # 3. Record settlement transaction
             await producer.publish_message(
@@ -3813,6 +3628,8 @@ async def _order_settlement(order: Order):
                     status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                     detail=f"Failed to process order settlement after {MAX_RETRIES} attempts"
                 )
+
+
 async def _package_settlement(order: Order):
     """
     Process wallet settlements for package delivery with retries and failure handling.
@@ -4357,7 +4174,7 @@ async def sender_confirm_delivery_or_order_received(
                 await send_push_notification(
                     tokens=[vendor_token],
                     title="Order Completed",
-                    message=f"Congratulations! Order completed. Your wallet has been credited with ₦{order.amount_due_vendor}.",
+                    message=f"Order completed. Your wallet has been credited with ₦{order.amount_due_vendor}.",
                     navigate_to="/(app)/delivery/orders",
                 )
 
@@ -4615,7 +4432,7 @@ async def rider_mark_package_delivered(
             f"Successfully marked delivery {delivery_id} as delivered by rider {current_user.id}"
         )
         
-        redis_client.delete(f"order_by_id:{order.id}")    
+        redis_client.delete(f"order_by_id:{delivery.order.id}")    
         return DeliveryStatusUpdateSchema(
             delivery_status=delivery.delivery_status,
             order_status=delivery.order.order_status,
