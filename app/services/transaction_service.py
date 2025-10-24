@@ -1410,7 +1410,7 @@ async def order_payment_callback(request: Request, db: AsyncSession):
 
         # Process successful payments
         if new_status == PaymentStatus.PAID:
-            logger.info(f"Processing successful payment for order {order.id}, type: {order.order_type}")
+            logger.info(f"Processing successful payment for order # {order.order_number}, type: {order.order_type}")
 
             # --- PACKAGE ORDER ---
             if order.order_type == OrderType.PACKAGE:
