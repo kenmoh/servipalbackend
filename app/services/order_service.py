@@ -525,7 +525,7 @@ async def order_food_or_request_laundy_service(
     if requires_delivery:
         # Fetch only the vendor's pickup/dropoff charge
         charge_result = await db.execute(
-            select(Profile.vendor_pickup_dropoff_charge)
+            select(Profile.pickup_and_delivery_charge)
             .where(Profile.user_id == vendor_id)
         )
         charge = charge_result.scalar_one_or_none()
