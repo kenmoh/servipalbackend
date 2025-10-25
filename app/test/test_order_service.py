@@ -5,7 +5,7 @@ from decimal import Decimal
 from httpx import AsyncClient
 from app.schemas.status_schema import UserType, OrderStatus, PaymentStatus, DeliveryStatus
 from app.schemas.order_schema import OrderType
-from app.models.models import Item, User, Profile, Wallet, ChargeAndCommission, Order, Delivery, OrderItem
+from app.models.models import Item, User, Profile, Wallet, ChargeAndCommission, Order,ItemImage, Delivery, OrderItem
 from app.services.auth_service import create_new_rider, register_user
 from app.services.order_service import create_package_order, order_food_or_request_laundy_service
 from app.schemas.user_schemas import CreateUserSchema, RiderCreate
@@ -46,19 +46,22 @@ async def restaurant_vendor(async_db: AsyncSession) -> User:
         "user_type": UserType.RESTAURANT_VENDOR,
         "phone_number": f"080{uuid.uuid4().hex[:8]}",
     }
-    user = await register_user(db=async_db, user_data=CreateUserSchema(**user_payload))
-    profile = await async_db.get(Profile, user['id'])
-    profile.business_name = "Test Restaurant"
-    profile.full_name = "Test Vendor"
+    user = User( **user_payload)
+    async_db.add(user)
+    await async_db.flush()
+    wallet = Wallet(id=user.id, balance=0.0, escrow_balance=0.0)
+    async_db.add(wallet)
+    profile = Profile(user_id=user.id, business_name="Test Restaurant",  business_address="Test Restaurant Address", business_registration_number="RC1234")
+    async_db.add(profile)
     await async_db.commit()
-    await async_db.refresh(profile)
-    user_instance = await async_db.get(User, user['id'])
-    return user_instance
+    await async_db.refresh(user)
+    return user
 
 
 
 @pytest.fixture
 async def food_item(async_db: AsyncSession, restaurant_vendor: User) -> Item:
+    # Create item first
     item = Item(
         name="Test Food Item",
         description="A delicious test food item",
@@ -67,6 +70,15 @@ async def food_item(async_db: AsyncSession, restaurant_vendor: User) -> Item:
         item_type=ItemType.FOOD,
     )
     async_db.add(item)
+    await async_db.flush()  # Flush to get the item ID
+    
+    # Create ItemImage for the food item
+    item_image = ItemImage(
+        item_id=item.id,
+        url="https://example.com/test-food-image.jpg",
+        is_primary=True
+    )
+    async_db.add(item_image)
     await async_db.commit()
     await async_db.refresh(item)
     return item
@@ -79,17 +91,20 @@ async def laundry_vendor(async_db: AsyncSession) -> User:
         "user_type": UserType.LAUNDRY_VENDOR,
         "phone_number": f"080{uuid.uuid4().hex[:8]}",
     }
-    user = await register_user(db=async_db, user_data=CreateUserSchema(**user_payload))
-    profile = await async_db.get(Profile, user['id'])
-    profile.business_name = "Test Laundry"
-    profile.full_name = "Test Laundry Vendor"
+    user = await User(**user_payload)
+    async_db.add(user)
+    await async_db.flush()
+    wallet = Wallet(id=user.id, balance=0.0, escrow_balance=0.0)
+    async_db.add(wallet)
+    profile = Profile(user_id=user.id, business_name="Test Laundry", business_address="Test Laundry Address", business_registration_number="RC1234")
+    async_db.add(profile)
     await async_db.commit()
-    await async_db.refresh(profile)
-    user_instance = await async_db.get(User, user['id'])
-    return user_instance
+    await async_db.refresh(user)
+    return user
 
 @pytest.fixture
 async def laundry_item(async_db: AsyncSession, laundry_vendor: User) -> Item:
+    # Create item first
     item = Item(
         name="Test Laundry Item",
         description="A test laundry service",
@@ -98,6 +113,15 @@ async def laundry_item(async_db: AsyncSession, laundry_vendor: User) -> Item:
         item_type=ItemType.LAUNDRY,
     )
     async_db.add(item)
+    await async_db.flush()  # Flush to get the item ID
+    
+    # Create ItemImage for the laundry item
+    item_image = ItemImage(
+        item_id=item.id,
+        url="https://example.com/test-laundry-image.jpg",
+        is_primary=True
+    )
+    async_db.add(item_image)
     await async_db.commit()
     await async_db.refresh(item)
     return item
@@ -131,8 +155,8 @@ class TestOrderService:
             "origin": "Origin Address",
             "destination": "Destination Address",
             "duration": "15 mins",
-            "pickup_coordinates": "6.5244, 3.3792",
-            "dropoff_coordinates": "6.5344, 3.3892",
+            "pickup_coordinates": [6.5244, 3.3792],
+            "dropoff_coordinates": [6.5344, 3.3892]
         }
         files = {"image_url": ("test.jpg", io.BytesIO(image_content), "image/jpeg")}
     

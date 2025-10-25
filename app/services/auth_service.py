@@ -1459,6 +1459,7 @@ async def register_user(db: AsyncSession, user_data: CreateUserSchema, backgroun
             try:
 
                 # Send verification codes in background
+                logger.info('Sending otp...')
                 background_tasks.add_task(
                     _send_verification_codes,
                     user_id=user.id,
@@ -1467,6 +1468,7 @@ async def register_user(db: AsyncSession, user_data: CreateUserSchema, backgroun
                     email_code=verification.email_code,
                     phone_code=verification.phone_code
                 )
+                logger.info("otp sent successfully")
             except Exception as e:
                 logger.error(f"Failed to send verification codes: {str(e)}")
         
@@ -1559,10 +1561,12 @@ async def create_user(db: AsyncSession, user_data: CreateUserSchema) -> CreateUs
         email_code, phone_code = await generate_verification_codes(user, profile, db)
 
         # Send verification code to phone and email
-        if settings.TEST == False:
+        if not settings.TEST:
+            logger.info('Sending otp... ')
             await send_verification_codes(
                 user=user, email_code=email_code, phone_code=phone_code, db=db
             )
+            logger.info('Otp sent')
 
         return user
         
