@@ -2,7 +2,7 @@ from uuid import UUID
 import uuid
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status, Query, BackgroundTask
+from fastapi import APIRouter, Depends, HTTPException, Request, status, Query, BackgroundTasks
 from fastapi.responses import HTMLResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
