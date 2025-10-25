@@ -1204,6 +1204,8 @@ async def handle_payment_webhook(
                     )
                 return {"message": "Success"}
 
+        logger.info('Sending background')
+
         return {"message": "Payment validation failed"}
 
     except Exception as e:
@@ -1589,7 +1591,7 @@ async def order_payment_callback(request: Request, db: AsyncSession):
                     await send_push_notification(
                         tokens=[vendor_token],
                         title="Payment Confirmed",
-                        message=f"You have a new order from {customer.full_name or customer.business_name}. Order ID: {order.id}",
+                        message=f"You have a new order from {customer.full_name or customer.business_name}. Order ID: {order.order_number}",
                     )
 
                 # Commit changes

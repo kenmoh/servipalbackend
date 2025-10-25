@@ -2,7 +2,7 @@ from uuid import UUID
 import uuid
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status, Query
+from fastapi import APIRouter, Depends, HTTPException, Request, status, Query, BackgroundTask
 from fastapi.responses import HTMLResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -179,10 +179,12 @@ async def withdraw_funds(
 @router.post("/webhook", include_in_schema=False, status_code=status.HTTP_200_OK)
 async def process_webhook(
     request: Request,
+    background_task: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, str]:
     return await transaction_service.handle_payment_webhook(
         request=request,
+        background_task=background_task
         db=db,
     )
 
