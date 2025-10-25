@@ -184,7 +184,7 @@ async def process_webhook(
 ) -> dict[str, str]:
     return await transaction_service.handle_payment_webhook(
         request=request,
-        background_task=background_task
+        background_task=background_task,
         db=db,
     )
 
