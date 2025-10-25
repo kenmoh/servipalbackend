@@ -2437,7 +2437,7 @@ async def pay_with_wallet(
     redis_client.delete(f"user_orders:{order.vendor_id}")
     redis_client.delete("paid_pending_deliveries")
     redis_client.delete("orders")
-    redis_client.delete(f'order_by_id:{order.}')
+    redis_client.delete(f'order_by_id:{order.id}')
 
 
     # Update customer wallet(move to escrow)
