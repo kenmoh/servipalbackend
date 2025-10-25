@@ -726,7 +726,7 @@ async def _calculate_order_costs(
     vendor_pickup_dropoff_charge = Decimal("0.00")
     if require_delivery:
         charge_result = await db.execute(
-            select(Profile.vendor_pickup_dropoff_charge).where(
+            select(Profile.pickup_and_delivery_charge).where(
                 Profile.user_id == vendor_id
             )
         )
