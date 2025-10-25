@@ -109,6 +109,7 @@ class TransactionLogService:
         db: AsyncSession,
         *,
         vendor_id: UUID,
+        order_id: UUID,
         amount: float,
         action: TransactionLogAction,
         status: PaymentStatus,
@@ -119,14 +120,15 @@ class TransactionLogService:
         """
         log = TransactionLog(
             vendor_id=vendor_id,
+            order_id=order_id,
             amount=amount,
             action=action,
             status=status,
             details=details or {},
         )
         db.add(log)
-        await db.commit()
-        return log
+        await db.flush()
+
 
     @staticmethod
     async def get_logs(
