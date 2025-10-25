@@ -2348,7 +2348,7 @@ async def pay_with_wallet(
             }
         )
 
-        # 2. Update the customer's wallet: move funds from balance to escrow
+        # 2. Update the customer's wallet: move to escrow
         await producer.publish_message(
             service='wallet',
             operation='update_wallet',
@@ -2384,6 +2384,7 @@ async def pay_with_wallet(
         redis_client.delete(f"user_orders:{order.owner_id}")
         redis_client.delete("paid_pending_deliveries")
         redis_client.delete("orders")
+        redis_client.delete(f'order_by_id:{order.id}')
 
         return {
             "payment_status": order.order_payment_status,
@@ -2394,23 +2395,18 @@ async def pay_with_wallet(
    
     vendor = await get_user_profile(order.vendor_id, db)
 
-    total_price = order.total_price
-    delivery_fee = 0
-    if order.require_delivery == RequireDeliverySchema.DELIVERY:
-        if order.delivery and order.delivery.delivery_fee:
-            delivery_fee = order.delivery.delivery_fee
-        else:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Delivery fee required but not found.",
-            )
-    charged_amount = (
-        total_price + delivery_fee
-        if order.require_delivery == RequireDeliverySchema.DELIVERY
-        else total_price
-    )
+    total_price = order.grand_total
+    # delivery_fee = 0
+    # if order.require_delivery == RequireDeliverySchema.DELIVERY:
+    #     if order.delivery and order.delivery.delivery_fee:
+    #         delivery_fee = order.delivery.delivery_fee
+    #     else:
+    #         raise HTTPException(
+    #             status_code=status.HTTP_400_BAD_REQUEST,
+    #             detail="Delivery fee required but not found.",
+    #         )
 
-    if customer_wallet.balance < charged_amount:
+    if customer_wallet.balance < total_price:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Insufficient funds in wallet",
@@ -2441,6 +2437,7 @@ async def pay_with_wallet(
     redis_client.delete(f"user_orders:{order.vendor_id}")
     redis_client.delete("paid_pending_deliveries")
     redis_client.delete("orders")
+    redis_client.delete(f'order_by_id:{order.}')
 
 
     # Update customer wallet(move to escrow)
@@ -2460,7 +2457,7 @@ async def pay_with_wallet(
             payload={
                 'wallet_id':str(order.vendor_id),
                 'balance_change':'0',
-                'escrow_change':str(order.amount_due_vendor),
+                'escrow_change':str(order.charged_amount),
             }
         )
 
