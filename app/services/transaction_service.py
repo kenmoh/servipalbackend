@@ -2457,7 +2457,7 @@ async def pay_with_wallet(
             payload={
                 'wallet_id':str(order.vendor_id),
                 'balance_change':'0',
-                'escrow_change':str(order.charged_amount),
+                'escrow_change':str(order.grand_total),
             }
         )
 

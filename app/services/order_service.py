@@ -5015,6 +5015,7 @@ def format_delivery_response(
     order_data = {
         "id": str(order.id),
         "user_id": str(order.owner_id),
+        "vendor_pickup_dropoff_charge": order.vendor_pickup_dropoff_charge,
         "order_number": order.order_number,
         "vendor_id": str(order.vendor_id),
         "business_name": order.vendor.profile.business_name
