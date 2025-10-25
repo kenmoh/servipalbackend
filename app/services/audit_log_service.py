@@ -127,7 +127,7 @@ class TransactionLogService:
             details=details or {},
         )
         db.add(log)
-        await db.flush()
+        await db.commit()
 
 
     @staticmethod
