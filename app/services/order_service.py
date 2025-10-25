@@ -3801,6 +3801,7 @@ async def customer_confirm_order_received(
         # 5. Create audit log
         try:
             await TransactionLogService.create_log(
+                db=db,
                 vendor_id=current_user.id,
                 amount=order.grand_total - order.amount_due_vendor,
                 action=TransactionLogAction.RECEIVED,
@@ -4032,6 +4033,7 @@ def _invalidate_order_caches(order: Order, current_user: User):
     redis_client.delete(f"user_related_orders:{current_user.id}")
     redis_client.delete(f"user_related_orders:{order.vendor_id}")
     redis_client.delete(f"user_related_orders:{order.owner_id}")
+    redis_client.delete(f'order_by_id:{order.id}')
 
 
 async def sender_confirm_delivery_or_order_received(
