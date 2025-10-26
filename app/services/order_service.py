@@ -5278,12 +5278,10 @@ async def get_user_related_orders(
     cached_orders = redis_client.get(cache_key)
     if cached_orders:
         return [DeliveryResponse(**d) for d in json.loads(cached_orders)]
-
+    
     stmt = (
         select(Order)
-        .outerjoin(
-            Delivery
-        )  # Using outerjoin to ensure we get orders even without deliveries
+        .outerjoin(Order.delivery) 
         .options(
             selectinload(Order.order_items).options(
                 joinedload(OrderItem.item).options(selectinload(Item.images))
@@ -5295,8 +5293,8 @@ async def get_user_related_orders(
             or_(
                 Order.owner_id == user_id,
                 Order.vendor_id == user_id,
-                and_(Delivery.id != None, Delivery.dispatch_id == user_id),
-                and_(Delivery.id != None, Delivery.rider_id == user_id),
+                Delivery.dispatch_id == user_id,
+                Delivery.rider_id == user_id,
             )
         )
         .where(
@@ -5304,20 +5302,77 @@ async def get_user_related_orders(
         )
         .order_by(Order.updated_at.desc())
     )
+    
     result = await db.execute(stmt)
     orders = result.unique().scalars().all()
-
+    
     delivery_responses = [
         format_delivery_response(order=order, delivery=order.delivery) for order in orders
     ]
-
+    
     redis_client.setex(
         cache_key,
-       settings.REDIS_EX,
+        settings.REDIS_EX,
         json.dumps([d.model_dump() for d in delivery_responses], default=str),
     )
-
+    
     return delivery_responses
+
+# async def get_user_related_orders(
+#     db: AsyncSession,
+#     user_id: UUID,
+# ) -> list[DeliveryResponse]:
+#     """
+#     Returns deliveries where the user is involved as:
+#       - order.owner_id
+#       - order.vendor_id
+#       - delivery.dispatch_id
+#       - delivery.rider_id
+#     """
+#     cache_key = f"user_related_orders:{user_id}"
+#     cached_orders = redis_client.get(cache_key)
+#     if cached_orders:
+#         return [DeliveryResponse(**d) for d in json.loads(cached_orders)]
+
+#     stmt = (
+#         select(Order)
+#         .outerjoin(
+#             Delivery
+#         )  # Using outerjoin to ensure we get orders even without deliveries
+#         .options(
+#             selectinload(Order.order_items).options(
+#                 joinedload(OrderItem.item).options(selectinload(Item.images))
+#             ),
+#             joinedload(Order.delivery),
+#             joinedload(Order.vendor).joinedload(User.profile),
+#         )
+#         .where(
+#             or_(
+#                 Order.owner_id == user_id,
+#                 Order.vendor_id == user_id,
+#                 and_(Delivery.id != None, Delivery.dispatch_id == user_id),
+#                 and_(Delivery.id != None, Delivery.rider_id == user_id),
+#             )
+#         )
+#         .where(
+#             Order.order_type.in_([OrderType.FOOD, OrderType.PACKAGE, OrderType.LAUNDRY])
+#         )
+#         .order_by(Order.updated_at.desc())
+#     )
+#     result = await db.execute(stmt)
+#     orders = result.unique().scalars().all()
+
+#     delivery_responses = [
+#         format_delivery_response(order=order, delivery=order.delivery) for order in orders
+#     ]
+
+#     redis_client.setex(
+#         cache_key,
+#        settings.REDIS_EX,
+#         json.dumps([d.model_dump() for d in delivery_responses], default=str),
+#     )
+
+#     return delivery_responses
 
 
 async def cancel_order_old(
