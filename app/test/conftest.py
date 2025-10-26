@@ -13,7 +13,7 @@ from sqlalchemy import text
 
 from app import auth
 from app.main import app
-from app.models.models import Base, User, Profile, Wallet, ChargeAndCommission, Category
+from app.models.models import Base, User, Profile, Wallet, ChargeAndCommission, Category, ProfileImage
 from app.database.database import get_db, create_test_session, create_test_engine
 from app.config.config import settings
 from app.schemas.item_schemas import ItemType
@@ -116,7 +116,7 @@ import uuid
 
 
 @pytest_asyncio.fixture
-async def authenticated_user(async_client: AsyncClient, async_db: AsyncSession):
+async def authenticated_user(async_db: AsyncSession, async_client: AsyncClient,):
     """
     Fixture to create a customer user, log them in, and return authentication details.
     """
@@ -129,16 +129,30 @@ async def authenticated_user(async_client: AsyncClient, async_db: AsyncSession):
     }
 
     # Create user
-    register_response = await async_client.post("/api/auth/register", json=user_payload)
-    assert register_response.status_code == 201
-    user_data = register_response.json()
+    user = User(
+        email=f"testuser_{unique_id}@example.com",
+        user_type=UserType.CUSTOMER.value,
+        phone_number=f"+12345{unique_id[:5]}",
+        password="Password123!",
+        account_status=AccounStatus.CONFIRMED
+    )
 
-    # Update profile with full name
-    profile = await async_db.get(Profile, user_data["id"])
-    profile.full_name = "Test User"
+    async_db.add(user)
+    await async_db.flush()
+
+    profile = Profile(
+        user_id=user.id
+        full_name="Test User"
+    )
+
+    async_db.add(profile)
+    await async_db.flush(profile)
+
+    Profile_image = ProfileImage(profile_id=profile.user_id, profile_image_url='https://text-image.png')
+    async_db.add(Profile_image)
+    
     await async_db.commit()
-    await async_db.refresh(profile)
-
+   
     # Log in user
     login_data = {"username": user_payload["email"], "password": user_payload["password"]}
     login_response = await async_client.post("/api/auth/login", data=login_data)

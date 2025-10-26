@@ -6,6 +6,7 @@ import uuid
 from sqlalchemy import func, or_, and_, select, update, insert
 
 from fastapi import UploadFile
+from app.ws_manager.ws_manager import manager
 
 from sqlalchemy.orm import joinedload, selectinload
 from app.models.models import (
@@ -57,7 +58,8 @@ from app.schemas.delivery_schemas import (
     DeliveryResponse,
     DeliveryType,
     PaginatedDeliveryResponse,
-    CancelOrderSchema
+    CancelOrderSchema,
+    LocationData
 )
 from app.schemas.item_schemas import ItemType
 
@@ -2714,6 +2716,12 @@ async def _assign_rider_and_update_db(db: AsyncSession, order: Order, rider: Use
     db.add(order)
     db.add(order.delivery)
 
+async def _rider_pickup_and_update_db(db: AsyncSession, order: Order, rider: User, dispatch_id: UUID):
+    """Atomically updates the database to assign the rider and update statuses."""
+    order.delivery.delivery_status = DeliveryStatus.PICKED_UP
+    db.add(order)
+    db.add(order.delivery)
+
 
 async def _dispatch_post_acceptance_tasks(order: Order, rider: User, db: AsyncSession):
     """Handles tasks that should occur after the database transaction is committed."""
@@ -2820,7 +2828,7 @@ async def rider_accept_delivery_order(
         await db.commit()
 
         # 3. Dispatch post-acceptance tasks (financial, notifications, etc.) after commit
-        await _dispatch_post_acceptance_tasks(order, current_user, db)
+        # await _dispatch_post_acceptance_tasks(order, current_user, db)
 
         return DeliveryStatusUpdateSchema(delivery_status=order.delivery.delivery_status)
 
@@ -2830,6 +2838,42 @@ async def rider_accept_delivery_order(
     except Exception as e: # Catch unexpected errors
         await db.rollback()
         logger.error(f"Failed to accept delivery for order {order_id}: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="An unexpected error occurred while accepting the delivery.",
+        )
+
+
+async def rider_pickup_delivery_order(
+    db: AsyncSession, order_id: UUID, current_user: User
+) -> DeliveryStatusUpdateSchema:
+    """
+    Allows a rider to pickup a delivery order from customer using an atomic transaction and decoupled post-processing.
+    """
+    try:
+        
+        order = await db.scalar(
+        select(Order).where(Order.id == order_id).options(selectinload(Order.delivery)).with_for_update()
+    )
+
+        if current_user.id != order.delivery.rider_id:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail='Invalid rider.')
+        
+
+        await _rider_pickup_and_update_db(db, order, current_user, dispatch_id)
+        
+        await db.commit()
+
+        await _dispatch_post_acceptance_tasks(order, current_user, db)
+
+        return DeliveryStatusUpdateSchema(delivery_status=order.delivery.delivery_status)
+
+    except HTTPException: # Re-raise known exceptions
+        await db.rollback()
+        raise
+    except Exception as e: # Catch unexpected errors
+        await db.rollback()
+        logger.error(f"Failed to pickup delivery for order {order_id}: {e}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="An unexpected error occurred while accepting the delivery.",
@@ -4428,7 +4472,7 @@ async def rider_mark_package_delivered(
             f"Successfully marked delivery {delivery_id} as delivered by rider {current_user.id}"
         )
         
-        redis_client.delete(f"order_by_id:{delivery.order.id}")    
+        redis_client.delete(f"order_by_id:{delivery.order.id}")
         return DeliveryStatusUpdateSchema(
             delivery_status=delivery.delivery_status,
             order_status=delivery.order.order_status,
@@ -4516,6 +4560,49 @@ async def _invalidate_delivery_caches(delivery: Delivery, current_user: User):
     await ws_service.broadcast_delivery_status_update(
         delivery_id=delivery.id, new_status=delivery.order.order_status
     )
+
+
+async def update_delivery_order_location(
+    db: AsyncSession, 
+    delivery_id: UUID, 
+    location_data: LocationData
+) -> LocationData:
+    # Update the delivery record
+    stmt = (
+        select(Delivery)
+        .where(Delivery.id == delivery_id, Delivery.rider_id == location_data.rider_id)
+    )
+    result = await db.execute(stmt)
+    delivery = result.scalar_one_or_none()
+    
+    raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Order not found or invalid rider."
+        )
+    if delivery.delivery_status == DeliveryStatus.DELIVERED:
+        raise HTTPException(400, "Delivery already completed")
+
+    # Update coordinates
+    delivery.last_known_rider_coordinates = location_data.last_known_rider_coordinates
+    await db.commit()
+    await db.refresh(delivery)
+
+    message = {
+    "type": "rider_location_update",
+    "delivery_id": str(delivery.id),
+    "coordinates": delivery.last_known_rider_coordinates,
+    "timestamp": datetime.now().isoformat(),
+}
+
+    # Send to customer
+    if delivery.sender_id:
+        await manager.send_personal_message(message, str(delivery.sender_id))
+
+
+
+
+    return location_data   
+
 
 # <<<--- Admin Order Status Modification --->>>
 async def admin_modify_order_status(

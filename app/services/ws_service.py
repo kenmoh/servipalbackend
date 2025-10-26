@@ -1,4 +1,5 @@
 from datetime import datetime
+from typing import Tuple
 from app.ws_manager.ws_manager import manager
 from typing import List
 
@@ -131,13 +132,19 @@ async def broadcast_new_report_message(
     await manager.broadcast_to_admins(message)
 
 
-# Additional debug function to test WebSocket connection
-async def test_websocket_broadcast():
-    """Test function to verify WebSocket broadcasting works"""
-    test_message = {
-        "type": "test_message",
-        "message": "WebSocket test successful",
+
+async def broadcast_delivery_location_update(
+    delivery_id: str, rider_id: str, coordinates: Tuple[float, float]
+):
+    """Broadcast real-time rider location update for a delivery."""
+    message = {
+        "type": "delivery_location_update",
+        "delivery_id": delivery_id,
+        "rider_id": rider_id,
+        "coordinates": coordinates,
         "timestamp": datetime.now().isoformat(),
     }
 
-    await manager.broadcast_to_admins(test_message)
+    await manager.broadcast_to_admins(message)
+    await manager.broadcast_to_mobile(message)
+

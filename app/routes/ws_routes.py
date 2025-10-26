@@ -47,7 +47,7 @@ security = HTTPBearer()
 async def websocket_endpoint(
     websocket: WebSocket,
     token: str = Query(...),
-    client_type: str = Query("admin"),
+    client_type: str = Query("admin", regex="^(admin|mobile)$"),
 ):
     """Main WebSocket endpoint for real-time communication"""
     async with async_session() as db:
@@ -112,3 +112,4 @@ async def websocket_endpoint(
         except Exception as e:
             logger.error(f"WebSocket error: {e}")
             manager.disconnect(websocket, client_type, user_id)
+

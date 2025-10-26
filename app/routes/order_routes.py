@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.auth import get_db, get_current_user
 from app.models.models import Order, User
-from app.schemas.delivery_schemas import DeliveryResponse, PaginatedDeliveryResponse, CancelOrderSchema
+from app.schemas.delivery_schemas import DeliveryResponse, PaginatedDeliveryResponse, CancelOrderSchema, LocationData
 
 from app.schemas.order_schema import (
     OrderAndDeliverySchema,
@@ -196,7 +196,19 @@ async def rider_accept_delivery(
         )
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
-    
+
+@router.put("/{order_id}/pickup", status_code=status.HTTP_202_ACCEPTED)
+async def rider_pickup_delivery_order(
+    order_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> DeliveryStatusUpdateSchema:
+    try:
+        return await order_service.rider_pickup_delivery_order(
+            db=db, current_user=current_user, order_id=order_id
+        )
+    except Exception as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)) 
 
 @router.put("/{order_id}/pickup-laundry", status_code=status.HTTP_202_ACCEPTED)
 async def laundry_pickup(
@@ -263,6 +275,21 @@ async def rider_mark_package_delivered(
     try:
         return await order_service.rider_mark_package_delivered(
             db=db, current_user=current_user, delivery_id=delivery_id
+        )
+    except Exception as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+
+@router.put("/{delivery_id}/location-update", status_code=status.HTTP_202_ACCEPTED)
+async def update_delivery_order_location(
+    delivery_id: UUID,
+    location_data: LocationData,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+   
+) -> DeliveryStatusUpdateSchema:
+    try:
+        return await order_service.update_delivery_order_location(
+            db=db, delivery_id=delivery_id, location_data=location_data
         )
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))

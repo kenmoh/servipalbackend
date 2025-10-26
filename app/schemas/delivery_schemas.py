@@ -34,6 +34,10 @@ class DeliveryCreate(BaseModel):
     dropoff_coordinates: Tuple[float, float]
     distance: float
 
+class LocationData(BaseModel):
+    rider_id: UUID
+    last_known_rider_coordinates: Tuple[float, float]
+
 
 class DeliverySchema(BaseModel):
     id: UUID

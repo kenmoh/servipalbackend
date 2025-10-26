@@ -50,7 +50,7 @@ class DeliveryStatus(str, Enum):
     DELIVERED: str = "delivered"  # Rider/Dispatch ops
     RECEIVED: str = "received"  # Sender ops
     CANCELLED: str = "canceled"
-    # VENDOR_RECEIVED_LAUNDRY_ITEM: str = "laundry_received"  # Vendor ops
+    PICKED_UP: str = "picked-up"
 
 
 class OrderStatus(str, Enum):

@@ -109,7 +109,6 @@ central_queue_producer = CentralQueueProducer()
 @asynccontextmanager
 async def lifespan(application: FastAPI):
     try:
-        print("Starting up...")
         logger.info("Initializing application...")
 
         async with async_session() as db:
