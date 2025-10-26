@@ -2682,9 +2682,10 @@ async def _validate_delivery_acceptance(db: AsyncSession, order_id: UUID, rider:
         .where(Delivery.rider_id == rider.id, Delivery.delivery_status==DeliveryStatus.ACCEPTED)
     )
 
-    delivery_count = await db.execute(delivery_count_stmt)
+    delivery_count_result = await db.execute(delivery_count_stmt)
+    delivery_count = delivery_count_result.scalar_one()
 
-    if delivery_count > 2:
+    if delivery_count > 1:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You still have 2 pending delivery.")
 
     # Fetch and lock the order to prevent race conditions
