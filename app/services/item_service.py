@@ -18,7 +18,7 @@ from app.schemas.item_schemas import (
     ItemType,
     CategoryType,
     LaundryItemCreate,
-    LaundryMenuResponseSchema
+    LaundryMenuResponseSchema,
 )
 from app.schemas.status_schema import AccountStatus, UserType
 from app.config.config import redis_client, settings
@@ -93,6 +93,7 @@ async def get_categories(db: AsyncSession) -> list[CategoryResponse]:
 
     return categories
 
+
 async def get_category(db: AsyncSession, category_id: UUID) -> CategoryResponse:
     """Retrieves a category."""
 
@@ -135,7 +136,9 @@ async def create_menu_item(
 
     try:
         # Create item first
-        new_item = Item(**item_data.model_dump(), user_id=current_user.id, item_type=ItemType.FOOD)
+        new_item = Item(
+            **item_data.model_dump(), user_id=current_user.id, item_type=ItemType.FOOD
+        )
         db.add(new_item)
         await db.flush()
 
@@ -182,7 +185,6 @@ async def create_menu_item(
         )
 
 
-
 async def create_laundry_item(
     db: AsyncSession,
     current_user: User,
@@ -215,7 +217,11 @@ async def create_laundry_item(
 
     try:
         # Create item first
-        new_item = Item(**item_data.model_dump(), user_id=current_user.id, item_type=ItemType.LAUNDRY)
+        new_item = Item(
+            **item_data.model_dump(),
+            user_id=current_user.id,
+            item_type=ItemType.LAUNDRY,
+        )
         db.add(new_item)
         await db.flush()
 
@@ -257,7 +263,6 @@ async def create_laundry_item(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to create item: {str(e)}",
         )
-
 
 
 async def get_restaurant_menu(
@@ -315,7 +320,9 @@ async def get_restaurant_menu(
 
         # Cache the menu
         # set_cached_menu(vendor_id, food_group, menu_response)
-        redis_client.setex(key, settings.REDIS_EX, json.dumps(menu_response, default=str))
+        redis_client.setex(
+            key, settings.REDIS_EX, json.dumps(menu_response, default=str)
+        )
 
         return MenuResponseSchema(**menu_response)
 
@@ -348,7 +355,7 @@ async def get_laundry_menu(
             .where(
                 Item.user_id == vendor_id,
                 Item.item_type == ItemType.LAUNDRY,
-                Item.is_deleted == False
+                Item.is_deleted == False,
             )
             .order_by(Item.name)
         )
@@ -459,7 +466,7 @@ async def get_all_laundry_items(db: AsyncSession) -> list[LaundryMenuResponseSch
         # Get all laundry items
         laundry_query = (
             select(Item)
-            .where(Item.item_type == ItemType.LAUNDRY, Item.is_deleted==False)
+            .where(Item.item_type == ItemType.LAUNDRY, Item.is_deleted == False)
             .options(selectinload(Item.images))
             .order_by(Item.name)
         )
@@ -507,25 +514,25 @@ async def get_menu_item_by_id(
 ) -> MenuResponseSchema:
     """Retrieves a specific item by ID belonging to the current VENDOR user."""
     cache_key = f"item:{menu_item_id}"
-    
+
     # Try cache first
     cached_item = redis_client.get(cache_key)
     if cached_item:
         item_dict = json.loads(cached_item)
         return MenuResponseSchema(**item_dict)
-    
+
     # Query database
     stmt = (
         select(Item).where(Item.id == menu_item_id).options(selectinload(Item.images))
     )
     result = await db.execute(stmt)
     menu_item = result.unique().scalar_one_or_none()
-    
+
     if not menu_item:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Item not found"
         )
-    
+
     # Prepare dict for caching and response
     item_dict = {
         "id": str(menu_item.id),
@@ -539,20 +546,17 @@ async def get_menu_item_by_id(
         "side": menu_item.side,
         "food_group": menu_item.food_group or None,
         "images": [
-            {
-                "id": str(img.id),
-                "url": img.url, 
-                "item_id": str(img.item_id)
-            }
+            {"id": str(img.id), "url": img.url, "item_id": str(img.item_id)}
             for img in menu_item.images
         ],
     }
-    
+
     # Cache the serialized item_dict (not the menu_item object)
     redis_client.setex(cache_key, settings.REDIS_EX, json.dumps(item_dict, default=str))
-    
+
     # Return response model
     return MenuResponseSchema(**item_dict)
+
 
 async def update_menu_item(
     db: AsyncSession,
@@ -565,7 +569,7 @@ async def update_menu_item(
     Handles both item data and image updates.
     """
     cache_key = f"restaurant_menu:{current_user.id}:{item_data.food_group}"
-  
+
     # Fetch the current item from DB (not cache, to ensure accuracy)
     db_item = await get_item_by_id(
         db=db, item_id=menu_item_id, current_user=current_user
@@ -636,7 +640,6 @@ async def update_menu_item(
         # Invalidate caches
         invalidate_item_cache(menu_item_id)
         redis_client.delete(cache_key)
-        
 
         return updated_item
 
@@ -665,7 +668,6 @@ async def update_menu_item(
         )
 
 
-
 async def update_laumdry_item(
     db: AsyncSession,
     current_user: User,
@@ -677,11 +679,9 @@ async def update_laumdry_item(
     Handles both item data and image updates.
     """
     cache_key = f"laundry_item:{current_user.id}"
-  
+
     # Fetch the current item from DB (not cache, to ensure accuracy)
-    db_item = await get_item_by_id(
-        db=db, item_id=item_id, current_user=current_user
-    )
+    db_item = await get_item_by_id(db=db, item_id=item_id, current_user=current_user)
     if not db_item:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Item not found"
@@ -748,7 +748,6 @@ async def update_laumdry_item(
         # Invalidate caches
         invalidate_item_cache(item_id)
         redis_client.delete(cache_key)
-        
 
         return updated_item
 
@@ -775,7 +774,6 @@ async def update_laumdry_item(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to update menu item: {str(e)}",
         )
-
 
 
 async def delete_item(db: AsyncSession, current_user: User, item_id: UUID) -> None:
@@ -824,10 +822,9 @@ async def delete_item(db: AsyncSession, current_user: User, item_id: UUID) -> No
 
         # Invalidate caches
         invalidate_item_cache(item_id)
-       
+
         redis_client.delete(f"vendor_items:{current_user.id}")
         redis_client.delete(f"restaurant_menu:{current_user.id}:{food_group}")
-
 
         return None
     except Exception as e:

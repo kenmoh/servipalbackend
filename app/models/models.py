@@ -1,6 +1,7 @@
 from typing import Optional
 import secrets
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
+from geoalchemy2 import Geography
 from sqlalchemy import func
 import random
 from uuid import UUID, uuid4
@@ -24,7 +25,7 @@ from sqlalchemy import (
     Index,
     Text,
     Enum,
-    Boolean
+    Boolean,
 )
 from sqlalchemy.schema import Sequence
 from sqlalchemy.orm import mapped_column, Mapped, relationship
@@ -43,7 +44,6 @@ from app.schemas.status_schema import (
     RequireDeliverySchema,
     TransactionDirection,
     TransactionLogAction,
-    
     TransactionType,
     UserType,
 )
@@ -79,6 +79,8 @@ class User(Base):
     notification_token: Mapped[str] = mapped_column(nullable=True)
     is_blocked: Mapped[bool] = mapped_column(default=False)
     is_verified: Mapped[bool] = mapped_column(default=False)
+    is_online: Mapped[bool] = mapped_column(default=True, nullable=True)
+    has_delivery: Mapped[bool] = mapped_column(default=False, nullable=True)
     rider_is_suspended_for_order_cancel: Mapped[bool] = mapped_column(
         nullable=True, default=False
     )
@@ -90,15 +92,18 @@ class User(Base):
         nullable=False, default=UserType.CUSTOMER, index=True
     )
 
-    accept_terms_and_conditions: Mapped[bool] = mapped_column(default=True, nullable=True)
+    accept_terms_and_conditions: Mapped[bool] = mapped_column(
+        default=True, nullable=True
+    )
     account_status: Mapped[AccountStatus] = mapped_column(default=AccountStatus.PENDING)
     current_user_location_coords: Mapped[dict] = mapped_column(JSON, nullable=True)
+    location_coordinates: Mapped[Optional[str]] = mapped_column(
+        Geography(geometry_type="POINT", srid=4326), nullable=True
+    )
 
     # Dispatcher-rider relationship with proper cascade
     dispatcher_id: Mapped[Optional[UUID]] = mapped_column(
-        ForeignKey(
-            "users.id", ondelete="CASCADE"
-        ),  
+        ForeignKey("users.id", ondelete="CASCADE"),
         # nullable=True,
     )
 
@@ -108,7 +113,7 @@ class User(Base):
         back_populates="dispatcher",
         foreign_keys=[dispatcher_id],
         lazy="dynamic",
-        cascade="all, delete-orphan", 
+        cascade="all, delete-orphan",
         passive_deletes=True,  # Let database handle the cascade
     )
 
@@ -123,8 +128,8 @@ class User(Base):
 
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
-    server_default=func.now(), onupdate=func.now()
-)
+        server_default=func.now(), onupdate=func.now()
+    )
 
     # Relationships with cascade
     profile: Mapped["Profile"] = relationship(
@@ -145,7 +150,7 @@ class User(Base):
         back_populates="user",
         uselist=False,
         lazy="selectin",
-        cascade="all, delete-orphan"  # Delete wallet when user is deleted
+        cascade="all, delete-orphan",  # Delete wallet when user is deleted
     )
 
     items: Mapped[list["Item"]] = relationship(
@@ -225,7 +230,9 @@ class Profile(Base):
     business_address: Mapped[str] = mapped_column(nullable=True)
     state: Mapped[str] = mapped_column(nullable=True)
     can_pickup_and_dropoff: Mapped[bool] = mapped_column(default=False)
-    pickup_and_delivery_charge: Mapped[Decimal] = mapped_column(nullable=True, default=0.00)
+    pickup_and_delivery_charge: Mapped[Decimal] = mapped_column(
+        nullable=True, default=0.00
+    )
     business_registration_number: Mapped[str] = mapped_column(nullable=True)
     account_holder_name: Mapped[str] = mapped_column(nullable=True)
     opening_hours: Mapped[time] = mapped_column(nullable=True)
@@ -236,8 +243,8 @@ class Profile(Base):
     bike_number: Mapped[str] = mapped_column(unique=True, nullable=True)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
-    server_default=func.now(), onupdate=func.now()
-)
+        server_default=func.now(), onupdate=func.now()
+    )
 
     user: Mapped["User"] = relationship(back_populates="profile")
     profile_image: Mapped["ProfileImage"] = relationship(
@@ -258,36 +265,37 @@ class ProfileImage(Base):
     backdrop_image_url: Mapped[str] = mapped_column(nullable=True)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
-    server_default=func.now(), onupdate=func.now()
-)
+        server_default=func.now(), onupdate=func.now()
+    )
 
     profile: Mapped["Profile"] = relationship(back_populates="profile_image")
+
 
 class VerificationCode(Base):
     __tablename__ = "verification_codes"
 
-
-    user_id: Mapped[UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, primary_key=True)
+    user_id: Mapped[UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False, primary_key=True
+    )
     email_code: Mapped[str] = mapped_column(
-        String(6), 
-        nullable=False, 
-        default=lambda: ''.join([str(secrets.randbelow(10)) for _ in range(6)])
+        String(6),
+        nullable=False,
+        default=lambda: "".join([str(secrets.randbelow(10)) for _ in range(6)]),
     )
     phone_code: Mapped[str] = mapped_column(
-        String(6), 
-        nullable=False, 
-        default=lambda: ''.join([str(secrets.randbelow(10)) for _ in range(6)])
+        String(6),
+        nullable=False,
+        default=lambda: "".join([str(secrets.randbelow(10)) for _ in range(6)]),
     )
     email_verified: Mapped[bool] = mapped_column(Boolean, default=False)
     phone_verified: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     expires_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
     user: Mapped["User"] = relationship(back_populates="verification")
-    
+
     # Add indexes for faster lookups
-    __table_args__ = (
-        Index('idx_user_id', 'user_id'),
-    )
+    __table_args__ = (Index("idx_user_id", "user_id"),)
+
 
 class Session(Base):
     __tablename__ = "sessions"
@@ -310,14 +318,16 @@ class Session(Base):
 class Wallet(Base):
     __tablename__ = "wallets"
 
-    id: Mapped[UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
+    id: Mapped[UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
+    )
     balance: Mapped[Decimal] = mapped_column(default=0.00)
     escrow_balance: Mapped[Decimal] = mapped_column(default=0.00)
     # idempotency_key: Mapped[str] = mapped_column(nullable=True)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
-    server_default=func.now(), onupdate=func.now()
-)
+        server_default=func.now(), onupdate=func.now()
+    )
 
     user: Mapped["User"] = relationship(back_populates="wallet")
     transactions: Mapped[list["Transaction"]] = relationship(
@@ -332,8 +342,12 @@ class Transaction(Base):
 
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
     tx_ref: Mapped[UUID] = mapped_column(default=uuid4, nullable=True)
-    wallet_id: Mapped[UUID] = mapped_column(ForeignKey("wallets.id", ondelete="CASCADE"))
-    to_wallet_id: Mapped[UUID] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    wallet_id: Mapped[UUID] = mapped_column(
+        ForeignKey("wallets.id", ondelete="CASCADE")
+    )
+    to_wallet_id: Mapped[UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
     amount: Mapped[Decimal] = mapped_column(default=0.00)
     from_user: Mapped[str] = mapped_column(nullable=True)
     to_user: Mapped[str] = mapped_column(nullable=True)
@@ -344,10 +358,9 @@ class Transaction(Base):
     payment_link: Mapped[str] = mapped_column(nullable=True)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
-    server_default=func.now(), onupdate=func.now()
-)
+        server_default=func.now(), onupdate=func.now()
+    )
     wallet: Mapped["Wallet"] = relationship(back_populates="transactions")
-
 
 
 class RefreshToken(Base):
@@ -394,7 +407,9 @@ class Item(Base):
 
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
     item_type: Mapped[ItemType] = mapped_column(index=True)
-    user_id: Mapped[UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    user_id: Mapped[UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), index=True
+    )
     name: Mapped[str]
     store_name: Mapped[str] = mapped_column(nullable=True)
     description: Mapped[str] = mapped_column(nullable=True)
@@ -416,8 +431,8 @@ class Item(Base):
 
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
-    server_default=func.now(), onupdate=func.now()
-)
+        server_default=func.now(), onupdate=func.now()
+    )
 
     vendor: Mapped["User"] = relationship(back_populates="items")
     category: Mapped["Category"] = relationship(back_populates="items")
@@ -452,8 +467,8 @@ class ItemImage(Base):
     is_primary: Mapped[bool] = mapped_column(default=False, nullable=True)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
-    server_default=func.now(), onupdate=func.now()
-)
+        server_default=func.now(), onupdate=func.now()
+    )
 
     item: Mapped["Item"] = relationship(back_populates="images")
 
@@ -469,8 +484,12 @@ class Order(Base):
         nullable=True,
         unique=True,
     )
-    owner_id: Mapped[Optional[UUID]] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
-    vendor_id: Mapped[Optional[UUID]] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    owner_id: Mapped[Optional[UUID]] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL")
+    )
+    vendor_id: Mapped[Optional[UUID]] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL")
+    )
     order_type: Mapped[OrderType] = mapped_column(default=OrderType.PACKAGE)
     total_price: Mapped[Decimal] = mapped_column(default=0.00)
     grand_total: Mapped[Decimal] = mapped_column(default=0.00, nullable=True)
@@ -480,7 +499,9 @@ class Order(Base):
     pickup_location: Mapped[str] = mapped_column(nullable=True)
     is_deleted: Mapped[bool] = mapped_column(default=False, nullable=True)
     is_one_way_delivery: Mapped[bool] = mapped_column(default=True, nullable=True)
-    vendor_pickup_dropoff_charge: Mapped[Decimal] = mapped_column(nullable=True, default=0.00)
+    vendor_pickup_dropoff_charge: Mapped[Decimal] = mapped_column(
+        nullable=True, default=0.00
+    )
     order_payment_status: Mapped[PaymentStatus] = mapped_column(
         default=PaymentStatus.PENDING
     )
@@ -490,11 +511,11 @@ class Order(Base):
         default=RequireDeliverySchema.PICKUP, nullable=True
     )
     cancel_reason: Mapped[str] = mapped_column(nullable=True)
-    
+
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
-    server_default=func.now(), onupdate=func.now()
-)
+        server_default=func.now(), onupdate=func.now()
+    )
 
     owner: Mapped[Optional["User"]] = relationship(
         back_populates="orders_placed", foreign_keys=[owner_id]
@@ -521,8 +542,12 @@ class Order(Base):
 class OrderItem(Base):
     __tablename__ = "order_items"
 
-    order_id: Mapped[UUID] = mapped_column(ForeignKey("orders.id", ondelete="CASCADE"), primary_key=True)
-    item_id: Mapped[UUID] = mapped_column(ForeignKey("items.id", ondelete="SET NULL"), primary_key=True)
+    order_id: Mapped[UUID] = mapped_column(
+        ForeignKey("orders.id", ondelete="CASCADE"), primary_key=True
+    )
+    item_id: Mapped[UUID] = mapped_column(
+        ForeignKey("items.id", ondelete="SET NULL"), primary_key=True
+    )
     quantity: Mapped[int] = mapped_column(default=1)
     sizes: Mapped[str] = mapped_column(ARRAY(String), nullable=True)
     colors: Mapped[list[str]] = mapped_column(ARRAY(String), nullable=True)
@@ -554,7 +579,9 @@ class Delivery(Base):
     image_url: Mapped[str] = mapped_column(nullable=True)
     pickup_coordinates: Mapped[Tuple[float, float]] = mapped_column(ARRAY(Float))
     dropoff_coordinates: Mapped[Tuple[float, float]] = mapped_column(ARRAY(Float))
-    last_known_rider_coordinates: Mapped[Tuple[float, float]] = mapped_column(ARRAY(Float), nullable=True)
+    last_known_rider_coordinates: Mapped[Tuple[float, float]] = mapped_column(
+        ARRAY(Float), nullable=True
+    )
     delivery_fee: Mapped[Decimal] = mapped_column(nullable=False)
     distance: Mapped[Decimal] = mapped_column(nullable=True)
     duration: Mapped[str] = mapped_column(nullable=True)
@@ -568,8 +595,8 @@ class Delivery(Base):
     amount_due_dispatch: Mapped[Decimal] = mapped_column(nullable=False)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
-    server_default=func.now(), onupdate=func.now()
-)
+        server_default=func.now(), onupdate=func.now()
+    )
 
     order: Mapped["Order"] = relationship(
         back_populates="delivery",
@@ -620,6 +647,9 @@ class Review(Base):
     reviewee_id: Mapped[Optional[UUID]] = mapped_column(
         ForeignKey("users.id"), nullable=True
     )  # Who is being reviewed
+    dispatch_id: Mapped[Optional[UUID]] = mapped_column(
+        ForeignKey("users.id"), nullable=True
+    )
 
     rating: Mapped[int] = mapped_column(Integer, nullable=False)
     review_type: Mapped[ReviewType] = mapped_column(nullable=False)
@@ -627,8 +657,8 @@ class Review(Base):
 
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
-    server_default=func.now(), onupdate=func.now()
-)
+        server_default=func.now(), onupdate=func.now()
+    )
 
     # RELATIONSHIPS
     reviewer: Mapped["User"] = relationship(
@@ -662,8 +692,12 @@ class UserReport(Base):
         ForeignKey("orders.id"), nullable=True
     )
 
-    complainant_id: Mapped[UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
-    defendant_id: Mapped[UUID] = mapped_column(ForeignKey("users.id",  ondelete="CASCADE"), nullable=False)
+    complainant_id: Mapped[UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    defendant_id: Mapped[UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
 
     reported_user_type: Mapped[ReportedUserType]
     report_tag: Mapped[ReportTag]
@@ -674,8 +708,8 @@ class UserReport(Base):
 
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
-    server_default=func.now(), onupdate=func.now()
-)
+        server_default=func.now(), onupdate=func.now()
+    )
 
     # Relationships
     defendant: Mapped["User"] = relationship(
@@ -725,7 +759,9 @@ class Message(Base):
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
     message_type: Mapped[MessageType] = mapped_column(default=MessageType.REPORT)
     content: Mapped[str] = mapped_column(Text)
-    sender_id: Mapped[UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=True)
+    sender_id: Mapped[UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=True
+    )
 
     # For report messages
     report_id: Mapped[Optional[UUID]] = mapped_column(
@@ -735,8 +771,8 @@ class Message(Base):
 
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
-    server_default=func.now(), onupdate=func.now()
-)
+        server_default=func.now(), onupdate=func.now()
+    )
 
     # Relationships
     sender: Mapped["User"] = relationship(
@@ -758,7 +794,9 @@ class MessageReadStatus(Base):
 
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
     message_id: Mapped[UUID] = mapped_column(ForeignKey("messages.id"), nullable=False)
-    user_id: Mapped[UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    user_id: Mapped[UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
     read: Mapped[bool] = mapped_column(default=False)
     read_at: Mapped[Optional[datetime]] = mapped_column(
         default=datetime.now, onupdate=datetime.now
@@ -778,7 +816,9 @@ class UserReportReadStatus(Base):
     report_id: Mapped[UUID] = mapped_column(
         ForeignKey("user_reports.id"), nullable=False
     )
-    user_id: Mapped[UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    user_id: Mapped[UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
     is_read: Mapped[bool] = mapped_column(default=False)
     read_at: Mapped[Optional[datetime]] = mapped_column(
         default=datetime.now, onupdate=datetime.now
@@ -838,17 +878,14 @@ class AuditLog(Base):
     extra_metadata: Mapped[dict] = mapped_column(JSON, nullable=True)
 
 
-
 class TransactionLog(Base):
     __tablename__ = "transaction_logs"
 
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
     vendor_id: Mapped[UUID]
     order_id: Mapped[UUID]
-    amount: Mapped[Decimal] 
+    amount: Mapped[Decimal]
     action: Mapped[TransactionLogAction] = mapped_column(nullable=True)
     status: Mapped[PaymentStatus] = mapped_column(nullable=True)
     details: Mapped[dict] = mapped_column(JSON, nullable=True)
     timestamp: Mapped[datetime] = mapped_column(default=func.now(), nullable=False)
-   
-  

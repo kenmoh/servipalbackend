@@ -16,10 +16,8 @@ class BankSchema(BaseModel):
 class RequireDeliverySchema(str, Enum):
     PICKUP = "pickup"
     DELIVERY = "delivery"
-    VENDOR_PICKUP_AND_DROPOFF = 'vendor-pickup-and-dropoff'
+    VENDOR_PICKUP_AND_DROPOFF = "vendor-pickup-and-dropoff"
     # USER_DROPOFF_AND_PICKUP = 'user-dropoff-and-pickup'
-    
-
 
 
 # class TransactionType(str, Enum):
@@ -124,7 +122,6 @@ class PaymentMethod(str, Enum):
     FUND_REVERSAL: str = "reversal"
 
 
-
 class DisputeStatus(str, Enum):
     OPEN: str = "open"
     CLOSED: str = "closed"
@@ -133,9 +130,7 @@ class DisputeStatus(str, Enum):
 class ChangeUserType(BaseModel):
     user_type: UserType
 
-  
 
 class TransactionLogAction(str, Enum):
-      RECEIVED: str = "received"
-      REFUNDED: str = "refunded"
-   
+    RECEIVED: str = "received"
+    REFUNDED: str = "refunded"

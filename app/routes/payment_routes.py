@@ -2,7 +2,15 @@ from uuid import UUID
 import uuid
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status, Query, BackgroundTasks
+from fastapi import (
+    APIRouter,
+    Depends,
+    HTTPException,
+    Request,
+    status,
+    Query,
+    BackgroundTasks,
+)
 from fastapi.responses import HTMLResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -138,7 +146,6 @@ async def get_transaction(
 async def order_payment_callback(
     request: Request, db: AsyncSession = Depends(get_db)
 ) -> dict[str, str]:
-    
     return await transaction_service.order_payment_callback(request=request, db=db)
 
 
@@ -244,7 +251,7 @@ async def bank_transfer_callback(
 async def generate_new_payment_link(
     transaction_id: UUID,
     db: AsyncSession = Depends(get_db),
-    link_type: GenerateLinkType = GenerateLinkType.ORDER
+    link_type: GenerateLinkType = GenerateLinkType.ORDER,
 ) -> PaymentLinkSchema:
     """
     Generate a new payment link for a transaction.
@@ -278,7 +285,6 @@ async def generate_new_payment_link(
             await db.commit()
 
             return PaymentLinkSchema(payment_link=order_payment_link)
-            
 
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))

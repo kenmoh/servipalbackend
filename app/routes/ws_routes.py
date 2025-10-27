@@ -98,13 +98,21 @@ async def websocket_endpoint(
                 elif message.get("type") == "ping":
                     # Handle ping/pong for connection health
                     await websocket.send_text(
-                        json.dumps({"type": "pong", "timestamp": datetime.now().isoformat()})
+                        json.dumps(
+                            {"type": "pong", "timestamp": datetime.now().isoformat()}
+                        )
                     )
 
                 else:
                     # Echo back unknown message types
                     await websocket.send_text(
-                        json.dumps({"type": "echo", "message": message, "timestamp": datetime.now().isoformat()})
+                        json.dumps(
+                            {
+                                "type": "echo",
+                                "message": message,
+                                "timestamp": datetime.now().isoformat(),
+                            }
+                        )
                     )
 
         except WebSocketDisconnect:
@@ -112,4 +120,3 @@ async def websocket_endpoint(
         except Exception as e:
             logger.error(f"WebSocket error: {e}")
             manager.disconnect(websocket, client_type, user_id)
-

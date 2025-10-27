@@ -1,5 +1,7 @@
 import asyncio
 from logging.config import fileConfig
+from re import T
+from geoalchemy2 import Geometry, Geography
 
 from sqlalchemy import pool
 from sqlalchemy.engine import Connection
@@ -35,6 +37,10 @@ target_metadata = Base.metadata
 # my_important_option = config.get_main_option("my_important_option")
 # ... etc.
 
+def include_object(object, name, type_, reflected, compare_to):
+    if type_ == 'table' and name in ('spatial_ref_sys', 'geometry_columns'):
+        return False
+    return True
 
 def run_migrations_offline() -> None:
     """Run migrations in 'offline' mode.
@@ -54,6 +60,7 @@ def run_migrations_offline() -> None:
         target_metadata=target_metadata,
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
+        include_object=include_object
     )
 
     with context.begin_transaction():

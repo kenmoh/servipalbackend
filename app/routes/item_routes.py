@@ -1,7 +1,16 @@
 from uuid import UUID
 from decimal import Decimal
 
-from fastapi import APIRouter, Depends, File, Request, UploadFile, status, Form, HTTPException
+from fastapi import (
+    APIRouter,
+    Depends,
+    File,
+    Request,
+    UploadFile,
+    status,
+    Form,
+    HTTPException,
+)
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.auth import get_db, get_current_user
@@ -14,7 +23,7 @@ from app.schemas.item_schemas import (
     LaundryMenuResponseSchema,
     ItemType,
     FoodGroup,
-    LaundryItemCreate
+    LaundryItemCreate,
 )
 from app.services import item_service
 from app.utils.limiter import limiter
@@ -53,8 +62,8 @@ async def create_menu_item(
     description: str = Form(...),
     price: Decimal = Form(...),
     side: str = Form(None),
-    category_id: UUID  = Form(...),
-    food_group: FoodGroup  = Form(...),
+    category_id: UUID = Form(...),
+    food_group: FoodGroup = Form(...),
     images: list[UploadFile] = File(...),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -185,7 +194,6 @@ async def get_menu_item_by_id(
     return await item_service.get_menu_item_by_id(db, item_id)
 
 
-
 @router.put(
     "/{item_id}/laundry-item-update",
     status_code=status.HTTP_202_ACCEPTED,
@@ -241,7 +249,14 @@ async def update_menu_item(
     - Returns 404 if the item is not found or does not belong to the user.
     - Returns 404 if the target category_id does not exist.
     """
-    item_data = MenuItemCreate(name=name, side=side, food_group=food_group, description=description, price=price, category_id=category_id)
+    item_data = MenuItemCreate(
+        name=name,
+        side=side,
+        food_group=food_group,
+        description=description,
+        price=price,
+        category_id=category_id,
+    )
     return await item_service.update_menu_item(
         db=db,
         current_user=current_user,
@@ -345,17 +360,16 @@ async def process_completed_videos_endpoint(
     """
     try:
         from app.utils.s3_service import process_completed_video_conversions
-        
+
         updated_count = await process_completed_video_conversions(db)
-        
+
         return {
             "status": "success",
             "message": f"Processed {updated_count} completed video conversions",
-            "updated_count": updated_count
+            "updated_count": updated_count,
         }
-        
+
     except Exception as e:
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e)
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e)
         )

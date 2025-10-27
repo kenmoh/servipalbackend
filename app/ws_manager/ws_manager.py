@@ -111,7 +111,9 @@ class ConnectionManager:
 
     async def is_user_online(self, user_id: str) -> bool:
         """Check if a user has at least one active WebSocket connection."""
-        return user_id in self.user_connections and len(self.user_connections[user_id]) > 0
+        return (
+            user_id in self.user_connections and len(self.user_connections[user_id]) > 0
+        )
 
 
 # Global manager instance

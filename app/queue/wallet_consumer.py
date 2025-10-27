@@ -83,12 +83,13 @@ class WalletQueueConsumer(BaseQueueConsumer):
                         balance_change=Decimal(balance_change),
                         escrow_change=Decimal(escrow_change),
                     )
-                    
-                    logger.info(f"Successfully processed wallet update for wallet {wallet_id}")
+
+                    logger.info(
+                        f"Successfully processed wallet update for wallet {wallet_id}"
+                    )
             except Exception as db_error:
                 logger.error(f"Wallet update error: {str(db_error)}")
                 raise
-
 
     async def process_create_transaction(self, payload: Dict[str, Any]):
         """Process transaction creation"""

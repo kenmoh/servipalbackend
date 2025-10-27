@@ -4,11 +4,9 @@ import json
 
 from aio_pika import (
     connect_robust,
-
     ExchangeType,
     IncomingMessage,
 )
-
 
 
 from app.utils.logger_config import setup_logger

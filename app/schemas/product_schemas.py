@@ -58,7 +58,7 @@ class ProductResponse(BaseModel):
     created_at: datetime
     updated_at: datetime
 
-    @field_serializer('price')
+    @field_serializer("price")
     def serialize_price(self, price: Decimal) -> float:
         """Convert to float to avoid scientific notation in JSON."""
         return float(f"{price:.2f}")

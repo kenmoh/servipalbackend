@@ -26,7 +26,7 @@ from app.schemas.user_schemas import AccountDetails, AccountDetailResponse
 from app.utils.logger_config import setup_logger
 
 
-flutterwave_base_url = "https://api.flutterwave.com/v3" 
+flutterwave_base_url = "https://api.flutterwave.com/v3"
 # https://api.flutterwave.com/v3/otps
 servipal_base_url = "https://api.servi-pal.com/api"
 bank_url = "https://api.flutterwave.com/v3/banks/NG"
@@ -282,9 +282,7 @@ async def send_sms(phone_number: str, phone_code: str) -> dict:
         dict: API response
     """
 
-
-   
-    base_url = 'https://v3.api.termii.com'
+    base_url = "https://v3.api.termii.com"
     termii_url = f"{base_url}/api/sms/send"
 
     payload = {
@@ -560,36 +558,32 @@ async def get_full_name_or_business_name(db: AsyncSession, user_id: UUID) -> str
 
 async def generate_otp(email, phone_number):
     name_from_email = email.split("@")[0]
-    char = ['.', '_', '-', '+', '#', '!', '~']
+    char = [".", "_", "-", "+", "#", "!", "~"]
     name = name_from_email  # Default to full name
-    
+
     # Extract name by splitting on first special character found
     for separator in char:
         if separator in name_from_email:
             name = name_from_email.split(separator)[0]
             break
-    
+
     # Truncate to 10 characters if needed
     name = name[:10] if len(name) > 10 else name
-    
+
     payload = {
         "length": 6,
         "send": True,  # Boolean, not string
         "medium": ["email", "sms"],  # List, not string
         "expiry": 30,
         "sender": "ServiPal",
-        "customer": {
-            "name": name,
-            "phone": phone_number,
-            "email": email
-        }
+        "customer": {"name": name, "phone": phone_number, "email": email},
     }
     headers = {
         "accept": "application/json",
         "Authorization": f"Bearer {settings.FLW_SECRET_KEY}",
         "Content-Type": "application/json",
     }
-    
+
     async with httpx.AsyncClient() as client:
         try:
             response = await client.post(
@@ -599,24 +593,24 @@ async def generate_otp(email, phone_number):
             )
             response.raise_for_status()
             response_data = response.json()
-            
+
             if response_data.get("status") == "success":
                 data = response_data.get("data", [])
                 # Extract references from all mediums
                 references = {item["medium"]: item["reference"] for item in data}
-                
+
                 return {
                     "status": "success",
                     "message": response_data.get("message"),
-                    "references": references, 
-                    "data": data 
+                    "references": references,
+                    "data": data,
                 }
             else:
                 return {
                     "status": "error",
-                    "message": response_data.get("message", "Unknown error")
+                    "message": response_data.get("message", "Unknown error"),
                 }
-                
+
         except httpx.HTTPStatusError as e:
             error_detail = e.response.text
             try:
@@ -627,39 +621,33 @@ async def generate_otp(email, phone_number):
             print(f"HTTP error occurred: {e.response.status_code} - {error_detail}")
             return {
                 "status": "error",
-                "message": f"HTTP {e.response.status_code}: {error_detail}"
+                "message": f"HTTP {e.response.status_code}: {error_detail}",
             }
-            
+
         except httpx.RequestError as e:
             print(f"Request error occurred: {e}")
-            return {
-                "status": "error",
-                "message": f"Request failed: {str(e)}"
-            }
+            return {"status": "error", "message": f"Request failed: {str(e)}"}
 
 
 async def validate_otp(reference: str, otp: str):
     """
     Validate an OTP sent to customer.
-    
+
     Args:
         reference: The OTP reference returned from generate_otp (e.g., "CF-BARTER-20200616015533756952")
         otp: The OTP code entered by the user (e.g., "123456")
-    
+
     Returns:
         dict: Response with status and validation result
     """
-    payload = {
-        "reference": reference,
-        "otp": otp
-    }
-    
+    payload = {"reference": reference, "otp": otp}
+
     headers = {
         "accept": "application/json",
         "Authorization": f"Bearer {settings.FLW_SECRET_KEY}",
         "Content-Type": "application/json",
     }
-    
+
     async with httpx.AsyncClient() as client:
         try:
             response = await client.post(
@@ -669,19 +657,21 @@ async def validate_otp(reference: str, otp: str):
             )
             response.raise_for_status()
             response_data = response.json()
-            
+
             if response_data.get("status") == "success":
                 return {
                     "status": "success",
-                    "message": response_data.get("message", "OTP validated successfully"),
-                    "data": response_data.get("data")
+                    "message": response_data.get(
+                        "message", "OTP validated successfully"
+                    ),
+                    "data": response_data.get("data"),
                 }
             else:
                 return {
                     "status": "error",
-                    "message": response_data.get("message", "OTP validation failed")
+                    "message": response_data.get("message", "OTP validation failed"),
                 }
-                
+
         except httpx.HTTPStatusError as e:
             error_detail = e.response.text
             try:
@@ -690,14 +680,8 @@ async def validate_otp(reference: str, otp: str):
             except:
                 pass
             print(f"HTTP error occurred: {e.response.status_code} - {error_detail}")
-            return {
-                "status": "error",
-                "message": f"Validation failed: {error_detail}"
-            }
-            
+            return {"status": "error", "message": f"Validation failed: {error_detail}"}
+
         except httpx.RequestError as e:
             print(f"Request error occurred: {e}")
-            return {
-                "status": "error",
-                "message": f"Request failed: {str(e)}"
-            }
+            return {"status": "error", "message": f"Request failed: {str(e)}"}

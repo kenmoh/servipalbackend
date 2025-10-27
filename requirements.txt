@@ -50,6 +50,7 @@ flask==3.1.2
 flask-cors==6.0.1
 flask-login==0.6.3
 frozenlist==1.8.0
+geoalchemy2==0.18.0
 gevent==25.9.1
 geventhttpclient==2.3.4
 ghp-import==2.1.0
@@ -154,6 +155,7 @@ rsa==4.9.1
 s3transfer==0.14.0
 sentry-sdk==2.42.1
 setuptools==80.9.0
+shapely==2.1.2
 shellingham==1.5.4
 simple-websocket==1.1.0
 six==1.17.0

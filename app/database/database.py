@@ -20,12 +20,13 @@ from urllib.parse import urlparse
 DEBUG = settings.DEBUG
 
 
-
 # def create_test_engine():
 #     return create_async_engine(settings.TEST_DATABASE_URL, future=True)
 
+
 def create_test_session(engine):
     return async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
+
 
 def create_test_engine():
     """Create test database engine with prepared statements disabled."""
@@ -36,7 +37,7 @@ def create_test_engine():
         connect_args={
             "prepared_statement_cache_size": 0,  # CRITICAL: Disable prepared statement cache
             "statement_cache_size": 0,  # Also disable statement cache
-        }
+        },
     )
 
 

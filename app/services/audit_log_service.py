@@ -129,7 +129,6 @@ class TransactionLogService:
         db.add(log)
         await db.commit()
 
-
     @staticmethod
     async def get_logs(
         db: AsyncSession,
@@ -153,7 +152,9 @@ class TransactionLogService:
             conditions.append(TransactionLog.timestamp <= end_time)
         if conditions:
             stmt = stmt.where(and_(*conditions))
-        stmt = stmt.order_by(TransactionLog.timestamp.desc()).offset(offset).limit(limit)
+        stmt = (
+            stmt.order_by(TransactionLog.timestamp.desc()).offset(offset).limit(limit)
+        )
         result = await db.execute(stmt)
         return result.scalars().all()
 
@@ -164,6 +165,7 @@ class TransactionLogService:
         log = result.scalar_one_or_none()
         if not log:
             raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND, detail="Transaction log not found"
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Transaction log not found",
             )
         return log

@@ -26,6 +26,7 @@ from app.schemas.review_schema import (
     ReviewerProfile,
     ReviewType,
     ReportedUserType,
+    RiderReviewCreate,
     StatusUpdate,
     ReviewResponse,
     ReportType,
@@ -37,6 +38,7 @@ from app.schemas.review_schema import (
 )
 from app.models.models import (
     AuditLog,
+    Delivery,
     Message,
     MessageReadStatus,
     User,
@@ -139,7 +141,6 @@ async def create_review(
         review = Review(
             order_id=data.order_id,
             reviewee_id=order.vendor_id,
-            reviewer_id=current_user.id,
             rating=data.rating,
             comment=data.comment,
             review_type=ReviewType.ORDER,
@@ -155,7 +156,7 @@ async def create_review(
             id=review.id,
             rating=review.rating,
             comment=review.comment,
-            created_at=review.created_at
+            created_at=review.created_at,
         )
 
     except IntegrityError:
@@ -171,6 +172,98 @@ async def create_review(
             detail=f"An unexpected error occurred: {str(e)}",
         )
 
+
+async def create_rider_review(
+    db: AsyncSession, current_user: User, data: ReviewCreate
+) -> ReviewCreate:
+    """Creates a review for a completed food or laundry order."""
+    # 1. Fetch the order and verify its existence
+
+
+    result = await db.execute(
+        select(Order)
+        .where(Order.id == data.order_id)
+        .options(selectinload(Order.delivery))
+        .with_for_update()
+    )
+    
+    order = result.scalar_one_or_none()
+
+    if not order:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Order not found.",
+        )
+
+    # 2. Perform all validation checks
+    if order.owner_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You can only review a delivery order you created.",
+        )
+
+    if order.vendor_id == current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You cannot review your own order.",
+        )
+
+    if order.order_status != OrderStatus.RECEIVED:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Order must be in 'RECEIVED' status to be reviewed.",
+        )
+
+    # 3. Check if a review already exists for this order by this user
+    existing_review_result = await db.execute(
+        select(Review).where(
+            Review.order_id == data.order_id, Review.reviewer_id == current_user.id
+        )
+    )
+    if existing_review_result.scalar_one_or_none():
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="You have already reviewed this order.",
+        )
+
+    # 4. Create and save the review
+    try:
+        review = Review(
+            order_id=data.order_id,
+            reviewee_id=order.delivery.rider_id,
+            dispatch_id=order.delivery.dispatch_id,
+            reviewer_id=current_user.id,
+            rating=data.rating,
+            comment=data.comment,
+            review_type=ReviewType.RIDER,
+        )
+
+        db.add(review)
+        await db.commit()
+        await db.refresh(review)
+
+        redis_client.delete(f"reviews:{order.vendor_id}")
+
+        return ReviewResponse(
+            id=review.id,
+            rating=review.rating,
+            comment=review.comment,
+            created_at=review.created_at,
+        )
+
+    except IntegrityError:
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Could not save the review due to a database error.",
+        )
+    except Exception as e:
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"An unexpected error occurred: {str(e)}",
+        )
+    
 
 async def create_product_review(
     db: AsyncSession, current_user: User, data: ReviewCreate
@@ -229,7 +322,6 @@ async def create_product_review(
 
     # 4. Create and save the review
     try:
-       
         item_to_review = order.order_items[0]
 
         review = Review(
@@ -253,7 +345,7 @@ async def create_product_review(
             id=review.id,
             rating=review.rating,
             comment=review.comment,
-            created_at=review.created_at
+            created_at=review.created_at,
         )
 
     except IntegrityError:
@@ -268,7 +360,7 @@ async def create_product_review(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"An unexpected error occurred: {str(e)}",
         )
-        
+
 
 async def fetch_vendor_reviews(
     vendor_id: UUID, db: AsyncSession
@@ -279,21 +371,17 @@ async def fetch_vendor_reviews(
         # Parse the JSON string back to a list of dictionaries
         reviews_data = json.loads(cached_reviews)
         return [ReviewResponse(**r) for r in reviews_data]
-    
+
     # Subquery to get the latest review ID for each reviewer
     latest_review_subquery = (
         select(
-            Review.reviewer_id,
-            func.max(Review.created_at).label('latest_created_at')
+            Review.reviewer_id, func.max(Review.created_at).label("latest_created_at")
         )
-        .where(
-            Review.reviewee_id == vendor_id, 
-            Review.review_type == ReviewType.ORDER
-        )
+        .where(Review.reviewee_id == vendor_id, Review.review_type == ReviewType.ORDER)
         .group_by(Review.reviewer_id)
         .subquery()
     )
-    
+
     # Main query to get the full review details for the latest reviews
     stmt = (
         select(Review)
@@ -306,18 +394,15 @@ async def fetch_vendor_reviews(
             latest_review_subquery,
             and_(
                 Review.reviewer_id == latest_review_subquery.c.reviewer_id,
-                Review.created_at == latest_review_subquery.c.latest_created_at
-            )
+                Review.created_at == latest_review_subquery.c.latest_created_at,
+            ),
         )
-        .where(
-            Review.reviewee_id == vendor_id,
-            Review.review_type == ReviewType.ORDER
-        )
+        .where(Review.reviewee_id == vendor_id, Review.review_type == ReviewType.ORDER)
     )
     stmt = stmt.order_by(Review.created_at.desc())
     result = await db.execute(stmt)
     reviews = result.scalars().all()
-    
+
     response_list = [
         ReviewResponse(
             id=r.id,
@@ -340,12 +425,13 @@ async def fetch_vendor_reviews(
         )
         for r in reviews
     ]
-    
+
     # Only cache if we have reviews
     if response_list:
         value = json.dumps([r.model_dump() for r in response_list], default=str)
-        redis_client.setex(cache_key, 3600, value) 
+        redis_client.setex(cache_key, 3600, value)
     return response_list
+
 
 # async def fetch_vendor_reviews(
 #     vendor_id: UUID, db: AsyncSession
@@ -356,7 +442,7 @@ async def fetch_vendor_reviews(
 #         # Parse the JSON string back to a list of dictionaries
 #         reviews_data = json.loads(cached_reviews)
 #         return [ReviewResponse(**r) for r in reviews_data]
-    
+
 #     # DB fallback
 #     stmt = (
 #         select(Review)
@@ -395,7 +481,7 @@ async def fetch_vendor_reviews(
 #     # Only cache if we have a full page
 #     if response_list:
 #         value = json.dumps([r.model_dump() for r in response_list], default=str)
-#         redis_client.setex(cache_key, 3600, value) 
+#         redis_client.setex(cache_key, 3600, value)
 #     return response_list
 
 
@@ -403,34 +489,36 @@ async def fetch_vendor_reviews(
 #    reviews_count = await db.scalar(
 #         select(func.count(Review.id)).where(Review.item_id == item_id)
 #     )
-   
+
 #    return {
 #         'reviews_count': reviews_count
 #    }
 
 
-async def get_item_review_count(item_id: UUID, db: AsyncSession, decimal_places: int = 2) -> ReviewCount:
+async def get_item_review_count(
+    item_id: UUID, db: AsyncSession, decimal_places: int = 2
+) -> ReviewCount:
     """
     Get review count and average rating (rounded) for an item.
     """
     result = await db.execute(
         select(
-            func.count(Review.id).label('reviews_count'),
-            func.round(func.avg(Review.rating), decimal_places).label('average_rating')
+            func.count(Review.id).label("reviews_count"),
+            func.round(func.avg(Review.rating), decimal_places).label("average_rating"),
         ).where(Review.item_id == item_id)
     )
-    
+
     row = result.first()
-    
+
     return {
-        'reviews_count': row.reviews_count if row else 0,
-        'average_rating': float(row.average_rating) if row and row.average_rating else None
+        "reviews_count": row.reviews_count if row else 0,
+        "average_rating": float(row.average_rating)
+        if row and row.average_rating
+        else None,
     }
 
-async def fetch_item_reviews(
-    item_id: UUID, db: AsyncSession
-) -> list[ReviewResponse]:
 
+async def fetch_item_reviews(item_id: UUID, db: AsyncSession) -> list[ReviewResponse]:
     cache_key = f"reviews:{item_id}"
     cached_reviews = redis_client.get(cache_key)
 
@@ -447,13 +535,12 @@ async def fetch_item_reviews(
             .selectinload(User.profile)
             .selectinload(Profile.profile_image)
         )
-        .where(Review.item_id == item_id, Review.review_type==ReviewType.PRODUCT)
+        .where(Review.item_id == item_id, Review.review_type == ReviewType.PRODUCT)
     )
 
     stmt = stmt.order_by(Review.created_at.desc())
     result = await db.execute(stmt)
     reviews = result.scalars().all()
-
 
     response_list = [
         ReviewResponse(
@@ -485,7 +572,6 @@ async def fetch_item_reviews(
             settings.REDIS_EX,
             json.dumps([r.model_dump() for r in response_list], default=str),
         )
-       
 
     return response_list
 
@@ -497,9 +583,7 @@ async def create_report(
 
     # 1. Fetch order and an admin user sequentially to avoid concurrent use of the same session
     order_stmt = (
-        select(Order)
-        .options(selectinload(Order.delivery))
-        .where(Order.id == order_id)
+        select(Order).options(selectinload(Order.delivery)).where(Order.id == order_id)
     )
     order_result = await db.execute(order_stmt)
     order = order_result.scalar_one_or_none()
@@ -541,10 +625,11 @@ async def create_report(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Could not identify the defendant for the report type '{report_data.reported_user_type.value}'.",
         )
-    
+
     if current_user.id == defendant_id:
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail="You cannot report yourself."
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="You cannot report yourself.",
         )
 
     # Proactively check for an existing report to provide a clear error message

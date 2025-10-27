@@ -11,26 +11,35 @@ from load_test_config import SCENARIOS, HOST, WEB_HOST, WEB_PORT
 def run_locust(scenario="medium_load", headless=False):
     """Run Locust load test"""
     config = SCENARIOS.get(scenario, SCENARIOS["medium_load"])
-    
+
     cmd = [
         "locust",
-        "-f", "locustfile.py",
-        "--host", HOST,
-        "--web-host", WEB_HOST,
-        "--web-port", str(WEB_PORT),
+        "-f",
+        "locustfile.py",
+        "--host",
+        HOST,
+        "--web-host",
+        WEB_HOST,
+        "--web-port",
+        str(WEB_PORT),
     ]
-    
+
     if headless:
-        cmd.extend([
-            "--headless",
-            "-u", str(config["users"]),
-            "-r", str(config["spawn_rate"]),
-            "-t", config["run_time"]
-        ])
-    
+        cmd.extend(
+            [
+                "--headless",
+                "-u",
+                str(config["users"]),
+                "-r",
+                str(config["spawn_rate"]),
+                "-t",
+                config["run_time"],
+            ]
+        )
+
     print(f"Running load test with scenario: {scenario}")
     print(f"Command: {' '.join(cmd)}")
-    
+
     try:
         subprocess.run(cmd, check=True)
     except KeyboardInterrupt:
@@ -43,16 +52,14 @@ def run_locust(scenario="medium_load", headless=False):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Run load tests")
     parser.add_argument(
-        "--scenario", 
-        choices=list(SCENARIOS.keys()), 
+        "--scenario",
+        choices=list(SCENARIOS.keys()),
         default="medium_load",
-        help="Load test scenario"
+        help="Load test scenario",
     )
     parser.add_argument(
-        "--headless", 
-        action="store_true",
-        help="Run in headless mode (no web UI)"
+        "--headless", action="store_true", help="Run in headless mode (no web UI)"
     )
-    
+
     args = parser.parse_args()
     run_locust(args.scenario, args.headless)

@@ -160,7 +160,6 @@ async def get_products(db: AsyncSession) -> list[ProductResponse]:
 
     cached_products = redis_client.get(cache_key)
     if cached_products:
-       
         return [ProductResponse(**product) for product in json.loads(cached_products)]
 
     # Get ALL products and cache them
@@ -263,26 +262,26 @@ async def get_user_products(db: AsyncSession, user_id: UUID) -> list[ProductResp
 
 
 async def update_product(
-    db: AsyncSession, 
-    product_id: UUID, 
-    product_data: ProductUpdate, 
+    db: AsyncSession,
+    product_id: UUID,
+    product_data: ProductUpdate,
     current_user: User,
-    images: list[UploadFile]
+    images: list[UploadFile],
 ) -> ProductResponse:
     """
     Updates an existing product if the current user is the seller.
     Handles both product data and image updates.
-    
+
     Args:
         db: The database session.
         product_id: The ID of the product to update.
         product_data: The updated product data.
         current_user: The authenticated user attempting the update.
         images: Optional list of new images to replace existing ones.
-        
+
     Returns:
         The updated product details or None if not found/not authorized.
-        
+
     Raises:
         HTTPException: If category not found, product not found, permission denied, or update fails.
     """
@@ -292,15 +291,15 @@ async def update_product(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Item not found!",
         )
-    
+
     if product.user_id != current_user.id:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Not authorized to update this product",
         )
-    
+
     update_values = product_data.model_dump(exclude_unset=True)
-    
+
     # Only check for duplicate name if name is being changed
     new_name = update_values.get("name")
     if new_name and new_name != product.name:
@@ -319,7 +318,7 @@ async def update_product(
                 status_code=status.HTTP_409_CONFLICT,
                 detail="You already have a product with this name.",
             )
-    
+
     # If category is being updated, check if the new one exists
     if "category_id" in update_values and update_values["category_id"] is not None:
         category = await db.get(Category, update_values["category_id"])
@@ -328,22 +327,22 @@ async def update_product(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=f"Category with id {update_values['category_id']} not found.",
             )
-    
+
     # Update 'in_stock' based on 'stock' if 'stock' is provided
     if "stock" in update_values:
         update_values["in_stock"] = update_values["stock"] > 0
-    
+
     stmt = (
         update(Item)
         .where(Item.id == product_id)
         .values(**update_values)
         .returning(Item)
     )
-    
+
     try:
         result = await db.execute(stmt)
         updated_product = result.scalar_one()
-        
+
         # Handle image updates if provided
         if images:
             # Get existing image URLs
@@ -351,31 +350,31 @@ async def update_product(
                 select(ItemImage).where(ItemImage.item_id == product_id)
             )
             old_urls = [img.url for img in old_images.scalars().all()]
-            
+
             # Upload new images
             new_urls = await upload_multiple_images(images)
-            
+
             # Delete old images from database
             await db.execute(delete(ItemImage).where(ItemImage.item_id == product_id))
-            
+
             # Create new image records
             for url in new_urls:
                 new_image = ItemImage(item_id=product_id, url=url)
                 db.add(new_image)
-            
+
             # Delete old images from S3
             for old_url in old_urls:
                 await delete_s3_object(old_url)
-        
+
         await db.commit()
         await db.refresh(updated_product)
-        
+
         # Invalidate caches
         invalidate_product_cache(product_id, current_user.id)
         redis_client.delete(f"product:{product_id}")
-        
+
         return updated_product
-        
+
     except IntegrityError as e:
         # Check if it's a UniqueViolationError for product name per user
         if hasattr(e, "orig") and (
@@ -400,22 +399,21 @@ async def update_product(
         )
 
 
-
-async def delete_product(db: AsyncSession, product_id: UUID, current_user: User) -> None:
+async def delete_product(
+    db: AsyncSession, product_id: UUID, current_user: User
+) -> None:
     """Deletes an item and its associated images belonging to the current VENDOR user."""
 
     product = await db.get(Item, product_id)
 
     if product.user_id != current_user.id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not allowed")
- 
-    try:
 
+    try:
         image_result = await db.execute(
             select(ItemImage).where(ItemImage.item_id == product.id)
         )
         product_images = image_result.scalars().all()
-
 
         # Delete images from S3
         for image in product_images:
@@ -428,7 +426,6 @@ async def delete_product(db: AsyncSession, product_id: UUID, current_user: User)
         # Invalidate caches
         invalidate_product_cache(product_id, current_user.id)
 
-
         return None
 
     except Exception as e:
@@ -439,7 +436,9 @@ async def delete_product(db: AsyncSession, product_id: UUID, current_user: User)
             detail=f"Failed to delete item: {str(e)}",
         )
 
+
 # <<<<< ---------- CACHE UTILITY FOR PRODUCTS ---------- >>>>>
+
 
 def invalidate_product_cache(product_id: UUID, seller_id: UUID = None) -> None:
     """Invalidate product related caches"""

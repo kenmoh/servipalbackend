@@ -6,6 +6,7 @@ from pydantic import BaseModel, Field
 
 
 class ReviewType(str, Enum):
+    RIDER = "rider"
     ORDER = "order"
     PRODUCT = "product"
 
@@ -26,10 +27,17 @@ class ReportTag(str, Enum):
     DEFENDANT = "defendanat"
 
 
-class ReviewCreate(BaseModel):
-    order_id: UUID
+class BaseReviewCreate(BaseModel):
     rating: int = Field(..., ge=1, le=5)
     comment: str
+
+
+class ReviewCreate(BaseReviewCreate):
+    order_id: UUID
+
+
+class RiderReviewCreate(BaseReviewCreate):
+    delivery_id: UUID
 
 
 class ReviewerProfile(BaseModel):
@@ -37,9 +45,11 @@ class ReviewerProfile(BaseModel):
     full_name: str
     profile_image_url: str
 
+
 class ReviewCount(BaseModel):
     reviews_count: int
     average_rating: float
+
 
 class ReviewResponse(BaseModel):
     id: UUID
@@ -90,7 +100,9 @@ class ReportResponseSchema(BaseModel):
         from_attributes = True
 
 
-class ReportIssueResponse(BaseModel): # This seems to be an older or alternative schema, leaving as is.
+class ReportIssueResponse(
+    BaseModel
+):  # This seems to be an older or alternative schema, leaving as is.
     id: UUID
     order_id: UUID | None
     delivery_id: UUID | None

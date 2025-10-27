@@ -56,6 +56,24 @@ async def toggle_user_block_status(
     )
 
 
+@router.put("/online-status", status_code=status.HTTP_200_OK)
+async def toggle_online_status(
+
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> bool:
+    """
+    Toggle user online status - 
+
+    Returns:
+        Boolean indicating the new online status 
+    """
+    return await user_service.toggle_online_status(
+        db=db, current_user=current_user
+    )
+
+
+
 @router.get("", status_code=status.HTTP_200_OK)
 async def get_users(
     skip: int = Query(0, ge=0),
@@ -134,10 +152,17 @@ async def update_rider_profile(
 @router.get("/{user_id}/profile", status_code=status.HTTP_200_OK)
 async def get_user_details(
     user_id: UUID,
-    # current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> ProfileSchema:
     return await user_service.get_user_with_profile(db=db, user_id=user_id)
+
+@router.get("/all-riders", status_code=status.HTTP_200_OK)
+async def get_riders(
+    user_id: UUID,
+    coords: UserCoords,
+    db: AsyncSession = Depends(get_db),
+) -> list[RiderProfileSchema]:
+    return await user_service.get_riders(db=db, coords=coords)
 
 
 @router.get("/{user_id}/current-user-profile", status_code=status.HTTP_200_OK)
@@ -162,13 +187,17 @@ async def get_rider_details(
 async def get_restaurants(
     category_id: UUID | None = None,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
 ) -> list[VendorUserResponse]:
     """
     Get  all restaurant users, optionally filtered by category.
     """
     try:
-        return await user_service.get_restaurant_vendors(db=db, current_user=current_user, category_id=category_id, )
+        return await user_service.get_restaurant_vendors(
+            db=db,
+            current_user=current_user,
+            category_id=category_id,
+        )
     except Exception as e:
         raise HTTPException(
             status_code=500, detail=f"Failed to retrieve restaurant vendors: {str(e)}"
@@ -181,13 +210,14 @@ async def get_restaurants(
     status_code=status.HTTP_200_OK,
 )
 async def get_laundry_vendors(
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)
 ) -> list[VendorUserResponse]:
     """
     Get users who provide laundry services.
     """
-    return await user_service.get_users_by_laundry_services(db=db, current_user=current_user)
+    return await user_service.get_users_by_laundry_services(
+        db=db, current_user=current_user
+    )
 
 
 @router.put("/upload-image", status_code=status.HTTP_202_ACCEPTED)
@@ -309,15 +339,27 @@ async def register_for_push_notification(
         push_token=push_token, db=db, current_user=current_user
     )
 
+
 @router.put("/user-coordinates", status_code=status.HTTP_202_ACCEPTED)
 async def register_current_user_coords(
     location_data: UserCoords,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
-)-> UserCoords:
+) -> UserCoords:
     """Add user coordinates"""
     return await user_service.update_user_location_coords(
         location_data=location_data, db=db, current_user=current_user
+    )
+
+
+@router.put("/update-user-location", status_code=status.HTTP_202_ACCEPTED)
+async def update_user_location(
+    location_data: UserCoords,
+    db: AsyncSession = Depends(get_db),
+) -> UserCoords:
+    """Update user coordinates"""
+    return await user_service.update_user_location(
+        location_data=location_data, db=db
     )
 
 
@@ -336,6 +378,6 @@ async def get_push_notification(
 async def delete_current_user(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
-): 
+):
     """Delete current user account"""
     return await user_service.delete_user(db=db, current_user=current_user)

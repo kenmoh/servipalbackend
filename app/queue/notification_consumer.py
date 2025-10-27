@@ -22,17 +22,15 @@ class NotificationQueueConsumer(BaseQueueConsumer):
             tokens = payload.get("tokens", [])
             title = payload.get("title")
             message = payload.get("message")
-           
+
             if not tokens or not title or not message:
                 raise ValueError("Missing required notification fields")
 
             # Simulate sending push notification (replace with your actual push notification service)
             logger.info(f"Sending notification to {tokens}: {title} - {message}")
-            
+
             # Example: await push_notification_service.send(tokens, title, message, navigate_to)
 
         except Exception as e:
             logger.error(f"Notification send error: {str(e)}")
             raise
-
-

@@ -132,7 +132,6 @@ async def broadcast_new_report_message(
     await manager.broadcast_to_admins(message)
 
 
-
 async def broadcast_delivery_location_update(
     delivery_id: str, rider_id: str, coordinates: Tuple[float, float]
 ):
@@ -147,4 +146,3 @@ async def broadcast_delivery_location_update(
 
     await manager.broadcast_to_admins(message)
     await manager.broadcast_to_mobile(message)
-

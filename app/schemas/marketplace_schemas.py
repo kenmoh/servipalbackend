@@ -26,7 +26,6 @@ class ProductBuyRequest(BaseModel):
     additional_info: str
 
 
-
 class ItemImageResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -34,6 +33,7 @@ class ItemImageResponse(BaseModel):
     item_id: UUID
     url: str
     is_primary: Optional[bool] = None
+
 
 class Item(BaseModel):
     model_config = ConfigDict(from_attributes=True)
@@ -46,6 +46,7 @@ class Item(BaseModel):
     sizes: str | None = None
     colors: List[str] = []
     images: List[ItemImageResponse] = []
+
 
 class OrderItem(BaseModel):
     model_config = ConfigDict(from_attributes=True)
@@ -76,8 +77,6 @@ class ProductOrderResponse(BaseModel):
     order_items: List[OrderItem]
     created_at: datetime
     updated_at: datetime
-
-  
 
 
 class TopUpRequestSchema(BaseModel):

@@ -11,8 +11,10 @@ from app.schemas.status_schema import (
 
 
 class UserCoords(BaseModel):
+    user_id: UUID | None = None
     lat: float
     lng: float
+
 
 class AccountDetails(BaseModel):
     account_number: str
@@ -212,6 +214,7 @@ class FavouriteResponseSchema(BaseModel):
 
 
 class RiderProfileSchema(BaseModel):
+    rider_id: UUID
     profile_image_url: str | None = None
     full_name: str
     email: str
@@ -219,6 +222,10 @@ class RiderProfileSchema(BaseModel):
     business_address: str
     business_name: str
     bike_number: str
+    distance_km: str
+    average_rating: float = Field(default=0.0)
+    review_count: int = Field(default=0)
+    delivery_count: int = Field(default=0)
 
 
 class UserResponseSchema(BaseModel):
@@ -406,7 +413,7 @@ class ProfileSchema(BaseModel):
     account_holder_name: str | None = None
     profile_image_url: str | None = None
     backdrop_image_url: str | None = None
-    can_pickup_and_dropoff: bool = False 
+    can_pickup_and_dropoff: bool = False
     pickup_and_delivery_charge: Decimal | None = None
     state: str | None = None
     review_count: float | None = None

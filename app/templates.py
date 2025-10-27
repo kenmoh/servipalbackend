@@ -1,5 +1,3 @@
-
-
 def send_email_verification_code(code: int, expires_in: str):
     return f"""
         <!DOCTYPE html>
@@ -17,9 +15,11 @@ def send_email_verification_code(code: int, expires_in: str):
         </html>
     """
 
-def send_password_request_email(user: str, custom_url: str, reset_url: str, expires_in: str):
-   
-   return f"""
+
+def send_password_request_email(
+    user: str, custom_url: str, reset_url: str, expires_in: str
+):
+    return f"""
 <!DOCTYPE html>
 <html lang="en">
   <head>
@@ -51,7 +51,8 @@ def send_password_request_email(user: str, custom_url: str, reset_url: str, expi
   </body>
 </html>
 """
-    
+
+
 def send_welcome_email_template(title: str, name: str, body: str):
     return f"""
 <!DOCTYPE html>

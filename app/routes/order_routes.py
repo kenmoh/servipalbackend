@@ -10,7 +10,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.auth import get_db, get_current_user
 from app.models.models import Order, User
-from app.schemas.delivery_schemas import DeliveryResponse, PaginatedDeliveryResponse, CancelOrderSchema, LocationData
+from app.schemas.delivery_schemas import (
+    DeliveryResponse,
+    PaginatedDeliveryResponse,
+    CancelOrderSchema,
+    LocationData,
+)
 
 from app.schemas.order_schema import (
     OrderAndDeliverySchema,
@@ -18,7 +23,12 @@ from app.schemas.order_schema import (
     DeliveryStatusUpdateSchema,
 )
 from app.schemas.schemas import PaymentLinkSchema, ReviewSchema
-from app.schemas.status_schema import DeliveryStatus, OrderStatus, OrderType, PaymentStatus
+from app.schemas.status_schema import (
+    DeliveryStatus,
+    OrderStatus,
+    OrderType,
+    PaymentStatus,
+)
 from app.services import order_service
 from app.utils import logger_config
 from app.utils.limiter import limiter
@@ -28,23 +38,22 @@ from app.config.config import redis_client
 router = APIRouter(prefix="/api/orders", tags=["Orders"])
 
 
-
 @router.get("/delivery-orders", status_code=status.HTTP_200_OK)
 async def get_all_require_delivery_orders(
     db: AsyncSession = Depends(get_db),
     skip: int = 0,
     limit: int = 20,
 ) -> PaginatedDeliveryResponse:
-    return await order_service.get_all_delivery_orders(
-        db=db, skip=skip, limit=limit
-    )
+    return await order_service.get_all_delivery_orders(db=db, skip=skip, limit=limit)
 
 
 @router.get("/paid-pending-deliveries", status_code=status.HTTP_200_OK)
 async def get_paid_pending_deliveries(
     db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)
 ) -> list[DeliveryResponse]:
-    return await order_service.get_paid_pending_deliveries(db=db, current_user=current_user)
+    return await order_service.get_paid_pending_deliveries(
+        db=db, current_user=current_user
+    )
 
 
 @router.get("/{user_id}/user-related-orders", status_code=status.HTTP_200_OK)
@@ -146,6 +155,24 @@ async def customer_confirm_order_received(
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     
+@router.put(
+    "/{delivery_id}/assign-rider-to-existing-delivery-order",
+    status_code=status.HTTP_202_ACCEPTED,
+)
+async def assign_rider_to_existing_delivery_order(
+    delivery_id: UUID,
+    rider_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> DeliveryStatusUpdateSchema:
+    try:
+        return await order_service.assign_rider_to_existing_delivery_order(
+            db=db,
+            delivery_id=delivery_id,
+            rider_id=rider_id,
+        )
+    except Exception as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
 
 @router.put(
@@ -167,7 +194,9 @@ async def sender_confirm_package_received(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
 
-@router.put("/{order_id}/vendor-mark-order-delivered", status_code=status.HTTP_202_ACCEPTED)
+@router.put(
+    "/{order_id}/vendor-mark-order-delivered", status_code=status.HTTP_202_ACCEPTED
+)
 async def vendor_mark_order_delivered(
     order_id: UUID,
     db: AsyncSession = Depends(get_db),
@@ -183,7 +212,6 @@ async def vendor_mark_order_delivered(
     )
 
 
-
 @router.put("/{order_id}/accept-delivery", status_code=status.HTTP_202_ACCEPTED)
 async def rider_accept_delivery(
     order_id: UUID,
@@ -197,6 +225,7 @@ async def rider_accept_delivery(
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
+
 @router.put("/{order_id}/pickup", status_code=status.HTTP_202_ACCEPTED)
 async def rider_pickup_delivery_order(
     order_id: UUID,
@@ -208,7 +237,8 @@ async def rider_pickup_delivery_order(
             db=db, current_user=current_user, order_id=order_id
         )
     except Exception as e:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)) 
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+
 
 @router.put("/{order_id}/pickup-laundry", status_code=status.HTTP_202_ACCEPTED)
 async def laundry_pickup(
@@ -222,7 +252,7 @@ async def laundry_pickup(
         )
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
-    
+
 
 @router.put("/{order_id}/laundry-returned", status_code=status.HTTP_202_ACCEPTED)
 async def laundry_returned(
@@ -236,8 +266,8 @@ async def laundry_returned(
         )
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
-    
-    
+
+
 # @router.put("/{order_id}/return-laundry", status_code=status.HTTP_202_ACCEPTED)
 # async def laundry_returned(
 #     order_id: UUID,
@@ -279,13 +309,13 @@ async def rider_mark_package_delivered(
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
+
 @router.put("/{delivery_id}/location-update", status_code=status.HTTP_202_ACCEPTED)
 async def update_delivery_order_location(
     delivery_id: UUID,
     location_data: LocationData,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user)
-   
+    current_user: User = Depends(get_current_user),
 ) -> DeliveryStatusUpdateSchema:
     try:
         return await order_service.update_delivery_order_location(
@@ -329,18 +359,17 @@ async def admin_modify_order_status(
             current_user=current_user,
             order_id=order_id,
             new_order_status=new_order_status,
-            new_delivery_status=new_delivery_status
+            new_delivery_status=new_delivery_status,
         )
     except HTTPException as e:
         raise
     except Exception as e:
         logger_config.logger.error(
-            f"Error in admin status modification: {str(e)}",
-            exc_info=True
+            f"Error in admin status modification: {str(e)}", exc_info=True
         )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="An unexpected error occurred while modifying status"
+            detail="An unexpected error occurred while modifying status",
         )
 
 
@@ -416,7 +445,6 @@ async def cancel_order(
         )
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
-
 
 
 @router.put(

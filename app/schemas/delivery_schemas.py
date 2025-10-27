@@ -34,6 +34,7 @@ class DeliveryCreate(BaseModel):
     dropoff_coordinates: Tuple[float, float]
     distance: float
 
+
 class LocationData(BaseModel):
     rider_id: UUID
     last_known_rider_coordinates: list[float]
@@ -48,7 +49,7 @@ class DeliverySchema(BaseModel):
     dispatch_id: UUID | None = None
     rider_id: UUID | None = None
     distance: Decimal
-    current_user_distance: float | None=None
+    current_user_distance: float | None = None
     duration: str
     origin: str
     destination: str
@@ -70,6 +71,7 @@ class DeliveryResponse(BaseModel):
 class PaginatedDeliveryResponse(BaseModel):
     total: int
     data: list[DeliveryResponse]
+
 
 class CancelOrderSchema(BaseModel):
     reason: str

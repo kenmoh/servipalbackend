@@ -117,12 +117,7 @@ load_dotenv()
 #     RESEND_API_KEY: str = os.getenv("RESEND_API_KEY")
 
 
-
-
 # settings = Settings()
-
-
-
 
 
 class Settings(BaseSettings):
@@ -130,38 +125,38 @@ class Settings(BaseSettings):
     Application settings loaded from environment variables.
     Pydantic automatically loads these from env vars - no need for os.getenv()!
     """
-    
+
     # Application settings
     APP_NAME: str = "ServiPal"
     DEBUG: bool = False
     ENVIRONMENT: str
-    
+
     # RabbitMQ settings
     RABBITMQ_URL: str
-    
+
     # Database settings
     DATABASE_URL: str
     TEST_DATABASE_URL: str
-    
+
     # LOGFIRE
     LOGFIRE_TOKEN: str
-    
+
     # FLUTTERWAVE
     FLW_PUBLIC_KEY: str
     FLW_SECRET_KEY: str
     FLW_SECRET_HASH: str
-    
+
     # JWT settings
     JWT_SECRET_KEY: str
     JWT_ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
     REFRESH_TOKEN_EXPIRE_DAYS: int = 7
-    
+
     # AWS
     AWS_SECRET_KEY: str = os.getenv("AWSSecretKey")
     AWS_ACCESS_KEY_ID: str = os.getenv("AWSAccessKeyId")
     S3_BUCKET_NAME: str
-    
+
     # Email Settings
     MAIL_USERNAME: str
     MAIL_PASSWORD: str
@@ -173,7 +168,7 @@ class Settings(BaseSettings):
     MAIL_STARTTLS: bool
     USE_CREDENTIALS: bool
     EMAIL_TEMPLATES_DIR: str = str(Path(__file__).parent.parent / "templates" / "email")
-    
+
     # Database connection settings
     DB_POOL_SIZE: int = 20
     DB_MAX_OVERFLOW: int = 20
@@ -181,10 +176,10 @@ class Settings(BaseSettings):
     DB_POOL_RECYCLE: int = 1800
     DB_MAX_RETRIES: int = 3
     DB_RETRY_DELAY: int = 1
-    
+
     # Termii
     SMS_API_KEY: str
-    
+
     # Redis
     REDIS_HOST: str = "localhost"
     REDIS_PORT: int = 6379
@@ -192,36 +187,36 @@ class Settings(BaseSettings):
     REDIS_EX: int = 3600
     UPSTASH_REDIS_URL: str
     UPSTASH_TOKEN: str
-    
+
     # API URL
     FRONTEND_URL: str
     API_URL: str = "http://localhost:8000"
     TEST_API_URL: str = "http://localhost:8000"
     TEST_BASE_URL: str = "http://test"
-    
+
     # Test
     TEST: bool = Field(default=True, env="TEST")
-    
+
     # Finger Print
     FINGER_PRINT: str
     PACKAGE_NAME: str
-    
+
     # Stream Chat
     STREAM_API_KEY: str
     STREAM_API_SECRET: str
-    
+
     # Timezone
     TZ: str = "Etc/UTC"
-    
+
     # GOOGLE
     GOOGLE_MAP_API_KEY: str
-    
+
     # MAP BOX
     MAPBOX_API_KEY: str
-    
+
     # RESEND
     RESEND_API_KEY: str
-    
+
     # Customer types (from your Cloud Run env vars)
     CUSTOMER: Optional[str] = None
     RESTAURANT_VENDOR: Optional[str] = None
@@ -230,8 +225,8 @@ class Settings(BaseSettings):
     DISPATCH: Optional[str] = None
     ADMIN: Optional[str] = None
     SUPER_ADMIN: Optional[str] = None
-    MODERATOR:Optional[str] = None
-    
+    MODERATOR: Optional[str] = None
+
     class Config:
         # This tells Pydantic to load from .env file in development
         env_file = ".env"
@@ -256,9 +251,6 @@ settings = Settings()
 
 # redis_client = redis.Redis.from_url(redis_url, decode_responses=True)
 redis_client = Redis(url=settings.UPSTASH_REDIS_URL, token=settings.UPSTASH_TOKEN)
-
-
-
 
 
 email_conf = ConnectionConfig(

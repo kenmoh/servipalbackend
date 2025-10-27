@@ -33,7 +33,7 @@ from app.schemas.user_schemas import (
     VerificationSchema,
     CreateUserSchema,
     UpdateStaffSchema,
-    CreateUserResponseSchema
+    CreateUserResponseSchema,
 )
 from app.services import auth_service
 from pydantic import BaseModel
@@ -152,7 +152,9 @@ async def create_user(
 ) -> CreateUserResponseSchema:
     """Logout user by revoking their refresh token"""
 
-    return await auth_service.register_user(db=db, user_data=user_data, background_tasks=background_tasks)
+    return await auth_service.register_user(
+        db=db, user_data=user_data, background_tasks=background_tasks
+    )
 
 
 @router.post(
@@ -165,7 +167,6 @@ async def create_rider(
     background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
-    
 ) -> CreateUserResponseSchema:
     """Logout user by revoking their refresh token"""
 
@@ -225,7 +226,6 @@ async def verify_token(token: str, db: AsyncSession = Depends(get_db)):
     return await auth_service.verify_reset_token(token, db)
 
 
-
 @router.post("/verify-contacts")
 @limiter.limit("5/minute")
 async def verify_user_contacts(
@@ -268,12 +268,10 @@ async def verify_user_contacts(
 @router.post("/{user_id}/resend-otp")
 @limiter.limit("5/minute")
 async def resend_verification_codes(
-    request: Request,
-    user_id: UUID, db: AsyncSession = Depends(get_db)
+    request: Request, user_id: UUID, db: AsyncSession = Depends(get_db)
 ) -> dict:
     """Resend verification codes"""
-    return await auth_service.send_verification_codes(
-        user_id=user_id, db=db)
+    return await auth_service.send_verification_codes(user_id=user_id, db=db)
 
 
 # <<<<< ------------- PASSWORD CHANGE ------------ >>>>>

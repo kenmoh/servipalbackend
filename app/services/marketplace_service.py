@@ -51,14 +51,14 @@ from app.config.config import redis_client
 async def get_marketplace_items(db: AsyncSession) -> list[ItemResponse]:
     """Retrieves all marketplace items"""
     cache_key = "marketplace_items"
-    
+
     # Try cache first
     cached_items = redis_client.get(cache_key)
-    
+
     if cached_items:
         item_dicts = json.loads(cached_items)
         return [ItemResponse(**item) for item in item_dicts]
-    
+
     # Query database
     stmt = (
         select(Item)
@@ -67,10 +67,10 @@ async def get_marketplace_items(db: AsyncSession) -> list[ItemResponse]:
     )
     result = await db.execute(stmt)
     items = result.unique().scalars().all()
-    
+
     # Convert to Pydantic models
     item_responses = [ItemResponse.model_validate(item) for item in items]
-    
+
     # Cache the results
     if item_responses:
         redis_client.setex(
@@ -78,20 +78,20 @@ async def get_marketplace_items(db: AsyncSession) -> list[ItemResponse]:
             CACHE_TTL,
             json.dumps([item.model_dump() for item in item_responses], default=str),
         )
-    
+
     return item_responses
 
 
 async def get_marketplace_item(item_id: UUID, db: AsyncSession) -> ItemResponse:
     """Retrieves a single marketplace item"""
     cache_key = f"marketplace_items:{item_id}"
-    
+
     # Try cache first
     cached_item = redis_client.get(cache_key)
     if cached_item:
         item_dict = json.loads(cached_item)
         return ItemResponse(**item_dict)
-    
+
     # Query database
     stmt = (
         select(Item)
@@ -100,25 +100,23 @@ async def get_marketplace_item(item_id: UUID, db: AsyncSession) -> ItemResponse:
     )
     result = await db.execute(stmt)
     item = result.unique().scalar_one_or_none()
-    
+
     if not item:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, 
-            detail="Item not found"
+            status_code=status.HTTP_404_NOT_FOUND, detail="Item not found"
         )
-    
+
     # Convert to Pydantic model
     item_response = ItemResponse.model_validate(item)
-    
+
     # Cache the result
     redis_client.setex(
         cache_key,
         CACHE_TTL,
         json.dumps(item_response.model_dump(), default=str),
     )
-    
-    return item_response
 
+    return item_response
 
 
 # async def get_marketplace_items(db: AsyncSession) -> list[ItemResponse]:
@@ -446,7 +444,7 @@ async def owner_mark_item_received(
             # Create the transaction for the vendor now that funds are released.
             # The buyer's debit transaction was already created at the time of payment.
 
-           # Vendor wallet update (remove from escrow)
+            # Vendor wallet update (remove from escrow)
             await producer.publish_message(
                 service="wallet",
                 operation="update_wallet",
@@ -463,10 +461,10 @@ async def owner_mark_item_received(
                 payload={
                     "wallet_id": str(order.owner_id),
                     "escrow_change": str(-order.total_price),
-                    "balance_change": '0'
+                    "balance_change": "0",
                 },
             )
-           
+
             # db.add(vendor_transx)
             await db.commit()
 
@@ -558,7 +556,9 @@ async def get_product_order_details(
     order = result.scalar_one_or_none()
 
     if not order:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Order not found.")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Order not found."
+        )
 
     # Format responses - delivery will be None for orders without delivery
     products_order_response = format_order_response(order)
@@ -568,7 +568,6 @@ async def get_product_order_details(
         CACHE_TTL,
         json.dumps(products_order_response.model_dump(), default=str),
     )
-
 
     return products_order_response
 
@@ -690,8 +689,6 @@ async def vendor_mark_rejected_item_received(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail="Unable to update order."
         )
-
-
 
 
 def format_order_response(order) -> ProductOrderResponse:

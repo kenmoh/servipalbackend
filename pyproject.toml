@@ -37,4 +37,6 @@ dependencies = [
     "websockets>=15.0.1",
     "locust>=2.31.8",
     "upstash-redis>=1.4.0",
+    "geoalchemy2>=0.18.0",
+    "shapely>=2.1.2",
 ]

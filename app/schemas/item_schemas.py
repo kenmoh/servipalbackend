@@ -40,7 +40,7 @@ class ItemType(str, Enum):
 
 class ItemImageSchema(BaseModel):
     model_config = ConfigDict(from_attributes=True)
-    
+
     id: UUID
     item_id: UUID
     url: str
@@ -52,8 +52,8 @@ class MenuItemCreate(BaseModel):
     description: str
     price: Decimal
     side: str | None = None
-    category_id: UUID 
-    food_group: FoodGroup 
+    category_id: UUID
+    food_group: FoodGroup
 
 
 class LaundryItemCreate(BaseModel):
@@ -128,6 +128,7 @@ class MenuResponseSchema(MenuBase):
     description: str
     is_deleted: bool = False
     is_primary: bool = False
+
 
 class LaundryMenuResponseSchema(MenuBase):
     pass

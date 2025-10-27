@@ -1,8 +1,12 @@
 from datetime import datetime, timedelta, time
+from functools import cache
+from turtle import distance
+from geoalchemy2.shape import from_shape
+from shapely.geometry import Point
 from decimal import Decimal
 from app.schemas.item_schemas import FoodGroup, ItemType
 from app.models.models import AuditLog, Delivery, User, Item, RefreshToken, Session
-from sqlalchemy.orm import selectinload
+from sqlalchemy.orm import selectinload, joinedload
 from sqlalchemy import func, select, delete, update, and_
 from typing import List, Optional
 from uuid import UUID
@@ -47,14 +51,16 @@ from app.schemas.user_schemas import (
     ProfileSchema,
     UpdateRider,
     WalletUserData,
-    UserCoords
+    UserCoords,
 )
 
 
 logger = setup_logger()
 
 
-def _build_user_profile_response(user: User, review_count: int = 0, avg_rating: float = 0.0) -> dict:
+def _build_user_profile_response(
+    user: User, review_count: int = 0, avg_rating: float = 0.0
+) -> dict:
     """Helper function to build a user profile response dictionary."""
     user_data = {
         "email": user.email,
@@ -76,27 +82,37 @@ def _build_user_profile_response(user: User, review_count: int = 0, avg_rating: 
             "store_name": user.profile.store_name,
             "business_name": getattr(user.profile, "business_name", None),
             "business_address": getattr(user.profile, "business_address", None),
-            "can_pickup_and_dropoff": getattr(user.profile, 'can_pickup_and_dropoff'),
-            "pickup_and_delivery_charge": str(user.profile.pickup_and_delivery_charge) or None,
-            "business_registration_number": getattr(user.profile, "business_registration_number", None),
-            "closing_hours": str(user.profile.closing_hours.isoformat()) if getattr(user.profile, "closing_hours", None) else None,
-            "opening_hours": str(user.profile.opening_hours.isoformat()) if getattr(user.profile, "opening_hours", None) else None,
+            "can_pickup_and_dropoff": getattr(user.profile, "can_pickup_and_dropoff"),
+            "pickup_and_delivery_charge": str(user.profile.pickup_and_delivery_charge)
+            or None,
+            "business_registration_number": getattr(
+                user.profile, "business_registration_number", None
+            ),
+            "closing_hours": str(user.profile.closing_hours.isoformat())
+            if getattr(user.profile, "closing_hours", None)
+            else None,
+            "opening_hours": str(user.profile.opening_hours.isoformat())
+            if getattr(user.profile, "opening_hours", None)
+            else None,
             "review_count": review_count or 0,
             "avg_rating": avg_rating or 0,
-
         }
 
         if hasattr(user.profile, "profile_image") and user.profile.profile_image:
-            profile_data["backdrop_image_url"] = getattr(user.profile.profile_image, "backdrop_image_url", None)
-            profile_data["profile_image_url"] = getattr(user.profile.profile_image, "profile_image_url", None)
+            profile_data["backdrop_image_url"] = getattr(
+                user.profile.profile_image, "backdrop_image_url", None
+            )
+            profile_data["profile_image_url"] = getattr(
+                user.profile.profile_image, "profile_image_url", None
+            )
         else:
             profile_data["backdrop_image_url"] = None
             profile_data["profile_image_url"] = None
-            
+
         user_data["profile"] = profile_data
     else:
         user_data["profile"] = None
-    
+
     return user_data
 
 
@@ -116,6 +132,70 @@ def set_cached_user(user_id: UUID, user_data: dict) -> None:
 def invalidate_user_cache(user_id: UUID) -> None:
     """Helper function to invalidate user cache"""
     redis_client.delete(f"user:{user_id}")
+
+
+async def get_riders(db: AsyncSession, coords: UserCoords) -> List[RiderProfileSchema]:
+
+    cache_key = f'near_by_riders:{round(coords.lng, 4)}:{round(coords.lat, 4)}:100km'
+
+    cached_riders = redis_client.get(cache_key)
+    if cached_riders:
+        data = json.loads(cached_riders)
+        return [RiderProfileSchema(**rider) for rider in data]
+
+
+    point = from_shape(Point(coords.lng, coords.lat), srid=4326)
+
+    stmt = (
+        select(
+            User,
+            func.count(Delivery.id).label("delivery_count"),
+            func.count(Review.id).label('review_count'),
+            func.coalesce(func.avg(Review.rating), 0).label("average_rating"),
+            func.ST_Distance(User.location_coordinates, point).label("distance_meters"),
+        )
+        .outerjoin(Delivery, Delivery.rider_id)
+        .outerjoin(Review, Review.reviewee_id == User.id)
+        .options(joinedload(User.profile))
+        .options(joinedload(Profile.profile_image))
+        .where(func.ST_DWithin(User.location_coordinates, point, 100_000))
+        .where(User.user_type == UserType.RIDER, User.has_delivery.is_(False), User.is_online.is_(True))
+        .group_by(User.id)
+        .order_by('distance_meters')
+    )
+
+
+    result = await db.execute(stmt)
+    riders = result.scalars().all()
+
+    riders_list = []
+    for rider, deliver_count, review_count, average_rating, distance_meters in riders:
+        rider_data = RiderProfileSchema(
+            rider_id=str(rider.id),
+            email=rider.email,
+            full_name=rider.profile.full_name,
+            phone_number=rider.profile.phone_number,
+            bike_number=rider.profile.bike_number,
+            business_address=rider.profile.business_address,
+            business_name=rider.profile.business_name,
+            delivery_count=deliver_count,
+            average_rating=average_rating,
+            review_count=review_count,
+            distance_km=round(distance_meters / 1000, 2),
+            profile_image_url=(
+                rider.profile.profile_image.profile_image_url
+                if rider.profile and rider.profile.profile_image
+                else None
+            ),
+        )
+        riders_list.append(rider_data)
+
+        riders_dict = [rider.model_dump() for rider in riders]
+
+        if riders_dict:
+            redis_client.set(cache_key, json.dumps(riders_dict, default=str), ex=300)
+
+    return riders_list
 
 
 async def get_rider_profile(db: AsyncSession, user_id: UUID) -> RiderProfileSchema:
@@ -181,14 +261,14 @@ async def get_current_user_details(
         user = result.scalar_one_or_none()
 
         review_stmt = select(
-            func.count(Review.id).label('review_count'),
-            func.avg(Review.rating).label('avg_rating'),
+            func.count(Review.id).label("review_count"),
+            func.avg(Review.rating).label("avg_rating"),
         ).where(Review.reviewee_id == user.id)
 
         review_result = await db.execute(review_stmt)
         stats = review_result.one()
 
-        review_count = stats.review_count 
+        review_count = stats.review_count
         avg_rating = round(float(stats.avg_rating), 2) if stats.avg_rating else 0.0
 
         # Convert response format
@@ -321,7 +401,6 @@ async def get_active_users(
     result = await db.execute(user_stmt)
     users = result.scalars().all()
 
-
     # Format as UserProfileResponse
     users_data = [_build_user_profile_response(user) for user in users]
 
@@ -349,6 +428,45 @@ async def get_active_user_count(db: AsyncSession, window_minutes: int = 10) -> i
     result = await db.execute(session_stmt)
     user_ids = {row[0] for row in result.all()}
     return len(user_ids)
+
+async def toggle_online_status(
+    db: AsyncSession,  current_user: User
+) -> bool:
+    """
+    Toggle user online status - offline if online,
+
+    Args:
+        db: Database session
+        
+        current_user: Current authenticated user
+
+    Returns:
+        Boolean indicating the new block status
+    """
+    
+
+    result = await db.execute(select(User).where(User.id == current_user.id))
+    user = result.scalar_one_or_none()
+
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Invalid user"
+        )
+
+    try:    
+        # Toggle the block status
+        user.is_online = not user.is_online
+        db.commit()
+
+        return user.is_online
+
+    except Exception as e:
+        await db.rollback()
+        logger.error(f"Error toggling online status for user {user_id}: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to update user online status",
+        )
 
 
 async def toggle_user_block_status(
@@ -595,7 +713,6 @@ async def update_profile(
                 if isinstance(value, (Decimal)):
                     values[i] = str(value)
 
-
         audit = AuditLog(
             actor_id=current_user.id,
             actor_name=current_user.profile.full_name or current_user.email,
@@ -773,17 +890,16 @@ async def get_user_with_profile(db: AsyncSession, user_id: UUID) -> ProfileSchem
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND, detail="Profile not found"
             )
-       
+
         review_stmt = select(
-            func.count(Review.id).label('review_count'),
-            func.avg(Review.rating).label('avg_rating'),
+            func.count(Review.id).label("review_count"),
+            func.avg(Review.rating).label("avg_rating"),
         ).where(Review.reviewee_id == profile.user_id)
 
         review_result = await db.execute(review_stmt)
         stats = review_result.one()
         review_count = stats.review_count
         avg_rating = round(stats.avg_rating, 2) if stats.avg_rating else 0.0
-
 
         user_data = {
             "user_id": profile.user_id,
@@ -826,14 +942,16 @@ async def get_user_with_profile(db: AsyncSession, user_id: UUID) -> ProfileSchem
 
 # <<<<< --------- GET USER BY FOOD CATEGORY ---------- >>>>>
 
+
 async def get_restaurant_vendors(
-    db: AsyncSession, current_user: User, category_id: UUID | None = None,
+    db: AsyncSession,
+    current_user: User,
+    category_id: UUID | None = None,
 ) -> list[VendorUserResponse]:
     cache_key = f"restaurant_vendors:{category_id if category_id else 'all'}"
     cached_data = redis_client.get(cache_key)
     if cached_data:
         return json.loads(cached_data)
-
 
     try:
         # Review stats subquery (for ORDER type reviews)
@@ -890,11 +1008,9 @@ async def get_restaurant_vendors(
         response = []
         for user, profile, image, avg_rating, review_count in rows:
             distance = await get_distance_between_addresses(
-                    vendor_address=profile.business_address,
-                    current_user=current_user
-                )
+                vendor_address=profile.business_address, current_user=current_user
+            )
 
-           
             vendor_dict = {
                 "id": str(user.id),
                 "company_name": profile.business_name or "",
@@ -918,8 +1034,7 @@ async def get_restaurant_vendors(
                     "average_rating": str(round(float(avg_rating or 0), 2)),
                     "number_of_reviews": review_count or 0,
                 },
-
-                "distance":distance
+                "distance": distance,
             }
             if distance and distance <= 35.0:
                 response.append(vendor_dict)
@@ -994,7 +1109,9 @@ async def delete_user(db: AsyncSession, current_user: User) -> None:
     """
     try:
         # Manually delete related records
-        await db.execute(delete(RefreshToken).where(RefreshToken.user_id == current_user.id))
+        await db.execute(
+            delete(RefreshToken).where(RefreshToken.user_id == current_user.id)
+        )
         await db.execute(delete(Session).where(Session.user_id == current_user.id))
 
         # Finally delete the user
@@ -1017,7 +1134,6 @@ async def delete_user(db: AsyncSession, current_user: User) -> None:
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to delete user. Please try again.",
         )
-
 
 
 async def upload_image_profile(
@@ -1191,7 +1307,9 @@ async def upload_image_profile(
 # <<<<< --------- GET LAUNDRY SERVICE PROVIDERS ---------- >>>>>
 
 
-async def get_users_by_laundry_services(db: AsyncSession, current_user: User) -> list[VendorUserResponse]:
+async def get_users_by_laundry_services(
+    db: AsyncSession, current_user: User
+) -> list[VendorUserResponse]:
     """
     Fetch all vendors who offer laundry services with:
     - basic info
@@ -1257,9 +1375,8 @@ async def get_users_by_laundry_services(db: AsyncSession, current_user: User) ->
                 continue  # skip vendors with no laundry services
 
             distance = await get_distance_between_addresses(
-                    vendor_address=profile.business_address,
-                    current_user=current_user
-                )
+                vendor_address=profile.business_address, current_user=current_user
+            )
 
             vendor_dict = {
                 "id": str(user.id),
@@ -1284,7 +1401,7 @@ async def get_users_by_laundry_services(db: AsyncSession, current_user: User) ->
                     "number_of_reviews": review_count or 0,
                 },
                 "total_items": total_items,
-                "distance": distance
+                "distance": distance,
             }
 
             if distance and distance <= 35.0:
@@ -1509,45 +1626,42 @@ async def register_notification(
     return user.notification_token
 
 
-
 async def update_user_location_coords(
     location_data: UserCoords,
     db: AsyncSession,
     current_user: User,
 ) -> UserCoords:
     # Create the coordinate dictionary
-    coordinate = {
-        'lat': location_data.lat,
-        'lng': location_data.lng
-    }
-    
+    coordinate = {"lat": location_data.lat, "lng": location_data.lng}
+
     # Create cache key using user ID
     cache_key = f"current_user_location_coords:{current_user.id}"
     cached_data = redis_client.get(cache_key)
-    
+
     if cached_data:
         # Parse cached data if it's JSON string
         if isinstance(cached_data, str):
             return json.loads(cached_data)
         return cached_data
-    
+
     # Get user from database
     result = await db.execute(select(User).where(User.id == current_user.id))
     user = result.scalar_one_or_none()
-    
+
     if user is None:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, 
-            detail="User not found"
+            status_code=status.HTTP_404_NOT_FOUND, detail="User not found"
         )
-    
+
     # Check if coordinates already exist and are the same
-    if (user.current_user_location_coords and 
-        user.current_user_location_coords.get('lat') == coordinate['lat'] and
-        user.current_user_location_coords.get('lng') == coordinate['lng']):
+    if (
+        user.current_user_location_coords
+        and user.current_user_location_coords.get("lat") == coordinate["lat"]
+        and user.current_user_location_coords.get("lng") == coordinate["lng"]
+    ):
         # Coordinates already exist and are the same
         return user.current_user_location_coords
-    
+
     # Update the location coordinates
     await db.execute(
         update(User)
@@ -1555,12 +1669,41 @@ async def update_user_location_coords(
         .values({"current_user_location_coords": coordinate})
     )
     await db.commit()
-    
+
     # Cache the new coordinates (serialize to JSON string for Redis)
     redis_client.setex(cache_key, 3600, json.dumps(coordinate))
-    
+
     return coordinate
 
+async def update_user_location(
+    location_data: UserCoords,
+    db: AsyncSession,
+
+) -> UserCoords:
+    # Create the coordinate dictionary
+    point = from_shape(location_data.lng, location_data.lat)
+
+    # Get user from database
+    result = await db.execute(select(User).where(User.id == location_data.user_id))
+    user = result.scalar_one_or_none()
+
+    if user is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="User not found"
+        )
+
+
+    # Update the location coordinates
+    await db.execute(
+        update(User)
+        .where(User.id == location_data.user_id)
+        .values({"location_coordinates": point})
+    )
+    await db.commit()
+
+
+
+    
 
 async def get_current_user_notification_token(
     current_user: UUID, db: AsyncSession
@@ -1615,7 +1758,7 @@ async def get_restaurant_menu(
                 Item.user_id == restaurant_id,
                 Item.item_type == ItemType.FOOD,
                 Item.food_group == food_group,
-                Item.is_deleted == False
+                Item.is_deleted == False,
             )
             .options(selectinload(Item.images))
         )
@@ -1684,7 +1827,11 @@ async def get_laundry_menu(
         # Query menu items with eager loading of images
         menu_stmt = (
             select(Item)
-            .where(Item.user_id == laundry_id, Item.item_type == ItemType.LAUNDRY, Item.is_deleted==True)
+            .where(
+                Item.user_id == laundry_id,
+                Item.item_type == ItemType.LAUNDRY,
+                Item.is_deleted == True,
+            )
             .options(selectinload(Item.images))
         )
         result = await db.execute(menu_stmt)

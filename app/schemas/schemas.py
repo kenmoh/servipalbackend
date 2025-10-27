@@ -52,5 +52,5 @@ class PaymentLinkSchema(BaseModel):
 
 
 class GenerateLinkType(str, Enum):
-    ORDER = 'order'
-    FUND_WALLET = 'fund-wallet'
+    ORDER = "order"
+    FUND_WALLET = "fund-wallet"

@@ -55,7 +55,6 @@ from app.queue.wallet_consumer import WalletQueueConsumer
 from app.queue.producer import CentralQueueProducer
 
 
-
 logger = setup_logger()
 
 scheduler = BackgroundScheduler()
@@ -134,13 +133,13 @@ async def lifespan(application: FastAPI):
         # Log scheduler status
         logger.info(f"Scheduler running: {scheduler.running}")
         logger.info(f"Scheduled jobs: {scheduler.get_jobs()}")
-       
+
         yield
 
         logger.info("Shutting down services...")
         scheduler.shutdown()
         logger.info("Services shutdown complete")
-      
+
     finally:
         # Shutdown: Stop consumers and close producer
         await wallet_queue_consumer.stop_consuming()
@@ -252,7 +251,7 @@ async def check_db_health(db: AsyncSession = Depends(get_db)):
         # Simple query to check connection
         await db.execute(text("SELECT 1"))
         redis_client.ping()
-        
+
         return {"status": "healthy", "database": "connected"}
     except Exception as e:
         return {"status": "unhealthy", "database": "disconnected", "error": str(e)}

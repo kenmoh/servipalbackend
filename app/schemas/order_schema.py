@@ -61,6 +61,7 @@ class PackageCreate(BaseModel):
     origin: str
     destination: str
     duration: str
+    rider_id: UUID
     pickup_coordinates: list[float]
     dropoff_coordinates: list[float]
 

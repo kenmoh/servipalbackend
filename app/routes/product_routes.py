@@ -172,7 +172,7 @@ async def update_existing_product(
     and the user must be the seller of the product.
     """
     processed_sizes = sizes if sizes else None
-    
+
     processed_colors = colors if colors else []
 
     product_data = ProductUpdate(
@@ -220,5 +220,5 @@ async def delete_existing_product(
     await product_service.delete_product(
         db=db, product_id=product_id, current_user=current_user
     )
-    
+
     return None

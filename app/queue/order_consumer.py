@@ -33,8 +33,8 @@ class OrderStatusQueueConsumer(BaseQueueConsumer):
                     order_status = payload.get("order_status")
                     delivery_status = payload.get("delivery_status")
                     delivery_id = payload.get("delivery_id")
-                    cache_keys = payload.get('cache_keys', [])
-                    notification_data = payload.get('notification_data', [])
+                    cache_keys = payload.get("cache_keys", [])
+                    notification_data = payload.get("notification_data", [])
 
                     result = await db.execute(
                         update(Order)
@@ -69,7 +69,7 @@ class OrderStatusQueueConsumer(BaseQueueConsumer):
                 async with db.begin():
                     order_id = UUID(payload.get("order_id"))
                     new_status = payload.get("new_status")
-                    
+
                     result = await db.execute(
                         update(Order)
                         .where(Order.id == order_id)

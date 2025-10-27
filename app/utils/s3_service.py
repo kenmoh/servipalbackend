@@ -1,4 +1,3 @@
-
 from app.config.config import settings
 import secrets
 import logging
@@ -204,7 +203,6 @@ async def update_image(new_image: UploadFile, old_image_url: str) -> str:
     return await add_image(new_image)
 
 
-
 async def update_multiple_images(
     new_images: list[UploadFile],
     old_image_urls: list[str],
@@ -235,19 +233,19 @@ async def update_multiple_images(
 #     """
 #     try:
 #         logging.info(f"Starting background video to GIF conversion: {video_filename}")
-        
+
 #         # Initialize Appwrite client inside the function to avoid circular imports
 #         from app.config.config import settings
 #         from appwrite.client import Client
 #         from appwrite.services.storage import Storage
 #         from appwrite.input_file import InputFile
-        
+
 #         appwrite_client = Client()
 #         appwrite_client.set_endpoint(settings.APPWRITE_ENDPOINT)
 #         appwrite_client.set_project(settings.APPWRITE_PROJECT_ID)
 #         appwrite_client.set_key(settings.APPWRITE_API_KEY)
 #         appwrite_storage = Storage(appwrite_client)
-        
+
 #         # Convert video to GIF using moviepy with the video URL
 #         with VideoFileClip(video_url) as video_clip:
 #             # Check duration (max 2 minutes = 120 seconds)
@@ -255,7 +253,7 @@ async def update_multiple_images(
 #                 # Trim video to first 2 minutes
 #                 video_clip = video_clip.subclip(0, 120)
 #                 logging.info("Video trimmed to 2 minutes")
-            
+
 #             # Convert to GIF with optimized settings
 #             gif_path = os.path.join(tempfile.gettempdir(), gif_filename)
 #             video_clip.write_gif(
@@ -264,7 +262,7 @@ async def update_multiple_images(
 #                 verbose=False,
 #                 logger=None
 #             )
-        
+
 #         # Upload GIF to Appwrite storage
 #         logging.info(f"Uploading GIF to Appwrite: {gif_filename}")
 #         with open(gif_path, 'rb') as gif_file:
@@ -273,19 +271,19 @@ async def update_multiple_images(
 #                 file_id=gif_filename,
 #                 file=InputFile.from_path(gif_path, filename=gif_filename)
 #             )
-        
+
 #         # Delete video from Appwrite storage
 #         logging.info(f"Deleting video from Appwrite: {video_filename}")
 #         appwrite_storage.delete_file(
 #             bucket_id=settings.APPWRITE_BUCKET_ID,
 #             file_id=video_filename
 #         )
-        
+
 #         # Clean up temporary GIF file
 #         os.unlink(gif_path)
-        
+
 #         logging.info("Background video to GIF conversion completed successfully")
-        
+
 #     except Exception as e:
 #         logging.error(f"Error in background video to GIF conversion: {str(e)}")
 #         # Try to clean up video if conversion failed
@@ -306,13 +304,13 @@ async def update_multiple_images(
 #     1. Upload video to Appwrite storage (max 2 minutes, max 25MB)
 #     2. Start background task to convert video to GIF
 #     3. Return task ID for tracking
-    
+
 #     Args:
 #         video_file: UploadFile object containing the video
-        
+
 #     Returns:
 #         dict: Contains 'task_id', 'status', and 'message' keys
-        
+
 #     Raises:
 #         HTTPException: If video validation fails or processing errors occur
 #     """
@@ -323,46 +321,46 @@ async def update_multiple_images(
 #                 status_code=status.HTTP_400_BAD_REQUEST,
 #                 detail="File must be a video"
 #             )
-        
+
 #         # Check file size (25MB = 25 * 1024 * 1024 bytes)
 #         max_size = 25 * 1024 * 1024
 #         video_file.file.seek(0, 2)  # Seek to end
 #         file_size = video_file.file.tell()
 #         video_file.file.seek(0)  # Reset to beginning
-        
+
 #         if file_size > max_size:
 #             raise HTTPException(
 #                 status_code=status.HTTP_400_BAD_REQUEST,
 #                 detail="Video file size must be less than 25MB"
 #             )
-        
+
 #         # Generate unique filename
 #         video_filename = f"{uuid4()}-{video_file.filename}"
 #         gif_filename = f"{uuid4()}-{Path(video_file.filename).stem}.gif"
-        
+
 #         # Upload video to Appwrite storage
 #         logging.info(f"Uploading video to Appwrite: {video_filename}")
-        
+
 #         # Create a temporary file from the UploadFile
 #         with tempfile.NamedTemporaryFile(delete=False, suffix=Path(video_file.filename).suffix) as temp_file:
 #             video_file.file.seek(0)
 #             temp_file.write(video_file.file.read())
 #             temp_file_path = temp_file.name
-        
+
 #         try:
 #             appwrite_storage.create_file(
 #                 bucket_id=settings.APPWRITE_BUCKET_ID,
 #                 file_id=video_filename,
 #                 file=InputFile.from_path(temp_file_path, filename=video_filename)
 #             )
-            
+
 #             video_url = f"{settings.APPWRITE_ENDPOINT}/storage/buckets/{settings.APPWRITE_BUCKET_ID}/files/{video_filename}/view?project={settings.APPWRITE_PROJECT_ID}"
-            
+
 #             # Start background task
 #             task = process_video_to_gif_background.send(video_filename, gif_filename, video_url)
-            
+
 #             logging.info(f"Started background video to GIF conversion task: {task.id}")
-            
+
 #             return {
 #                 "task_id": task.id,
 #                 "status": "processing",
@@ -370,12 +368,12 @@ async def update_multiple_images(
 #                 "video_filename": video_filename,
 #                 "gif_filename": gif_filename
 #             }
-            
+
 #         finally:
 #             # Clean up temporary file
 #             if os.path.exists(temp_file_path):
 #                 os.unlink(temp_file_path)
-        
+
 #     except Exception as e:
 #         logging.error(f"Unexpected error in convert_video_to_gif: {str(e)}")
 #         raise HTTPException(
@@ -387,11 +385,11 @@ async def update_multiple_images(
 # async def get_conversion_status(task_id: str, gif_filename: str) -> dict:
 #     """
 #     Check the status of a video to GIF conversion task
-    
+
 #     Args:
 #         task_id: Dramatiq task ID
 #         gif_filename: Expected GIF filename
-        
+
 #     Returns:
 #         dict: Contains status and GIF URL if available
 #     """
@@ -402,17 +400,17 @@ async def update_multiple_images(
 #                 bucket_id=settings.APPWRITE_BUCKET_ID,
 #                 file_id=gif_filename
 #             )
-            
+
 #             # If GIF exists, conversion is complete
 #             gif_url = f"{settings.APPWRITE_ENDPOINT}/storage/buckets/{settings.APPWRITE_BUCKET_ID}/files/{gif_filename}/view?project={settings.APPWRITE_PROJECT_ID}"
-            
+
 #             return {
 #                 "task_id": task_id,
 #                 "status": "completed",
 #                 "gif_url": gif_url,
 #                 "message": "Video successfully converted to GIF"
 #             }
-            
+
 #         except Exception:
 #             # GIF doesn't exist yet, check if task is still processing
 #             return {
@@ -420,15 +418,13 @@ async def update_multiple_images(
 #                 "status": "processing",
 #                 "message": "Video conversion in progress"
 #             }
-            
+
 #     except Exception as e:
 #         logging.error(f"Error checking conversion status: {str(e)}")
 #         raise HTTPException(
 #             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
 #             detail="Failed to check conversion status"
 #         )
-
-
 
 
 # WORkING ENGINE
@@ -446,7 +442,7 @@ async def update_multiple_images(
 #             "command_timeout": 60,
 #         }
 #     )
-    
+
 #     # Clean database before creating schema
 #     async with engine.begin() as conn:
 #         # Drop all connections first
@@ -456,17 +452,17 @@ async def update_multiple_images(
 #             WHERE pg_stat_activity.datname = current_database()
 #             AND pid <> pg_backend_pid()
 #         """))
-        
+
 #         # Drop all objects
 #         await conn.execute(text("DROP SCHEMA public CASCADE"))
 #         await conn.execute(text("CREATE SCHEMA public"))
 #         await conn.execute(text("GRANT ALL ON SCHEMA public TO public"))
-    
+
 #     # Create tables
 #     async with engine.begin() as conn:
 #         await conn.run_sync(Base.metadata.create_all)
-    
+
 #     yield engine
-    
+
 #     # Cleanup
 #     await engine.dispose()
