@@ -1,6 +1,4 @@
 from datetime import datetime, timedelta, time
-from functools import cache
-from turtle import distance
 from geoalchemy2.shape import from_shape
 from shapely.geometry import Point
 from decimal import Decimal
@@ -159,7 +157,7 @@ async def get_riders(db: AsyncSession, coords: UserCoords) -> List[RiderProfileS
         .options(joinedload(User.profile))
         .options(joinedload(Profile.profile_image))
         .where(func.ST_DWithin(User.location_coordinates, point, 100_000))
-        .where(User.user_type == UserType.RIDER, User.has_delivery.is_(False), User.is_online.is_(True))
+        .where(User.user_type == UserType.RIDER, User.has_delivery.is_(False), User.is_online.is_(True), Profile.profile_image.isnot(None))
         .group_by(User.id)
         .order_by('distance_meters')
     )

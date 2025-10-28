@@ -158,7 +158,6 @@ async def get_user_details(
 
 @router.get("/all-riders", status_code=status.HTTP_200_OK)
 async def get_riders(
-    user_id: UUID,
     coords: UserCoords,
     db: AsyncSession = Depends(get_db),
 ) -> list[RiderProfileSchema]:
