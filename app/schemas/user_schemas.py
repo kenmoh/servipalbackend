@@ -222,10 +222,14 @@ class RiderProfileSchema(BaseModel):
     business_address: str
     business_name: str
     bike_number: str
-    distance_km: str
+    distance_km: float
     average_rating: float = Field(default=0.0)
     review_count: int = Field(default=0)
     delivery_count: int = Field(default=0)
+
+
+    class Config:
+        from_attributes = True
 
 
 class UserResponseSchema(BaseModel):

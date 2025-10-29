@@ -132,18 +132,84 @@ def invalidate_user_cache(user_id: UUID) -> None:
     redis_client.delete(f"user:{user_id}")
 
 
+# async def get_riders(db: AsyncSession, lat: float, lng: float) -> List[RiderProfileSchema]:
+
+#     cache_key = f'near_by_riders:{round(lng, 4)}:{round(lat, 4)}:100km'
+
+#     # cached_riders = redis_client.get(cache_key)
+#     # if cached_riders:
+#     #     data = json.loads(cached_riders)
+#     #     return [RiderProfileSchema(**rider) for rider in data]
+
+
+#     point = from_shape(Point(lng, lat), srid=4326)
+
+#     stmt = (
+#         select(
+#             User,
+#             func.count(Delivery.id).label("delivery_count"),
+#             func.count(Review.id).label('review_count'),
+#             func.coalesce(func.avg(Review.rating), 0).label("average_rating"),
+#             func.ST_Distance(User.location_coordinates, point).label("distance_meters"),
+#         )
+#         .join(User.profile)
+#         .outerjoin(Profile.profile_image)   
+#         .outerjoin(Delivery, Delivery.rider_id == User.id)
+#         .outerjoin(Review, Review.reviewee_id == User.id)
+#         .where(func.ST_DWithin(User.location_coordinates, point, 100_000))
+#         .where(User.user_type == UserType.RIDER, User.has_delivery.is_(False), User.is_online.is_(True), Profile.profile_image != None)
+#         .group_by(User.id, Profile.user_id)
+#         .order_by('distance_meters')
+#     )
+
+
+#     result = await db.execute(stmt)
+#     riders = result.all()
+
+#     print('*'*50)
+#     print(riders)
+#     print('*'*50)
+
+#     riders_list = []
+#     for rider, delivery_count, review_count, average_rating, distance_meters in riders:
+
+#         rider_data = RiderProfileSchema(
+#             rider_id=rider.id,
+#             email=rider.email,
+#             full_name=rider.profile.full_name,
+#             phone_number=rider.profile.phone_number,
+#             bike_number=rider.profile.bike_number,
+#             business_address=rider.profile.business_address,
+#             business_name=rider.profile.business_name,
+#             delivery_count=delivery_count,
+#             average_rating=average_rating,
+#             review_count=review_count,
+#             distance_km=round(distance_meters / 1000, 2),
+#             profile_image_url=(
+#                 rider.profile.profile_image.profile_image_url
+#                 if rider.profile and rider.profile.profile_image
+#                 else None
+#             ),
+#         )
+#         riders_list.append(rider_data)
+
+#         riders_dict = [rider.model_dump() for rider in riders]
+
+#         if riders_dict:
+#             redis_client.set(cache_key, json.dumps(riders_dict, default=str), ex=300)
+
+#     return riders_list
+
+
 async def get_riders(db: AsyncSession, lat: float, lng: float) -> List[RiderProfileSchema]:
-
     cache_key = f'near_by_riders:{round(lng, 4)}:{round(lat, 4)}:100km'
-
     cached_riders = redis_client.get(cache_key)
     if cached_riders:
         data = json.loads(cached_riders)
         return [RiderProfileSchema(**rider) for rider in data]
-
-
+    
     point = from_shape(Point(lng, lat), srid=4326)
-
+     
     stmt = (
         select(
             User,
@@ -154,22 +220,27 @@ async def get_riders(db: AsyncSession, lat: float, lng: float) -> List[RiderProf
         )
         .join(User.profile)
         .outerjoin(Profile.profile_image)   
-        .outerjoin(Delivery, Delivery.rider_id==User.id)
+        .outerjoin(Delivery, Delivery.rider_id == User.id)
         .outerjoin(Review, Review.reviewee_id == User.id)
         .where(func.ST_DWithin(User.location_coordinates, point, 100_000))
-        .where(User.user_type == UserType.RIDER, User.has_delivery.is_(False), User.is_online.is_(True), Profile.profile_image != None)
+        .where(
+            User.user_type == UserType.RIDER, 
+            User.has_delivery.is_(False), 
+            User.is_online.is_(True), 
+            Profile.profile_image != None
+        )
         .group_by(User.id, Profile.user_id)
         .order_by('distance_meters')
     )
-
-
+    
     result = await db.execute(stmt)
     riders = result.all()
-
+    
     riders_list = []
     for rider, delivery_count, review_count, average_rating, distance_meters in riders:
+
         rider_data = RiderProfileSchema(
-            rider_id=str(rider.id),
+            rider_id=rider.id,
             email=rider.email,
             full_name=rider.profile.full_name,
             phone_number=rider.profile.phone_number,
@@ -179,7 +250,7 @@ async def get_riders(db: AsyncSession, lat: float, lng: float) -> List[RiderProf
             delivery_count=delivery_count,
             average_rating=average_rating,
             review_count=review_count,
-            distance_km=round(distance_meters / 1000, 2),
+            distance_km=round(float(distance_meters) / 1000, 2),
             profile_image_url=(
                 rider.profile.profile_image.profile_image_url
                 if rider.profile and rider.profile.profile_image
@@ -187,12 +258,12 @@ async def get_riders(db: AsyncSession, lat: float, lng: float) -> List[RiderProf
             ),
         )
         riders_list.append(rider_data)
-
-        riders_dict = [rider.model_dump() for rider in riders]
-
-        if riders_dict:
-            redis_client.set(cache_key, json.dumps(riders_dict, default=str), ex=300)
-
+    )
+    
+    riders_dict = [rider.model_dump() for rider in riders_list]
+    if riders_dict:
+        redis_client.set(cache_key, json.dumps(riders_dict, default=str), ex=300)
+    
     return riders_list
 
 
@@ -1679,8 +1750,8 @@ async def update_user_location(
 
 ) -> UserCoords:
     # Create the coordinate dictionary
-    point = from_shape(location_data.lng, location_data.lat)
-
+    point = from_shape(Point(location_data.lng, location_data.lat), srid=4326)
+ 
     # Get user from database
     result = await db.execute(select(User).where(User.id == location_data.user_id))
     user = result.scalar_one_or_none()
@@ -1692,12 +1763,13 @@ async def update_user_location(
 
 
     # Update the location coordinates
-    await db.execute(
+    location_data = await db.execute(
         update(User)
         .where(User.id == location_data.user_id)
-        .values({"location_coordinates": point})
+        .values(location_coordinates=point)
     )
     await db.commit()
+
 
 
 
