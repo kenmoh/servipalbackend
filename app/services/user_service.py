@@ -258,7 +258,7 @@ async def get_riders(db: AsyncSession, lat: float, lng: float) -> List[RiderProf
             ),
         )
         riders_list.append(rider_data)
-    )
+    
     
     riders_dict = [rider.model_dump() for rider in riders_list]
     if riders_dict:
