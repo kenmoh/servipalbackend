@@ -158,10 +158,11 @@ async def get_user_details(
 
 @router.get("/all-riders", status_code=status.HTTP_200_OK)
 async def get_riders(
-    coords: UserCoords,
+    lat: float,
+    l: float,
     db: AsyncSession = Depends(get_db),
 ) -> list[RiderProfileSchema]:
-    return await user_service.get_riders(db=db, coords=coords)
+    return await user_service.get_riders(db=db, lat=lat, lng=lng)
 
 
 @router.get("/{user_id}/current-user-profile", status_code=status.HTTP_200_OK)

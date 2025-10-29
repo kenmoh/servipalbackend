@@ -132,9 +132,9 @@ def invalidate_user_cache(user_id: UUID) -> None:
     redis_client.delete(f"user:{user_id}")
 
 
-async def get_riders(db: AsyncSession, coords: UserCoords) -> List[RiderProfileSchema]:
+async def get_riders(db: AsyncSession, lat: float, lng: float) -> List[RiderProfileSchema]:
 
-    cache_key = f'near_by_riders:{round(coords.lng, 4)}:{round(coords.lat, 4)}:100km'
+    cache_key = f'near_by_riders:{round(lng, 4)}:{round(lat, 4)}:100km'
 
     cached_riders = redis_client.get(cache_key)
     if cached_riders:
@@ -142,7 +142,7 @@ async def get_riders(db: AsyncSession, coords: UserCoords) -> List[RiderProfileS
         return [RiderProfileSchema(**rider) for rider in data]
 
 
-    point = from_shape(Point(coords.lng, coords.lat), srid=4326)
+    point = from_shape(Point(lng, lat), srid=4326)
 
     stmt = (
         select(
