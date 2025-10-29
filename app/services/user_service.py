@@ -152,23 +152,23 @@ async def get_riders(db: AsyncSession, lat: float, lng: float) -> List[RiderProf
             func.coalesce(func.avg(Review.rating), 0).label("average_rating"),
             func.ST_Distance(User.location_coordinates, point).label("distance_meters"),
         )
-        .join(User.profile)  
+        .join(User.profile)
+        .outerjoin(Profile.profile_image)   
         .outerjoin(Delivery, Delivery.rider_id)
         .outerjoin(Review, Review.reviewee_id == User.id)
         .options(joinedload(User.profile))
-        .options(joinedload(Profile.profile_image))
         .where(func.ST_DWithin(User.location_coordinates, point, 100_000))
-        .where(User.user_type == UserType.RIDER, User.has_delivery.is_(False), User.is_online.is_(True), Profile.profile_image.is_not(None))
-        .group_by(User.id)
+        .where(User.user_type == UserType.RIDER, User.has_delivery.is_(False), User.is_online.is_(True), Profile.profile_image != None)
+        .group_by(User.id, Profile.user_id)
         .order_by('distance_meters')
     )
 
 
     result = await db.execute(stmt)
-    riders = result.scalars().all()
+    riders = result.all()
 
     riders_list = []
-    for rider, deliver_count, review_count, average_rating, distance_meters in riders:
+    for rider, delivery_count, review_count, average_rating, distance_meters in riders:
         rider_data = RiderProfileSchema(
             rider_id=str(rider.id),
             email=rider.email,
@@ -177,7 +177,7 @@ async def get_riders(db: AsyncSession, lat: float, lng: float) -> List[RiderProf
             bike_number=rider.profile.bike_number,
             business_address=rider.profile.business_address,
             business_name=rider.profile.business_name,
-            delivery_count=deliver_count,
+            delivery_count=delivery_count,
             average_rating=average_rating,
             review_count=review_count,
             distance_km=round(distance_meters / 1000, 2),
