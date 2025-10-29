@@ -157,7 +157,7 @@ async def get_riders(db: AsyncSession, lat: float, lng: float) -> List[RiderProf
         .options(joinedload(User.profile))
         .options(joinedload(Profile.profile_image))
         .where(func.ST_DWithin(User.location_coordinates, point, 100_000))
-        .where(User.user_type == UserType.RIDER, User.has_delivery.is_(False), User.is_online.is_(True), Profile.profile_image.is_not(None))
+        .where(User.user_type == UserType.RIDER, User.has_delivery.is_(False), User.is_online.is_(True), Profile.profile_image!=None)
         .group_by(User.id)
         .order_by('distance_meters')
     )
