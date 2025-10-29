@@ -152,12 +152,13 @@ async def get_riders(db: AsyncSession, lat: float, lng: float) -> List[RiderProf
             func.coalesce(func.avg(Review.rating), 0).label("average_rating"),
             func.ST_Distance(User.location_coordinates, point).label("distance_meters"),
         )
+        .join(User.profile)  
         .outerjoin(Delivery, Delivery.rider_id)
         .outerjoin(Review, Review.reviewee_id == User.id)
         .options(joinedload(User.profile))
         .options(joinedload(Profile.profile_image))
         .where(func.ST_DWithin(User.location_coordinates, point, 100_000))
-        .where(User.user_type == UserType.RIDER, User.has_delivery.is_(False), User.is_online.is_(True), Profile.profile_image!=None)
+        .where(User.user_type == UserType.RIDER, User.has_delivery.is_(False), User.is_online.is_(True), Profile.profile_image.is_not(None))
         .group_by(User.id)
         .order_by('distance_meters')
     )
