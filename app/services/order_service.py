@@ -1436,7 +1436,7 @@ async def cancel_order(
 
 
 async def cancel_delivery(
-    db: AsyncSession, order_id: UUID, current_user: User, reason: CancelOrderSchema
+    db: AsyncSession, current_user: User, reason: CancelOrderSchema
 ):
     """
     Cancel a delivery order with proper validation and transaction handling.
@@ -1457,12 +1457,12 @@ async def cancel_delivery(
     """
 
     try:
-        order = await _order_to_cancel(db=db, order_id=order_id)
+        order = await _order_to_cancel(db=db, order_id=reason.owner_id)
         await _cancel_delivery_validation(order, current_user)
 
-        if current_user.user_type in [UserType.RIDER, UserType.DISPATCH]:
-            # Rider/Dispatch cancellation: Re-list delivery
-            status_update = await _rider_or_dispatch_cancel_delivery(
+        if current_user.user_type == UserType.RIDER:
+            # Rider/Dispatch cancellation
+            status_update = await _rider_cancel_delivery(
                 order, db, current_user, reason.reason
             )
         else:
@@ -1476,7 +1476,7 @@ async def cancel_delivery(
             db=db,
             vendor_id=current_user.id,
             amount=order.grand_total,
-            action=TransactionLogAction.REFUNDED,
+            action=TransactionLogAction.CANCELLED,
             status=order.order_payment_status,
             details={
                 "order_type": order.order_type,
@@ -1627,7 +1627,7 @@ async def _order_to_cancel(db: AsyncSession, order_id: UUID) -> Order:
         )
 
 
-async def _rider_or_dispatch_cancel_delivery(
+async def _rider_cancel_delivery(
     order: Order, db: AsyncSession, current_user: User, reason: str
 ) -> DeliveryStatusUpdateSchema:
     """
@@ -1732,14 +1732,9 @@ async def _sender_cancel_delivery(
             detail="This order has no delivery to cancel.",
         )
 
-    if order.delivery.delivery_status != OrderStatus.PENDING:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="This order is in transit.",
-        )
 
-    order.order_status = OrderStatus.PENDING
-    order.delivery.delivery_status = DeliveryStatus.PENDING
+    order.order_status = OrderStatus.DELIVERED
+    order.delivery.delivery_status = DeliveryStatus.DELIVERED
     order.cancel_reason = reason.reason
 
     await db.commit()
@@ -3107,7 +3102,7 @@ async def _dispatch_post_pickup_tasks(order: Order, rider: User, db: AsyncSessio
 #         )
 
 
-async def rider_accept_delivery_order(
+async def rider_accept_booking(
     db: AsyncSession, order_id: UUID, current_user: User
 ) -> DeliveryStatusUpdateSchema:
     """
@@ -3141,7 +3136,7 @@ async def rider_accept_delivery_order(
         )
 
 
-async def rider_decline_delivery_order(
+async def rider_decline_booking(
     db: AsyncSession, order_id: UUID, current_user: User
 ) -> DeliveryStatusUpdateSchema:
     """

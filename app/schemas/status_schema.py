@@ -134,3 +134,4 @@ class ChangeUserType(BaseModel):
 class TransactionLogAction(str, Enum):
     RECEIVED: str = "received"
     REFUNDED: str = "refunded"
+    CANCELLED: str = "canceled"

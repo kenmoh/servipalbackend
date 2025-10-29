@@ -212,14 +212,28 @@ async def vendor_mark_order_delivered(
     )
 
 
-@router.put("/{order_id}/accept-delivery", status_code=status.HTTP_202_ACCEPTED)
-async def rider_accept_delivery(
+@router.put("/{order_id}/accept-booking", status_code=status.HTTP_202_ACCEPTED)
+async def rider_accept_booking(
     order_id: UUID,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> DeliveryStatusUpdateSchema:
     try:
-        return await order_service.rider_accept_delivery_order(
+        return await order_service.rider_accept_booking(
+            db=db, current_user=current_user, order_id=order_id
+        )
+    except Exception as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+
+
+@router.put("/{order_id}/decline-booking", status_code=status.HTTP_202_ACCEPTED)
+async def rider_decline_booking(
+    order_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> DeliveryStatusUpdateSchema:
+    try:
+        return await order_service.rider_decline_booking(
             db=db, current_user=current_user, order_id=order_id
         )
     except Exception as e:
@@ -396,14 +410,13 @@ async def admin_modify_delivery_status(
     status_code=status.HTTP_202_ACCEPTED,
 )
 async def cancel_delivery(
-    order_id: UUID,
     reason: CancelOrderSchema,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> DeliveryStatusUpdateSchema:
     try:
         return await order_service.cancel_delivery(
-            db=db, current_user=current_user, order_id=order_id, reason=reason
+            db=db, current_user=current_user, reason=reason
         )
 
     except Exception as e:
