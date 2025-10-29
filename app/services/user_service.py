@@ -156,7 +156,6 @@ async def get_riders(db: AsyncSession, lat: float, lng: float) -> List[RiderProf
         .outerjoin(Profile.profile_image)   
         .outerjoin(Delivery, Delivery.rider_id==User.id)
         .outerjoin(Review, Review.reviewee_id == User.id)
-        .options(joinedload(User.profile))
         .where(func.ST_DWithin(User.location_coordinates, point, 100_000))
         .where(User.user_type == UserType.RIDER, User.has_delivery.is_(False), User.is_online.is_(True), Profile.profile_image != None)
         .group_by(User.id, Profile.user_id)
