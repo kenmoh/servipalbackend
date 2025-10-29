@@ -522,6 +522,9 @@ async def toggle_online_status(
             status_code=status.HTTP_404_NOT_FOUND, detail="Invalid user"
         )
 
+    if user.has_delivery:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail='You have a pending delivery.')
+
     try:    
         # Toggle the block status
         user.is_online = not user.is_online

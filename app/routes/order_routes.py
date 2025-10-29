@@ -71,6 +71,7 @@ async def get_user_related_deliveries(
 async def send_item(
     request: Request,
     name: str = Form(...),
+    rider_id: UUID = Form(...),
     description: str = Form(...),
     distance: Decimal = Form(...),
     origin: str = Form(...),
@@ -100,6 +101,7 @@ async def send_item(
         description=description,
         distance=distance,
         origin=origin,
+        rider_id=rider_id,
         destination=destination,
         duration=duration,
         pickup_coordinates=pickup_coords,

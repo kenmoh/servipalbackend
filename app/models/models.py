@@ -84,7 +84,7 @@ class User(Base):
     rider_is_suspended_for_order_cancel: Mapped[bool] = mapped_column(
         nullable=True, default=False
     )
-    rider_is_suspension_until: Mapped[datetime] = mapped_column(nullable=True)
+    rider_is_suspension_until: Mapped[datetime] = mapped_column(default=True, nullable=True)
     order_cancel_count: Mapped[int] = mapped_column(nullable=True, default=0)
     reset_token: Mapped[Optional[str]] = mapped_column(nullable=True, unique=True)
     reset_token_expires: Mapped[Optional[datetime]] = mapped_column(nullable=True)
