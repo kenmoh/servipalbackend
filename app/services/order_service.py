@@ -299,8 +299,8 @@ async def _create_order_and_order_item(db: AsyncSession, package_data):
         .values(
             {
                 "owner_id": package_data.user_id,
-                "vendor_id": package_data.user_id,  # Assuming sender is the vendor for packages
-                "order_type": DeliveryType.PACKAGE,
+                "vendor_id": package_data.user_id,
+                "order_type": OrderType.PACKAGE,
                 "amount_due_vendor": 0,
                 "order_status": OrderStatus.PENDING,
                 "order_payment_status": PaymentStatus.PENDING,
@@ -352,22 +352,24 @@ async def _create_delivery_and_calculate_fees(
 
 
 async def _update_order_with_payment_link(
-    db: AsyncSession, order_data, delivery_data, current_user: User
+    db: AsyncSession, 
+    order_data,
+    delivery_data,
+    current_user: User
 ):
     total_amount_due = delivery_data.delivery_fee
     payment_link = await get_payment_link(
-        tx_ref=order_data.tx_ref, amount=total_amount_due, current_user=current_user
+        tx_ref=order_data.tx_ref, 
+        amount=total_amount_due, 
+        current_user=current_user
     )
-
     await db.execute(
         update(Order)
         .where(Order.id == order_data.id)
         .values(
-            {
-                "payment_link": payment_link,
-                "total_price": total_amount_due,
-                "grand_total": total_amount_due,
-            }
+            payment_link=payment_link,
+            total_price=total_amount_due,
+            grand_total=total_amount_due,
         )
     )
 
@@ -440,8 +442,9 @@ async def create_package_order(
     Creates a package order by orchestrating validation, database operations, and post-creation actions.
     """
     await _validate_package_order_request(current_user)
-
+    
     try:
+        # Create all database records within a nested transaction
         async with db.begin_nested():
             package_data = await _create_package_item_and_image(
                 db, data, image, current_user
@@ -450,17 +453,23 @@ async def create_package_order(
             delivery_data = await _create_delivery_and_calculate_fees(
                 db, data, order_data, current_user
             )
+            
             await _assign_rider_and_update_db(
-                db=db, order=order_data, rider_id=data.rider_id
+                db=db, 
+                order_id=order_data.id,
+                delivery_id=delivery_data.id,
+                rider_id=data.rider_id
             )
             await _update_order_with_payment_link(
                 db, order_data, delivery_data, current_user
             )
-
+        
+        # Commit the outer transaction
         await db.commit()
-
+        
+        # Invalidate caches after successful commit
         await _invalidate_package_order_caches(order_data, delivery_data, current_user)
-
+        
         # Fetch the final order and delivery to return the response
         order_stmt = (
             select(Order)
@@ -472,22 +481,27 @@ async def create_package_order(
             )
         )
         order = (await db.execute(order_stmt)).scalar_one()
-
+        
         delivery_stmt = select(Delivery).where(Delivery.id == delivery_data.id)
         delivery = (await db.execute(delivery_stmt)).scalar_one()
-
-        await ws_service.broadcast_new_order({"order_id": order.id})
-
+        
+        # Broadcast the new order
+        await ws_service.broadcast_new_order({"order_id": str(order.id)})
+        
         return format_delivery_response(order=order, delivery=delivery)
-
+        
+    except HTTPException:
+        # Re-raise HTTP exceptions with their original status and detail
+        await db.rollback()
+        raise
     except Exception as e:
+        # Handle unexpected errors
         await db.rollback()
         logger.error(f"Failed to create package order: {e}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to create package order: {e}",
+            detail="Failed to create package order. Please try again.",
         )
-
 
 async def order_food_or_request_laundy_service(
     current_user: User,
@@ -2853,9 +2867,14 @@ async def _validate_delivery_acceptance(
 #     return order
 
 
-async def _assign_rider_and_update_db(db: AsyncSession, order: Order, rider_id: UUID):
+async def _assign_rider_and_update_db(
+    db: AsyncSession, 
+    order_id: UUID,  # Pass IDs instead of result rows
+    delivery_id: UUID,
+    rider_id: UUID
+):
     """Atomically updates the database to assign the rider and update statuses."""
-
+    # Fetch rider information
     stmt = (
         select(User.id, User.dispatcher_id, Profile.phone_number)
         .join(Profile)
@@ -2863,23 +2882,32 @@ async def _assign_rider_and_update_db(db: AsyncSession, order: Order, rider_id: 
     )
     result = await db.execute(stmt)
     rider = result.first()
-
+    
     if not rider:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Rider not found.",
         )
+    
     _rider_id, dispatcher_id, phone_number = rider
-    order.delivery.rider_id = _rider_id
-    order.delivery.dispatch_id = dispatcher_id
-    order.delivery.rider_phone_number = phone_number
-    db.add(order)
-    db.add(order.delivery)
-
+    
+    # Update the delivery record
     await db.execute(
-        update(User.has_delivery).where(User.id == rider_id).values(has_delivery=True)
+        update(Delivery)
+        .where(Delivery.id == delivery_id)
+        .values(
+            rider_id=_rider_id,
+            dispatch_id=dispatcher_id,
+            rider_phone_number=phone_number
+        )
     )
-
+    
+    # Update the rider's has_delivery status
+    await db.execute(
+        update(User)
+        .where(User.id == rider_id)
+        .values(has_delivery=True)
+    )
 
 async def _decline_delivery_order_and_update_db(
     db: AsyncSession, order: Order, rider_id: UUID
