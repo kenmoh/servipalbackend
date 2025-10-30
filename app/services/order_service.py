@@ -2857,7 +2857,7 @@ async def _assign_rider_and_update_db(db: AsyncSession, order: Order, rider_id: 
     """Atomically updates the database to assign the rider and update statuses."""
 
     stmt = (
-        select(User.id, User.dispatch_id, Profile.phone_number)
+        select(User.id, User.dispatcher_id, Profile.phone_number)
         .join(Profile)
         .where(User.id == rider_id)
     )
@@ -2871,7 +2871,7 @@ async def _assign_rider_and_update_db(db: AsyncSession, order: Order, rider_id: 
         )
     _rider_id, dispatcher_id, phone_number = rider
     order.delivery.rider_id = _rider_id
-    order.delivery.dispatch_id = dispatch_id
+    order.delivery.dispatch_id = dispatcher_id
     order.delivery.rider_phone_number = phone_number
     db.add(order)
     db.add(order.delivery)
