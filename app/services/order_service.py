@@ -3275,7 +3275,7 @@ async def rider_pickup_delivery_order(
             )
 
         await _rider_pickup_and_update_db(
-            db, order, current_user, dispatch_id=current_user.dispatch_id
+            db, order, current_user, dispatch_id=current_user.dispatcher_id
         )
 
         await db.commit()
