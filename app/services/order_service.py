@@ -2869,7 +2869,7 @@ async def _assign_rider_and_update_db(db: AsyncSession, order: Order, rider_id: 
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Rider not found.",
         )
-    _rider_id, dispatch_id, phone_number = rider
+    _rider_id, dispatcher_id, phone_number = rider
     order.delivery.rider_id = _rider_id
     order.delivery.dispatch_id = dispatch_id
     order.delivery.rider_phone_number = phone_number
