@@ -1,8 +1,6 @@
 
 import asyncio
 from decimal import Decimal
-from copyreg import dispatch_table
-import email
 import io
 import pytest
 import pytest_asyncio
@@ -11,7 +9,6 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from sqlalchemy.pool import NullPool
 from sqlalchemy import text
 
-from app import auth
 from app.main import app
 from app.models.models import Base, User, Profile, Wallet, ChargeAndCommission, Category, ProfileImage
 from app.database.database import get_db, create_test_session, create_test_engine
@@ -134,14 +131,14 @@ async def authenticated_user(async_db: AsyncSession, async_client: AsyncClient,)
         user_type=UserType.CUSTOMER.value,
         phone_number=f"+12345{unique_id[:5]}",
         password="Password123!",
-        account_status=AccounStatus.CONFIRMED
+        account_status=AccountStatus.CONFIRMED
     )
 
     async_db.add(user)
     await async_db.flush()
 
     profile = Profile(
-        user_id=user.id
+        user_id=user.id,
         full_name="Test User"
     )
 
@@ -160,7 +157,6 @@ async def authenticated_user(async_db: AsyncSession, async_client: AsyncClient,)
     auth_data = login_response.json()
 
     return {
-        "user": user_data,
         "access_token": auth_data["access_token"],
         "refresh_token": auth_data["refresh_token"],
         "headers": {"Authorization": f"Bearer {auth_data['access_token']}"},

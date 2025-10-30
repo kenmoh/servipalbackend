@@ -132,73 +132,6 @@ def invalidate_user_cache(user_id: UUID) -> None:
     redis_client.delete(f"user:{user_id}")
 
 
-# async def get_riders(db: AsyncSession, lat: float, lng: float) -> List[RiderProfileSchema]:
-
-#     cache_key = f'near_by_riders:{round(lng, 4)}:{round(lat, 4)}:100km'
-
-#     # cached_riders = redis_client.get(cache_key)
-#     # if cached_riders:
-#     #     data = json.loads(cached_riders)
-#     #     return [RiderProfileSchema(**rider) for rider in data]
-
-
-#     point = from_shape(Point(lng, lat), srid=4326)
-
-#     stmt = (
-#         select(
-#             User,
-#             func.count(Delivery.id).label("delivery_count"),
-#             func.count(Review.id).label('review_count'),
-#             func.coalesce(func.avg(Review.rating), 0).label("average_rating"),
-#             func.ST_Distance(User.location_coordinates, point).label("distance_meters"),
-#         )
-#         .join(User.profile)
-#         .outerjoin(Profile.profile_image)   
-#         .outerjoin(Delivery, Delivery.rider_id == User.id)
-#         .outerjoin(Review, Review.reviewee_id == User.id)
-#         .where(func.ST_DWithin(User.location_coordinates, point, 100_000))
-#         .where(User.user_type == UserType.RIDER, User.has_delivery.is_(False), User.is_online.is_(True), Profile.profile_image != None)
-#         .group_by(User.id, Profile.user_id)
-#         .order_by('distance_meters')
-#     )
-
-
-#     result = await db.execute(stmt)
-#     riders = result.all()
-
-#     print('*'*50)
-#     print(riders)
-#     print('*'*50)
-
-#     riders_list = []
-#     for rider, delivery_count, review_count, average_rating, distance_meters in riders:
-
-#         rider_data = RiderProfileSchema(
-#             rider_id=rider.id,
-#             email=rider.email,
-#             full_name=rider.profile.full_name,
-#             phone_number=rider.profile.phone_number,
-#             bike_number=rider.profile.bike_number,
-#             business_address=rider.profile.business_address,
-#             business_name=rider.profile.business_name,
-#             delivery_count=delivery_count,
-#             average_rating=average_rating,
-#             review_count=review_count,
-#             distance_km=round(distance_meters / 1000, 2),
-#             profile_image_url=(
-#                 rider.profile.profile_image.profile_image_url
-#                 if rider.profile and rider.profile.profile_image
-#                 else None
-#             ),
-#         )
-#         riders_list.append(rider_data)
-
-#         riders_dict = [rider.model_dump() for rider in riders]
-
-#         if riders_dict:
-#             redis_client.set(cache_key, json.dumps(riders_dict, default=str), ex=300)
-
-#     return riders_list
 
 
 async def get_riders(db: AsyncSession, lat: float, lng: float) -> List[RiderProfileSchema]:
@@ -267,37 +200,96 @@ async def get_riders(db: AsyncSession, lat: float, lng: float) -> List[RiderProf
     return riders_list
 
 
-async def get_rider_profile(db: AsyncSession, user_id: UUID) -> RiderProfileSchema:
-    cached_user = redis_client.get(f"rider_id:{user_id}")
-    if cached_user:
-        users_data = json.loads(cached_user)
-        return RiderProfileSchema(**users_data)
-
+async def get_rider_profile(db: AsyncSession, rider_id:UUID) -> RiderProfileSchema:
+    cache_key = f'rider:{rider_id}'
+    cached_rider = redis_client.get(cache_key)
+    if cached_rider:
+        data = json.loads(cached_rider)
+        return RiderProfileSchema(**rider)
+    
+     
     stmt = (
-        select(User)
-        .options(selectinload(User.profile).selectinload(Profile.profile_image))
-        .where(User.id == user_id)
+        select(
+            User,
+            func.count(Delivery.id).label("delivery_count"),
+            func.count(Review.id).label('review_count'),
+            func.coalesce(func.avg(Review.rating), 0).label("average_rating")
+        )
+        .join(User.profile)
+        .outerjoin(Profile.profile_image)   
+        .outerjoin(Delivery, Delivery.rider_id == User.id)
+        .outerjoin(Review, Review.reviewee_id == User.id)
+        .where(
+            User.user_type == UserType.RIDER,
+            User.id == rider_id
+        )
     )
+    
     result = await db.execute(stmt)
-    rider = result.scalar_one_or_none()
+    rider = result.one()
+    
+   
+    rider, delivery_count, review_count, average_rating = rider
 
-    rider_dict = {
-        "profile_image_url": rider.profile.profile_image.profile_image_url,
-        "full_name": rider.profile.full_name,
-        "email": rider.email,
-        "phone_number": rider.profile.phone_number,
-        "business_address": rider.profile.business_address,
-        "business_name": rider.profile.business_name,
-        "bike_number": rider.profile.bike_number,
-    }
-
-    redis_client.set(
-        f"rider_id:{rider.id}",
-        json.dumps(rider_dict, default=str),
-        ex=settings.REDIS_EX,
+    rider_data = RiderProfileSchema(
+        rider_id=rider.id,
+        email=rider.email,
+        full_name=rider.profile.full_name,
+        phone_number=rider.profile.phone_number,
+        bike_number=rider.profile.bike_number,
+        business_address=rider.profile.business_address,
+        business_name=rider.profile.business_name,
+        delivery_count=delivery_count or 0,
+        distance_km=0,
+        average_rating=average_rating or 0.0,
+        review_count=review_count or 0,
+        profile_image_url=(
+            rider.profile.profile_image.profile_image_url
+            if rider.profile and rider.profile.profile_image
+            else None
+        ),
     )
+    
+    
+    riders_dict = rider.model_dump()
 
-    return RiderProfileSchema(**rider_dict)
+    if riders_dict:
+        redis_client.set(cache_key, json.dumps(riders_dict, default=str), ex=300)
+    
+    return riders_dict
+
+
+# async def get_rider_profile(db: AsyncSession, user_id: UUID) -> RiderProfileSchema:
+#     cached_user = redis_client.get(f"rider_id:{user_id}")
+#     if cached_user:
+#         users_data = json.loads(cached_user)
+#         return RiderProfileSchema(**users_data)
+
+#     stmt = (
+#         select(User)
+#         .options(selectinload(User.profile).selectinload(Profile.profile_image))
+#         .where(User.id == user_id)
+#     )
+#     result = await db.execute(stmt)
+#     rider = result.scalar_one_or_none()
+
+#     rider_dict = {
+#         "profile_image_url": rider.profile.profile_image.profile_image_url,
+#         "full_name": rider.profile.full_name,
+#         "email": rider.email,
+#         "phone_number": rider.profile.phone_number,
+#         "business_address": rider.profile.business_address,
+#         "business_name": rider.profile.business_name,
+#         "bike_number": rider.profile.bike_number,
+#     }
+
+#     redis_client.set(
+#         f"rider_id:{rider.id}",
+#         json.dumps(rider_dict, default=str),
+#         ex=settings.REDIS_EX,
+#     )
+
+#     return RiderProfileSchema(**rider_dict)
 
 
 async def get_current_user_details(

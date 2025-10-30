@@ -79,12 +79,12 @@ class User(Base):
     notification_token: Mapped[str] = mapped_column(nullable=True)
     is_blocked: Mapped[bool] = mapped_column(default=False)
     is_verified: Mapped[bool] = mapped_column(default=False)
-    is_online: Mapped[bool] = mapped_column(default=True, nullable=True)
-    has_delivery: Mapped[bool] = mapped_column(default=False, nullable=True)
+    is_online: Mapped[bool] = mapped_column(default=True)
+    has_delivery: Mapped[bool] = mapped_column(default=False)
     rider_is_suspended_for_order_cancel: Mapped[bool] = mapped_column(
         nullable=True, default=False
     )
-    rider_is_suspension_until: Mapped[datetime] = mapped_column(default=True, nullable=True)
+    rider_is_suspension_until: Mapped[datetime] = mapped_column(nullable=True)
     order_cancel_count: Mapped[int] = mapped_column(nullable=True, default=0)
     reset_token: Mapped[Optional[str]] = mapped_column(nullable=True, unique=True)
     reset_token_expires: Mapped[Optional[datetime]] = mapped_column(nullable=True)

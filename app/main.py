@@ -152,14 +152,15 @@ async def lifespan(application: FastAPI):
         logger.info("Cleanup complete")
 
 
-sentry_sdk.init(
-    dsn="https://29793bfca41a89530399ca6c906484a8@o4505603287023616.ingest.us.sentry.io/4509700294311936",
-    send_default_pii=True,
-    traces_sample_rate=1.0,
-    profile_session_sample_rate=1.0,
-    profile_lifecycle="trace",
-    enable_logs=True,
-)
+if not settings.TEST:
+    sentry_sdk.init(
+        dsn="https://29793bfca41a89530399ca6c906484a8@o4505603287023616.ingest.us.sentry.io/4509700294311936",
+        send_default_pii=True,
+        traces_sample_rate=1.0,
+        profile_session_sample_rate=1.0,
+        profile_lifecycle="trace",
+        enable_logs=True,
+    )
 
 
 app = FastAPI(
@@ -211,11 +212,11 @@ def favicon():
 def read_root():
     return {"message": "Welcome to ServiPal API"}
 
-
-logfire.configure(service_name="ServiPal")
-logfire.debug("App Debug mode on")
-logfire.instrument_fastapi(app=app)
-logfire.instrument_sqlalchemy(engine=engine)
+if not settings.TEST:
+    logfire.configure(service_name="ServiPal")
+    logfire.debug("App Debug mode on")
+    logfire.instrument_fastapi(app=app)
+    logfire.instrument_sqlalchemy(engine=engine)
 
 origins = ["https://servi-pal.com"]
 

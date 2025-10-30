@@ -1487,7 +1487,7 @@ async def cancel_delivery(
                 "reason": reason.reason,
             },
         )
-        redis_client.delete(f"order_by_id:{order_id}")
+        redis_client.delete(f"order_by_id:{order.id}")
         return status_update
 
     except HTTPException:
@@ -1495,7 +1495,7 @@ async def cancel_delivery(
         raise
     except Exception as e:
         await db.rollback()
-        logger.error(f"Failed to cancel delivery {order_id}: {str(e)}", exc_info=True)
+        logger.error(f"Failed to cancel delivery {order.id}: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to cancel delivery: {str(e)}",
