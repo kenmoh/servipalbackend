@@ -331,8 +331,7 @@ async def update_delivery_order_location(
     delivery_id: UUID,
     location_data: LocationData,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-) -> DeliveryStatusUpdateSchema:
+) -> LocationData:
     try:
         return await order_service.update_delivery_order_location(
             db=db, delivery_id=delivery_id, location_data=location_data

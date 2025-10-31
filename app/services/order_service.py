@@ -4747,12 +4747,19 @@ async def update_delivery_order_location(
     result = await db.execute(stmt)
     delivery = result.scalar_one_or_none()
 
-    raise HTTPException(
-        status_code=status.HTTP_404_NOT_FOUND,
-        detail="Delivery order not found or invalid rider.",
-    )
+
+    if not delivery:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Delivery order not found or invalid rider.",
+        )
     if delivery.delivery_status == DeliveryStatus.DELIVERED:
-        raise HTTPException(400, "Delivery already completed")
+        logger.info(f"Delivery already comleted for {delivery_id}")
+        return {
+            "message": "Delivery already comleted.",
+                 "rider_id": delivery.rider_id,
+                 "last_known_rider_coordinates": delivery.last_known_rider_coordinates
+                 }
 
     # Update coordinates
     delivery.last_known_rider_coordinates = location_data.last_known_rider_coordinates
@@ -4766,11 +4773,16 @@ async def update_delivery_order_location(
         "timestamp": datetime.now().isoformat(),
     }
 
+    data = {
+        "rider_id": delivery.rider_id,
+        "last_known_rider_coordinates": delivery.last_known_rider_coordinates
+    }
+
     # Send to customer
     if delivery.sender_id:
         await manager.send_personal_message(message, str(delivery.sender_id))
 
-    return location_data
+    return data
 
 
 # <<<--- Admin Order Status Modification --->>>

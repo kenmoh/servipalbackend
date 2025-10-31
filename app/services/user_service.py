@@ -205,7 +205,7 @@ async def get_rider_profile(db: AsyncSession, rider_id:UUID) -> RiderProfileSche
     cached_rider = redis_client.get(cache_key)
     if cached_rider:
         data = json.loads(cached_rider)
-        return RiderProfileSchema(**rider)
+        return RiderProfileSchema(**data)
     
      
     stmt = (
@@ -251,7 +251,7 @@ async def get_rider_profile(db: AsyncSession, rider_id:UUID) -> RiderProfileSche
     )
     
     
-    riders_dict = rider.model_dump()
+    riders_dict = rider_data.model_dump()
 
     if riders_dict:
         redis_client.set(cache_key, json.dumps(riders_dict, default=str), ex=300)
@@ -526,7 +526,7 @@ async def toggle_online_status(
 
     except Exception as e:
         await db.rollback()
-        logger.error(f"Error toggling online status for user {user_id}: {str(e)}")
+        logger.error(f"Error toggling online status for user {current_user.id}: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to update user online status",
