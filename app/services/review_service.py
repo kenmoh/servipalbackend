@@ -179,14 +179,13 @@ async def create_rider_review(
     """Creates a review for a completed food or laundry order."""
     # 1. Fetch the order and verify its existence
 
-
     result = await db.execute(
         select(Order)
         .where(Order.id == data.order_id)
         .options(selectinload(Order.delivery))
         .with_for_update()
     )
-    
+
     order = result.scalar_one_or_none()
 
     if not order:
@@ -263,7 +262,7 @@ async def create_rider_review(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"An unexpected error occurred: {str(e)}",
         )
-    
+
 
 async def create_product_review(
     db: AsyncSession, current_user: User, data: ReviewCreate

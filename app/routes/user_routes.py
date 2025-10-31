@@ -58,20 +58,16 @@ async def toggle_user_block_status(
 
 @router.put("/online-status", status_code=status.HTTP_200_OK)
 async def toggle_online_status(
-
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> bool:
     """
-    Toggle user online status - 
+    Toggle user online status -
 
     Returns:
-        Boolean indicating the new online status 
+        Boolean indicating the new online status
     """
-    return await user_service.toggle_online_status(
-        db=db, current_user=current_user
-    )
-
+    return await user_service.toggle_online_status(db=db, current_user=current_user)
 
 
 @router.get("", status_code=status.HTTP_200_OK)
@@ -155,6 +151,7 @@ async def get_user_details(
     db: AsyncSession = Depends(get_db),
 ) -> ProfileSchema:
     return await user_service.get_user_with_profile(db=db, user_id=user_id)
+
 
 @router.get("/all-riders", status_code=status.HTTP_200_OK)
 async def get_riders(
@@ -358,9 +355,7 @@ async def update_user_location(
     db: AsyncSession = Depends(get_db),
 ) -> UserCoords:
     """Update user coordinates for close rider display"""
-    return await user_service.update_user_location(
-        location_data=location_data, db=db
-    )
+    return await user_service.update_user_location(location_data=location_data, db=db)
 
 
 @router.get("/notification", status_code=status.HTTP_200_OK)

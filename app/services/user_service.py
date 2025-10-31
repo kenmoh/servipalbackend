@@ -132,46 +132,45 @@ def invalidate_user_cache(user_id: UUID) -> None:
     redis_client.delete(f"user:{user_id}")
 
 
-
-
-async def get_riders(db: AsyncSession, lat: float, lng: float) -> List[RiderProfileSchema]:
-    cache_key = f'near_by_riders:{round(lng, 4)}:{round(lat, 4)}:100km'
+async def get_riders(
+    db: AsyncSession, lat: float, lng: float
+) -> List[RiderProfileSchema]:
+    cache_key = f"near_by_riders:{round(lng, 4)}:{round(lat, 4)}:100km"
     cached_riders = redis_client.get(cache_key)
     if cached_riders:
         data = json.loads(cached_riders)
         return [RiderProfileSchema(**rider) for rider in data]
-    
+
     point = from_shape(Point(lng, lat), srid=4326)
-     
+
     stmt = (
         select(
             User,
             func.count(Delivery.id).label("delivery_count"),
-            func.count(Review.id).label('review_count'),
+            func.count(Review.id).label("review_count"),
             func.coalesce(func.avg(Review.rating), 0).label("average_rating"),
             func.ST_Distance(User.location_coordinates, point).label("distance_meters"),
         )
         .join(User.profile)
-        .outerjoin(Profile.profile_image)   
+        .outerjoin(Profile.profile_image)
         .outerjoin(Delivery, Delivery.rider_id == User.id)
         .outerjoin(Review, Review.reviewee_id == User.id)
         .where(func.ST_DWithin(User.location_coordinates, point, 100_000))
         .where(
-            User.user_type == UserType.RIDER, 
-            User.has_delivery.is_(False), 
-            User.is_online.is_(True), 
-            Profile.profile_image != None
+            User.user_type == UserType.RIDER,
+            User.has_delivery.is_(False),
+            User.is_online.is_(True),
+            Profile.profile_image != None,
         )
         .group_by(User.id, Profile.user_id)
-        .order_by('distance_meters')
+        .order_by("distance_meters")
     )
-    
+
     result = await db.execute(stmt)
     riders = result.all()
-    
+
     riders_list = []
     for rider, delivery_count, review_count, average_rating, distance_meters in riders:
-
         rider_data = RiderProfileSchema(
             rider_id=rider.id,
             email=rider.email,
@@ -191,44 +190,38 @@ async def get_riders(db: AsyncSession, lat: float, lng: float) -> List[RiderProf
             ),
         )
         riders_list.append(rider_data)
-    
-    
+
     riders_dict = [rider.model_dump() for rider in riders_list]
     if riders_dict:
         redis_client.set(cache_key, json.dumps(riders_dict, default=str), ex=300)
-    
+
     return riders_list
 
 
-async def get_rider_profile(db: AsyncSession, rider_id:UUID) -> RiderProfileSchema:
-    cache_key = f'rider:{rider_id}'
+async def get_rider_profile(db: AsyncSession, rider_id: UUID) -> RiderProfileSchema:
+    cache_key = f"rider:{rider_id}"
     cached_rider = redis_client.get(cache_key)
     if cached_rider:
         data = json.loads(cached_rider)
         return RiderProfileSchema(**data)
-    
-     
+
     stmt = (
         select(
             User,
             func.count(Delivery.id).label("delivery_count"),
-            func.count(Review.id).label('review_count'),
-            func.coalesce(func.avg(Review.rating), 0).label("average_rating")
+            func.count(Review.id).label("review_count"),
+            func.coalesce(func.avg(Review.rating), 0).label("average_rating"),
         )
         .join(User.profile)
-        .outerjoin(Profile.profile_image)   
+        .outerjoin(Profile.profile_image)
         .outerjoin(Delivery, Delivery.rider_id == User.id)
         .outerjoin(Review, Review.reviewee_id == User.id)
-        .where(
-            User.user_type == UserType.RIDER,
-            User.id == rider_id
-        )
+        .where(User.user_type == UserType.RIDER, User.id == rider_id)
     )
-    
+
     result = await db.execute(stmt)
     rider = result.one()
-    
-   
+
     rider, delivery_count, review_count, average_rating = rider
 
     rider_data = RiderProfileSchema(
@@ -249,13 +242,12 @@ async def get_rider_profile(db: AsyncSession, rider_id:UUID) -> RiderProfileSche
             else None
         ),
     )
-    
-    
+
     riders_dict = rider_data.model_dump()
 
     if riders_dict:
         redis_client.set(cache_key, json.dumps(riders_dict, default=str), ex=300)
-    
+
     return riders_dict
 
 
@@ -490,21 +482,19 @@ async def get_active_user_count(db: AsyncSession, window_minutes: int = 10) -> i
     user_ids = {row[0] for row in result.all()}
     return len(user_ids)
 
-async def toggle_online_status(
-    db: AsyncSession,  current_user: User
-) -> bool:
+
+async def toggle_online_status(db: AsyncSession, current_user: User) -> bool:
     """
     Toggle user online status - offline if online,
 
     Args:
         db: Database session
-        
+
         current_user: Current authenticated user
 
     Returns:
         Boolean indicating the new block status
     """
-    
 
     result = await db.execute(select(User).where(User.id == current_user.id))
     user = result.scalar_one_or_none()
@@ -515,9 +505,11 @@ async def toggle_online_status(
         )
 
     if user.has_delivery:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail='You have a pending delivery.')
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail="You have a pending delivery."
+        )
 
-    try:    
+    try:
         # Toggle the block status
         user.is_online = not user.is_online
         db.commit()
@@ -526,7 +518,9 @@ async def toggle_online_status(
 
     except Exception as e:
         await db.rollback()
-        logger.error(f"Error toggling online status for user {current_user.id}: {str(e)}")
+        logger.error(
+            f"Error toggling online status for user {current_user.id}: {str(e)}"
+        )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to update user online status",
@@ -1739,14 +1733,14 @@ async def update_user_location_coords(
 
     return coordinate
 
+
 async def update_user_location(
     location_data: UserCoords,
     db: AsyncSession,
-
 ) -> UserCoords:
     # Create the coordinate dictionary
     point = from_shape(Point(location_data.lng, location_data.lat), srid=4326)
- 
+
     # Get user from database
     result = await db.execute(select(User).where(User.id == location_data.user_id))
     user = result.scalar_one_or_none()
@@ -1756,7 +1750,6 @@ async def update_user_location(
             status_code=status.HTTP_404_NOT_FOUND, detail="User not found"
         )
 
-
     # Update the location coordinates
     location_data = await db.execute(
         update(User)
@@ -1765,10 +1758,6 @@ async def update_user_location(
     )
     await db.commit()
 
-
-
-
-    
 
 async def get_current_user_notification_token(
     current_user: UUID, db: AsyncSession

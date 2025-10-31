@@ -227,7 +227,6 @@ class RiderProfileSchema(BaseModel):
     review_count: int = Field(default=0)
     delivery_count: int = Field(default=0)
 
-
     class Config:
         from_attributes = True
 

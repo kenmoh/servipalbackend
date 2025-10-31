@@ -352,16 +352,11 @@ async def _create_delivery_and_calculate_fees(
 
 
 async def _update_order_with_payment_link(
-    db: AsyncSession, 
-    order_data,
-    delivery_data,
-    current_user: User
+    db: AsyncSession, order_data, delivery_data, current_user: User
 ):
     total_amount_due = delivery_data.delivery_fee
     payment_link = await get_payment_link(
-        tx_ref=order_data.tx_ref, 
-        amount=total_amount_due, 
-        current_user=current_user
+        tx_ref=order_data.tx_ref, amount=total_amount_due, current_user=current_user
     )
     await db.execute(
         update(Order)
@@ -442,7 +437,7 @@ async def create_package_order(
     Creates a package order by orchestrating validation, database operations, and post-creation actions.
     """
     await _validate_package_order_request(current_user)
-    
+
     try:
         # Create all database records within a nested transaction
         async with db.begin_nested():
@@ -453,23 +448,23 @@ async def create_package_order(
             delivery_data = await _create_delivery_and_calculate_fees(
                 db, data, order_data, current_user
             )
-            
+
             await _assign_rider_and_update_db(
-                db=db, 
+                db=db,
                 order_id=order_data.id,
                 delivery_id=delivery_data.id,
-                rider_id=data.rider_id
+                rider_id=data.rider_id,
             )
             await _update_order_with_payment_link(
                 db, order_data, delivery_data, current_user
             )
-        
+
         # Commit the outer transaction
         await db.commit()
-        
+
         # Invalidate caches after successful commit
         await _invalidate_package_order_caches(order_data, delivery_data, current_user)
-        
+
         # Fetch the final order and delivery to return the response
         order_stmt = (
             select(Order)
@@ -481,15 +476,15 @@ async def create_package_order(
             )
         )
         order = (await db.execute(order_stmt)).scalar_one()
-        
+
         delivery_stmt = select(Delivery).where(Delivery.id == delivery_data.id)
         delivery = (await db.execute(delivery_stmt)).scalar_one()
-        
+
         # Broadcast the new order
         await ws_service.broadcast_new_order({"order_id": str(order.id)})
-        
+
         return format_delivery_response(order=order, delivery=delivery)
-        
+
     except HTTPException:
         # Re-raise HTTP exceptions with their original status and detail
         await db.rollback()
@@ -502,6 +497,7 @@ async def create_package_order(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to create package order. Please try again.",
         )
+
 
 async def order_food_or_request_laundy_service(
     current_user: User,
@@ -1746,7 +1742,6 @@ async def _sender_cancel_delivery(
             detail="This order has no delivery to cancel.",
         )
 
-
     order.order_status = OrderStatus.DELIVERED
     order.delivery.delivery_status = DeliveryStatus.DELIVERED
     order.cancel_reason = reason.reason
@@ -2588,8 +2583,7 @@ def _invalidate_pickup_order_caches(order: Order, current_user: User):
         f"user_related_orders:{order.owner_id}",
         f"user_related_orders:{order.vendor_id}",
         f"order:{order.id}",
-        f"order_by_id: {order.id}"
-        "pending_orders",
+        f"order_by_id: {order.id}" "pending_orders",
         "orders",
     ]
 
@@ -2655,12 +2649,11 @@ async def _validate_delivery_acceptance(
     return order
 
 
-
 async def _assign_rider_and_update_db(
-    db: AsyncSession, 
+    db: AsyncSession,
     order_id: UUID,  # Pass IDs instead of result rows
     delivery_id: UUID,
-    rider_id: UUID
+    rider_id: UUID,
 ):
     """Atomically updates the database to assign the rider and update statuses."""
     # Fetch rider information
@@ -2671,15 +2664,15 @@ async def _assign_rider_and_update_db(
     )
     result = await db.execute(stmt)
     rider = result.first()
-    
+
     if not rider:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Rider not found.",
         )
-    
+
     _rider_id, dispatcher_id, phone_number = rider
-    
+
     # Update the delivery record
     await db.execute(
         update(Delivery)
@@ -2687,16 +2680,13 @@ async def _assign_rider_and_update_db(
         .values(
             rider_id=_rider_id,
             dispatch_id=dispatcher_id,
-            rider_phone_number=phone_number
+            rider_phone_number=phone_number,
         )
     )
-    
+
     # Update the rider's has_delivery status
-    await db.execute(
-        update(User)
-        .where(User.id == rider_id)
-        .values(has_delivery=True)
-    )
+    await db.execute(update(User).where(User.id == rider_id).values(has_delivery=True))
+
 
 async def _decline_delivery_order_and_update_db(
     db: AsyncSession, order: Order, rider_id: UUID
@@ -2724,7 +2714,6 @@ async def _decline_delivery_order_and_update_db(
     )
 
 
-
 async def _rider_pickup_and_update_db(
     db: AsyncSession, order: Order, rider: User, dispatch_id: UUID
 ):
@@ -2741,16 +2730,18 @@ async def _dispatch_post_pickup_tasks(order: Order, rider: User, db: AsyncSessio
     """
     dispatch_profile = await get_user_profile(order.delivery.dispatch_id, db=db)
     sender_profile = await get_user_profile(order.owner_id, db=db)
-    
+
     # Use a unique idempotency key based on the order and action
     idempotency_key = f"pickup:{order.id}:{order.delivery.id}"
-    
+
     # Check if we've already processed this pickup
     cache_key = f"idempotency:{idempotency_key}"
     if redis_client.get(cache_key):
-        logger.info(f"Pickup for order {order.id} already processed. Skipping post-pickup tasks.")
+        logger.info(
+            f"Pickup for order {order.id} already processed. Skipping post-pickup tasks."
+        )
         return
-    
+
     # Set idempotency marker (expires after 24 hours as a safety measure)
     redis_client.setex(cache_key, 86400, "1")
 
@@ -3016,19 +3007,19 @@ async def rider_pickup_delivery_order(
 
         if not order:
             raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND, 
-                detail="Order not found."
+                status_code=status.HTTP_404_NOT_FOUND, detail="Order not found."
             )
 
         if current_user.id != order.delivery.rider_id:
             raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN, 
-                detail="Invalid rider."
+                status_code=status.HTTP_403_FORBIDDEN, detail="Invalid rider."
             )
 
         # Idempotency check: If already picked up, return current status without processing
         if order.delivery.delivery_status == DeliveryStatus.PICKED_UP:
-            logger.info(f"Order {order_id} already picked up. Returning current status.")
+            logger.info(
+                f"Order {order_id} already picked up. Returning current status."
+            )
             return DeliveryStatusUpdateSchema(
                 delivery_status=order.delivery.delivery_status
             )
@@ -3058,6 +3049,7 @@ async def rider_pickup_delivery_order(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="An unexpected error occurred while accepting the delivery.",
         )
+
 
 async def laundry_pickup(
     db: AsyncSession, order_id: UUID, current_user: User
@@ -4531,6 +4523,7 @@ async def sender_confirm_delivery_or_order_received(
         await db.rollback()
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
+
 async def rider_mark_package_delivered(
     delivery_id: UUID, current_user: User, db: AsyncSession
 ) -> DeliveryStatusUpdateSchema:
@@ -4608,7 +4601,9 @@ async def rider_mark_package_delivered(
 
         # Idempotency check: If already delivered, return current status
         if delivery.delivery_status == DeliveryStatus.DELIVERED:
-            logger.info(f"Delivery {delivery_id} already marked as delivered. Returning current status.")
+            logger.info(
+                f"Delivery {delivery_id} already marked as delivered. Returning current status."
+            )
             return DeliveryStatusUpdateSchema(
                 delivery_status=delivery.delivery_status,
                 order_status=delivery.order.order_status,
@@ -4629,7 +4624,6 @@ async def rider_mark_package_delivered(
                 exc_info=True,
             )
 
-
         # Invalidate caches
         try:
             _invalidate_delivery_caches(delivery, current_user)
@@ -4644,7 +4638,7 @@ async def rider_mark_package_delivered(
         )
 
         redis_client.delete(f"order_by_id:{delivery.order.id}")
-        
+
         return DeliveryStatusUpdateSchema(
             delivery_status=delivery.delivery_status,
             order_status=delivery.order.order_status,
@@ -4719,7 +4713,7 @@ async def _invalidate_delivery_caches(delivery: Delivery, current_user: User):
         f"user_related_orders:{delivery.sender_id}",
         f"user_related_orders:{delivery.dispatch_id}",
         f"user_related_orders:{delivery.rider_id}",
-        f"order_by_id: {delivery.order_id}"
+        f"order_by_id: {delivery.order_id}",
     ]
 
     for key in cache_keys:
@@ -4747,7 +4741,6 @@ async def update_delivery_order_location(
     result = await db.execute(stmt)
     delivery = result.scalar_one_or_none()
 
-
     if not delivery:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -4757,9 +4750,9 @@ async def update_delivery_order_location(
         logger.info(f"Delivery already comleted for {delivery_id}")
         return {
             "message": "Delivery already comleted.",
-                 "rider_id": delivery.rider_id,
-                 "last_known_rider_coordinates": delivery.last_known_rider_coordinates
-                 }
+            "rider_id": delivery.rider_id,
+            "last_known_rider_coordinates": delivery.last_known_rider_coordinates,
+        }
 
     # Update coordinates
     delivery.last_known_rider_coordinates = location_data.last_known_rider_coordinates
@@ -4775,7 +4768,7 @@ async def update_delivery_order_location(
 
     data = {
         "rider_id": delivery.rider_id,
-        "last_known_rider_coordinates": delivery.last_known_rider_coordinates
+        "last_known_rider_coordinates": delivery.last_known_rider_coordinates,
     }
 
     # Send to customer
@@ -5306,7 +5299,11 @@ def format_delivery_response(
 
 
 async def get_user_profile(user_id: UUID, db: AsyncSession):
-    stmt = select(Profile).where(Profile.user_id==user_id).options(selectinload(Profile.user))
+    stmt = (
+        select(Profile)
+        .where(Profile.user_id == user_id)
+        .options(selectinload(Profile.user))
+    )
     result = await db.execute(stmt)
 
     return result.scalar_one_or_none()

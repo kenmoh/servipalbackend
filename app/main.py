@@ -212,6 +212,7 @@ def favicon():
 def read_root():
     return {"message": "Welcome to ServiPal API"}
 
+
 if not settings.TEST:
     logfire.configure(service_name="ServiPal")
     logfire.debug("App Debug mode on")

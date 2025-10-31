@@ -11,7 +11,7 @@ from app.database.database import get_db
 from app.models.models import Transaction, Wallet
 from app.queue.base_consumer import BaseQueueConsumer
 from app.utils.logger_config import setup_logger
-from app.cache.redis_client import redis_client  # Import your Redis client
+from app.config.config import redis_client 
 
 logger = setup_logger()
 
@@ -32,7 +32,7 @@ class WalletQueueConsumer(BaseQueueConsumer):
         """
         if not idempotency_key:
             return False
-        
+
         cache_key = f"wallet_idempotency:{idempotency_key}"
         return redis_client.get(cache_key) is not None
 
@@ -42,7 +42,7 @@ class WalletQueueConsumer(BaseQueueConsumer):
         """
         if not idempotency_key:
             return
-        
+
         cache_key = f"wallet_idempotency:{idempotency_key}"
         redis_client.setex(cache_key, ttl, "1")
 
@@ -84,7 +84,7 @@ class WalletQueueConsumer(BaseQueueConsumer):
     async def process_wallet_update(self, payload: Dict[str, Any]):
         """Process wallet balance update with idempotency"""
         idempotency_key = payload.get("idempotency_key")
-        
+
         # Check if already processed
         if idempotency_key and self._check_idempotency(idempotency_key):
             logger.info(f"Skipping duplicate wallet update with key: {idempotency_key}")
@@ -125,10 +125,12 @@ class WalletQueueConsumer(BaseQueueConsumer):
     async def process_create_transaction(self, payload: Dict[str, Any]):
         """Process transaction creation with idempotency"""
         idempotency_key = payload.get("idempotency_key")
-        
+
         # Check if already processed
         if idempotency_key and self._check_idempotency(idempotency_key):
-            logger.info(f"Skipping duplicate transaction creation with key: {idempotency_key}")
+            logger.info(
+                f"Skipping duplicate transaction creation with key: {idempotency_key}"
+            )
             return
 
         async for db in get_db():
@@ -190,7 +192,9 @@ class WalletQueueConsumer(BaseQueueConsumer):
                     if idempotency_key:
                         self._set_idempotency(idempotency_key)
 
-                    logger.info(f"Successfully created transaction with tx_ref={tx_ref}")
+                    logger.info(
+                        f"Successfully created transaction with tx_ref={tx_ref}"
+                    )
 
             except Exception as db_error:
                 logger.error(f"Transaction creation error: {str(db_error)}")
@@ -199,10 +203,12 @@ class WalletQueueConsumer(BaseQueueConsumer):
     async def process_transaction_update(self, payload: Dict[str, Any]):
         """Process transaction update with idempotency"""
         idempotency_key = payload.get("idempotency_key")
-        
+
         # Check if already processed
         if idempotency_key and self._check_idempotency(idempotency_key):
-            logger.info(f"Skipping duplicate transaction update with key: {idempotency_key}")
+            logger.info(
+                f"Skipping duplicate transaction update with key: {idempotency_key}"
+            )
             return
 
         async for db in get_db():
@@ -249,7 +255,9 @@ class WalletQueueConsumer(BaseQueueConsumer):
                     if idempotency_key:
                         self._set_idempotency(idempotency_key)
 
-                    logger.info(f"Successfully updated transaction with tx_ref={tx_ref}")
+                    logger.info(
+                        f"Successfully updated transaction with tx_ref={tx_ref}"
+                    )
 
             except Exception as db_error:
                 logger.error(f"Transaction update error: {str(db_error)}")

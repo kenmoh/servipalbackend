@@ -156,7 +156,8 @@ async def customer_confirm_order_received(
         )
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
-    
+
+
 @router.put(
     "/{delivery_id}/assign-rider-to-existing-delivery-order",
     status_code=status.HTTP_202_ACCEPTED,
@@ -326,7 +327,9 @@ async def rider_mark_package_delivered(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
 
-@router.put("/{delivery_id}/location-update", status_code=status.HTTP_202_ACCEPTED)
+@router.put(
+    "/{delivery_id}/delivery-location-update", status_code=status.HTTP_202_ACCEPTED
+)
 async def update_delivery_order_location(
     delivery_id: UUID,
     location_data: LocationData,
