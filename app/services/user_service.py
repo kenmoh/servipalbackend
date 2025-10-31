@@ -1754,7 +1754,7 @@ async def update_user_location(
     # Update the location coordinates
     location_data = await db.execute(
         update(User)
-        .where(User.id == location_data.user_id)
+        .where(User.id == current_user.id)
         .values(location_coordinates=point)
     )
     await db.commit()
