@@ -2588,6 +2588,7 @@ def _invalidate_pickup_order_caches(order: Order, current_user: User):
         f"user_related_orders:{order.owner_id}",
         f"user_related_orders:{order.vendor_id}",
         f"order:{order.id}",
+        f"order_by_id: {order.id}"
         "pending_orders",
         "orders",
     ]
@@ -2955,94 +2956,7 @@ async def _rider_pickup_and_update_db(
     db.add(order.delivery)
 
 
-async def _dispatch_post_pickup_tasks(order: Order, rider: User, db: AsyncSession):
-    """Handles tasks that should occur after the database transaction is committed."""
-    # 1. Publish a single high-level event for financial processing
-    # This is an internal settlement from the customer's escrow to the dispatch company's escrow.
-    # We create a new, distinct transaction for this movement. It should not inherit properties
-    # like 'payment_method' from the original customer payment.
-
-    dispatch_profile = await get_user_profile(order.delivery.dispatch_id, db=db)
-    sender_profile = await get_user_profile(order.owner_id, db=db)
-    # Amount to move to escrow
-    # dispatch_amount = max(order.delivery.amount_due_dispatch, 0)
-
-    await producer.publish_message(
-        service="wallet",
-        operation="create_transaction",
-        payload={
-            "wallet_id": str(order.delivery.dispatch_id),
-            "tx_ref": str(order.tx_ref),
-            # The 'to_wallet_id' is the same as the wallet_id because this is a credit
-            # to the dispatch company's wallet.
-            "to_wallet_id": str(order.delivery.dispatch_id),
-            "amount": str(order.delivery.delivery_fee),
-            # This is an internal settlement, so we use standard types.
-            "transaction_type": TransactionType.USER_TO_USER,
-            "transaction_direction": TransactionDirection.CREDIT,
-            # The payment method is 'ESCROW_SETTLEMENT', not the customer's original method (e.g., CARD).
-            "payment_method": PaymentMethod.ESCROW_SETTLEMENT,
-            # The payment is considered 'PAID' as the funds are already secured in escrow.
-            "payment_status": PaymentStatus.PAID,
-            "from_user": sender_profile.full_name or sender_profile.business_name,
-            "to_user": dispatch_profile.full_name or dispatch_profile.business_name,
-        },
-    )
-
-    # Update sender transaction
-    await producer.publish_message(
-        service="wallet",
-        operation="update_transaction",
-        payload={
-            "wallet_id": str(order.owner_id),
-            "tx_ref": str(order.tx_ref),
-            "to_user": dispatch_profile.full_name or dispatch_profile.business_name,
-        },
-    )
-
-    # Update dispatch escrow
-    await producer.publish_message(
-        service="wallet",
-        operation="update_wallet",
-        payload={
-            "wallet_id": str(order.delivery.dispatch_id),
-            "balance_change": "0",
-            "transaction_direction": TransactionDirection.CREDIT,
-            "escrow_change": str(order.delivery.delivery_fee),
-        },
-    )
-
-    # 2. Invalidate Caches
-    keys_to_delete = {
-        f"user_related_orders:{rider.id}",
-        f"user_related_orders:{order.delivery.dispatch_id}",
-        f"user_related_orders:{order.owner_id}",
-        f"delivery:{order.delivery.id}",
-        ALL_DELIVERY,
-        "paid_pending_deliveries",
-    }
-    redis_client.delete(*keys_to_delete)
-
-    # 3. Broadcast WebSocket updates
-    await ws_service.broadcast_delivery_status_update(
-        delivery_id=order.delivery.id, new_status=DeliveryStatus.PICKED_UP
-    )
-    await ws_service.broadcast_order_status_update(
-        order_id=order.id, new_status=OrderStatus.ACCEPTED
-    )
-
-    # 4. Send Push Notification to customer
-    sender_token = await get_user_notification_token(db=db, user_id=order.owner_id)
-    if sender_token:
-        await send_push_notification(
-            tokens=[sender_token],
-            title="Order Assigned",
-            message=f"Your order has been assigned to {rider.profile.full_name}, {rider.profile.phone_number}",
-            navigate_to="/(app)/delivery/orders",
-        )
-
-
-# async def _dispatch_post_acceptance_tasks(order: Order, rider: User, db: AsyncSession):
+# async def _dispatch_post_pickup_tasks(order: Order, rider: User, db: AsyncSession):
 #     """Handles tasks that should occur after the database transaction is committed."""
 #     # 1. Publish a single high-level event for financial processing
 #     # This is an internal settlement from the customer's escrow to the dispatch company's escrow.
@@ -3052,7 +2966,8 @@ async def _dispatch_post_pickup_tasks(order: Order, rider: User, db: AsyncSessio
 #     dispatch_profile = await get_user_profile(order.delivery.dispatch_id, db=db)
 #     sender_profile = await get_user_profile(order.owner_id, db=db)
 #     # Amount to move to escrow
-#     dispatch_amount = max(order.delivery.amount_due_dispatch, 0)
+#     # dispatch_amount = max(order.delivery.amount_due_dispatch, 0)
+
 
 #     await producer.publish_message(
 #         service="wallet",
@@ -3063,7 +2978,7 @@ async def _dispatch_post_pickup_tasks(order: Order, rider: User, db: AsyncSessio
 #             # The 'to_wallet_id' is the same as the wallet_id because this is a credit
 #             # to the dispatch company's wallet.
 #             "to_wallet_id": str(order.delivery.dispatch_id),
-#             "amount": str(dispatch_amount),
+#             "amount": str(order.delivery.delivery_fee),
 #             # This is an internal settlement, so we use standard types.
 #             "transaction_type": TransactionType.USER_TO_USER,
 #             "transaction_direction": TransactionDirection.CREDIT,
@@ -3093,11 +3008,10 @@ async def _dispatch_post_pickup_tasks(order: Order, rider: User, db: AsyncSessio
 #         operation="update_wallet",
 #         payload={
 #             "wallet_id": str(order.delivery.dispatch_id),
-#             "balance_change":'0',
-#                     "transaction_direction": TransactionDirection.CREDIT,
-#             "escrow_change":str(dispatch_amount),
+#             "balance_change": "0",
+#             "transaction_direction": TransactionDirection.CREDIT,
+#             "escrow_change": str(order.delivery.delivery_fee),
 #         },
-
 #     )
 
 #     # 2. Invalidate Caches
@@ -3113,7 +3027,7 @@ async def _dispatch_post_pickup_tasks(order: Order, rider: User, db: AsyncSessio
 
 #     # 3. Broadcast WebSocket updates
 #     await ws_service.broadcast_delivery_status_update(
-#         delivery_id=order.delivery.id, new_status=DeliveryStatus.ACCEPTED
+#         delivery_id=order.delivery.id, new_status=DeliveryStatus.PICKED_UP
 #     )
 #     await ws_service.broadcast_order_status_update(
 #         order_id=order.id, new_status=OrderStatus.ACCEPTED
@@ -3128,6 +3042,100 @@ async def _dispatch_post_pickup_tasks(order: Order, rider: User, db: AsyncSessio
 #             message=f"Your order has been assigned to {rider.profile.full_name}, {rider.profile.phone_number}",
 #             navigate_to="/(app)/delivery/orders",
 #         )
+
+
+async def _dispatch_post_pickup_tasks(order: Order, rider: User, db: AsyncSession):
+    """
+    Handles tasks that should occur after the database transaction is committed.
+    Uses idempotency keys to prevent duplicate event processing.
+    """
+    dispatch_profile = await get_user_profile(order.delivery.dispatch_id, db=db)
+    sender_profile = await get_user_profile(order.owner_id, db=db)
+    
+    # Use a unique idempotency key based on the order and action
+    idempotency_key = f"pickup:{order.id}:{order.delivery.id}"
+    
+    # Check if we've already processed this pickup
+    cache_key = f"idempotency:{idempotency_key}"
+    if redis_client.get(cache_key):
+        logger.info(f"Pickup for order {order.id} already processed. Skipping post-pickup tasks.")
+        return
+    
+    # Set idempotency marker (expires after 24 hours as a safety measure)
+    redis_client.setex(cache_key, 86400, "1")
+
+    # 1. Publish wallet transaction events
+    await producer.publish_message(
+        service="wallet",
+        operation="create_transaction",
+        payload={
+            "idempotency_key": f"{idempotency_key}:create_tx",  # Add idempotency key to payload
+            "wallet_id": str(order.delivery.dispatch_id),
+            "tx_ref": str(order.tx_ref),
+            "to_wallet_id": str(order.delivery.dispatch_id),
+            "amount": str(order.delivery.delivery_fee),
+            "transaction_type": TransactionType.USER_TO_USER,
+            "transaction_direction": TransactionDirection.CREDIT,
+            "payment_method": PaymentMethod.ESCROW_SETTLEMENT,
+            "payment_status": PaymentStatus.PAID,
+            "from_user": sender_profile.full_name or sender_profile.business_name,
+            "to_user": dispatch_profile.full_name or dispatch_profile.business_name,
+        },
+    )
+
+    # Update sender transaction
+    await producer.publish_message(
+        service="wallet",
+        operation="update_transaction",
+        payload={
+            "idempotency_key": f"{idempotency_key}:update_sender_tx",
+            "wallet_id": str(order.owner_id),
+            "tx_ref": str(order.tx_ref),
+            "to_user": dispatch_profile.full_name or dispatch_profile.business_name,
+        },
+    )
+
+    # Update dispatch escrow
+    await producer.publish_message(
+        service="wallet",
+        operation="update_wallet",
+        payload={
+            "idempotency_key": f"{idempotency_key}:update_dispatch_escrow",
+            "wallet_id": str(order.delivery.dispatch_id),
+            "balance_change": "0",
+            "transaction_direction": TransactionDirection.CREDIT,
+            "escrow_change": str(order.delivery.delivery_fee),
+        },
+    )
+
+    # 2. Invalidate Caches
+    keys_to_delete = {
+        f"user_related_orders:{rider.id}",
+        f"user_related_orders:{order.delivery.dispatch_id}",
+        f"user_related_orders:{order.owner_id}",
+        f"delivery:{order.delivery.id}",
+        ALL_DELIVERY,
+        "paid_pending_deliveries",
+    }
+    redis_client.delete(*keys_to_delete)
+
+    # 3. Broadcast WebSocket updates (these are typically idempotent by nature)
+    await ws_service.broadcast_delivery_status_update(
+        delivery_id=order.delivery.id, new_status=DeliveryStatus.PICKED_UP
+    )
+    await ws_service.broadcast_order_status_update(
+        order_id=order.id, new_status=OrderStatus.ACCEPTED
+    )
+
+    # 4. Send Push Notification (idempotent - multiple notifications are acceptable)
+    sender_token = await get_user_notification_token(db=db, user_id=order.owner_id)
+    if sender_token:
+        await send_push_notification(
+            tokens=[sender_token],
+            title="Order Assigned",
+            message=f"Your order has been assigned to {rider.profile.full_name}, {rider.profile.phone_number}",
+            navigate_to="/(app)/delivery/orders",
+        )
 
 
 async def rider_accept_booking(
@@ -3255,11 +3263,57 @@ async def assign_rider_to_existing_delivery_order(
 #         )
 
 
+# async def rider_pickup_delivery_order(
+#     db: AsyncSession, order_id: UUID, current_user: User
+# ) -> DeliveryStatusUpdateSchema:
+#     """
+#     Allows a rider to pickup a delivery order from customer using an atomic transaction and decoupled post-processing.
+#     """
+#     try:
+#         order = await db.scalar(
+#             select(Order)
+#             .where(Order.id == order_id)
+#             .options(selectinload(Order.delivery))
+#             .with_for_update()
+#         )
+
+#         if current_user.id != order.delivery.rider_id:
+#             raise HTTPException(
+#                 status_code=status.HTTP_403_FORBIDDEN, detail="Invalid rider."
+#             )
+
+#         await _rider_pickup_and_update_db(
+#             db, order, current_user, dispatch_id=current_user.dispatcher_id
+#         )
+
+#         await db.commit()
+
+#         await _dispatch_post_pickup_tasks(order, current_user, db)
+
+#         return DeliveryStatusUpdateSchema(
+#             delivery_status=order.delivery.delivery_status
+#         )
+
+#     except HTTPException:  # Re-raise known exceptions
+#         await db.rollback()
+#         raise
+#     except Exception as e:  # Catch unexpected errors
+#         await db.rollback()
+#         logger.error(
+#             f"Failed to pickup delivery for order {order_id}: {e}", exc_info=True
+#         )
+#         raise HTTPException(
+#             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+#             detail="An unexpected error occurred while accepting the delivery.",
+#         )
+
+
 async def rider_pickup_delivery_order(
     db: AsyncSession, order_id: UUID, current_user: User
 ) -> DeliveryStatusUpdateSchema:
     """
     Allows a rider to pickup a delivery order from customer using an atomic transaction and decoupled post-processing.
+    This function is idempotent - multiple calls with the same order will not create duplicate transactions.
     """
     try:
         order = await db.scalar(
@@ -3269,9 +3323,23 @@ async def rider_pickup_delivery_order(
             .with_for_update()
         )
 
+        if not order:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, 
+                detail="Order not found."
+            )
+
         if current_user.id != order.delivery.rider_id:
             raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN, detail="Invalid rider."
+                status_code=status.HTTP_403_FORBIDDEN, 
+                detail="Invalid rider."
+            )
+
+        # Idempotency check: If already picked up, return current status without processing
+        if order.delivery.delivery_status == DeliveryStatus.PICKED_UP:
+            logger.info(f"Order {order_id} already picked up. Returning current status.")
+            return DeliveryStatusUpdateSchema(
+                delivery_status=order.delivery.delivery_status
             )
 
         await _rider_pickup_and_update_db(
@@ -3280,16 +3348,17 @@ async def rider_pickup_delivery_order(
 
         await db.commit()
 
+        # Only dispatch post-pickup tasks if we actually updated the status
         await _dispatch_post_pickup_tasks(order, current_user, db)
 
         return DeliveryStatusUpdateSchema(
             delivery_status=order.delivery.delivery_status
         )
 
-    except HTTPException:  # Re-raise known exceptions
+    except HTTPException:
         await db.rollback()
         raise
-    except Exception as e:  # Catch unexpected errors
+    except Exception as e:
         await db.rollback()
         logger.error(
             f"Failed to pickup delivery for order {order_id}: {e}", exc_info=True
@@ -3298,43 +3367,6 @@ async def rider_pickup_delivery_order(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="An unexpected error occurred while accepting the delivery.",
         )
-
-
-# async def rider_pickup_delivery_order(
-#     db: AsyncSession, order_id: UUID, current_user: User
-# ) -> DeliveryStatusUpdateSchema:
-#     """
-#     Allows a rider to pickup a delivery order from customer using an atomic transaction and decoupled post-processing.
-#     """
-#     try:
-
-#         order = await db.scalar(
-#         select(Order).where(Order.id == order_id).options(selectinload(Order.delivery)).with_for_update()
-#     )
-
-#         if current_user.id != order.delivery.rider_id:
-#             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail='Invalid rider.')
-
-
-#         await _rider_pickup_and_update_db(db, order, current_user, dispatch_id=current_user.dispatch_id)
-
-#         await db.commit()
-
-#         await _dispatch_post_acceptance_tasks(order, current_user, db)
-
-#         return DeliveryStatusUpdateSchema(delivery_status=order.delivery.delivery_status)
-
-#     except HTTPException: # Re-raise known exceptions
-#         await db.rollback()
-#         raise
-#     except Exception as e: # Catch unexpected errors
-#         await db.rollback()
-#         logger.error(f"Failed to pickup delivery for order {order_id}: {e}", exc_info=True)
-#         raise HTTPException(
-#             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-#             detail="An unexpected error occurred while accepting the delivery.",
-#         )
-
 
 async def laundry_pickup(
     db: AsyncSession, order_id: UUID, current_user: User
@@ -4808,7 +4840,6 @@ async def sender_confirm_delivery_or_order_received(
         await db.rollback()
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
-
 async def rider_mark_package_delivered(
     delivery_id: UUID, current_user: User, db: AsyncSession
 ) -> DeliveryStatusUpdateSchema:
@@ -4884,13 +4915,21 @@ async def rider_mark_package_delivered(
                 detail="Cannot mark as delivered: Order payment is not completed.",
             )
 
+        # Idempotency check: If already delivered, return current status
+        if delivery.delivery_status == DeliveryStatus.DELIVERED:
+            logger.info(f"Delivery {delivery_id} already marked as delivered. Returning current status.")
+            return DeliveryStatusUpdateSchema(
+                delivery_status=delivery.delivery_status,
+                order_status=delivery.order.order_status,
+            )
+
         # Update delivery status
         delivery.delivery_status = DeliveryStatus.DELIVERED
         delivery.order.order_status = OrderStatus.DELIVERED
 
-        db.commit()
+        await db.commit()
 
-        # Send notifications to all stakeholders
+        # Send notifications to all stakeholders (after commit)
         try:
             await _notify_delivery_completion(delivery, db)
         except Exception as e:
@@ -4898,7 +4937,7 @@ async def rider_mark_package_delivered(
                 f"Failed to send notifications for delivery {delivery_id}: {str(e)}",
                 exc_info=True,
             )
-            # Don't raise - notifications should not block main flow
+
 
         # Invalidate caches
         try:
@@ -4908,13 +4947,13 @@ async def rider_mark_package_delivered(
                 f"Failed to invalidate caches for delivery {delivery_id}: {str(e)}",
                 exc_info=True,
             )
-            # Don't raise - cache invalidation should not block main flow
 
         logger.info(
             f"Successfully marked delivery {delivery_id} as delivered by rider {current_user.id}"
         )
 
         redis_client.delete(f"order_by_id:{delivery.order.id}")
+        
         return DeliveryStatusUpdateSchema(
             delivery_status=delivery.delivery_status,
             order_status=delivery.order.order_status,
@@ -4989,6 +5028,7 @@ async def _invalidate_delivery_caches(delivery: Delivery, current_user: User):
         f"user_related_orders:{delivery.sender_id}",
         f"user_related_orders:{delivery.dispatch_id}",
         f"user_related_orders:{delivery.rider_id}",
+        f"order_by_id: {delivery.order_id}"
     ]
 
     for key in cache_keys:
@@ -5018,7 +5058,7 @@ async def update_delivery_order_location(
 
     raise HTTPException(
         status_code=status.HTTP_404_NOT_FOUND,
-        detail="Order not found or invalid rider.",
+        detail="Delivery order not found or invalid rider.",
     )
     if delivery.delivery_status == DeliveryStatus.DELIVERED:
         raise HTTPException(400, "Delivery already completed")
