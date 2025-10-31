@@ -2601,167 +2601,6 @@ def _invalidate_pickup_order_caches(order: Order, current_user: User):
             continue  # Continue with other cache invalidations
 
 
-async def rider_accept_delivery_order_old(
-    db: AsyncSession, order_id: UUID, current_user: User
-) -> DeliveryStatusUpdateSchema:
-    dispatch_id = get_dispatch_id(current_user)
-
-    existing = await db.execute(
-        select(Delivery).where(
-            Delivery.rider_id == current_user.id,
-            Delivery.delivery_status == DeliveryStatus.ACCEPTED,
-        )
-    )
-
-    existing_delivery = existing.scalars().all()
-
-    if existing_delivery:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="You still have a pending delivery.",
-        )
-
-    result = await db.execute(
-        select(Order)
-        .where(Order.id == order_id)
-        .options(selectinload(Order.delivery))
-        .with_for_update()
-    )
-    order = result.scalar_one_or_none()
-
-    if not order:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Delivery not found."
-        )
-
-    if order.delivery.rider_phone_number or order.delivery.rider_id:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="This order has been assigned to a rider.",
-        )
-
-    if current_user.user_type != UserType.RIDER:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only a rider can pickup orders. Register a rider",
-        )
-
-    if current_user.profile.profile_image.profile_image_url is None:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Profile image is missing. Please update your profile",
-        )
-
-    if current_user.rider_is_suspended_for_order_cancel:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="You have been blocked for too many cancelled order. Wait until your account is reset",
-        )
-
-    await db.execute(
-        update(Delivery)
-        .where(Delivery.id == order.delivery.id)
-        .values(
-            {
-                "delivery_status": DeliveryStatus.ACCEPTED,
-                "rider_id": current_user.id,
-                "dispatch_id": dispatch_id,
-                "rider_phone_number": current_user.profile.phone_number,
-            }
-        )
-        .returning(Delivery.delivery_status)
-    )
-
-    await db.commit()
-
-    # Get profile
-    dispatch_profile = await get_user_profile(order.delivery.dispatch_id, db=db)
-    sender_profile = await get_user_profile(order.owner_id, db=db)
-
-    # Amount to move to escrow
-    dispatch_amount = max(order.delivery.amount_due_dispatch, 0)
-
-    # This is an internal settlement from the customer's escrow to the dispatch company's escrow.
-    # We create a new, distinct transaction for this movement. It should not inherit properties
-    # like 'payment_method' from the original customer payment.
-    await producer.publish_message(
-        service="wallet",
-        operation="create_transaction",
-        payload={
-            "wallet_id": str(order.delivery.dispatch_id),
-            "tx_ref": str(order.tx_ref),
-            # The 'to_wallet_id' is the same as the wallet_id because this is a credit
-            # to the dispatch company's wallet.
-            "to_wallet_id": str(order.delivery.dispatch_id),
-            "amount": str(dispatch_amount),
-            # This is an internal settlement, so we use standard types.
-            "transaction_type": TransactionType.USER_TO_USER,
-            "transaction_direction": TransactionDirection.CREDIT,
-            # The payment method is 'ESCROW_SETTLEMENT', not the customer's original method (e.g., CARD).
-            "payment_method": PaymentMethod.ESCROW_SETTLEMENT,
-            # The payment is considered 'PAID' as the funds are already secured in escrow.
-            "payment_status": PaymentStatus.PAID,
-            "from_user": sender_profile.full_name or sender_profile.business_name,
-            "to_user": dispatch_profile.full_name or dispatch_profile.business_name,
-        },
-    )
-
-    # Update sender transaction
-    await producer.publish_message(
-        service="wallet",
-        operation="update_transaction",
-        payload={
-            "wallet_id": str(order.owner_id),
-            "tx_ref": str(order.tx_ref),
-            "to_user": dispatch_profile.full_name or dispatch_profile.business_name,
-        },
-    )
-
-    # Update dispatch escrow
-    await producer.publish_message(
-        service="wallet",
-        operation="update_wallet",
-        payload={
-            "wallet_id": str(order.delivery.dispatch_id),
-            "balance_change": "0",
-            "transaction_direction": TransactionDirection.CREDIT,
-            "escrow_change": str(dispatch_amount),
-        },
-    )
-
-    order.delivery.delivery_status = DeliveryStatus.ACCEPTED
-    order.order_status = OrderStatus.ACCEPTED
-    await db.commit()
-    await db.refresh(order.delivery)
-
-    # redis_client.delete(f"delivery:{delivery_id}")
-    redis_client.delete(f"{ALL_DELIVERY}")
-    redis_client.delete("paid_pending_deliveries")
-    redis_client.delete(f"user_related_orders:{current_user.id}")
-    redis_client.delete(f"user_related_orders:{order.delivery.dispatch_id}")
-    redis_client.delete(f"user_related_orders:{order.owner_id}")
-
-    await ws_service.broadcast_delivery_status_update(
-        delivery_id=order.delivery.id, new_status=order.delivery.delivery_status
-    )
-
-    await ws_service.broadcast_order_status_update(
-        order_id=order.id, new_status=order.order_status
-    )
-
-    sender_token = await get_user_notification_token(db=db, user_id=order.owner_id)
-
-    if sender_token:
-        await send_push_notification(
-            tokens=[sender_token],
-            title="Order Assigned",
-            message=f"Your order has been assigned to {current_user.profile.full_name}, {current_user.profile.phone_number}",
-            navigate_to="/(app)/delivery/orders",
-        )
-
-    return DeliveryStatusUpdateSchema(delivery_status=order.delivery.delivery_status)
-
-
 async def _validate_delivery_acceptance(
     db: AsyncSession,
     order_id: UUID,
@@ -2815,57 +2654,6 @@ async def _validate_delivery_acceptance(
 
     return order
 
-
-# async def _validate_delivery_acceptance(db: AsyncSession, order_id: UUID, rider: User) -> Order:
-#     """Validates all preconditions for a rider to accept a delivery."""
-#     if rider.user_type != UserType.RIDER:
-#         raise HTTPException(
-#             status_code=status.HTTP_403_FORBIDDEN,
-#             detail="Only a rider can accept orders.",
-#         )
-
-#     if rider.profile.profile_image is None or not rider.profile.profile_image.profile_image_url:
-#         raise HTTPException(
-#             status_code=status.HTTP_403_FORBIDDEN,
-#             detail="Profile image is missing. Please update your profile.",
-#         )
-
-#     if rider.rider_is_suspended_for_order_cancel:
-#         raise HTTPException(
-#             status_code=status.HTTP_403_FORBIDDEN,
-#             detail="Your account is suspended due to too many cancellations.",
-#         )
-
-#     # Check for existing active deliveries
-#     delivery_count_stmt = (
-#         select(func.count())
-#         .select_from(Delivery)
-#         .where(Delivery.rider_id == rider.id, Delivery.delivery_status==DeliveryStatus.ACCEPTED)
-#     )
-
-#     delivery_count_result = await db.execute(delivery_count_stmt)
-#     delivery_count = delivery_count_result.scalar_one()
-
-#     if delivery_count > 1:
-#         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You still have 2 pending delivery.")
-
-#     # Fetch and lock the order to prevent race conditions
-#     order = await db.scalar(
-#         select(Order).where(Order.id == order_id).options(selectinload(Order.delivery)).with_for_update()
-#     )
-
-#     if not order or not order.delivery:
-#         raise HTTPException(
-#             status_code=status.HTTP_404_NOT_FOUND, detail="Delivery not found."
-#         )
-
-#     if order.delivery.rider_id:
-#         raise HTTPException(
-#             status_code=status.HTTP_400_BAD_REQUEST,
-#             detail="This order has already been assigned to a rider.",
-#         )
-
-#     return order
 
 
 async def _assign_rider_and_update_db(
@@ -2936,16 +2724,6 @@ async def _decline_delivery_order_and_update_db(
     )
 
 
-# async def _assign_rider_and_update_db(db: AsyncSession, order: Order, rider: User, dispatch_id: UUID):
-#     """Atomically updates the database to assign the rider and update statuses."""
-#     order.delivery.delivery_status = DeliveryStatus.ACCEPTED
-#     order.delivery.rider_id = rider.id
-#     order.delivery.dispatch_id = dispatch_id
-#     order.delivery.rider_phone_number = rider.profile.phone_number
-#     order.order_status = OrderStatus.ACCEPTED
-#     db.add(order)
-#     db.add(order.delivery)
-
 
 async def _rider_pickup_and_update_db(
     db: AsyncSession, order: Order, rider: User, dispatch_id: UUID
@@ -2954,94 +2732,6 @@ async def _rider_pickup_and_update_db(
     order.delivery.delivery_status = DeliveryStatus.PICKED_UP
     db.add(order)
     db.add(order.delivery)
-
-
-# async def _dispatch_post_pickup_tasks(order: Order, rider: User, db: AsyncSession):
-#     """Handles tasks that should occur after the database transaction is committed."""
-#     # 1. Publish a single high-level event for financial processing
-#     # This is an internal settlement from the customer's escrow to the dispatch company's escrow.
-#     # We create a new, distinct transaction for this movement. It should not inherit properties
-#     # like 'payment_method' from the original customer payment.
-
-#     dispatch_profile = await get_user_profile(order.delivery.dispatch_id, db=db)
-#     sender_profile = await get_user_profile(order.owner_id, db=db)
-#     # Amount to move to escrow
-#     # dispatch_amount = max(order.delivery.amount_due_dispatch, 0)
-
-
-#     await producer.publish_message(
-#         service="wallet",
-#         operation="create_transaction",
-#         payload={
-#             "wallet_id": str(order.delivery.dispatch_id),
-#             "tx_ref": str(order.tx_ref),
-#             # The 'to_wallet_id' is the same as the wallet_id because this is a credit
-#             # to the dispatch company's wallet.
-#             "to_wallet_id": str(order.delivery.dispatch_id),
-#             "amount": str(order.delivery.delivery_fee),
-#             # This is an internal settlement, so we use standard types.
-#             "transaction_type": TransactionType.USER_TO_USER,
-#             "transaction_direction": TransactionDirection.CREDIT,
-#             # The payment method is 'ESCROW_SETTLEMENT', not the customer's original method (e.g., CARD).
-#             "payment_method": PaymentMethod.ESCROW_SETTLEMENT,
-#             # The payment is considered 'PAID' as the funds are already secured in escrow.
-#             "payment_status": PaymentStatus.PAID,
-#             "from_user": sender_profile.full_name or sender_profile.business_name,
-#             "to_user": dispatch_profile.full_name or dispatch_profile.business_name,
-#         },
-#     )
-
-#     # Update sender transaction
-#     await producer.publish_message(
-#         service="wallet",
-#         operation="update_transaction",
-#         payload={
-#             "wallet_id": str(order.owner_id),
-#             "tx_ref": str(order.tx_ref),
-#             "to_user": dispatch_profile.full_name or dispatch_profile.business_name,
-#         },
-#     )
-
-#     # Update dispatch escrow
-#     await producer.publish_message(
-#         service="wallet",
-#         operation="update_wallet",
-#         payload={
-#             "wallet_id": str(order.delivery.dispatch_id),
-#             "balance_change": "0",
-#             "transaction_direction": TransactionDirection.CREDIT,
-#             "escrow_change": str(order.delivery.delivery_fee),
-#         },
-#     )
-
-#     # 2. Invalidate Caches
-#     keys_to_delete = {
-#         f"user_related_orders:{rider.id}",
-#         f"user_related_orders:{order.delivery.dispatch_id}",
-#         f"user_related_orders:{order.owner_id}",
-#         f"delivery:{order.delivery.id}",
-#         ALL_DELIVERY,
-#         "paid_pending_deliveries",
-#     }
-#     redis_client.delete(*keys_to_delete)
-
-#     # 3. Broadcast WebSocket updates
-#     await ws_service.broadcast_delivery_status_update(
-#         delivery_id=order.delivery.id, new_status=DeliveryStatus.PICKED_UP
-#     )
-#     await ws_service.broadcast_order_status_update(
-#         order_id=order.id, new_status=OrderStatus.ACCEPTED
-#     )
-
-#     # 4. Send Push Notification to customer
-#     sender_token = await get_user_notification_token(db=db, user_id=order.owner_id)
-#     if sender_token:
-#         await send_push_notification(
-#             tokens=[sender_token],
-#             title="Order Assigned",
-#             message=f"Your order has been assigned to {rider.profile.full_name}, {rider.profile.phone_number}",
-#             navigate_to="/(app)/delivery/orders",
-#         )
 
 
 async def _dispatch_post_pickup_tasks(order: Order, rider: User, db: AsyncSession):
@@ -3114,6 +2804,7 @@ async def _dispatch_post_pickup_tasks(order: Order, rider: User, db: AsyncSessio
         f"user_related_orders:{order.delivery.dispatch_id}",
         f"user_related_orders:{order.owner_id}",
         f"delivery:{order.delivery.id}",
+        f"order_by_id:{order.id}",
         ALL_DELIVERY,
         "paid_pending_deliveries",
     }
@@ -3218,7 +2909,7 @@ async def assign_rider_to_existing_delivery_order(
         .where(Delivery.id == delivery_id)
         .values(
             rider_phone_number=rider.phone_number,
-            dispatch_id=rider.dispatch_id,
+            dispatch_id=rider.user.dispatcher_id,
             rider_id=rider.user_id,
         )
     )
@@ -5603,7 +5294,8 @@ def format_delivery_response(
 
 
 async def get_user_profile(user_id: UUID, db: AsyncSession):
-    result = await db.execute(select(Profile).where(Profile.user_id == user_id))
+    stmt = select(Profile).where(Profile.user_id==user_id).options(selectinload(Profile.user))
+    result = await db.execute(stmt)
 
     return result.scalar_one_or_none()
 
