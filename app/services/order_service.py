@@ -5264,6 +5264,7 @@ def format_delivery_response(
             "distance": delivery.distance,
             "delivery_fee": delivery.delivery_fee,
             "amount_due_dispatch": delivery.amount_due_dispatch,
+            "last_known_rider_coordinates": delivery.last_known_rider_coordinates or None,
             "pickup_coordinates": delivery.pickup_coordinates,
             "dropoff_coordinates": delivery.dropoff_coordinates,
             "origin": delivery.origin,
