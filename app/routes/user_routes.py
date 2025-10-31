@@ -178,7 +178,7 @@ async def get_rider_details(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> RiderProfileSchema:
-    return await user_service.get_rider_profile(db=db, user_id=user_id)
+    return await user_service.get_rider_profile(db=db, rider_id=user_id)
 
 
 @router.get("/restaurants", status_code=status.HTTP_200_OK)
