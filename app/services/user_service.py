@@ -1759,6 +1759,11 @@ async def update_user_location(
     )
     await db.commit()
 
+    return {
+        "lat": location_data.lat,
+        "lng": location_data.lng
+    }
+
 
 async def get_current_user_notification_token(
     current_user: UUID, db: AsyncSession
