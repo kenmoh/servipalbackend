@@ -20,16 +20,6 @@ class RequireDeliverySchema(str, Enum):
     # USER_DROPOFF_AND_PICKUP = 'user-dropoff-and-pickup'
 
 
-# class TransactionType(str, Enum):
-#     DEBIT = "debit"
-#     CREDIT = "credit"
-
-
-# class UserType(str, Enum):
-#     CUSTOMER: str = 'customer'
-#     RESTAURANT_VENDOR: str = 'restaurant_vendor'
-#     LAUNDRY_VENDOR: str = 'laundry_vendor'
-
 
 class UserType(str, Enum):
     CUSTOMER: str = os.getenv("CUSTOMER")

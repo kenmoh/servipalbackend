@@ -3419,10 +3419,10 @@ async def _update_delivery_status(
         valid_transitions = {
             DeliveryStatus.DELIVERED: [DeliveryStatus.RECEIVED],
             DeliveryStatus.ACCEPTED: [
-                DeliveryStatus.IN_TRANSIT,
+                DeliveryStatus.PICKED_UP,
                 DeliveryStatus.CANCELLED,
             ],
-            DeliveryStatus.IN_TRANSIT: [
+            DeliveryStatus.PICKED_UP: [
                 DeliveryStatus.DELIVERED,
                 DeliveryStatus.CANCELLED,
             ],
@@ -4264,7 +4264,7 @@ async def sender_confirm_delivery_or_order_received(
         )
 
     # Handle pickup orders (no delivery)
-    if order.require_delivery == RequireDeliverySchema.PICKUP:
+    if order.require_delivery == RequireDeliverySchema.PICKED_UP:
         if order.order_status != OrderStatus.DELIVERED:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
