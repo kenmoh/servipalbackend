@@ -1737,12 +1737,13 @@ async def update_user_location_coords(
 async def update_user_location(
     location_data: UserCoords,
     db: AsyncSession,
+    current_user: User
 ) -> UserCoords:
     # Create the coordinate dictionary
     point = from_shape(Point(location_data.lng, location_data.lat), srid=4326)
 
     # Get user from database
-    result = await db.execute(select(User).where(User.id == location_data.user_id))
+    result = await db.execute(select(User).where(User.id == current_user.id))
     user = result.scalar_one_or_none()
 
     if user is None:

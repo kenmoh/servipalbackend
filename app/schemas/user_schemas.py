@@ -11,7 +11,6 @@ from app.schemas.status_schema import (
 
 
 class UserCoords(BaseModel):
-    user_id: UUID | None = None
     lat: float
     lng: float
 
