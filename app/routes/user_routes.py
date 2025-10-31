@@ -30,6 +30,7 @@ from app.schemas.user_schemas import (
     ProfileImageResponseSchema,
     CreateReviewSchema,
     UpdateRider,
+    UserLocationResonse
 )
 from app.services import user_service
 from app.schemas.item_schemas import MenuResponseSchema, FoodGroup

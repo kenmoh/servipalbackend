@@ -50,6 +50,7 @@ from app.schemas.user_schemas import (
     UpdateRider,
     WalletUserData,
     UserCoords,
+    UserLocationResonse
 )
 
 
@@ -1688,7 +1689,7 @@ async def update_user_location_coords(
     location_data: UserCoords,
     db: AsyncSession,
     current_user: User,
-) -> UserCoords:
+) -> UserLocationResonse:
     # Create the coordinate dictionary
     coordinate = {"lat": location_data.lat, "lng": location_data.lng}
 
