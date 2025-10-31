@@ -1760,8 +1760,8 @@ async def update_user_location(
     await db.commit()
 
     return {
-        "lat": location_data.lat,
-        "lng": location_data.lng
+        "lat": location_data.location_coordinates['lat'],
+        "lng": location_data.location_coordinates['lng']
     }
 
 
