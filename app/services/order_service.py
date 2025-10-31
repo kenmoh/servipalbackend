@@ -1133,7 +1133,6 @@ async def order_food_or_request_laundy_service_old(
             for item in order_item.order_items
         ]
         await db.execute(insert(OrderItem).values(order_items_payload))
-
         # Create delivery if required
         if requires_delivery:
             await db.execute(
@@ -3703,7 +3702,7 @@ async def sender_confirm_package_received(
         await db.execute(
             update(User.has_delivery)
             .where(User.id == order.delivery.rider_id)
-            .values(has_delivery=True)
+            .values(has_delivery=False)
         )
         await db.commit()
 
