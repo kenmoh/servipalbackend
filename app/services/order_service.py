@@ -3646,8 +3646,9 @@ async def sender_confirm_package_received(
                 .where(Order.id == order_id)
                 .options(
                     selectinload(Order.delivery)
-                    .selectinload(User.profile),
-                    selectinload(Order.vendor).selectinload(User.profile),
+                    # .selectinload(Delivery.rider)
+                    # .selectinload(User.profile),
+                    # selectinload(Order.vendor).selectinload(User.profile),
                 )
                 .with_for_update()
             )
