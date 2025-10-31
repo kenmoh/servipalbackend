@@ -3646,7 +3646,6 @@ async def sender_confirm_package_received(
                 .where(Order.id == order_id)
                 .options(
                     selectinload(Order.delivery)
-                    .selectinload(Delivery.dispatch)
                     .selectinload(User.profile),
                     selectinload(Order.vendor).selectinload(User.profile),
                 )
