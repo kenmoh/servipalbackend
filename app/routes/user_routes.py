@@ -357,7 +357,7 @@ async def update_user_location(
     location_data: UserCoords,
     db: AsyncSession = Depends(get_db),
 ) -> UserCoords:
-    """Update user coordinates"""
+    """Update user coordinates for close rider display"""
     return await user_service.update_user_location(
         location_data=location_data, db=db
     )
