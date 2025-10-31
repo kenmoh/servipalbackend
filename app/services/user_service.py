@@ -218,6 +218,7 @@ async def get_rider_profile(db: AsyncSession, rider_id: UUID) -> RiderProfileSch
         .outerjoin(Delivery, Delivery.rider_id == User.id)
         .outerjoin(Review, Review.reviewee_id == User.id)
         .where(User.user_type == UserType.RIDER, User.id == rider_id)
+        .group_by(User.id)
     )
 
     result = await db.execute(stmt)
@@ -249,7 +250,7 @@ async def get_rider_profile(db: AsyncSession, rider_id: UUID) -> RiderProfileSch
     if riders_dict:
         redis_client.set(cache_key, json.dumps(riders_dict, default=str), ex=300)
 
-    return riders_dict
+    return rider_data
 
 
 # async def get_rider_profile(db: AsyncSession, user_id: UUID) -> RiderProfileSchema:
