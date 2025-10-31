@@ -4775,6 +4775,9 @@ async def update_delivery_order_location(
     if delivery.sender_id:
         await manager.send_personal_message(message, str(delivery.sender_id))
 
+    redis_client.delete(f"user_orders:{delivery.sender_id}")
+    redis_client.delete(f"user_orders:{delivery.rider_id}")
+
     return data
 
 
