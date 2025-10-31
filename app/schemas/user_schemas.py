@@ -14,6 +14,9 @@ class UserCoords(BaseModel):
     lat: float
     lng: float
 
+class UserLocationResonse(BaseModel):
+    location_coordinates: str
+
 
 class AccountDetails(BaseModel):
     account_number: str

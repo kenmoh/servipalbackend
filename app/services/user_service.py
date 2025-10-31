@@ -1758,40 +1758,9 @@ async def update_user_location(
     await db.refresh(user)
     
     return {
-        "lat": user.location_coordinates["lat"],
-        "lng": user.location_coordinates["lng"]
+        "location_coordinates": str(user.location_coordinates)
     }
 
-# async def update_user_location(
-#     location_data: UserCoords,
-#     db: AsyncSession,
-#     current_user: User
-# ) -> UserCoords:
-#     # Create the coordinate dictionary
-#     point = from_shape(Point(location_data.lng, location_data.lat), srid=4326)
-
-#     # Get user from database
-#     result = await db.execute(select(User).where(User.id == current_user.id))
-#     user = result.scalar_one_or_none()
-
-#     if user is None:
-#         raise HTTPException(
-#             status_code=status.HTTP_404_NOT_FOUND, detail="User not found"
-#         )
-
-#     # Update the location coordinates
-#     location_data = await db.execute(
-#         update(User)
-#         .where(User.id == current_user.id)
-#         .values(location_coordinates=point)
-#     )
-#     await db.commit()
-#     await db.refresh(location_data)
-
-#     return {
-#         "lat": location_data.location_coordinates['lat'],
-#         "lng": location_data.location_coordinates['lng']
-#     }
 
 
 async def get_current_user_notification_token(
