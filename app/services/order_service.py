@@ -2795,6 +2795,8 @@ async def rider_accept_booking(
         )
         await db.commit()
 
+        await _acceptance_wallet_update(order)
+
         _invalidate_order_caches()
         redis_client.delete(f"order_by_id:{order_id}")
 
@@ -2814,6 +2816,73 @@ async def rider_accept_booking(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="An unexpected error occurred while accepting the delivery.",
         )
+
+
+
+async def _acceptance_wallet_update(order: Order):
+    """
+    Process wallet settlements for package delivery with retries and failure handling.
+    All wallet operations are atomic and must either all succeed or all fail.
+
+    Args:
+        order: Order instance with loaded delivery relationship
+
+    Raises:
+        HTTPException: If wallet operations fail after retries
+    """
+    MAX_RETRIES = 3
+    retry_count = 0
+    settlement_succeeded = False
+
+    while retry_count < MAX_RETRIES and not settlement_succeeded:
+        try:
+            # Calculate amounts
+            dispatch_amount = order.delivery.amount_due_dispatch
+            total_spent = order.delivery.delivery_fee
+
+            # Validate amounts
+            if dispatch_amount < 0 or total_spent < 0:
+                raise ValueError("Settlement amounts cannot be negative")
+            if dispatch_amount > total_spent:
+                raise ValueError("Dispatch amount cannot exceed total fee")
+
+            # 1. Update dispatch company wallet - move to escrow
+            dispatch_result = await producer.publish_message(
+                service="wallet",
+                operation="update_wallet",
+                payload={
+                    "wallet_id": str(order.delivery.dispatch_id),
+                    "balance_change": str(0),
+                    "escrow_change": str(total_spent),
+                    "details": {
+                        "order_id": str(order.id),
+                        "operation": "escrow_change",
+                        "order_number": order.order_number,
+                    },
+                },
+            )
+
+            if not dispatch_result:
+                raise ValueError("Failed to update dispatch wallet")
+
+            settlement_succeeded = True
+            logger.info(
+                f"Package settlement escrowed for order {order.id}: "
+                f"dispatch_amount={dispatch_amount}, delivery_fee={total_spent}"
+            )
+
+        except Exception as e:
+            retry_count += 1
+            logger.error(
+                f"Package escrow udate attempt {retry_count} failed for order {order.id}: {str(e)}",
+                exc_info=True,
+            )
+            if retry_count >= MAX_RETRIES:
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail=f"Failed to process package escrow update after {MAX_RETRIES} attempts: {str(e)}",
+                )
+
 
 
 async def rider_decline_booking(
@@ -4194,8 +4263,7 @@ async def _notify_order_completion(order: Order, db: AsyncSession):
             f"Failed to send some notifications for order {order.id}: {str(e)}",
             exc_info=True,
         )
-        # Don't raise - notifications should not block main flow
-
+       
 
 def _invalidate_order_caches(order: Order, current_user: User):
     redis_client.delete(f"user_related_orders:{current_user.id}")
