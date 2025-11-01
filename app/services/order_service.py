@@ -3704,6 +3704,8 @@ async def sender_confirm_package_received(
                 delivery_status=DeliveryStatus.RECEIVED,
             )
 
+            await db.execute(update(User.has_delivery).where(User.id == order.delivery.rider_id).values(has_delivery=False))
+
             # 4. Process wallet settlements (with retry logic)
             try:
                 await _package_settlement(order)
