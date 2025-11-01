@@ -377,6 +377,7 @@ async def _invalidate_package_order_caches(
     redis_client.delete(f"user_orders:{order_data.vendor_id}")
     redis_client.delete(f"user_orders:{delivery_data.rider_id}")
     redis_client.delete(f"user_orders:{delivery_data.dispatch_id}")
+    redis_client.delete("near_by_riders")
     redis_client.delete(f"{ALL_DELIVERY}")
     redis_client.delete("paid_pending_deliveries")
     redis_client.delete(f"user_related_orders:{current_user.id}")
@@ -2747,7 +2748,10 @@ async def _dispatch_post_pickup_tasks(order: Order, rider: User, db: AsyncSessio
     keys_to_delete = {
         f"user_related_orders:{rider.id}",
         f"user_related_orders:{order.delivery.dispatch_id}",
-        f"user_related_orders:{order.owner_id}",
+        f"user_related_orders:{order.delivery.rider_id}",
+        f"user_orders:{order.owner_id}",
+        f"user_orders:{order.delivery.rider_id}",
+        f"user_orders:{order.delivery.dispatch_id}",
         f"delivery:{order.delivery.id}",
         f"order_by_id:{order.id}",
         ALL_DELIVERY,
@@ -2790,6 +2794,8 @@ async def rider_accept_booking(
         )
         await db.commit()
 
+        _invalidate_order_caches()
+
         return DeliveryStatusUpdateSchema(
             delivery_status=order.delivery.delivery_status
         )
@@ -2826,6 +2832,8 @@ async def rider_decline_booking(
             db=db, order=order, rider_id=current_user.id
         )
         await db.commit()
+
+        _invalidate_order_caches()
 
         return DeliveryStatusUpdateSchema(
             delivery_status=order.delivery.delivery_status
@@ -2864,6 +2872,7 @@ async def assign_rider_to_existing_delivery_order(
     )
 
     await db.commit()
+    await _invalidate_package_order_caches()
 
 
 # async def rider_accept_delivery_order(
@@ -2986,6 +2995,7 @@ async def rider_pickup_delivery_order(
 
         # Only dispatch post-pickup tasks if we actually updated the status
         await _dispatch_post_pickup_tasks(order, current_user, db)
+        _invalidate_order_caches()
 
         return DeliveryStatusUpdateSchema(
             delivery_status=order.delivery.delivery_status
@@ -4185,6 +4195,8 @@ def _invalidate_order_caches(order: Order, current_user: User):
     redis_client.delete(f"user_related_orders:{current_user.id}")
     redis_client.delete(f"user_related_orders:{order.vendor_id}")
     redis_client.delete(f"user_related_orders:{order.owner_id}")
+    redis_client.delete(f"user_orders:{order.delivery.rider_id}")
+    redis_client.delete(f"user_orders:{order.delivery.dispatch_id}")
     redis_client.delete(f"order_by_id:{order.id}")
 
 

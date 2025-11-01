@@ -136,7 +136,7 @@ def invalidate_user_cache(user_id: UUID) -> None:
 async def get_riders(
     db: AsyncSession, lat: float, lng: float
 ) -> List[RiderProfileSchema]:
-    cache_key = f"near_by_riders:{round(lng, 4)}:{round(lat, 4)}:100km"
+    cache_key = f"near_by_riders"
     cached_riders = redis_client.get(cache_key)
     if cached_riders:
         data = json.loads(cached_riders)
