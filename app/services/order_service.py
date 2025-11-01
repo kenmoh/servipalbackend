@@ -383,53 +383,6 @@ async def _invalidate_package_order_caches(
         redis_client.delete(f"vendor_orders:{delivery_data.vendor_id}")
 
 
-# async def create_package_order(
-#     db: AsyncSession, data: PackageCreate, image: UploadFile, current_user: User
-# ) -> DeliveryResponse:
-#     """
-#     Creates a package order by orchestrating validation, database operations, and post-creation actions.
-#     """
-#     await _validate_package_order_request(current_user)
-
-#     try:
-#         async with db.begin_nested():
-#             package_data = await _create_package_item_and_image(db, data, image, current_user)
-#             order_data = await _create_order_and_order_item(db, package_data)
-#             delivery_data = await _create_delivery_and_calculate_fees(db, data, order_data, current_user)
-#             await _update_order_with_payment_link(db, order_data, delivery_data, current_user)
-
-#         await db.commit()
-
-#         await _invalidate_package_order_caches(order_data, delivery_data, current_user)
-
-#         # Fetch the final order and delivery to return the response
-#         order_stmt = (
-#             select(Order)
-#             .where(Order.id == order_data.id)
-#             .options(
-#                 selectinload(Order.order_items).options(
-#                     joinedload(OrderItem.item).options(selectinload(Item.images))
-#                 )
-#             )
-#         )
-#         order = (await db.execute(order_stmt)).scalar_one()
-
-#         delivery_stmt = select(Delivery).where(Delivery.id == delivery_data.id)
-#         delivery = (await db.execute(delivery_stmt)).scalar_one()
-
-#         await ws_service.broadcast_new_order({"order_id": order.id})
-
-#         return format_delivery_response(order=order, delivery=delivery)
-
-#     except Exception as e:
-#         await db.rollback()
-#         logger.error(f"Failed to create package order: {e}", exc_info=True)
-#         raise HTTPException(
-#             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-#             detail=f"Failed to create package order: {e}",
-#         )
-
-
 async def create_package_order(
     db: AsyncSession, data: PackageCreate, image: UploadFile, current_user: User
 ) -> DeliveryResponse:
