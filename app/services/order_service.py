@@ -87,7 +87,7 @@ async def get_order_by_id(
 ) -> DeliveryResponse:
     """Get delivery by order ID"""
 
-    cache_key = f"order_by_id: {order_id}"
+    cache_key = f"order_by_id:{order_id}"
 
     cached_delivery = redis_client.get(cache_key)
     if cached_delivery:
@@ -1777,7 +1777,8 @@ async def _process_post_delivery_cancellation_rider(
             f"order_details:{order.id}",
             f"delivery:{order.delivery.id}",
             f"user_related_orders:{current_user.id}",
-            f"order_by_id:{order.id}" "paid_pending_deliveries",
+            f"order_by_id:{order.id}" ,
+            "paid_pending_deliveries",
             ALL_DELIVERY,
             "orders",
         ]
@@ -2795,6 +2796,7 @@ async def rider_accept_booking(
         await db.commit()
 
         _invalidate_order_caches()
+        redis_client.delete(f"order_by_id:{order_id}")
 
         return DeliveryStatusUpdateSchema(
             delivery_status=order.delivery.delivery_status
@@ -2996,6 +2998,8 @@ async def rider_pickup_delivery_order(
         # Only dispatch post-pickup tasks if we actually updated the status
         await _dispatch_post_pickup_tasks(order, current_user, db)
         _invalidate_order_caches()
+        redis_client.delete(f"order_by_id:{order_id}")
+
 
         return DeliveryStatusUpdateSchema(
             delivery_status=order.delivery.delivery_status
@@ -3037,6 +3041,8 @@ async def laundry_pickup(
     await db.refresh(order)
 
     _invalidate_order_caches()
+    redis_client.delete(f"order_by_id:{order_id}")
+
 
     await ws_service.broadcast_order_status_update(
         order_id=order.id, new_status=order.order_status
