@@ -66,6 +66,8 @@ async def clear_order_caches(order):
     try:
         redis_client.delete(f"user_related_orders:{order.owner_id}")
         redis_client.delete(f"user_orders:{order.owner_id}")
+        redis_client.delete(f"user_orders:{order.delivery.dispatch_id}")
+        redis_client.delete(f"user_orders:{order.delivery.rider_id}")
         redis_client.delete(f"order_by_id:{order.id}")
         if order.vendor_id:
             redis_client.delete(f"user_related_orders:{order.vendor_id}")
@@ -1500,6 +1502,7 @@ async def order_payment_callback(request: Request, db: AsyncSession):
 
                 logger.info(f"Package order {order.id} payment processed successfully")
 
+
                 return templates.TemplateResponse(
                     "payment-status.html",
                     {
@@ -2696,6 +2699,8 @@ async def pay_with_wallet(
             try:
                 redis_client.delete(f"user_related_orders:{customer.id}")
                 redis_client.delete(f"user_orders:{order.owner_id}")
+                redis_client.delete(f'user_orders:{order.delivery.rider_id}')
+                redis_client.delete(f"user_orders:{order.delivery.dispatch_id}")
                 redis_client.delete("paid_pending_deliveries")
                 redis_client.delete("orders")
                 redis_client.delete(f"order_by_id:{order.id}")
