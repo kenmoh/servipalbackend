@@ -183,7 +183,7 @@ async def get_riders(
             business_name=rider.profile.business_name,
             delivery_count=delivery_count,
             average_rating=average_rating,
-            total_distance_travelled=rider.total_distance_travelled or 0.00,
+            total_distance_travelled=rider.profile.total_distance_travelled or 0.00,
             review_count=review_count,
             distance_km=round(float(distance_meters) / 1000, 2),
             profile_image_url=(
