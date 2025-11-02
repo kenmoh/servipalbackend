@@ -346,7 +346,7 @@ async def _create_delivery_and_calculate_fees(
     delivery_insert_result = await db.execute(
         insert(Delivery)
         .values(delivery_values)
-        .returning(Delivery.id, Delivery.delivery_fee, Delivery.vendor_id)
+        .returning(Delivery.id, Delivery.delivery_fee, Delivery.vendor_id, Delivery.rider_id)
     )
     return delivery_insert_result.fetchone()
 
@@ -404,6 +404,8 @@ async def create_package_order(
             delivery_data = await _create_delivery_and_calculate_fees(
                 db, data, order_data, current_user
             )
+
+        
 
             await _assign_rider_and_update_db(
                 db=db,
