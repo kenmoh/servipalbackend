@@ -55,6 +55,7 @@ from app.schemas.user_schemas import (
 
 
 logger = setup_logger()
+DISTANCE_IN_METERS = 100_000  # 100 km
 
 
 def _build_user_profile_response(
@@ -156,7 +157,7 @@ async def get_riders(
         .outerjoin(Profile.profile_image)
         .outerjoin(Delivery, Delivery.rider_id == User.id)
         .outerjoin(Review, Review.reviewee_id == User.id)
-        .where(func.ST_DWithin(User.location_coordinates, point, 100_000))
+        .where(func.ST_DWithin(User.location_coordinates, point, DISTANCE_IN_METERS))
         .where(
             User.user_type == UserType.RIDER,
             User.has_delivery.is_(False),
@@ -1045,7 +1046,7 @@ async def get_restaurant_vendors(
     if point:
         stmt = stmt.add_columns(
             func.ST_Distance(User.location_coordinates, point).label("distance_meters")
-        ).where(func.ST_DWithin(User.location_coordinates, point, 100_000))
+        ).where(func.ST_DWithin(User.location_coordinates, point, DISTANCE_IN_METERS))
     else:
         stmt = stmt.add_columns(func.literal(0).label("distance_meters"))
 
