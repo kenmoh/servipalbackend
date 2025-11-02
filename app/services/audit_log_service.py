@@ -127,7 +127,8 @@ class TransactionLogService:
             details=details or {},
         )
         db.add(log)
-        await db.commit()
+       
+        return log
 
     @staticmethod
     async def get_logs(
