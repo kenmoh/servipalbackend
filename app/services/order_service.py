@@ -1344,6 +1344,7 @@ async def cancel_order(
         await TransactionLogService.create_log(
             db=db,
             vendor_id=current_user.id,
+            order_id=order.id,
             amount=order.grand_total,
             action=TransactionLogAction.REFUNDED,
             status=order.order_payment_status,
@@ -1457,6 +1458,7 @@ async def cancel_delivery(
         await TransactionLogService.create_log(
             db=db,
             vendor_id=current_user.id,
+            order_id=order.id,
             amount=order.grand_total,
             action=TransactionLogAction.CANCELLED,
             status=order.order_payment_status,
@@ -3836,6 +3838,7 @@ async def sender_confirm_package_received(
             await TransactionLogService.create_log(
                 db=db,
                 vendor_id=current_user.id,
+                order_id=order.id,
                 amount=order.delivery.delivery_fee - order.delivery.amount_due_dispatch,
                 action=TransactionLogAction.RECEIVED,
                 status=order.order_payment_status,
