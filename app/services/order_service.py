@@ -2698,9 +2698,11 @@ async def _rider_pickup_and_update_db(
 ):
     """Atomically updates the database to assign the rider and update statuses."""
     order.delivery.delivery_status = DeliveryStatus.PICKED_UP
-    await _acceptance_wallet_update(order)
+    
     db.add(order)
     db.add(order.delivery)
+    await db.refresh(order)
+    
 
 
 async def _dispatch_post_pickup_tasks(order: Order, rider: User, db: AsyncSession):
@@ -3174,7 +3176,7 @@ async def rider_pickup_delivery_order(
         await _rider_pickup_and_update_db(
             db, order, current_user, dispatch_id=current_user.dispatcher_id
         )
-
+        await _acceptance_wallet_update(order)
         await db.commit()
 
         # Only dispatch post-pickup tasks if we actually updated the status
