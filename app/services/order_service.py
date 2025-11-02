@@ -3915,6 +3915,15 @@ async def _order_settlement(order: Order):
     Raises:
         HTTPException: If wallet operations fail after retries
     """
+    # Idempotency key to prevent duplicate processing
+    idempotency_key = f"order_settlement:{order.id}"
+    cache_key = f"idempotency:{idempotency_key}"
+    
+    # Check if already processed
+    if redis_client.get(cache_key):
+        logger.info(f"Order settlement for order {order.id} already processed. Skipping.")
+        return
+
     MAX_RETRIES = 3
     retry_count = 0
     settlement_succeeded = False
@@ -3935,6 +3944,7 @@ async def _order_settlement(order: Order):
                     "wallet_id": str(order.vendor_id),
                     "balance_change": str(order.amount_due_vendor),
                     "escrow_change": str(-abs(order.grand_total)),
+                    "idempotency_key": idempotency_key,
                     "details": {
                         "order_id": str(order.id),
                         "operation": "order_settlement",
@@ -3955,6 +3965,7 @@ async def _order_settlement(order: Order):
                     "wallet_id": str(order.owner_id),
                     "balance_change": "0",
                     "escrow_change": str(-abs(order.grand_total)),
+                    "idempotency_key": idempotency_key,
                     "details": {
                         "order_id": str(order.id),
                         "operation": "order_settlement",
@@ -3976,6 +3987,7 @@ async def _order_settlement(order: Order):
                     "payment_status": PaymentStatus.PAID,
                     "payment_method": PaymentMethod.ESCROW_SETTLEMENT,
                     "from_user": f"Order #{order.order_number}",
+                    "idempotency_key": idempotency_key,
                     "details": {
                         "order_id": str(order.id),
                         "settlement_type": order.order_type.value,
@@ -3984,6 +3996,9 @@ async def _order_settlement(order: Order):
                 },
             )
 
+            # Set idempotency marker (expires after 24 hours)
+            redis_client.setex(cache_key, 86400, "1")
+            
             settlement_succeeded = True
             logger.info(
                 f"Order settlement completed for order {order.id}: "
@@ -4014,6 +4029,15 @@ async def _package_settlement(order: Order):
     Raises:
         HTTPException: If wallet operations fail after retries
     """
+    # Idempotency key to prevent duplicate processing
+    idempotency_key = f"package_settlement:{order.id}:{order.delivery.id}"
+    cache_key = f"idempotency:{idempotency_key}"
+    
+    # Check if already processed
+    if redis_client.get(cache_key):
+        logger.info(f"Package settlement for order {order.id} already processed. Skipping.")
+        return
+
     MAX_RETRIES = 3
     retry_count = 0
     settlement_succeeded = False
@@ -4038,6 +4062,7 @@ async def _package_settlement(order: Order):
                     "wallet_id": str(order.delivery.dispatch_id),
                     "balance_change": str(dispatch_amount),
                     "escrow_change": str(-total_spent),
+                    "idempotency_key": idempotency_key,
                     "details": {
                         "order_id": str(order.id),
                         "operation": "package_settlement",
@@ -4046,10 +4071,8 @@ async def _package_settlement(order: Order):
                 },
             )
 
-     
-
             # 2. Update sender wallet - clear escrow
-            sender_result = await producer.publish_message(
+            await producer.publish_message(
                 service="wallet",
                 operation="update_wallet",
                 payload={
@@ -4057,6 +4080,7 @@ async def _package_settlement(order: Order):
                     "tx_ref": str(order.tx_ref),
                     "balance_change": "0",
                     "escrow_change": str(-total_spent),
+                    "idempotency_key": idempotency_key,
                     "details": {
                         "order_id": str(order.id),
                         "operation": "package_settlement",
@@ -4064,9 +4088,6 @@ async def _package_settlement(order: Order):
                     },
                 },
             )
-
-            if not sender_result:
-                raise ValueError("Failed to update sender wallet")
 
             # 3. Record settlement transaction for audit
             await producer.publish_message(
@@ -4081,6 +4102,7 @@ async def _package_settlement(order: Order):
                     "payment_status": PaymentStatus.PAID,
                     "payment_method": PaymentMethod.ESCROW_SETTLEMENT,
                     "from_user": f"Order #{order.order_number}",
+                    "idempotency_key": idempotency_key,
                     "details": {
                         "order_id": str(order.id),
                         "delivery_id": str(order.delivery.id),
@@ -4089,6 +4111,9 @@ async def _package_settlement(order: Order):
                 },
             )
 
+            # Set idempotency marker (expires after 24 hours)
+            redis_client.setex(cache_key, 86400, "1")
+            
             settlement_succeeded = True
             logger.info(
                 f"Package settlement completed for order {order.id}: "
