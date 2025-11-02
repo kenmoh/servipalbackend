@@ -3818,8 +3818,8 @@ async def sender_confirm_package_received(
             )
 
             distance_travelled = order.delivery.distance
-            await db.execute(update(User.has_delivery).where(User.id == order.delivery.rider_id).values(has_delivery=False))
-            await db.execute(update(Profile.total_distance_travelled).where(Profile.user_id == order.delivery.rider_id).values(total_distance_travelled=Profile.total_distance_travelled + distance_travelled))
+            await db.execute(update(User).where(User.id == order.delivery.rider_id).values(has_delivery=False))
+            await db.execute(update(Profile).where(Profile.user_id == order.delivery.rider_id).values(total_distance_travelled=Profile.total_distance_travelled + distance_travelled))
             await db.commit()
             
             try:
