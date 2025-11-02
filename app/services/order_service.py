@@ -3763,15 +3763,15 @@ async def assign_rider_to_existing_delivery_order(
     rider_token = await get_user_notification_token(
                 db=db, user_id=rider.user_id
             )
-        if rider_token:
-            await send_push_notification(
-                tokens=[rider_token],
-                title="New Order.
-                message=(
-                    f"You have a new order."
-                ),
-                navigate_to="/delivery/orders",
-            )
+    if rider_token:
+        await send_push_notification(
+            tokens=[rider_token],
+            title="New Order.
+            message=(
+                f"You have a new order."
+            ),
+            navigate_to="/delivery/orders",
+        )
     await _invalidate_package_order_caches()
 
 
