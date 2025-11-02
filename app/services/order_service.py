@@ -2698,6 +2698,7 @@ async def _rider_pickup_and_update_db(
 ):
     """Atomically updates the database to assign the rider and update statuses."""
     order.delivery.delivery_status = DeliveryStatus.PICKED_UP
+    await _acceptance_wallet_update(order)
     db.add(order)
     db.add(order.delivery)
 
@@ -2802,51 +2803,51 @@ async def _dispatch_post_pickup_tasks(order: Order, rider: User, db: AsyncSessio
         )
 
 
-async def rider_accept_booking_fixed(
-    db: AsyncSession, order_id: UUID, current_user: User
-) -> DeliveryStatusUpdateSchema:
-    """
-    FIXED VERSION - Allows a rider to accept a delivery order using an atomic transaction and decoupled post-processing.
+# async def rider_accept_booking_fixed(
+#     db: AsyncSession, order_id: UUID, current_user: User
+# ) -> DeliveryStatusUpdateSchema:
+#     """
+#     FIXED VERSION - Allows a rider to accept a delivery order using an atomic transaction and decoupled post-processing.
     
-    Key fixes:
-    1. Uses the improved _acceptance_wallet_update_fixed function
-    2. Better error handling and logging
-    3. Proper idempotency to prevent double escrow updates
-    """
-    try:
-        order = await _validate_delivery_acceptance(
-            db,
-            order_id,
-            current_user,
-            order_status=OrderStatus.ACCEPTED,
-            delivery_status=DeliveryStatus.ACCEPTED,
-        )
-        await db.commit()
+#     Key fixes:
+#     1. Uses the improved _acceptance_wallet_update_fixed function
+#     2. Better error handling and logging
+#     3. Proper idempotency to prevent double escrow updates
+#     """
+#     try:
+#         order = await _validate_delivery_acceptance(
+#             db,
+#             order_id,
+#             current_user,
+#             order_status=OrderStatus.ACCEPTED,
+#             delivery_status=DeliveryStatus.ACCEPTED,
+#         )
+#         await db.commit()
 
-        # Use the fixed version to prevent escrow doubling
-        await _acceptance_wallet_update(order)
+#         # Use the fixed version to prevent escrow doubling
+#         await _acceptance_wallet_update(order)
 
-        _invalidate_order_caches(order=order, current_user=current_user)
-        redis_client.delete(f"order_by_id:{order_id}")
+#         _invalidate_order_caches(order=order, current_user=current_user)
+#         redis_client.delete(f"order_by_id:{order_id}")
 
-        logger.info(f"Successfully processed rider acceptance for order {order_id}")
+#         logger.info(f"Successfully processed rider acceptance for order {order_id}")
 
-        return DeliveryStatusUpdateSchema(
-            delivery_status=order.delivery.delivery_status
-        )
+#         return DeliveryStatusUpdateSchema(
+#             delivery_status=order.delivery.delivery_status
+#         )
 
-    except HTTPException:  # Re-raise known exceptions
-        await db.rollback()
-        raise
-    except Exception as e:  # Catch unexpected errors
-        await db.rollback()
-        logger.error(
-            f"Failed to accept delivery for order {order_id}: {e}", exc_info=True
-        )
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="An unexpected error occurred while accepting the delivery.",
-        )
+#     except HTTPException:  # Re-raise known exceptions
+#         await db.rollback()
+#         raise
+#     except Exception as e:  # Catch unexpected errors
+#         await db.rollback()
+#         logger.error(
+#             f"Failed to accept delivery for order {order_id}: {e}", exc_info=True
+#         )
+#         raise HTTPException(
+#             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+#             detail="An unexpected error occurred while accepting the delivery.",
+#         )
 
 
 async def rider_accept_booking(
@@ -2865,7 +2866,7 @@ async def rider_accept_booking(
         )
         await db.commit()
 
-        await _acceptance_wallet_update(order)
+        # await _acceptance_wallet_update(order)
 
         _invalidate_order_caches(order=order, current_user=current_user)
         redis_client.delete(f"order_by_id:{order_id}")
@@ -3016,7 +3017,7 @@ async def rider_decline_booking(
         )
         await db.commit()
 
-        _invalidate_order_caches()
+        _invalidate_order_caches(order, current_user)
 
         return DeliveryStatusUpdateSchema(
             delivery_status=order.delivery.delivery_status
@@ -3178,7 +3179,7 @@ async def rider_pickup_delivery_order(
 
         # Only dispatch post-pickup tasks if we actually updated the status
         await _dispatch_post_pickup_tasks(order, current_user, db)
-        _invalidate_order_caches()
+        _invalidate_order_caches(order, current_user)
         redis_client.delete(f"order_by_id:{order_id}")
 
 
@@ -3221,7 +3222,7 @@ async def laundry_pickup(
     await db.commit()
     await db.refresh(order)
 
-    _invalidate_order_caches()
+    _invalidate_order_caches(order, current_user)
     redis_client.delete(f"order_by_id:{order_id}")
 
 
@@ -3267,7 +3268,7 @@ async def laundry_returned(
     await db.commit()
     await db.refresh(order)
 
-    _invalidate_order_caches()
+    _invalidate_order_caches(order, current_user)
 
     await ws_service.broadcast_order_status_update(
         order_id=order.id, new_status=order.order_status
