@@ -458,16 +458,16 @@ async def create_package_order(
         rider_token = await get_user_notification_token(
                 db=db, user_id=delivery.rider_id
             )
-            if rider_token:
-                await send_push_notification(
-                    tokens=[rider_token],
-                    title="New order",
-                    message=(
-                        f"You have a new order."
-                        
-                    ),
-                    navigate_to="/delivery/orders",
-                )
+        if rider_token:
+            await send_push_notification(
+                tokens=[rider_token],
+                title="New order",
+                message=(
+                    f"You have a new order."
+                    
+                ),
+                navigate_to="/delivery/orders",
+            )
 
         # Broadcast the new order
         await ws_service.broadcast_new_order({"order_id": str(order.id)})
