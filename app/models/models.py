@@ -235,6 +235,7 @@ class Profile(Base):
     )
     business_registration_number: Mapped[str] = mapped_column(nullable=True)
     account_holder_name: Mapped[str] = mapped_column(nullable=True)
+    total_distance_travelled: Mapped[Decimal] = mapped_column(nullable=True, default=0.0)
     opening_hours: Mapped[time] = mapped_column(nullable=True)
     closing_hours: Mapped[time] = mapped_column(nullable=True)
     full_name: Mapped[str] = mapped_column(nullable=True)

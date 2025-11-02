@@ -3816,9 +3816,11 @@ async def sender_confirm_package_received(
                 delivery_status=DeliveryStatus.RECEIVED,
             )
 
+            distance_travelled = order.delivery.distance
             await db.execute(update(User.has_delivery).where(User.id == order.delivery.rider_id).values(has_delivery=False))
-
-            # 4. Process wallet settlements (with retry logic)
+            await db.execute(update(Profile.total_distance_travelled).where(Profile.user_id == order.delivery.rider_id).values(total_distance_travelled=Profile.total_distance_travelled + distance_travelled))
+            await db.commit()
+            
             try:
                 await _package_settlement(order)
             except Exception as e:

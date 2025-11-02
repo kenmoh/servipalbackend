@@ -225,6 +225,7 @@ class RiderProfileSchema(BaseModel):
     business_name: str
     bike_number: str
     distance_km: float
+    total_distance_travelled: Decimal | None = Field(default=0.0)
     average_rating: float = Field(default=0.0)
     review_count: int = Field(default=0)
     delivery_count: int = Field(default=0)
