@@ -5364,6 +5364,13 @@ async def _order_settlement(order: Order):
 #                 )
 
 async def _clear_sender_escrow(order: Order, idempotency_key: str):
+    cache_key = f"idempotency:{idempotency_key}"
+    
+    # Check if already processed
+    if redis_client.get(cache_key):
+        logger.info(f"Sender escrow clear already processed for order {order.id}. Skipping.")
+        return
+
     total_spent = order.delivery.delivery_fee
 
     await producer.publish_message(
@@ -5381,7 +5388,10 @@ async def _clear_sender_escrow(order: Order, idempotency_key: str):
             },
         },
     )
-    
+
+    # Mark as processed
+    redis_client.setex(cache_key, 86400, "1")  # 24 hours
+    logger.info(f"Sender escrow cleared for order {order.id}")
 
 async def _settle_dispatch(order: Order, idempotency_key: str):
     total_spent = order.delivery.delivery_fee
