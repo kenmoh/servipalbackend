@@ -3972,7 +3972,7 @@ async def rider_pickup_delivery_order(
         logger.info(f"Escrow allocation completed for order {order_id}")
 
         # Post-pickup tasks
-        await _dispatch_post_pickup_tasks(order, current_user, db)
+        # await _dispatch_post_pickup_tasks(order, current_user, db)
         _invalidate_order_caches(order, current_user)
         redis_client.delete(f"order_by_id:{order_id}")
         
@@ -5249,120 +5249,175 @@ async def _order_settlement(order: Order):
                 )
 
 
+# async def _package_settlement(order: Order):
+#     """
+#     Process wallet settlements for package delivery with retries and failure handling.
+#     All wallet operations are atomic and must either all succeed or all fail.
+
+#     Args:
+#         order: Order instance with loaded delivery relationship
+
+#     Raises:
+#         HTTPException: If wallet operations fail after retries
+#     """
+#     # Idempotency key to prevent duplicate processing
+#     idempotency_key = f"package_settlement:{order.id}:{order.delivery.id}"
+#     cache_key = f"idempotency:{idempotency_key}"
+    
+#     # Check if already processed
+#     if redis_client.get(cache_key):
+#         logger.info(f"Package settlement for order {order.id} already processed. Skipping.")
+#         return
+
+#     MAX_RETRIES = 3
+#     retry_count = 0
+#     settlement_succeeded = False
+
+#     while retry_count < MAX_RETRIES and not settlement_succeeded:
+#         try:
+#             # Calculate amounts
+#             dispatch_amount = order.delivery.amount_due_dispatch
+#             total_spent = order.delivery.delivery_fee
+
+#             # Validate amounts
+#             if dispatch_amount < 0 or total_spent < 0:
+#                 raise ValueError("Settlement amounts cannot be negative")
+#             if dispatch_amount > total_spent:
+#                 raise ValueError("Dispatch amount cannot exceed total fee")
+
+#             # 1. Update dispatch company wallet - move from escrow to balance
+#             await producer.publish_message(
+#                 service="wallet",
+#                 operation="update_wallet",
+#                 payload={
+#                     "wallet_id": str(order.delivery.dispatch_id),
+#                     "balance_change": str(dispatch_amount),
+#                     "escrow_change": str(-total_spent),
+#                     "idempotency_key": idempotency_key,
+#                     "details": {
+#                         "order_id": str(order.id),
+#                         "operation": "package_settlement",
+#                         "order_number": order.order_number,
+#                     },
+#                 },
+#             )
+
+#             # 2. Update sender wallet - clear escrow
+#             await producer.publish_message(
+#                 service="wallet",
+#                 operation="update_wallet",
+#                 payload={
+#                     "wallet_id": str(order.owner_id),
+#                     "tx_ref": str(order.tx_ref),
+#                     "balance_change": "0",
+#                     "escrow_change": str(-total_spent),
+#                     "idempotency_key": idempotency_key,
+#                     "details": {
+#                         "order_id": str(order.id),
+#                         "operation": "package_settlement",
+#                         "order_number": order.order_number,
+#                     },
+#                 },
+#             )
+
+#             # 3. Record settlement transaction for audit
+#             await producer.publish_message(
+#                 service="wallet",
+#                 operation="create_transaction",
+#                 payload={
+#                     "wallet_id": str(order.delivery.dispatch_id),
+#                     "tx_ref": str(uuid.uuid4()),
+#                     "amount": str(dispatch_amount),
+#                     "transaction_type": TransactionType.USER_TO_USER,
+#                     "transaction_direction": TransactionDirection.CREDIT,
+#                     "payment_status": PaymentStatus.PAID,
+#                     "payment_method": PaymentMethod.ESCROW_SETTLEMENT,
+#                     "from_user": f"Order #{order.order_number}",
+#                     "idempotency_key": idempotency_key,
+#                     "details": {
+#                         "order_id": str(order.id),
+#                         "delivery_id": str(order.delivery.id),
+#                         "settlement_type": "package_delivery",
+#                     },
+#                 },
+#             )
+
+#             # Set idempotency marker (expires after 24 hours)
+#             redis_client.setex(cache_key, 86400, "1")
+            
+#             settlement_succeeded = True
+#             logger.info(
+#                 f"Package settlement completed for order {order.id}: "
+#                 f"dispatch_amount={dispatch_amount}, total_spent={total_spent}"
+#             )
+
+#         except Exception as e:
+#             retry_count += 1
+#             logger.error(
+#                 f"Package settlement attempt {retry_count} failed for order {order.id}: {str(e)}",
+#                 exc_info=True,
+#             )
+#             if retry_count >= MAX_RETRIES:
+#                 raise HTTPException(
+#                     status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+#                     detail=f"Failed to process package settlement after {MAX_RETRIES} attempts: {str(e)}",
+#                 )
+
+async def _clear_sender_escrow(order: Order, idempotency_key: str):
+    total_spent = order.delivery.delivery_fee
+
+    await producer.publish_message(
+        service="wallet",
+        operation="update_wallet",
+        payload={
+            "wallet_id": str(order.owner_id),
+            "balance_change": "0",
+            "escrow_change": str(-total_spent),
+            "idempotency_key": idempotency_key,
+            "details": {
+                "order_id": str(order.id),
+                "operation": "sender_escrow_clear",
+                "order_number": order.order_number,
+            },
+        },
+    )
+    
+
+async def _settle_dispatch(order: Order, idempotency_key: str):
+    total_spent = order.delivery.delivery_fee
+    dispatch_amount = order.delivery.amount_due_dispatch
+
+    await producer.publish_message(
+        service="wallet",
+        operation="update_wallet",
+        payload={
+            "wallet_id": str(order.delivery.dispatch_id),
+            "balance_change": str(dispatch_amount),
+            "escrow_change": str(-total_spent),
+            "idempotency_key": idempotency_key,
+            "details": {
+                "order_id": str(order.id),
+                "operation": "dispatch_settlement",
+                "order_number": order.order_number,
+            },
+        },
+    )
+    redis_client.setex(f"idempotency:{idempotency_key}", 86400, "1")
 async def _package_settlement(order: Order):
     """
-    Process wallet settlements for package delivery with retries and failure handling.
-    All wallet operations are atomic and must either all succeed or all fail.
-
-    Args:
-        order: Order instance with loaded delivery relationship
-
-    Raises:
-        HTTPException: If wallet operations fail after retries
+    1. Move money from dispatch escrow → dispatch balance
+    2. ALWAYS clear the sender’s escrow (idempotent on wallet side)
     """
-    # Idempotency key to prevent duplicate processing
-    idempotency_key = f"package_settlement:{order.id}:{order.delivery.id}"
-    cache_key = f"idempotency:{idempotency_key}"
-    
-    # Check if already processed
-    if redis_client.get(cache_key):
-        logger.info(f"Package settlement for order {order.id} already processed. Skipping.")
-        return
+    # ---- 1. Dispatch settlement (idempotent) ----
+    dispatch_key = f"dispatch_settlement:{order.id}:{order.delivery.id}"
+    if redis_client.get(f"idempotency:{dispatch_key}"):
+        logger.info(f"Dispatch settlement already done for order {order.id}")
+    else:
+        await _settle_dispatch(order, dispatch_key)
 
-    MAX_RETRIES = 3
-    retry_count = 0
-    settlement_succeeded = False
-
-    while retry_count < MAX_RETRIES and not settlement_succeeded:
-        try:
-            # Calculate amounts
-            dispatch_amount = order.delivery.amount_due_dispatch
-            total_spent = order.delivery.delivery_fee
-
-            # Validate amounts
-            if dispatch_amount < 0 or total_spent < 0:
-                raise ValueError("Settlement amounts cannot be negative")
-            if dispatch_amount > total_spent:
-                raise ValueError("Dispatch amount cannot exceed total fee")
-
-            # 1. Update dispatch company wallet - move from escrow to balance
-            await producer.publish_message(
-                service="wallet",
-                operation="update_wallet",
-                payload={
-                    "wallet_id": str(order.delivery.dispatch_id),
-                    "balance_change": str(dispatch_amount),
-                    "escrow_change": str(-total_spent),
-                    "idempotency_key": idempotency_key,
-                    "details": {
-                        "order_id": str(order.id),
-                        "operation": "package_settlement",
-                        "order_number": order.order_number,
-                    },
-                },
-            )
-
-            # 2. Update sender wallet - clear escrow
-            await producer.publish_message(
-                service="wallet",
-                operation="update_wallet",
-                payload={
-                    "wallet_id": str(order.owner_id),
-                    "tx_ref": str(order.tx_ref),
-                    "balance_change": "0",
-                    "escrow_change": str(-total_spent),
-                    "idempotency_key": idempotency_key,
-                    "details": {
-                        "order_id": str(order.id),
-                        "operation": "package_settlement",
-                        "order_number": order.order_number,
-                    },
-                },
-            )
-
-            # 3. Record settlement transaction for audit
-            await producer.publish_message(
-                service="wallet",
-                operation="create_transaction",
-                payload={
-                    "wallet_id": str(order.delivery.dispatch_id),
-                    "tx_ref": str(uuid.uuid4()),
-                    "amount": str(dispatch_amount),
-                    "transaction_type": TransactionType.USER_TO_USER,
-                    "transaction_direction": TransactionDirection.CREDIT,
-                    "payment_status": PaymentStatus.PAID,
-                    "payment_method": PaymentMethod.ESCROW_SETTLEMENT,
-                    "from_user": f"Order #{order.order_number}",
-                    "idempotency_key": idempotency_key,
-                    "details": {
-                        "order_id": str(order.id),
-                        "delivery_id": str(order.delivery.id),
-                        "settlement_type": "package_delivery",
-                    },
-                },
-            )
-
-            # Set idempotency marker (expires after 24 hours)
-            redis_client.setex(cache_key, 86400, "1")
-            
-            settlement_succeeded = True
-            logger.info(
-                f"Package settlement completed for order {order.id}: "
-                f"dispatch_amount={dispatch_amount}, total_spent={total_spent}"
-            )
-
-        except Exception as e:
-            retry_count += 1
-            logger.error(
-                f"Package settlement attempt {retry_count} failed for order {order.id}: {str(e)}",
-                exc_info=True,
-            )
-            if retry_count >= MAX_RETRIES:
-                raise HTTPException(
-                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                    detail=f"Failed to process package settlement after {MAX_RETRIES} attempts: {str(e)}",
-                )
-
+    # ---- 2. Sender escrow clear (always run – wallet service is idempotent) ----
+    sender_key = f"sender_escrow_clear:{order.id}"
+    await _clear_sender_escrow(order, sender_key)
 
 async def customer_confirm_order_received(
     db: AsyncSession, order_id: UUID, current_user: User
