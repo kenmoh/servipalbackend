@@ -3766,7 +3766,7 @@ async def assign_rider_to_existing_delivery_order(
     if rider_token:
         await send_push_notification(
             tokens=[rider_token],
-            title="New Order.
+            title="New Order."
             message=(
                 f"You have a new order."
             ),
