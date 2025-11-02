@@ -4099,7 +4099,7 @@ async def _package_settlement(order: Order):
                     "wallet_id": str(order.delivery.dispatch_id),
                     "tx_ref": str(uuid.uuid4()),
                     "amount": str(dispatch_amount),
-                    "transaction_type": TransactionType.SETTLEMENT,
+                    "transaction_type": TransactionType.USER_TO_USER,
                     "transaction_direction": TransactionDirection.CREDIT,
                     "payment_status": PaymentStatus.PAID,
                     "payment_method": PaymentMethod.ESCROW_SETTLEMENT,
@@ -4838,6 +4838,7 @@ async def rider_mark_package_delivered(
         # Invalidate caches
         try:
             _invalidate_delivery_caches(delivery, current_user)
+            _invalidate_pickup_order_caches(delivery.order, current_user)
         except Exception as e:
             logger.error(
                 f"Failed to invalidate caches for delivery {delivery_id}: {str(e)}",
