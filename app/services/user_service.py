@@ -1003,6 +1003,112 @@ async def get_user_with_profile(db: AsyncSession, user_id: UUID) -> ProfileSchem
 # <<<<< --------- GET USER BY FOOD CATEGORY ---------- >>>>>
 
 async def get_restaurant_vendors(
+    db: AsyncSession, category_id: UUID | None = None, lat: float = None, lng: float = None
+) -> List[VendorUserResponse]:
+    cache_key = f"restaurants:{category_id if category_id else 'all'}:{lat}:{lng}"
+    cached_restaurants = redis_client.get(cache_key)
+    if cached_restaurants:
+        data = json.loads(cached_restaurants)
+        return data
+
+    point = from_shape(Point(lng, lat), srid=4326) if lat and lng else None
+
+    # Review stats subquery (for ORDER type reviews)
+    review_stats_subq = (
+        select(
+            Order.vendor_id.label("vendor_id"),
+            func.avg(Review.rating).label("average_rating"),
+            func.count(Review.id).label("review_count"),
+        )
+        .join(Review, Review.order_id == Order.id)
+        .where(Review.review_type == ReviewType.ORDER)
+        .group_by(Order.vendor_id)
+        .subquery()
+    )
+
+    # Main query
+    stmt = (
+        select(
+            User,
+            Profile,
+            ProfileImage,
+            func.coalesce(review_stats_subq.c.average_rating, 0).label("avg_rating"),
+            func.coalesce(review_stats_subq.c.review_count, 0).label("review_count"),
+        )
+        .join(Profile, Profile.user_id == User.id)
+        .outerjoin(ProfileImage, ProfileImage.profile_id == User.id)
+        .outerjoin(review_stats_subq, review_stats_subq.c.vendor_id == User.id)
+        .where(User.user_type == UserType.RESTAURANT_VENDOR)
+    )
+
+    # Add distance filter if coordinates provided
+    if point:
+        stmt = stmt.add_columns(
+            func.ST_Distance(User.location_coordinates, point).label("distance_meters")
+        ).where(func.ST_DWithin(User.location_coordinates, point, 100_000))
+    else:
+        stmt = stmt.add_columns(func.literal(0).label("distance_meters"))
+
+    # If category_id is provided, filter vendors to only those with items in that category
+    if category_id:
+        vendors_with_category_items = (
+            select(Item.user_id)
+            .where(
+                and_(Item.item_type == ItemType.FOOD, Item.category_id == category_id)
+            )
+            .distinct()
+            .subquery()
+        )
+        stmt = stmt.join(
+            vendors_with_category_items,
+            vendors_with_category_items.c.user_id == User.id,
+        )
+
+    if point:
+        stmt = stmt.order_by("distance_meters")
+    else:
+        stmt = stmt.order_by(User.created_at.desc())
+
+    result = await db.execute(stmt)
+    rows = result.all()
+
+    restaurants_list = []
+    for user, profile, image, avg_rating, review_count, distance_meters in rows:
+        restaurant_data = {
+            "id": str(user.id),
+            "company_name": profile.business_name or "",
+            "email": user.email,
+            "phone_number": profile.phone_number,
+            "profile_image": image.profile_image_url if image else None,
+            "location": profile.business_address,
+            "can_pickup_and_dropoff": profile.can_pickup_and_dropoff or None,
+            "backdrop_image_url": image.backdrop_image_url if image else None,
+            "opening_hour": (
+                profile.opening_hours.strftime("%H:%M:%S")
+                if profile.opening_hours
+                else None
+            ),
+            "closing_hour": (
+                profile.closing_hours.strftime("%H:%M:%S")
+                if profile.closing_hours
+                else None
+            ),
+            "rating": {
+                "average_rating": str(round(float(avg_rating or 0), 2)),
+                "number_of_reviews": review_count or 0,
+            },
+            "distance": round(float(distance_meters) / 1000, 2) if distance_meters else 0,
+        }
+        restaurants_list.append(restaurant_data)
+
+    restaurants_dict = restaurants_list
+    if restaurants_dict:
+        redis_client.set(cache_key, json.dumps(restaurants_dict, default=str), ex=300)
+
+    return restaurants_list
+
+
+async def get_restaurant_vendors_old(
     db: AsyncSession,
     current_user: User,
     category_id: UUID | None = None,
