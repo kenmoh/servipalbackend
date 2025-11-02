@@ -435,6 +435,8 @@ async def create_package_order(
         # Commit the outer transaction
         await db.commit()
 
+
+
         # Invalidate caches after successful commit
         await _invalidate_package_order_caches(order_data, delivery_data, current_user)
 
@@ -452,6 +454,20 @@ async def create_package_order(
 
         delivery_stmt = select(Delivery).where(Delivery.id == delivery_data.id)
         delivery = (await db.execute(delivery_stmt)).scalar_one()
+
+        rider_token = await get_user_notification_token(
+                db=db, user_id=delivery.rider_id
+            )
+            if rider_token:
+                await send_push_notification(
+                    tokens=[rider_token],
+                    title="New order",
+                    message=(
+                        f"You have a new order."
+                        
+                    ),
+                    navigate_to="/delivery/orders",
+                )
 
         # Broadcast the new order
         await ws_service.broadcast_new_order({"order_id": str(order.id)})
@@ -3744,6 +3760,18 @@ async def assign_rider_to_existing_delivery_order(
     )
 
     await db.commit()
+    rider_token = await get_user_notification_token(
+                db=db, user_id=rider.user_id
+            )
+        if rider_token:
+            await send_push_notification(
+                tokens=[rider_token],
+                title="New Order.
+                message=(
+                    f"You have a new order."
+                ),
+                navigate_to="/delivery/orders",
+            )
     await _invalidate_package_order_caches()
 
 
