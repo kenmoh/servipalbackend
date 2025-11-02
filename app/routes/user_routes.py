@@ -187,7 +187,7 @@ async def get_restaurants(
     lat: float | None = None,
     lng: float | None = None,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+   
 ) -> list[VendorUserResponse]:
     """
     Get  all restaurant users, optionally filtered by category.
@@ -195,7 +195,7 @@ async def get_restaurants(
     try:
         return await user_service.get_restaurant_vendors(
             db=db,
-            current_user=current_user,
+           
             category_id=category_id,
             lat=lat,
             lng=lng,

@@ -81,6 +81,23 @@ logger = setup_logger()
 ALL_DELIVERY = "orders"
 
 
+"""
+Let's do someting critical as it's financial issue. 
+In the rider_accept_booking function, 
+when the rider accept booking, 
+it first update the the escrow_balance of t
+he dispatch company with delivery 
+fee(commission is deducted later when the sender mark received)
+using this _acceptance_wallet_update. rigt now this part of the 
+error is thrown Failed to process package escrow update after {MAX_RETRIES} 
+attempts: {str(e)} and the wallet get updated with the total funds in the sender
+escrow instead of the fund/delivery fee for that order. each time the user click
+accept booking, the escrow_balance for the dispatch keep doubling(which is supposed to be indempotent). 
+Create a new function to address the issue and keep the old for reference
+
+"""
+
+
 async def get_order_by_id(
     order_id: UUID,
     db: AsyncSession,
@@ -2598,6 +2615,12 @@ async def _validate_delivery_acceptance(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Invalid user",
         )
+    
+    if order.delivery.delivery_status != DeliveryStatus.PENDING:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="This delivery has already been accepted or is no longer available.",
+        )
 
     order.order_status = order_status
     order.delivery.delivery_status = delivery_status
@@ -2795,9 +2818,10 @@ async def rider_accept_booking(
         )
         await db.commit()
 
+        # Use the fixed version to prevent escrow doubling
         await _acceptance_wallet_update(order)
 
-        _invalidate_order_caches()
+        _invalidate_order_caches(order=order, current_user=current_user)
         redis_client.delete(f"order_by_id:{order_id}")
 
         return DeliveryStatusUpdateSchema(
@@ -2821,8 +2845,95 @@ async def rider_accept_booking(
 
 async def _acceptance_wallet_update(order: Order):
     """
+    Process wallet settlements for package delivery with idempotency.
+    
+    At acceptance stage: Put FULL delivery_fee into dispatch escrow
+    At received stage: Move amount_due_dispatch to balance, remove full delivery_fee from escrow
+
+    Critical: Added idempotency check to prevent double escrow updates.
+
+    Args:
+        order: Order instance with loaded delivery relationship
+
+    Raises:
+        HTTPException: If wallet operations fail after retries
+    """
+    MAX_RETRIES = 3
+    retry_count = 0
+    settlement_succeeded = False
+    
+    # Idempotency key to prevent duplicate processing
+    idempotency_key = f"acceptance_escrow:{order.id}:{order.delivery.id}"
+    cache_key = f"idempotency:{idempotency_key}"
+    
+    # Check if already processed
+    if redis_client.get(cache_key):
+        logger.info(f"Acceptance escrow for order {order.id} already processed. Skipping.")
+        return
+
+    while retry_count < MAX_RETRIES and not settlement_succeeded:
+        try:
+            # Calculate amounts
+            dispatch_amount = order.delivery.amount_due_dispatch
+            delivery_fee = order.delivery.delivery_fee
+
+            # Validate amounts
+            if dispatch_amount < 0 or delivery_fee < 0:
+                raise ValueError("Settlement amounts cannot be negative")
+            if dispatch_amount > delivery_fee:
+                raise ValueError("Dispatch amount cannot exceed delivery fee")
+
+            # Update dispatch company wallet - put FULL delivery_fee into escrow
+            dispatch_result = await producer.publish_message(
+                service="wallet",
+                operation="update_wallet",
+                payload={
+                    "wallet_id": str(order.delivery.dispatch_id),
+                    "balance_change": str(0),
+                    "escrow_change": str(delivery_fee),  # Full delivery fee to escrow
+                    "idempotency_key": idempotency_key,
+                    "details": {
+                        "order_id": str(order.id),
+                        "operation": "acceptance_escrow_allocation",
+                        "order_number": order.order_number,
+                        "delivery_fee": str(delivery_fee),
+                        "amount_due_dispatch": str(dispatch_amount),
+                    },
+                },
+            )
+
+            if not dispatch_result:
+                raise ValueError("Failed to update dispatch wallet")
+
+            # Set idempotency marker (expires after 24 hours)
+            redis_client.setex(cache_key, 86400, "1")
+            
+            settlement_succeeded = True
+            logger.info(
+                f"Package acceptance escrow completed for order {order.id}: "
+                f"delivery_fee={delivery_fee} added to dispatch escrow, amount_due_dispatch={dispatch_amount}"
+            )
+
+        except Exception as e:
+            retry_count += 1
+            logger.error(
+                f"Package escrow update attempt {retry_count} failed for order {order.id}: {str(e)}",
+                exc_info=True,
+            )
+            if retry_count >= MAX_RETRIES:
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail=f"Failed to process package escrow update after {MAX_RETRIES} attempts: {str(e)}",
+                )
+
+
+async def _acceptance_wallet_update_old(order: Order):
+    """
+    OLD VERSION - KEPT FOR REFERENCE
     Process wallet settlements for package delivery with retries and failure handling.
-    All wallet operations are atomic and must either all succeed or all fail.
+    
+    ISSUE: This function lacks idempotency checks, causing escrow balance to double 
+    when called multiple times for the same order acceptance.
 
     Args:
         order: Order instance with loaded delivery relationship
@@ -2846,14 +2957,15 @@ async def _acceptance_wallet_update(order: Order):
             if dispatch_amount > total_spent:
                 raise ValueError("Dispatch amount cannot exceed total fee")
 
-            # 1. Update dispatch company wallet - move to escrow
+            # ISSUE: No idempotency check - this can be called multiple times
+            # Update dispatch company wallet - move to escrow
             dispatch_result = await producer.publish_message(
                 service="wallet",
                 operation="update_wallet",
                 payload={
                     "wallet_id": str(order.delivery.dispatch_id),
                     "balance_change": str(0),
-                    "escrow_change": str(total_spent),
+                    "escrow_change": str(total_spent),  # Full delivery fee to escrow
                     "details": {
                         "order_id": str(order.id),
                         "operation": "escrow_change",
@@ -4267,13 +4379,42 @@ async def _notify_order_completion(order: Order, db: AsyncSession):
         )
        
 
+# def _invalidate_order_caches():
+#     """
+#     Simple cache invalidation for order-related caches.
+#     Used when we don't have specific order/user context.
+#     """
+#     try:
+#         cache_keys = [
+#             ALL_DELIVERY,
+#             "paid_pending_deliveries", 
+#             "orders",
+#             "near_by_riders"
+#         ]
+#         redis_client.delete(*cache_keys)
+#     except Exception as e:
+#         logger.warning(f"Failed to invalidate some order caches: {str(e)}")
+
+
 def _invalidate_order_caches(order: Order, current_user: User):
-    redis_client.delete(f"user_related_orders:{current_user.id}")
-    redis_client.delete(f"user_related_orders:{order.vendor_id}")
-    redis_client.delete(f"user_related_orders:{order.owner_id}")
-    redis_client.delete(f"user_orders:{order.delivery.rider_id}")
-    redis_client.delete(f"user_orders:{order.delivery.dispatch_id}")
-    redis_client.delete(f"order_by_id:{order.id}")
+     
+    try:
+        cache_keys = [
+            ALL_DELIVERY,
+            "paid_pending_deliveries", 
+            "orders",
+            "near_by_riders"
+        ]
+        redis_client.delete(f"user_related_orders:{current_user.id}")
+        redis_client.delete(f"user_related_orders:{order.vendor_id}")
+        redis_client.delete(f"user_related_orders:{order.owner_id}")
+        redis_client.delete(f"user_orders:{order.delivery.rider_id}")
+        redis_client.delete(f"user_orders:{order.delivery.dispatch_id}")
+        redis_client.delete(f"order_by_id:{order.id}")
+        redis_client.delete(*cache_keys)
+    except Exception as e:
+        logger.warning(f"Failed to invalidate some order caches: {str(e)}")
+    
 
 
 async def sender_confirm_delivery_or_order_received(
