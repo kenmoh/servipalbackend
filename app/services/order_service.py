@@ -462,10 +462,7 @@ async def create_package_order(
             await send_push_notification(
                 tokens=[rider_token],
                 title="New order",
-                message=(
-                    f"You have a new order."
-                    
-                ),
+                message="You have a new order.",
                 navigate_to="/delivery/orders",
             )
 
@@ -3766,10 +3763,8 @@ async def assign_rider_to_existing_delivery_order(
     if rider_token:
         await send_push_notification(
             tokens=[rider_token],
-            title="New Order."
-            message=(
-                f"You have a new order."
-            ),
+            title="New Order.",
+            message="You have a new order.", 
             navigate_to="/delivery/orders",
         )
     await _invalidate_package_order_caches()
