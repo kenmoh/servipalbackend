@@ -2689,7 +2689,7 @@ async def _decline_delivery_order_and_update_db(
     db.add(order.delivery)
 
     await db.execute(
-        update(User.has_delivery).where(User.id == rider_id).values(has_delivery=False)
+        update(User).where(User.id == rider_id).values(has_delivery=False)
     )
 
 
@@ -3052,7 +3052,7 @@ async def assign_rider_to_existing_delivery_order(
     )
 
     await db.execute(
-        update(User.has_delivery).where(User.id == rider_id).values(has_delivery=True)
+        update(User).where(User.id == rider_id).values(has_delivery=True)
     )
 
     await db.commit()
@@ -3818,10 +3818,7 @@ async def sender_confirm_package_received(
             )
 
             distance_travelled = order.delivery.distance
-            await db.execute(update(User).where(User.id == order.delivery.rider_id).values(has_delivery=False))
-            await db.execute(update(Profile).where(Profile.user_id == order.delivery.rider_id).values(total_distance_travelled=Profile.total_distance_travelled + distance_travelled))
-            await db.commit()
-            
+                       
             try:
                 await _package_settlement(order)
             except Exception as e:
@@ -3857,10 +3854,12 @@ async def sender_confirm_package_received(
 
         # 6. Commit main transaction
         await db.execute(
-            update(User.has_delivery)
+            update(User)
             .where(User.id == order.delivery.rider_id)
             .values(has_delivery=False)
         )
+
+        await db.execute(update(Profile).where(Profile.user_id == order.delivery.rider_id).values(total_distance_travelled=Profile.total_distance_travelled + distance_travelled))
         await db.commit()
 
         # 7. Post-transaction operations (non-critical)
