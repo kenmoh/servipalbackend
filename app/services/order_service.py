@@ -4685,7 +4685,7 @@ async def sender_confirm_package_received(
                 settlement_message = "delivery"
 
         # 4. Create audit log (outside nested transaction)
-        distance_travelled = order.delivery.distance
+        distance_travelled = Decimal(f"{order.delivery.distance}")
         rider_id = order.delivery.rider_id
 
         
@@ -4733,7 +4733,7 @@ async def sender_confirm_package_received(
             profile = result.scalar_one_or_none()
 
             if profile:
-                profile.total_distance_travelled = (profile.total_distance_travelled or 0.0) + distance_travelled
+                profile.total_distance_travelled = Decimal(f"{profile.total_distance_travelled}" or Decimal('f{0.0}')) + distance_travelled
                 db.add(profile)
             else:
                 logger.warning(f"Profile not found for rider {rider_id}; cannot update distance.")
