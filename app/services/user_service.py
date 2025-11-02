@@ -1002,7 +1002,6 @@ async def get_user_with_profile(db: AsyncSession, user_id: UUID) -> ProfileSchem
 
 # <<<<< --------- GET USER BY FOOD CATEGORY ---------- >>>>>
 
-
 async def get_restaurant_vendors(
     db: AsyncSession,
     current_user: User,

@@ -346,7 +346,7 @@ async def _create_delivery_and_calculate_fees(
     delivery_insert_result = await db.execute(
         insert(Delivery)
         .values(delivery_values)
-        .returning(Delivery.id, Delivery.delivery_fee, Delivery.vendor_id, Delivery.rider_id)
+        .returning(Delivery.id, Delivery.delivery_fee, Delivery.vendor_id, Delivery.rider_id, Delivery.dispatch_id)
     )
     return delivery_insert_result.fetchone()
 
@@ -382,9 +382,7 @@ async def _invalidate_package_order_caches(
     redis_client.delete("paid_pending_deliveries")
     redis_client.delete(f"user_related_orders:{current_user.id}")
     redis_client.delete("orders")
-    if hasattr(delivery_data, "vendor_id"):
-        redis_client.delete(f"vendor_orders:{delivery_data.vendor_id}")
-
+    
 
 async def create_package_order(
     db: AsyncSession, data: PackageCreate, image: UploadFile, current_user: User
