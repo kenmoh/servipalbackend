@@ -4686,6 +4686,8 @@ async def sender_confirm_package_received(
 
         # 4. Create audit log (outside nested transaction)
         distance_travelled = order.delivery.distance
+        rider_id = order.delivery.rider_id
+
         
         await TransactionLogService.create_log(
             db=db,
@@ -4711,11 +4713,33 @@ async def sender_confirm_package_received(
         )
 
         # 5. Update rider status and profile
-        await db.execute(
-            update(User)
-            .where(User.id == order.delivery.rider_id)
-            .values(has_delivery=False)
-        )
+        # await db.execute(
+        #     update(User)
+        #     .where(User.id == order.delivery.rider_id)
+        #     .values(has_delivery=False)
+        # )
+
+        if rider_id:
+            # update has_delivery
+            await db.execute(
+                update(User)
+                .where(User.id == rider_id)
+                .values(has_delivery=False)
+            )
+
+            # safe profile update (load-and-mutate)
+            stmt = select(Profile).where(Profile.user_id == rider_id).with_for_update()
+            result = await db.execute(stmt)
+            profile = result.scalar_one_or_none()
+
+            if profile:
+                profile.total_distance_travelled = (profile.total_distance_travelled or 0.0) + distance_travelled
+                db.add(profile)
+            else:
+                logger.warning(f"Profile not found for rider {rider_id}; cannot update distance.")
+        else:
+            logger.warning(f"No rider_id on order {order.id}; skipping rider profile updates.")
+
 
         await db.execute(
             update(Profile)
