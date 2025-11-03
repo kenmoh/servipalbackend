@@ -457,37 +457,29 @@ async def get_active_user_count(db: AsyncSession, window_minutes: int = 10) -> i
 
 async def toggle_online_status(db: AsyncSession, current_user: User) -> bool:
     """
-    Toggle user online status - offline if online,
-
+    Toggle user online status - offline if online, online if offline
     Args:
         db: Database session
-
         current_user: Current authenticated user
-
     Returns:
-        Boolean indicating the new block status
+        Boolean indicating the new online status
     """
-
     result = await db.execute(select(User).where(User.id == current_user.id))
     user = result.scalar_one_or_none()
-
     if not user:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Invalid user"
         )
-
     if user.has_delivery:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN, detail="You have a pending delivery."
         )
-
     try:
-        # Toggle the block status
+        # Toggle the online status
         user.is_online = not user.is_online
-        db.commit()
-
+        await db.commit() 
+        await db.refresh(user)
         return user.is_online
-
     except Exception as e:
         await db.rollback()
         logger.error(
