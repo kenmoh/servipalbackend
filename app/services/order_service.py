@@ -3347,7 +3347,7 @@ async def assign_rider_to_existing_delivery_order(
     db: AsyncSession, 
     delivery_id: UUID, 
     rider_id: UUID
-):
+) DeliveryStatusUpdateSchema:
     # --- 1. Load delivery + order ---
     delivery_stmt = (
         select(Delivery)
@@ -3392,6 +3392,8 @@ async def assign_rider_to_existing_delivery_order(
 
         redis_client.delete("near_by_riders")
         redis_client.delete(f"order_by_id:{delivery.order.id}")
+
+        return DeliveryStatusUpdateSchema(order_status=delivery.order.order_status, delivery_status=delivery.delivery_status)
     except Exception as e:
         logger.error(f'Error assigning a rider {e}')
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Error assigning a rider")
