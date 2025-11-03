@@ -1904,15 +1904,19 @@ async def _sender_cancel_delivery(
                 )
 
             rider_id = order.delivery.rider_id
-                    
+            dispatch_id = order.delivery.dispatch_id
+
             # Update order and delivery statuses
             order.order_status = OrderStatus.CANCELLED
             order.delivery.delivery_status = DeliveryStatus.CANCELLED
             order.order_payment_status = PaymentStatus.CANCELLED
             order.cancel_reason = reason
+
+            # Clear rider/dispatch assignments
             order.delivery.rider_id = None
             order.delivery.dispatch_id = None
             order.delivery.rider_phone_number = None
+          
 
             await db.execute(update(User).where(User.id==rider_id).values(User.has_delivery==False))
             
