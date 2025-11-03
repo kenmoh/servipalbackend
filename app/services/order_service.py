@@ -1542,6 +1542,7 @@ async def _cancel_delivery_validation(order: Order, current_user: User):
         )
 
 
+
 async def _order_to_cancel(db: AsyncSession, order_id: UUID) -> Order:
     """
     Fetch an order with all related data needed for cancellation.
@@ -1552,7 +1553,7 @@ async def _order_to_cancel(db: AsyncSession, order_id: UUID) -> Order:
         order_id: UUID of the order to fetch
 
     Returns:
-        Order with loaded relationships
+        Order with loaded relationships: delivery → sender, rider
 
     Raises:
         HTTPException: If order not found or database error occurs
@@ -1562,33 +1563,33 @@ async def _order_to_cancel(db: AsyncSession, order_id: UUID) -> Order:
             select(Order)
             .where(Order.id == order_id)
             .options(
-                selectinload(Order.delivery),
-                selectinload(Order.owner).selectinload(User.wallet),
-                selectinload(Order.vendor).selectinload(User.wallet),
-                joinedload(Order.owner).joinedload(User.profile),
-                joinedload(Order.vendor).joinedload(User.profile),
+                selectinload(Order.delivery).options(
+                    selectinload(Delivery.sender),   
+                    selectinload(Delivery.rider),  
+                )
             )
             .with_for_update()
         )
+
         order_result = await db.execute(order_stmt)
         order = order_result.unique().scalar_one_or_none()
 
         if not order:
             raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND, detail="Order not found"
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Order not found"
             )
 
-        # Validate order has required relationships loaded
         if not order.delivery:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Order has no associated delivery",
+                detail="Order has no associated delivery"
             )
 
-        if not (order.owner and order.vendor):
+        if not order.delivery.sender or not order.delivery.rider:
             raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Order is missing required relationships",
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Delivery is missing sender or rider"
             )
 
         return order
@@ -1599,9 +1600,8 @@ async def _order_to_cancel(db: AsyncSession, order_id: UUID) -> Order:
         logger.error(f"Error fetching order {order_id}: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to retrieve order: {str(e)}",
+            detail="Failed to retrieve order"
         )
-
 
 async def _rider_cancel_delivery(
     order: Order, db: AsyncSession, current_user: User, reason: str
@@ -1747,7 +1747,7 @@ async def _rider_cancel_delivery(
             logger.warning(
                 f"Failed to send cancellation notifications for order {order.id}: {str(e)}"
             )
-    
+
 
         
         return DeliveryStatusUpdateSchema(
