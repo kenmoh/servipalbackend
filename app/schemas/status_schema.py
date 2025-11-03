@@ -37,7 +37,7 @@ class DeliveryStatus(str, Enum):
     PENDING: str = "pending"  # Default
     DELIVERED: str = "delivered"  # Rider/Dispatch ops
     RECEIVED: str = "received"  # Sender ops
-    CANCELLED: str = "canceled"
+    CANCELLED: str = "cancelled"
     PICKED_UP: str = "picked-up"
 
 
@@ -46,7 +46,7 @@ class OrderStatus(str, Enum):
     PENDING: str = "pending"
     DELIVERED: str = "delivered"
     RECEIVED: str = "received"
-    CANCELLED: str = "canceled"
+    CANCELLED: str = "cancelled"
     REJECTED: str = "rejected"
     RECEIVED_REJECTED_PRODUCT: str = "received_rejected_product"
     VENDOR_PICKUP_LAUNDRY: str = "laundry_pickup"  # Vendor ops
@@ -63,7 +63,7 @@ class TransactionStatus(str, Enum):
     RECEIVED_REJECTED_ITEM = "received-rejected-item"
     DELIVERED = "delivered"
     REJECTED = "rejected"
-    CANCELED = "canceled"
+    CANCELED = "cancelled"
 
 
 class OrderType(str, Enum):
@@ -125,4 +125,4 @@ class ChangeUserType(BaseModel):
 class TransactionLogAction(str, Enum):
     RECEIVED: str = "received"
     REFUNDED: str = "refunded"
-    CANCELLED: str = "canceled"
+    CANCELLED: str = "cancelled"
