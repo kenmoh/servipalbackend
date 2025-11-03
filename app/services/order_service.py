@@ -1743,10 +1743,11 @@ async def _rider_cancel_delivery(
                     )
 
 
-            except Exception as e:
-                logger.warning(
-                    f"Failed to send cancellation notifications for order {order.id}: {str(e)}"
-                )
+        except Exception as e:
+            logger.warning(
+                f"Failed to send cancellation notifications for order {order.id}: {str(e)}"
+            )
+    
 
         
         return DeliveryStatusUpdateSchema(
