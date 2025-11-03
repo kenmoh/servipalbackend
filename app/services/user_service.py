@@ -1,6 +1,7 @@
 from datetime import datetime, timedelta, time
 from geoalchemy2.shape import from_shape
 from shapely.geometry import Point
+from geoalchemy2 import functions as geo_func
 from decimal import Decimal
 from app.schemas.item_schemas import FoodGroup, ItemType
 from app.models.models import AuditLog, Delivery, User, Item, RefreshToken, Session
@@ -253,39 +254,6 @@ async def get_rider_profile(db: AsyncSession, rider_id: UUID) -> RiderProfileSch
         redis_client.set(cache_key, json.dumps(riders_dict, default=str), ex=300)
 
     return rider_data
-
-
-# async def get_rider_profile(db: AsyncSession, user_id: UUID) -> RiderProfileSchema:
-#     cached_user = redis_client.get(f"rider_id:{user_id}")
-#     if cached_user:
-#         users_data = json.loads(cached_user)
-#         return RiderProfileSchema(**users_data)
-
-#     stmt = (
-#         select(User)
-#         .options(selectinload(User.profile).selectinload(Profile.profile_image))
-#         .where(User.id == user_id)
-#     )
-#     result = await db.execute(stmt)
-#     rider = result.scalar_one_or_none()
-
-#     rider_dict = {
-#         "profile_image_url": rider.profile.profile_image.profile_image_url,
-#         "full_name": rider.profile.full_name,
-#         "email": rider.email,
-#         "phone_number": rider.profile.phone_number,
-#         "business_address": rider.profile.business_address,
-#         "business_name": rider.profile.business_name,
-#         "bike_number": rider.profile.bike_number,
-#     }
-
-#     redis_client.set(
-#         f"rider_id:{rider.id}",
-#         json.dumps(rider_dict, default=str),
-#         ex=settings.REDIS_EX,
-#     )
-
-#     return RiderProfileSchema(**rider_dict)
 
 
 async def get_current_user_details(
@@ -1003,24 +971,26 @@ async def get_user_with_profile(db: AsyncSession, user_id: UUID) -> ProfileSchem
 
 
 # <<<<< --------- GET USER BY FOOD CATEGORY ---------- >>>>>
-
 async def get_restaurant_vendors(
-    db: AsyncSession, category_id: UUID | None = None, lat: float = None, lng: float = None
+    db: AsyncSession, 
+    category_id: UUID | None = None, 
+    lat: float = None, 
+    lng: float = None
 ) -> List[VendorUserResponse]:
-    cache_key = f"restaurants:{category_id if category_id else 'all'}:{lat}:{lng}"
-    cached_restaurants = redis_client.get(cache_key)
-    if cached_restaurants:
-        data = json.loads(cached_restaurants)
-        return data
+    
+    cache_key = f"restaurants:{category_id or 'all'}:{lat or 'none'}:{lng or 'none'}"
+    cached = redis_client.get(cache_key)
+    if cached:
+        return json.loads(cached)
 
     point = from_shape(Point(lng, lat), srid=4326) if lat and lng else None
 
-    # Review stats subquery (for ORDER type reviews)
+    # Review stats
     review_stats_subq = (
         select(
-            Order.vendor_id.label("vendor_id"),
-            func.avg(Review.rating).label("average_rating"),
-            func.count(Review.id).label("review_count"),
+            Order.vendor_id,
+            func.avg(Review.rating),
+            func.count(Review.id),
         )
         .join(Review, Review.order_id == Order.id)
         .where(Review.review_type == ReviewType.ORDER)
@@ -1028,14 +998,14 @@ async def get_restaurant_vendors(
         .subquery()
     )
 
-    # Main query
+    # Base query
     stmt = (
         select(
             User,
             Profile,
             ProfileImage,
-            func.coalesce(review_stats_subq.c.average_rating, 0).label("avg_rating"),
-            func.coalesce(review_stats_subq.c.review_count, 0).label("review_count"),
+            func.coalesce(review_stats_subq.c.average_rating, 0),
+            func.coalesce(review_stats_subq.c.review_count, 0),
         )
         .join(Profile, Profile.user_id == User.id)
         .outerjoin(ProfileImage, ProfileImage.profile_id == User.id)
@@ -1043,30 +1013,23 @@ async def get_restaurant_vendors(
         .where(User.user_type == UserType.RESTAURANT_VENDOR)
     )
 
-    # Add distance filter if coordinates provided
-    if point:
-        stmt = stmt.add_columns(
-            func.ST_Distance(User.location_coordinates, point).label("distance_meters")
-        ).where(func.ST_DWithin(User.location_coordinates, point, DISTANCE_IN_METERS))
-    else:
-        stmt = stmt.add_columns(func.literal(0).label("distance_meters"))
-
-    # If category_id is provided, filter vendors to only those with items in that category
+    # Category filter
     if category_id:
-        vendors_with_category_items = (
+        cat_vendors = (
             select(Item.user_id)
-            .where(
-                and_(Item.item_type == ItemType.FOOD, Item.category_id == category_id)
-            )
+            .where((Item.item_type == ItemType.FOOD) & (Item.category_id == category_id))
             .distinct()
             .subquery()
         )
-        stmt = stmt.join(
-            vendors_with_category_items,
-            vendors_with_category_items.c.user_id == User.id,
-        )
+        stmt = stmt.join(cat_vendors, cat_vendors.c.user_id == User.id)
 
+    # ONLY add distance if point exists (LIKE get_riders)
     if point:
+        stmt = stmt.add_columns(
+            func.ST_Distance(User.location_coordinates, point).label("distance_meters")
+        ).where(
+            func.ST_DWithin(User.location_coordinates, point, DISTANCE_IN_METERS)
+        )
         stmt = stmt.order_by("distance_meters")
     else:
         stmt = stmt.order_by(User.created_at.desc())
@@ -1074,40 +1037,33 @@ async def get_restaurant_vendors(
     result = await db.execute(stmt)
     rows = result.all()
 
-    restaurants_list = []
-    for user, profile, image, avg_rating, review_count, distance_meters in rows:
-        restaurant_data = {
+    restaurants = []
+    for row in rows:
+        user, profile, image, avg_rating, review_count = row[:5]
+        distance_meters = row[5] if point else 0  # Only exists if point
+
+        restaurants.append({
             "id": str(user.id),
             "company_name": profile.business_name or "",
             "email": user.email,
             "phone_number": profile.phone_number,
             "profile_image": image.profile_image_url if image else None,
             "location": profile.business_address,
-            "can_pickup_and_dropoff": profile.can_pickup_and_dropoff or None,
+            "can_pickup_and_dropoff": profile.can_pickup_and_dropoff,
             "backdrop_image_url": image.backdrop_image_url if image else None,
-            "opening_hour": (
-                profile.opening_hours.strftime("%H:%M:%S")
-                if profile.opening_hours
-                else None
-            ),
-            "closing_hour": (
-                profile.closing_hours.strftime("%H:%M:%S")
-                if profile.closing_hours
-                else None
-            ),
+            "opening_hour": profile.opening_hours.strftime("%H:%M:%S") if profile.opening_hours else None,
+            "closing_hour": profile.closing_hours.strftime("%H:%M:%S") if profile.closing_hours else None,
             "rating": {
                 "average_rating": str(round(float(avg_rating or 0), 2)),
-                "number_of_reviews": review_count or 0,
+                "number_of_reviews": int(review_count or 0),
             },
             "distance": round(float(distance_meters) / 1000, 2) if distance_meters else 0,
-        }
-        restaurants_list.append(restaurant_data)
+        })
 
-    restaurants_dict = restaurants_list
-    if restaurants_dict:
-        redis_client.set(cache_key, json.dumps(restaurants_dict, default=str), ex=300)
+    if restaurants:
+        redis_client.set(cache_key, json.dumps(restaurants, default=str), ex=300)
 
-    return restaurants_list
+    return restaurants
 
 
 async def get_restaurant_vendors_old(
@@ -1472,9 +1428,123 @@ async def upload_image_profile(
 
 
 # <<<<< --------- GET LAUNDRY SERVICE PROVIDERS ---------- >>>>>
+async def get_laundry_vendors(
+    db: AsyncSession,
+    lat: float = None,
+    lng: float = None
+) -> List[VendorUserResponse]:
+    """
+    Fetch laundry vendors with:
+    - Profile + image
+    - Laundry item count
+    - Avg rating + review count (from ORDER reviews)
+    - Distance (if lat/lng provided)
+    - Cached in Redis
+    """
+    # Dynamic cache key
+    cache_key = f"laundry_vendors:{lat or 'none'}:{lng or 'none'}"
+    cached = redis_client.get(cache_key)
+    if cached:
+        logger.info(f"Cache hit: {cache_key}")
+        return json.loads(cached)
+
+    point = from_shape(Point(lng, lat), srid=4326) if lat and lng else None
+
+    # 1. Review stats (from ORDER reviews)
+    review_stats_subq = (
+        select(
+            Order.vendor_id.label("vendor_id"),
+            func.avg(Review.rating).label("average_rating"),
+            func.count(Review.id).label("review_count"),
+        )
+        .join(Review, Review.order_id == Order.id)
+        .where(Review.review_type == ReviewType.ORDER)
+        .group_by(Order.vendor_id)
+        .subquery()
+    )
+
+    # 2. Laundry item count
+    item_count_subq = (
+        select(
+            Item.user_id.label("vendor_id"),
+            func.count(Item.id).label("total_items"),
+        )
+        .where(Item.item_type == ItemType.LAUNDRY)
+        .group_by(Item.user_id)
+        .subquery()
+    )
+
+    # 3. Main query
+    stmt = (
+        select(
+            User,
+            Profile,
+            ProfileImage,
+            func.coalesce(review_stats_subq.c.average_rating, 0).label("avg_rating"),
+            func.coalesce(review_stats_subq.c.review_count, 0).label("review_count"),
+            func.coalesce(item_count_subq.c.total_items, 0).label("total_items"),
+        )
+        .join(Profile, Profile.user_id == User.id)
+        .outerjoin(ProfileImage, ProfileImage.profile_id == User.id)
+        .outerjoin(review_stats_subq, review_stats_subq.c.vendor_id == User.id)
+        .outerjoin(item_count_subq, item_count_subq.c.vendor_id == User.id)
+        .where(User.user_type == UserType.LAUNDRY_VENDOR)
+    )
+
+    # 4. Add distance + filter if point exists
+    if point:
+        stmt = stmt.add_columns(
+            func.ST_Distance(User.location_coordinates, point).label("distance_meters")
+        ).where(
+            func.ST_DWithin(User.location_coordinates, point, DISTANCE_IN_METERS)
+        )
+        stmt = stmt.order_by("distance_meters")
+    else:
+        stmt = stmt.order_by(User.created_at.desc())
+
+    result = await db.execute(stmt)
+    rows = result.all()
+
+    vendors = []
+    for row in rows:
+        user, profile, image, avg_rating, review_count, total_items = row[:6]
+        distance_meters = row[6] if point else 0  # Only exists if point
+
+        # Skip if no laundry items
+        if total_items == 0:
+            continue
+
+        # Max 35km
+        distance_km = round(float(distance_meters) / 1000, 2) if distance_meters else 0
+        if point and distance_km > 35.0:
+            continue
+
+        vendors.append({
+            "id": str(user.id),
+            "company_name": profile.business_name or "",
+            "email": user.email,
+            "phone_number": profile.phone_number,
+            "profile_image": image.profile_image_url if image else None,
+            "location": profile.business_address,
+            "backdrop_image_url": image.backdrop_image_url if image else None,
+            "opening_hour": profile.opening_hours.strftime("%H:%M:%S") if profile.opening_hours else None,
+            "closing_hour": profile.closing_hours.strftime("%H:%M:%S") if profile.closing_hours else None,
+            "rating": {
+                "average_rating": str(round(float(avg_rating or 0), 2)),
+                "number_of_reviews": int(review_count or 0),
+            },
+            "total_items": int(total_items),
+            "distance": distance_km,
+        })
+
+    # Cache
+    if vendors:
+        redis_client.set(cache_key, json.dumps(vendors, default=str), ex=300)
+
+    return vendors
 
 
-async def get_users_by_laundry_services(
+async def get_users_by_laundry_services_old(
     db: AsyncSession, current_user: User
 ) -> list[VendorUserResponse]:
     """
