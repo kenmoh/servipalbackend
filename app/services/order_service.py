@@ -438,16 +438,16 @@ async def create_package_order(
         delivery_stmt = select(Delivery).where(Delivery.id == delivery_data.id)
         delivery = (await db.execute(delivery_stmt)).scalar_one()
 
-        rider_token = await get_user_notification_token(
-                db=db, user_id=delivery.rider_id
-            )
-        if rider_token:
-            await send_push_notification(
-                tokens=[rider_token],
-                title="New order",
-                message="You have a new order.",
-                navigate_to="/delivery/orders",
-            )
+        # rider_token = await get_user_notification_token(
+        #         db=db, user_id=delivery.rider_id
+        #     )
+        # if rider_token:
+        #     await send_push_notification(
+        #         tokens=[rider_token],
+        #         title="New order",
+        #         message="You have a new order.",
+        #         navigate_to="/delivery/orders",
+        #     )
 
 
         redis_client.delete("near_by_riders")
@@ -3364,7 +3364,7 @@ async def assign_rider_to_existing_delivery_order(
         delivery.delivery_status = DeliveryStatus.ASSIGNED
 
         # --- 4. Update Order status ---
-        delivery.order.order_status = OrderStatus.PENDING.
+        delivery.order.order_status = OrderStatus.PENDING
 
         # --- 5. Update Rider has_delivery ---
         await db.execute(
