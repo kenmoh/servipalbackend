@@ -2985,12 +2985,15 @@ async def _decline_delivery_order_and_update_db(
     order.delivery.rider_id = None
     order.delivery.dispatch_id = None
     order.delivery.rider_phone_number = None
+    order.order_status = OrderStatus.CANCELLED
+    order.delivery.delivery_status = DeliveryStatus.CANCELLED
+    rider.has_delivery = False
     db.add(order)
     db.add(order.delivery)
 
-    await db.execute(
-        update(User).where(User.id == rider_id).values(has_delivery=False)
-    )
+    # await db.execute(
+    #     update(User).where(User.id == rider_id).values(has_delivery=False)
+    # )
 
 
 async def _rider_pickup_and_update_db(
@@ -3298,13 +3301,12 @@ async def rider_decline_booking(
     Allows a rider to decline a delivery order.
     """
     try:
-        order = await _validate_delivery_acceptance(
-            db=db,
-            order_id=order_id,
-            current_user=current_user,
-            delivery_status=DeliveryStatus.CANCELLED,
-            order_status=OrderStatus.CANCELLED,
-        )
+        
+        order = await db.execute(select(Order).where(Order.id==order_id).options(selectinload(Order.delivery)))
+
+        if order.delivery.rider_id != current_user.id:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Invalid rider")
+
         await _decline_delivery_order_and_update_db(
             db=db, order=order, rider_id=current_user.id
         )
@@ -3316,10 +3318,10 @@ async def rider_decline_booking(
             delivery_status=order.delivery.delivery_status
         )
 
-    except HTTPException:  # Re-raise known exceptions
+    except HTTPException:  
         await db.rollback()
         raise
-    except Exception as e:  # Catch unexpected errors
+    except Exception as e: 
         await db.rollback()
         logger.error(
             f"Failed to accept delivery for order {order_id}: {e}", exc_info=True
