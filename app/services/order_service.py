@@ -2987,13 +2987,13 @@ async def _decline_delivery_order_and_update_db(
     order.delivery.rider_phone_number = None
     order.order_status = OrderStatus.CANCELLED
     order.delivery.delivery_status = DeliveryStatus.CANCELLED
-    rider.has_delivery = False
+    # rider.has_delivery = False
     db.add(order)
     db.add(order.delivery)
 
-    # await db.execute(
-    #     update(User).where(User.id == rider_id).values(has_delivery=False)
-    # )
+    await db.execute(
+        update(User).where(User.id == rider.id).values(has_delivery=False)
+    )
 
 
 async def _rider_pickup_and_update_db(
