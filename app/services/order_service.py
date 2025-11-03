@@ -81,23 +81,6 @@ logger = setup_logger()
 ALL_DELIVERY = "orders"
 
 
-"""
-Let's do someting critical as it's financial issue. 
-In the rider_accept_booking function, 
-when the rider accept booking, 
-it first update the the escrow_balance of t
-he dispatch company with delivery 
-fee(commission is deducted later when the sender mark received)
-using this _update_wallet_at_pickup. rigt now this part of the 
-error is thrown Failed to process package escrow update after {MAX_RETRIES} 
-attempts: {str(e)} and the wallet get updated with the total funds in the sender
-escrow instead of the fund/delivery fee for that order. each time the user click
-accept booking, the escrow_balance for the dispatch keep doubling(which is supposed to be indempotent). 
-Create a new function to address the issue and keep the old for reference
-
-"""
-
-
 async def get_order_by_id(
     order_id: UUID,
     db: AsyncSession,
@@ -466,6 +449,8 @@ async def create_package_order(
                 navigate_to="/delivery/orders",
             )
 
+
+        redis_client.delete("near_by_riders")
         # Broadcast the new order
         await ws_service.broadcast_new_order({"order_id": str(order.id)})
 
@@ -1433,7 +1418,7 @@ async def cancel_order(
 
 async def cancel_delivery(
     db: AsyncSession, current_user: User, reason: CancelOrderSchema
-):
+) -> DeliveryStatusUpdateSchema:
     """
     Cancel a delivery order with proper validation and transaction handling.
     This function handles both rider/dispatch cancellations (which re-list the delivery)
@@ -1520,7 +1505,6 @@ async def _cancel_delivery_validation(order: Order, current_user: User):
     # Check authorization
     allowed_user_ids = {
         order.delivery.rider_id,
-        order.delivery.dispatch_id,
         order.delivery.sender_id,
     }
 
@@ -1550,12 +1534,7 @@ async def _cancel_delivery_validation(order: Order, current_user: User):
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Riders can only cancel accepted deliveries.",
             )
-    elif current_user.user_type == UserType.DISPATCH:
-        if order.delivery.dispatch_id != current_user.id:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Dispatch companies can only cancel their own deliveries.",
-            )
+
     elif order.delivery.sender_id != current_user.id:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -1624,97 +1603,6 @@ async def _order_to_cancel(db: AsyncSession, order_id: UUID) -> Order:
         )
 
 
-# async def _rider_cancel_delivery(
-#     order: Order, db: AsyncSession, current_user: User, reason: str
-# ) -> DeliveryStatusUpdateSchema:
-#     """
-#     Handle cancellation of a delivery by a rider or dispatch company.
-#     This re-lists the delivery for other riders to accept.
-
-#     Args:
-#         order: The order being cancelled
-#         db: Database session
-#         current_user: The user cancelling the order
-#         reason: Cancellation reason
-
-#     Returns:
-#         DeliveryStatusUpdateSchema with updated statuses
-
-#     Raises:
-#         HTTPException: If validation fails or processing error occurs
-#     """
-#     try:
-#         # Store original IDs before clearing
-#         old_dispatch_id = order.delivery.dispatch_id
-#         old_rider_id = order.delivery.rider_id
-
-#         # Additional validations specific to rider/dispatch cancellation
-#         if current_user.user_type == UserType.RIDER:
-#             if order.delivery.rider_id != current_user.id:
-#                 raise HTTPException(
-#                     status_code=status.HTTP_403_FORBIDDEN,
-#                     detail="Riders can only cancel their own assigned deliveries.",
-#                 )
-#             if order.delivery.delivery_status != DeliveryStatus.ACCEPTED:
-#                 raise HTTPException(
-#                     status_code=status.HTTP_400_BAD_REQUEST,
-#                     detail="Riders can only cancel accepted deliveries.",
-#                 )
-
-#         elif current_user.user_type == UserType.DISPATCH:
-#             if order.delivery.dispatch_id != current_user.id:
-#                 raise HTTPException(
-#                     status_code=status.HTTP_403_FORBIDDEN,
-#                     detail="Dispatch companies can only cancel deliveries assigned to them.",
-#                 )
-#             if order.delivery.delivery_status not in [
-#                 DeliveryStatus.ACCEPTED,
-#                 DeliveryStatus.PENDING,
-#             ]:
-#                 raise HTTPException(
-#                     status_code=status.HTTP_400_BAD_REQUEST,
-#                     detail="Cannot cancel delivery in current status.",
-#                 )
-
-#         # Re-list the delivery
-#         async with db.begin_nested():
-#             order.order_status = OrderStatus.PENDING
-#             order.delivery.delivery_status = DeliveryStatus.PENDING
-#             order.delivery.rider_id = None
-#             order.delivery.dispatch_id = None
-#             order.delivery.rider_phone_number = None
-#             order.cancel_reason = reason
-
-#             # Track rider cancellations
-#             if current_user.user_type == UserType.RIDER:
-#                 current_user.order_cancel_count = (
-#                     current_user.order_cancel_count or 0
-#                 ) + 1
-
-#             await db.flush()
-
-#         # Process post-cancellation actions (notifications, refunds, etc.)
-#         return await _process_post_delivery_cancellation_rider(
-#             order=order,
-#             db=db,
-#             old_dispatch_id=old_dispatch_id,
-#             current_user=current_user,
-#             reason=reason,
-#         )
-
-#     except HTTPException:
-#         raise
-#     except Exception as e:
-#         logger.error(
-#             f"Error in rider/dispatch cancellation for order {order.id}: {str(e)}",
-#             exc_info=True,
-#         )
-#         raise HTTPException(
-#             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-#             detail=f"Failed to cancel delivery: {str(e)}",
-#         )
-
-
 async def _rider_cancel_delivery(
     order: Order, db: AsyncSession, current_user: User, reason: str
 ) -> DeliveryStatusUpdateSchema:
@@ -1770,7 +1658,7 @@ async def _rider_cancel_delivery(
                 payload={
                     "wallet_id": str(old_dispatch_id),
                     "balance_change": "0",
-                    "escrow_change": str(-order.delivery.delivery_fee),  # Remove full delivery fee
+                    "escrow_change": str(-order.delivery.delivery_fee),
                     "idempotency_key": f"cancel_pickup_escrow:{order.id}",
                     "details": {
                         "order_id": str(order.id),
@@ -1804,7 +1692,62 @@ async def _rider_cancel_delivery(
         # Rest of cancellation logic...
         await db.commit()
         
-        # ... (notifications, cache invalidation, etc.)
+        # Invalidate caches
+        cache_keys = [
+            f"user_orders:{order.owner_id}",
+            f"user_orders:{order.vendor_id}",
+            f"order_details:{order.id}",
+            f"delivery:{order.delivery.id}",
+            f"user_related_orders:{current_user.id}",
+            f"order_by_id:{order.id}",
+            "paid_pending_deliveries",
+            ALL_DELIVERY,
+            "orders",
+        ]
+            
+        if order.delivery.rider_id:
+            cache_keys.append(f"user_related_orders:{order.delivery.rider_id}")
+            cache_keys.append(f"user_orders:{order.delivery.rider_id}")
+        if order.delivery.dispatch_id:
+            cache_keys.append(f"user_related_orders:{order.delivery.dispatch_id}")
+            cache_keys.append(f"user_orders:{order.delivery.dispatch_id}")
+            
+        redis_client.delete(*cache_keys)
+
+        try:
+            # Notify sender (confirmation)
+            sender_token = await get_user_notification_token(
+                db=db, user_id=order.owner_id
+            )
+            if sender_token:
+                await send_push_notification(
+                    tokens=[sender_token],
+                    title="Delivery Cancelled",
+                    message=(
+                        f"We're sorry, but your rider cancelled order #{order.order_number}. Don't worry - the delivery fee has been credited to your wallet. You can select a new rider and pay to continue."
+                          ),
+                    navigate_to="/delivery/orders",
+                )
+
+            # Notify rider if exists and is different from sender
+            if order.delivery.rider_id and was_picked_up:
+                rider_token = await get_user_notification_token(
+                    db=db, user_id=order.delivery.rider_id
+                )
+                if rider_token:
+                    await send_push_notification(
+                        tokens=[rider_token],
+                        title="Delivery Cancelled",
+                        message=(f"You have cancelled order #{order.order_number}."),
+                        navigate_to="/delivery/orders",
+                    )
+
+
+            except Exception as e:
+                logger.warning(
+                    f"Failed to send cancellation notifications for order {order.id}: {str(e)}"
+                )
+
         
         return DeliveryStatusUpdateSchema(
             order_status=OrderStatus.PENDING, 
@@ -1910,8 +1853,8 @@ async def _sender_cancel_delivery(
                     operation="update_wallet",
                     payload={
                         "wallet_id": str(order.delivery.sender_id),
-                        "balance_change": str(order.delivery.delivery_fee),  # Add to BALANCE
-                        "escrow_change": str(-order.delivery.delivery_fee),  # Remove from ESCROW
+                        "balance_change": str(order.delivery.delivery_fee),  
+                        "escrow_change": str(-order.delivery.delivery_fee),
                         "idempotency_key": f"{idempotency_key}:sender_refund",
                         "details": {
                             "order_id": str(order.id),
@@ -2010,54 +1953,21 @@ async def _sender_cancel_delivery(
                         navigate_to="/delivery/orders",
                     )
 
-                # Notify vendor if exists and is different from sender
-                if order.vendor_id and order.vendor_id != order.owner_id:
-                    vendor_token = await get_user_notification_token(
-                        db=db, user_id=order.vendor_id
-                    )
-                    if vendor_token:
-                        await send_push_notification(
-                            tokens=[vendor_token],
-                            title="Delivery Cancelled",
-                            message=(
-                                f"Delivery for order #{order.order_number} has been cancelled by the sender."
-                            ),
-                            navigate_to="/delivery/orders",
-                        )
-
-                # Notify rider if assigned
-                if order.delivery.rider_id:
+                # Notify rider if exists and is different from sender
+                if order.delivery.rider_id and was_picked_up:
                     rider_token = await get_user_notification_token(
                         db=db, user_id=order.delivery.rider_id
                     )
                     if rider_token:
-                        rider_message = (
-                            f"The sender has cancelled delivery for order #{order.order_number}. "
-                            f"Please return the package to the sender."
-                            if was_picked_up
-                            else f"Delivery for order #{order.order_number} has been cancelled."
-                        )
                         await send_push_notification(
                             tokens=[rider_token],
                             title="Delivery Cancelled",
-                            message=rider_message,
-                            navigate_to="/delivery/orders",
-                        )
-
-                # Notify dispatch if assigned
-                if order.delivery.dispatch_id:
-                    dispatch_token = await get_user_notification_token(
-                        db=db, user_id=order.delivery.dispatch_id
-                    )
-                    if dispatch_token:
-                        await send_push_notification(
-                            tokens=[dispatch_token],
-                            title="Delivery Cancelled",
                             message=(
-                                f"Sender cancelled delivery for order #{order.order_number}."
+                               f"⚠️ The sender has cancelled order #{order.order_number}. Please return the item to the pickup address. Don't worry - you'll still receive your full payment."
                             ),
                             navigate_to="/delivery/orders",
                         )
+
 
             except Exception as e:
                 logger.warning(
@@ -2095,29 +2005,6 @@ async def _sender_cancel_delivery(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to cancel delivery: {str(e)}",
         )
-
-
-# async def _sender_cancel_delivery(
-#     order: Order, db: AsyncSession, current_user: User, reason: CancelOrderSchema
-# ):
-#     if order.delivery.sender_id != current_user.id:
-#         raise HTTPException(
-#             status_code=status.HTTP_403_FORBIDDEN, detail="Invalid user"
-#         )
-
-#     if not order.delivery:
-#         raise HTTPException(
-#             status_code=status.HTTP_400_BAD_REQUEST,
-#             detail="This order has no delivery to cancel.",
-#         )
-
-#     order.order_status = OrderStatus.DELIVERED
-#     order.delivery.delivery_status = DeliveryStatus.DELIVERED
-#     order.cancel_reason = reason.reason
-
-#     await db.commit()
-
-#     await _process_post_delivery_cancellation_sender(order)
 
 
 async def _process_post_delivery_cancellation_rider(
@@ -3124,24 +3011,6 @@ async def _dispatch_post_pickup_tasks(order: Order, rider: User, db: AsyncSessio
     # Set idempotency marker (expires after 24 hours as a safety measure)
     redis_client.setex(cache_key, 86400, "1")
 
-    # # 1. Publish wallet transaction events
-    # await producer.publish_message(
-    #     service="wallet",
-    #     operation="create_transaction",
-    #     payload={
-    #         "idempotency_key": f"{idempotency_key}:create_tx",
-    #         "wallet_id": str(order.delivery.dispatch_id),
-    #         "tx_ref": str(order.tx_ref),
-    #         "to_wallet_id": str(order.delivery.dispatch_id),
-    #         "amount": str(order.delivery.delivery_fee),
-    #         "transaction_type": TransactionType.USER_TO_USER,
-    #         "transaction_direction": TransactionDirection.CREDIT,
-    #         "payment_method": PaymentMethod.ESCROW_SETTLEMENT,
-    #         "payment_status": PaymentStatus.PAID,
-    #         "from_user": sender_profile.full_name or sender_profile.business_name,
-    #         "to_user": dispatch_profile.full_name or dispatch_profile.business_name,
-    #     },
-    # )
 
     # Update sender transaction
     await producer.publish_message(
@@ -3202,88 +3071,6 @@ async def _dispatch_post_pickup_tasks(order: Order, rider: User, db: AsyncSessio
         )
 
 
-# async def rider_accept_booking_fixed(
-#     db: AsyncSession, order_id: UUID, current_user: User
-# ) -> DeliveryStatusUpdateSchema:
-#     """
-#     FIXED VERSION - Allows a rider to accept a delivery order using an atomic transaction and decoupled post-processing.
-    
-#     Key fixes:
-#     1. Uses the improved _update_wallet_at_pickup_fixed function
-#     2. Better error handling and logging
-#     3. Proper idempotency to prevent double escrow updates
-#     """
-#     try:
-#         order = await _validate_delivery_acceptance(
-#             db,
-#             order_id,
-#             current_user,
-#             order_status=OrderStatus.ACCEPTED,
-#             delivery_status=DeliveryStatus.ACCEPTED,
-#         )
-#         await db.commit()
-
-#         # Use the fixed version to prevent escrow doubling
-#         await _update_wallet_at_pickup(order)
-
-#         _invalidate_order_caches(order=order, current_user=current_user)
-#         redis_client.delete(f"order_by_id:{order_id}")
-
-#         logger.info(f"Successfully processed rider acceptance for order {order_id}")
-
-#         return DeliveryStatusUpdateSchema(
-#             delivery_status=order.delivery.delivery_status
-#         )
-
-#     except HTTPException:  # Re-raise known exceptions
-#         await db.rollback()
-#         raise
-#     except Exception as e:  # Catch unexpected errors
-#         await db.rollback()
-#         logger.error(
-#             f"Failed to accept delivery for order {order_id}: {e}", exc_info=True
-#         )
-#         raise HTTPException(
-#             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-#             detail="An unexpected error occurred while accepting the delivery.",
-#         )
-
-
-# async def rider_accept_booking(
-#     db: AsyncSession, order_id: UUID, current_user: User
-# ) -> DeliveryStatusUpdateSchema:
-#     """
-#     Allows a rider to accept a delivery order using an atomic transaction and decoupled post-processing.
-#     """
-#     try:
-#         order = await _validate_delivery_acceptance(
-#             db,
-#             order_id,
-#             current_user,
-#             order_status=OrderStatus.ACCEPTED,
-#             delivery_status=DeliveryStatus.ACCEPTED,
-#         )
-#         await db.commit()
-
-#         _invalidate_order_caches(order=order, current_user=current_user)
-#         redis_client.delete(f"order_by_id:{order_id}")
-
-#         return DeliveryStatusUpdateSchema(
-#             delivery_status=order.delivery.delivery_status
-#         )
-
-#     except HTTPException:  # Re-raise known exceptions
-#         await db.rollback()
-#         raise
-#     except Exception as e:  # Catch unexpected errors
-#         await db.rollback()
-#         logger.error(
-#             f"Failed to accept delivery for order {order_id}: {e}", exc_info=True
-#         )
-#         raise HTTPException(
-#             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-#             detail="An unexpected error occurred while accepting the delivery.",
-#         )
 
 async def rider_accept_booking(
     db: AsyncSession, order_id: UUID, current_user: User
@@ -3354,218 +3141,7 @@ async def rider_accept_booking(
             detail="An unexpected error occurred while accepting the delivery.",
         )
 
-# async def _update_wallet_at_pickup(order: Order):
-#     """
-#     FIXED VERSION - Process wallet settlements for package delivery with proper idempotency.
-    
-#     At acceptance stage: Put FULL delivery_fee into dispatch escrow
-#     At received stage: Move amount_due_dispatch to balance, remove full delivery_fee from escrow
 
-#     Critical fixes:
-#     1. Proper idempotency check to prevent double escrow updates
-#     2. Better error handling that doesn't raise exceptions when operation already completed
-#     3. Validation of wallet operation success
-
-#     Args:
-#         order: Order instance with loaded delivery relationship
-
-#     Raises:
-#         HTTPException: Only if wallet operations genuinely fail after retries
-#     """
-#     # Idempotency key to prevent duplicate processing
-#     idempotency_key = f"acceptance_escrow:{order.id}:{order.delivery.id}"
-#     cache_key = f"idempotency:{idempotency_key}"
-    
-#     # Check if already processed - if so, return success without error
-#     if redis_client.get(cache_key):
-#         logger.info(f"Acceptance escrow for order {order.id} already processed. Operation is idempotent.")
-#         return True
-
-#     MAX_RETRIES = 3
-#     retry_count = 0
-    
-#     while retry_count < MAX_RETRIES:
-#         try:
-#             # Calculate amounts
-#             dispatch_amount = order.delivery.amount_due_dispatch
-#             delivery_fee = order.delivery.delivery_fee
-
-#             # Validate amounts
-#             if dispatch_amount < 0 or delivery_fee < 0:
-#                 logger.error(f"Invalid amounts for order {order.id}: dispatch_amount={dispatch_amount}, delivery_fee={delivery_fee}")
-#                 raise ValueError("Settlement amounts cannot be negative")
-            
-#             if dispatch_amount > delivery_fee:
-#                 logger.error(f"Invalid amounts for order {order.id}: dispatch_amount={dispatch_amount} > delivery_fee={delivery_fee}")
-#                 raise ValueError("Dispatch amount cannot exceed delivery fee")
-
-#             # Update dispatch company wallet - put FULL delivery_fee into escrow
-#             await producer.publish_message(
-#                 service="wallet",
-#                 operation="update_wallet",
-#                 payload={
-#                     "wallet_id": str(order.delivery.dispatch_id),
-#                     "balance_change": "0",
-#                     "escrow_change": str(delivery_fee),  # Full delivery fee to escrow
-#                     "idempotency_key": idempotency_key,
-#                     "details": {
-#                         "order_id": str(order.id),
-#                         "operation": "acceptance_escrow_allocation",
-#                         "order_number": order.order_number,
-#                         "delivery_fee": str(delivery_fee),
-#                         "amount_due_dispatch": str(dispatch_amount),
-#                     },
-#                 },
-#             )
-
-#             # Set idempotency marker (expires after 24 hours) - only after successful operation
-#             redis_client.setex(cache_key, 86400, "1")
-            
-#             logger.info(
-#                 f"Package acceptance escrow completed successfully for order {order.id}: "
-#                 f"delivery_fee={delivery_fee} added to dispatch escrow, amount_due_dispatch={dispatch_amount}"
-#             )
-#             return True
-
-#         except ValueError as ve:
-#             # Don't retry validation errors
-#             logger.error(f"Validation error for order {order.id}: {str(ve)}")
-#             raise HTTPException(
-#                 status_code=status.HTTP_400_BAD_REQUEST,
-#                 detail=f"Invalid order data: {str(ve)}",
-#             )
-            
-#         except Exception as e:
-#             retry_count += 1
-#             logger.error(
-#                 f"Package escrow update attempt {retry_count} failed for order {order.id}: {str(e)}",
-#                 exc_info=True,
-#             )
-            
-#             # If this is the last retry, raise the exception
-#             if retry_count >= MAX_RETRIES:
-#                 logger.error(
-#                     f"All {MAX_RETRIES} attempts failed for order {order.id}. Final error: {str(e)}"
-#                 )
-#                 raise HTTPException(
-#                     status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-#                     detail=f"Failed to process package escrow update after {MAX_RETRIES} attempts: {str(e)}",
-#                 )
-            
-#             # Wait before retry (exponential backoff)
-#             await asyncio.sleep(2 ** retry_count)
-
-#     # This should never be reached due to the logic above, but just in case
-#     raise HTTPException(
-#         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-#         detail="Unexpected error in escrow processing",
-#     )
-
-
-# async def _update_wallet_at_pickup(order: Order):
-#     """
-#     Process wallet settlements for package delivery at ACCEPTANCE stage.
-#     Put FULL delivery_fee into dispatch escrow.
-#     """
-#     idempotency_key = f"acceptance_escrow:{order.id}:{order.delivery.id}"
-#     cache_key = f"idempotency:{idempotency_key}"
-    
-#     # Atomic check-and-set using SETNX
-#     is_first_call = redis_client.setnx(cache_key, "processing")
-    
-#     if not is_first_call:
-#         existing_status = redis_client.get(cache_key)
-#         if existing_status == b"completed":
-#             logger.info(f"Acceptance escrow for order {order.id} already completed.")
-#             return True
-#         elif existing_status == b"processing":
-#             # Wait for concurrent process to complete
-#             for _ in range(10):
-#                 await asyncio.sleep(1)
-#                 status = redis_client.get(cache_key)
-#                 if status == b"completed":
-#                     logger.info(f"Acceptance escrow for order {order.id} completed by concurrent request.")
-#                     return True
-#             logger.warning(f"Timeout waiting for concurrent escrow processing for order {order.id}")
-#             return True
-    
-#     # Set expiry on the processing lock
-#     redis_client.expire(cache_key, 300)
-
-#     MAX_RETRIES = 3
-#     retry_count = 0
-    
-#     while retry_count < MAX_RETRIES:
-#         try:
-#             dispatch_amount = order.delivery.amount_due_dispatch
-#             delivery_fee = order.delivery.delivery_fee
-
-#             # Validate amounts
-#             if dispatch_amount < 0 or delivery_fee < 0:
-#                 redis_client.delete(cache_key)
-#                 raise ValueError("Settlement amounts cannot be negative")
-            
-#             if dispatch_amount > delivery_fee:
-#                 redis_client.delete(cache_key)
-#                 raise ValueError("Dispatch amount cannot exceed delivery fee")
-
-#             # Update dispatch company wallet - put FULL delivery_fee into escrow
-#             await producer.publish_message(
-#                 service="wallet",
-#                 operation="update_wallet",
-#                 payload={
-#                     "wallet_id": str(order.delivery.dispatch_id),
-#                     "balance_change": "0",
-#                     "escrow_change": str(delivery_fee),
-#                     "idempotency_key": idempotency_key,
-#                     "details": {
-#                         "order_id": str(order.id),
-#                         "operation": "acceptance_escrow_allocation",
-#                         "order_number": order.order_number,
-#                         "delivery_fee": str(delivery_fee),
-#                         "amount_due_dispatch": str(dispatch_amount),
-#                     },
-#                 },
-#             )
-
-#             # Mark as completed
-#             redis_client.setex(cache_key, 86400, "completed")
-            
-#             logger.info(
-#                 f"Package acceptance escrow completed for order {order.id}: "
-#                 f"delivery_fee={delivery_fee} added to dispatch escrow"
-#             )
-#             return True
-
-#         except ValueError as ve:
-#             redis_client.delete(cache_key)
-#             logger.error(f"Validation error for order {order.id}: {str(ve)}")
-#             raise HTTPException(
-#                 status_code=status.HTTP_400_BAD_REQUEST,
-#                 detail=f"Invalid order data: {str(ve)}",
-#             )
-            
-#         except Exception as e:
-#             retry_count += 1
-#             logger.error(
-#                 f"Package escrow update attempt {retry_count} failed for order {order.id}: {str(e)}",
-#                 exc_info=True,
-#             )
-            
-#             if retry_count >= MAX_RETRIES:
-#                 redis_client.delete(cache_key)
-#                 raise HTTPException(
-#                     status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-#                     detail=f"Failed to process package escrow update after {MAX_RETRIES} attempts",
-#                 )
-            
-#             await asyncio.sleep(2 ** retry_count)
-
-#     redis_client.delete(cache_key)
-#     raise HTTPException(
-#         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-#         detail="Unexpected error in escrow processing",
-#     )
 
 
 async def _update_wallet_at_pickup(order: Order):
@@ -3767,149 +3343,11 @@ async def assign_rider_to_existing_delivery_order(
             message="You have a new order.", 
             navigate_to="/delivery/orders",
         )
+
+    redis_client.delete("near_by_riders")
     await _invalidate_package_order_caches()
 
 
-# async def rider_accept_delivery_order(
-#     db: AsyncSession, order_id: UUID, current_user: User
-# ) -> DeliveryStatusUpdateSchema:
-#     """
-#     Allows a rider to accept a delivery order using an atomic transaction and decoupled post-processing.
-#     """
-#     try:
-#         # 1. Validate all preconditions
-#         order = await _validate_delivery_acceptance(db, order_id, current_user)
-#         dispatch_id = get_dispatch_id(current_user)
-
-#         # 2. Perform all database updates in a single atomic transaction
-#         await _assign_rider_and_update_db(db, order, current_user, dispatch_id)
-
-#         await db.commit()
-
-#         # 3. Dispatch post-acceptance tasks (financial, notifications, etc.) after commit
-#         # await _dispatch_post_acceptance_tasks(order, current_user, db)
-
-#         return DeliveryStatusUpdateSchema(delivery_status=order.delivery.delivery_status)
-
-#     except HTTPException: # Re-raise known exceptions
-#         await db.rollback()
-#         raise
-#     except Exception as e: # Catch unexpected errors
-#         await db.rollback()
-#         logger.error(f"Failed to accept delivery for order {order_id}: {e}", exc_info=True)
-#         raise HTTPException(
-#             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-#             detail="An unexpected error occurred while accepting the delivery.",
-#         )
-
-
-# async def rider_pickup_delivery_order(
-#     db: AsyncSession, order_id: UUID, current_user: User
-# ) -> DeliveryStatusUpdateSchema:
-#     """
-#     Allows a rider to pickup a delivery order from customer using an atomic transaction and decoupled post-processing.
-#     """
-#     try:
-#         order = await db.scalar(
-#             select(Order)
-#             .where(Order.id == order_id)
-#             .options(selectinload(Order.delivery))
-#             .with_for_update()
-#         )
-
-#         if current_user.id != order.delivery.rider_id:
-#             raise HTTPException(
-#                 status_code=status.HTTP_403_FORBIDDEN, detail="Invalid rider."
-#             )
-
-#         await _rider_pickup_and_update_db(
-#             db, order, current_user, dispatch_id=current_user.dispatcher_id
-#         )
-
-#         await db.commit()
-
-#         await _dispatch_post_pickup_tasks(order, current_user, db)
-
-#         return DeliveryStatusUpdateSchema(
-#             delivery_status=order.delivery.delivery_status
-#         )
-
-#     except HTTPException:  # Re-raise known exceptions
-#         await db.rollback()
-#         raise
-#     except Exception as e:  # Catch unexpected errors
-#         await db.rollback()
-#         logger.error(
-#             f"Failed to pickup delivery for order {order_id}: {e}", exc_info=True
-#         )
-#         raise HTTPException(
-#             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-#             detail="An unexpected error occurred while accepting the delivery.",
-#         )
-
-
-# async def rider_pickup_delivery_order(
-#     db: AsyncSession, order_id: UUID, current_user: User
-# ) -> DeliveryStatusUpdateSchema:
-#     """
-#     Allows a rider to pickup a delivery order from customer using an atomic transaction and decoupled post-processing.
-#     This function is idempotent - multiple calls with the same order will not create duplicate transactions.
-#     """
-#     try:
-#         order = await db.scalar(
-#             select(Order)
-#             .where(Order.id == order_id)
-#             .options(selectinload(Order.delivery))
-#             .with_for_update()
-#         )
-
-#         if not order:
-#             raise HTTPException(
-#                 status_code=status.HTTP_404_NOT_FOUND, detail="Order not found."
-#             )
-
-#         if current_user.id != order.delivery.rider_id:
-#             raise HTTPException(
-#                 status_code=status.HTTP_403_FORBIDDEN, detail="Invalid rider."
-#             )
-
-#         # Idempotency check: If already picked up, return current status without processing
-#         if order.delivery.delivery_status == DeliveryStatus.PICKED_UP:
-#             logger.info(
-#                 f"Order {order_id} already picked up. Returning current status."
-#             )
-#             return DeliveryStatusUpdateSchema(
-#                 delivery_status=order.delivery.delivery_status
-#             )
-
-#         await _rider_pickup_and_update_db(
-#             db, order, current_user, dispatch_id=current_user.dispatcher_id
-#         )
-#         await _update_wallet_at_pickup(order)
-#         await db.commit()
-
-#         # Only dispatch post-pickup tasks if we actually updated the status
-#         await _dispatch_post_pickup_tasks(order, current_user, db)
-#         _invalidate_order_caches(order, current_user)
-#         redis_client.delete(f"order_by_id:{order_id}")
-
-
-#         return DeliveryStatusUpdateSchema(
-#             delivery_status=order.delivery.delivery_status
-#         )
-
-#     except HTTPException:
-#         await db.rollback()
-#         raise
-#     except Exception as e:
-#         await db.rollback()
-#         logger.error(
-#             f"Failed to pickup delivery for order {order_id}: {e}", exc_info=True
-#         )
-#         raise HTTPException(
-#             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-#             detail="An unexpected error occurred while accepting the delivery.",
-#         )
 
 
 async def rider_pickup_delivery_order(
@@ -4105,138 +3543,6 @@ async def laundry_returned(
         )
 
     return DeliveryStatusUpdateSchema(order_status=order.order_status)
-
-
-async def sender_confirm_package_received_old(
-    db: AsyncSession, order_id: UUID, current_user: User
-) -> DeliveryStatusUpdateSchema:
-    result = await db.execute(
-        select(Order)
-        .where(Order.id == order_id)
-        .options(selectinload(Order.delivery))
-        .with_for_update()
-    )
-    order = result.scalar_one_or_none()
-
-    if not order:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Order not found."
-        )
-
-    if order.owner_id != current_user.id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="You are not allowed to perform this action.",
-        )
-
-    # Ensure tx_ref exists
-    if not order.tx_ref:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="No transaction reference found for this order.",
-        )
-
-    # Handle delivery orders
-    if not order.delivery:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="No delivery found for this order.",
-        )
-
-    if order.delivery.delivery_status != DeliveryStatus.DELIVERED:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Delivery is not yet completed.",
-        )
-
-    if order.delivery.delivery_status == DeliveryStatus.RECEIVED:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="You have already marked this delivery as received.",
-        )
-
-    dispatch_profile = await get_user_profile(order.delivery.dispatch_id, db=db)
-
-    total_spent = order.grand_total
-
-    to_user = dispatch_profile.full_name or dispatch_profile.business_name
-    try:
-        order.order_status = OrderStatus.RECEIVED
-        order.delivery.delivery_status = DeliveryStatus.RECEIVED
-        tx_ref = order.tx_ref
-
-        await db.commit()
-        await db.refresh(order)
-
-        await ws_service.broadcast_delivery_status_update(
-            delivery_id=order.delivery.id, new_status=order.delivery.delivery_status
-        )
-        await ws_service.broadcast_order_status_update(
-            order_id=order.id, new_status=order.order_status
-        )
-
-        rider_token = await get_user_notification_token(
-            db=db, user_id=order.delivery.rider_id
-        )
-
-        if rider_token:
-            await send_push_notification(
-                tokens=[rider_token],
-                title="Order Completed",
-                message=f"Congratulations! Your wallet has been updated.",
-                navigate_to="/(app)/delivery/orders",
-            )
-
-        # Update dispatch wallet (move from escrow to balance)
-
-        await producer.publish_message(
-            service="wallet",
-            operation="update_wallet",
-            payload={
-                "wallet_id": str(order.delivery.dispatch_id),
-                "balance_change": str(order.delivery.amount_due_dispatch),
-                "escrow_change": str(-order.delivery.amount_due_dispatch),
-            },
-        )
-
-        # Update sender wallet (move from escrow)
-        await producer.publish_message(
-            service="wallet",
-            operation="update_wallet",
-            payload={
-                "wallet_id": str(order.owner_id),
-                "tx_ref": str(tx_ref),
-                "balance_change": str(0),
-                "escrow_change": str(-total_spent),
-            },
-        )
-
-        # Update sender transaction
-        await producer.publish_message(
-            service="wallet",
-            operation="update_transaction",
-            payload={
-                "wallet_id": str(order.owner_id),
-                "tx_ref": str(order.tx_ref),
-                "to_user": to_user,
-            },
-        )
-
-        redis_client.delete(f"{ALL_DELIVERY}")
-        redis_client.delete("paid_pending_deliveries")
-        redis_client.delete(f"user_related_orders:{current_user.id}")
-        redis_client.delete(f"user_related_orders:{order.vendor_id}")
-        redis_client.delete(f"user_related_orders:{order.delivery.dispatch_id}")
-        redis_client.delete(f"user_related_orders:{order.delivery.rider_id}")
-
-        return DeliveryStatusUpdateSchema(
-            delivery_status=order.delivery.delivery_status,
-            order_status=order.order_status,
-        )
-
-    except Exception as e:
-        await db.rollback()
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
 
 async def _validate_delivery(order: Order, current_user: User):
@@ -4539,6 +3845,7 @@ def _invalidate_caches(order: Order, current_user: User):
             f"order_details:{order.id}",
             f"delivery:{order.delivery.id}",
             f"order_by_id:{order.id}",
+            f"near_by_riders",
         ]
 
         # Add vendor-related caches if exists
@@ -5015,145 +4322,6 @@ async def _process_cancelled_order_return_settlement(order: Order):
                     detail=f"Failed to process return settlement after {MAX_RETRIES} attempts: {str(e)}",
                 )
 
-# async def sender_confirm_package_received_still_working(
-#     db: AsyncSession, order_id: UUID, current_user: User
-# ) -> DeliveryStatusUpdateSchema:
-#     """
-#     Process package delivery confirmation with robust error handling and comprehensive logging.
-
-#     This function:
-#     1. Validates the delivery state and user authorization
-#     2. Updates order and delivery status
-#     3. Processes wallet settlements
-#     4. Sends notifications
-#     5. Invalidates caches
-#     6. Creates audit logs
-
-#     Args:
-#         db: Database session
-#         order_id: UUID of the order to confirm
-#         current_user: User confirming the delivery
-
-#     Returns:
-#         DeliveryStatusUpdateSchema with updated status
-
-#     Raises:
-#         HTTPException: With appropriate status code and detailed error message
-#     """
-#     try:
-#         # Start a transaction
-#         async with db.begin_nested():
-#             # 1. Fetch order with relationships
-#             result = await db.execute(
-#                 select(Order)
-#                 .where(Order.id == order_id)
-#                 .options(
-#                     selectinload(Order.delivery)
-#                     # .selectinload(Delivery.rider)
-#                     # .selectinload(User.profile),
-#                     # selectinload(Order.vendor).selectinload(User.profile),
-#                 )
-#                 .with_for_update()
-#             )
-#             order = result.scalar_one_or_none()
-
-#             # 2. Validate delivery state and authorization
-#             await _validate_delivery(order, current_user)
-
-#             # 3. Update delivery status
-#             await _update_delivery_status(
-#                 order=order,
-#                 db=db,
-#                 order_status=OrderStatus.RECEIVED,
-#                 delivery_status=DeliveryStatus.RECEIVED,
-#             )
-
-#             distance_travelled = order.delivery.distance
-                       
-#             try:
-#                 await _package_settlement(order)
-#             except Exception as e:
-#                 logger.error(
-#                     f"Settlement failed for order {order.id}: {str(e)}", exc_info=True
-#                 )
-#                 raise HTTPException(
-#                     status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-#                     detail="Failed to process payment settlement. Please contact support.",
-#                 )
-
-#         # 5. Create detailed audit log
-#         await TransactionLogService.create_log(
-#             db=db,
-#             vendor_id=current_user.id,
-#             order_id=order.id,
-#             amount=order.delivery.delivery_fee - order.delivery.amount_due_dispatch,
-#             action=TransactionLogAction.RECEIVED,
-#             status=order.order_payment_status,
-#             details={
-#                 "order_type": order.order_type,
-#                 "order_number": order.order_number,
-#                 "confirmed_by": current_user.profile.full_name
-#                 or current_user.profile.business_name,
-#                 "phone_number": current_user.profile.phone_number,
-#                 "delivery_fee": str(order.delivery.delivery_fee),
-#                 "amount_due_dispatch": str(order.delivery.amount_due_dispatch),
-#                 "dispatch_id": str(order.delivery.dispatch_id),
-#                 "rider_id": str(order.delivery.rider_id)
-#                 if order.delivery.rider_id
-#                 else None,
-#             },
-#         )
-
-#         # 6. Commit main transaction
-#         await db.execute(
-#             update(User)
-#             .where(User.id == order.delivery.rider_id)
-#             .values(has_delivery=False)
-#         )
-
-#         await db.execute(update(Profile).where(Profile.user_id == order.delivery.rider_id).values(total_distance_travelled=Profile.total_distance_travelled + distance_travelled))
-#         await db.commit()
-
-#         # 7. Post-transaction operations (non-critical)
-#         try:
-#             # Send notifications (non-blocking)
-#             await _send_notifications(order, db)
-
-#             # Invalidate caches (non-blocking)
-#             _invalidate_caches(order, current_user)
-
-#         except Exception as e:
-#             logger.warning(
-#                 f"Non-critical post-confirmation operations failed for order {order.id}: {str(e)}",
-#                 exc_info=True,
-#             )
-
-#         # 8. Log successful completion
-#         logger.info(
-#             f"Package delivery confirmation completed successfully for order {order.id}"
-#         )
-#         redis_client.delete(f"order_by_id:{order_id}")
-#         return DeliveryStatusUpdateSchema(
-#             delivery_status=order.delivery.delivery_status,
-#             order_status=order.order_status,
-#         )
-
-#     except HTTPException:
-#         await db.rollback()
-#         raise
-#     except Exception as e:
-#         await db.rollback()
-#         logger.error(
-#             f"Failed to confirm package received for order {order_id}: {str(e)}",
-#             exc_info=True,
-#         )
-#         raise HTTPException(
-#             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-#             detail=(
-#                 "An unexpected error occurred while confirming the package reception. "
-#                 "Please try again or contact support if the issue persists."
-#             ),
-#         )
 
 
 async def _order_settlement(order: Order):
@@ -5270,119 +4438,6 @@ async def _order_settlement(order: Order):
                 )
 
 
-# async def _package_settlement(order: Order):
-#     """
-#     Process wallet settlements for package delivery with retries and failure handling.
-#     All wallet operations are atomic and must either all succeed or all fail.
-
-#     Args:
-#         order: Order instance with loaded delivery relationship
-
-#     Raises:
-#         HTTPException: If wallet operations fail after retries
-#     """
-#     # Idempotency key to prevent duplicate processing
-#     idempotency_key = f"package_settlement:{order.id}:{order.delivery.id}"
-#     cache_key = f"idempotency:{idempotency_key}"
-    
-#     # Check if already processed
-#     if redis_client.get(cache_key):
-#         logger.info(f"Package settlement for order {order.id} already processed. Skipping.")
-#         return
-
-#     MAX_RETRIES = 3
-#     retry_count = 0
-#     settlement_succeeded = False
-
-#     while retry_count < MAX_RETRIES and not settlement_succeeded:
-#         try:
-#             # Calculate amounts
-#             dispatch_amount = order.delivery.amount_due_dispatch
-#             total_spent = order.delivery.delivery_fee
-
-#             # Validate amounts
-#             if dispatch_amount < 0 or total_spent < 0:
-#                 raise ValueError("Settlement amounts cannot be negative")
-#             if dispatch_amount > total_spent:
-#                 raise ValueError("Dispatch amount cannot exceed total fee")
-
-#             # 1. Update dispatch company wallet - move from escrow to balance
-#             await producer.publish_message(
-#                 service="wallet",
-#                 operation="update_wallet",
-#                 payload={
-#                     "wallet_id": str(order.delivery.dispatch_id),
-#                     "balance_change": str(dispatch_amount),
-#                     "escrow_change": str(-total_spent),
-#                     "idempotency_key": idempotency_key,
-#                     "details": {
-#                         "order_id": str(order.id),
-#                         "operation": "package_settlement",
-#                         "order_number": order.order_number,
-#                     },
-#                 },
-#             )
-
-#             # 2. Update sender wallet - clear escrow
-#             await producer.publish_message(
-#                 service="wallet",
-#                 operation="update_wallet",
-#                 payload={
-#                     "wallet_id": str(order.owner_id),
-#                     "tx_ref": str(order.tx_ref),
-#                     "balance_change": "0",
-#                     "escrow_change": str(-total_spent),
-#                     "idempotency_key": idempotency_key,
-#                     "details": {
-#                         "order_id": str(order.id),
-#                         "operation": "package_settlement",
-#                         "order_number": order.order_number,
-#                     },
-#                 },
-#             )
-
-#             # 3. Record settlement transaction for audit
-#             await producer.publish_message(
-#                 service="wallet",
-#                 operation="create_transaction",
-#                 payload={
-#                     "wallet_id": str(order.delivery.dispatch_id),
-#                     "tx_ref": str(uuid.uuid4()),
-#                     "amount": str(dispatch_amount),
-#                     "transaction_type": TransactionType.USER_TO_USER,
-#                     "transaction_direction": TransactionDirection.CREDIT,
-#                     "payment_status": PaymentStatus.PAID,
-#                     "payment_method": PaymentMethod.ESCROW_SETTLEMENT,
-#                     "from_user": f"Order #{order.order_number}",
-#                     "idempotency_key": idempotency_key,
-#                     "details": {
-#                         "order_id": str(order.id),
-#                         "delivery_id": str(order.delivery.id),
-#                         "settlement_type": "package_delivery",
-#                     },
-#                 },
-#             )
-
-#             # Set idempotency marker (expires after 24 hours)
-#             redis_client.setex(cache_key, 86400, "1")
-            
-#             settlement_succeeded = True
-#             logger.info(
-#                 f"Package settlement completed for order {order.id}: "
-#                 f"dispatch_amount={dispatch_amount}, total_spent={total_spent}"
-#             )
-
-#         except Exception as e:
-#             retry_count += 1
-#             logger.error(
-#                 f"Package settlement attempt {retry_count} failed for order {order.id}: {str(e)}",
-#                 exc_info=True,
-#             )
-#             if retry_count >= MAX_RETRIES:
-#                 raise HTTPException(
-#                     status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-#                     detail=f"Failed to process package settlement after {MAX_RETRIES} attempts: {str(e)}",
-#                 )
 
 async def _clear_sender_escrow(order: Order, idempotency_key: str):
     cache_key = f"idempotency:{idempotency_key}"
@@ -5722,21 +4777,6 @@ async def _notify_order_completion(order: Order, db: AsyncSession):
         )
        
 
-# def _invalidate_order_caches():
-#     """
-#     Simple cache invalidation for order-related caches.
-#     Used when we don't have specific order/user context.
-#     """
-#     try:
-#         cache_keys = [
-#             ALL_DELIVERY,
-#             "paid_pending_deliveries", 
-#             "orders",
-#             "near_by_riders"
-#         ]
-#         redis_client.delete(*cache_keys)
-#     except Exception as e:
-#         logger.warning(f"Failed to invalidate some order caches: {str(e)}")
 
 
 def _invalidate_order_caches(order: Order, current_user: User):
@@ -7025,61 +6065,7 @@ async def get_user_related_orders(
     return delivery_responses
 
 
-# async def get_user_related_orders(
-#     db: AsyncSession,
-#     user_id: UUID,
-# ) -> list[DeliveryResponse]:
-#     """
-#     Returns deliveries where the user is involved as:
-#       - order.owner_id
-#       - order.vendor_id
-#       - delivery.dispatch_id
-#       - delivery.rider_id
-#     """
-#     cache_key = f"user_related_orders:{user_id}"
-#     cached_orders = redis_client.get(cache_key)
-#     if cached_orders:
-#         return [DeliveryResponse(**d) for d in json.loads(cached_orders)]
 
-#     stmt = (
-#         select(Order)
-#         .outerjoin(
-#             Delivery
-#         )  # Using outerjoin to ensure we get orders even without deliveries
-#         .options(
-#             selectinload(Order.order_items).options(
-#                 joinedload(OrderItem.item).options(selectinload(Item.images))
-#             ),
-#             joinedload(Order.delivery),
-#             joinedload(Order.vendor).joinedload(User.profile),
-#         )
-#         .where(
-#             or_(
-#                 Order.owner_id == user_id,
-#                 Order.vendor_id == user_id,
-#                 and_(Delivery.id != None, Delivery.dispatch_id == user_id),
-#                 and_(Delivery.id != None, Delivery.rider_id == user_id),
-#             )
-#         )
-#         .where(
-#             Order.order_type.in_([OrderType.FOOD, OrderType.PACKAGE, OrderType.LAUNDRY])
-#         )
-#         .order_by(Order.updated_at.desc())
-#     )
-#     result = await db.execute(stmt)
-#     orders = result.unique().scalars().all()
-
-#     delivery_responses = [
-#         format_delivery_response(order=order, delivery=order.delivery) for order in orders
-#     ]
-
-#     redis_client.setex(
-#         cache_key,
-#        settings.REDIS_EX,
-#         json.dumps([d.model_dump() for d in delivery_responses], default=str),
-#     )
-
-#     return delivery_responses
 
 
 async def cancel_order_old(

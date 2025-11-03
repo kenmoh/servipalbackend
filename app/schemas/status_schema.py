@@ -83,6 +83,7 @@ class PaymentStatus(str, Enum):
     ESCROWED: str = "escrowed"
 
 
+
 class AccountStatus(str, Enum):
     PENDING: str = "pending"
     CONFIRMED: str = "confirmed"
@@ -107,7 +108,7 @@ class PaymentMethod(str, Enum):
     WALLET: str = "wallet"
     CARD: str = "card"
     BANK_TRANSFER: str = "bank_transfer"
-    SYSTEM_REFUND: str = "Refund"
+    SYSTEM_REFUND: str = "refund"
     ESCROW_SETTLEMENT: str = "escrow-settlement"
     FUND_REVERSAL: str = "reversal"
 
