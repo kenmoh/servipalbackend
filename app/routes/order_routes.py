@@ -410,7 +410,7 @@ async def admin_modify_delivery_status(
 
 
 @router.put(
-    "/{order_id}/cancel-delivery",
+    "/cancel-delivery",
     status_code=status.HTTP_202_ACCEPTED,
 )
 async def cancel_delivery(
