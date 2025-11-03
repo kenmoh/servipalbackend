@@ -3374,7 +3374,7 @@ async def assign_rider_to_existing_delivery_order(
         delivery.rider_id = rider.user_id
         delivery.dispatch_id = rider.user.dispatcher_id
         delivery.rider_phone_number = rider.phone_number
-        delivery.delivery_status = DeliveryStatus.ASSIGNED
+        delivery.delivery_status = DeliveryStatus.PENDING
 
         # --- 4. Update Order status ---
         delivery.order.order_status = OrderStatus.PENDING
