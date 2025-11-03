@@ -479,6 +479,8 @@ async def toggle_online_status(db: AsyncSession, current_user: User) -> bool:
         user.is_online = not user.is_online
         await db.commit() 
         await db.refresh(user)
+
+        redis_client.delete(f"near_by_riders")
         return user.is_online
     except Exception as e:
         await db.rollback()
