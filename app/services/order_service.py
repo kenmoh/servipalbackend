@@ -3331,37 +3331,57 @@ async def rider_decline_booking(
 
 
 async def assign_rider_to_existing_delivery_order(
-    db: AsyncSession, delivery_id: UUID, rider_id: UUID
+    db: AsyncSession, 
+    delivery_id: UUID, 
+    rider_id: UUID
 ):
-    rider = await get_user_profile(db=db, user_id=rider_id)
-    await db.execute(
-        update(Delivery)
+    # --- 1. Load delivery + order ---
+    delivery_stmt = (
+        select(Delivery)
         .where(Delivery.id == delivery_id)
-        .values(
-            rider_phone_number=rider.phone_number,
-            dispatch_id=rider.user.dispatcher_id,
-            rider_id=rider.user_id,
-        )
+        .options(selectinload(Delivery.order))
+        .with_for_update()
     )
+    result = await db.execute(delivery_stmt)
+    delivery = result.scalar_one_or_none()
 
-    await db.execute(
-        update(User).where(User.id == rider_id).values(has_delivery=True)
-    )
+    if not delivery:
+        raise HTTPException(status_code=404, detail="Delivery not found")
 
-    await db.commit()
-    rider_token = await get_user_notification_token(
-                db=db, user_id=rider.user_id
-            )
-    if rider_token:
-        await send_push_notification(
-            tokens=[rider_token],
-            title="New Order.",
-            message="You have a new order.", 
-            navigate_to="/delivery/orders",
+    if not delivery.order:
+        raise HTTPException(status_code=400, detail="Delivery has no associated order")
+
+    # --- 2. Load rider ---
+    rider = await get_user_profile(db=db, user_id=rider_id)
+    if not rider:
+        raise HTTPException(status_code=404, detail="Rider not found")
+
+    try:
+        # --- 3. Update Delivery ---
+        delivery.rider_id = rider.user_id
+        delivery.dispatch_id = rider.user.dispatcher_id
+        delivery.rider_phone_number = rider.phone_number
+        delivery.delivery_status = DeliveryStatus.ASSIGNED
+
+        # --- 4. Update Order status ---
+        delivery.order.order_status = OrderStatus.PENDING.
+
+        # --- 5. Update Rider has_delivery ---
+        await db.execute(
+            update(User)
+            .where(User.id == rider_id)
+            .values(has_delivery=True)
         )
 
-    redis_client.delete("near_by_riders")
-    await _invalidate_package_order_caches()
+        # --- 6. Commit ---
+        await db.commit()
+        await db.refresh(delivery)
+
+        redis_client.delete("near_by_riders")
+        redis_client.delete(f"order_by_id:{delivery.order.id}")
+    except Exception as e:
+        logger.error(f'Error assigning a rider {e}')
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Error assigning a rider")
 
 
 
