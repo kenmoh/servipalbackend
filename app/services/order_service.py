@@ -3301,36 +3301,47 @@ async def rider_decline_booking(
     Allows a rider to decline a delivery order.
     """
     try:
-        
-        order = await db.execute(select(Order).where(Order.id==order_id).options(selectinload(Order.delivery)))
+        # 1. Fetch the order with delivery
+        result = await db.execute(
+            select(Order)
+            .where(Order.id == order_id)
+            .options(selectinload(Order.delivery))
+        )
+        order = result.scalar_one()
 
+        # 2. Check if rider owns it
         if order.delivery.rider_id != current_user.id:
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Invalid rider")
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Invalid rider"
+            )
 
+        # 3. Decline it
         await _decline_delivery_order_and_update_db(
             db=db, order=order, rider_id=current_user.id
         )
         await db.commit()
 
+        # 4. Invalidate cache
         _invalidate_order_caches(order, current_user)
 
         return DeliveryStatusUpdateSchema(
             delivery_status=order.delivery.delivery_status
         )
 
-    except HTTPException:  
+    except HTTPException:
         await db.rollback()
         raise
-    except Exception as e: 
+    except Exception as e:
         await db.rollback()
         logger.error(
-            f"Failed to accept delivery for order {order_id}: {e}", exc_info=True
+            f"Failed to decline delivery for order {order_id}: {e}",
+            exc_info=True
         )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="An unexpected error occurred while accepting the delivery.",
+            detail="An unexpected error occurred",
         )
-
 
 async def assign_rider_to_existing_delivery_order(
     db: AsyncSession, 
