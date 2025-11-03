@@ -1438,7 +1438,7 @@ async def cancel_delivery(
     """
 
     try:
-        order = await _order_to_cancel(db=db, order_id=reason.owner_id)
+        order = await _order_to_cancel(db=db, order_id=reason.order_id)
         await _cancel_delivery_validation(order, current_user)
 
         if current_user.user_type == UserType.RIDER:

@@ -67,5 +67,5 @@ class PaginatedDeliveryResponse(BaseModel):
 
 
 class CancelOrderSchema(BaseModel):
-    owner_id: UUID
+    order_id: UUID
     reason: str
