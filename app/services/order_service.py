@@ -1908,6 +1908,7 @@ async def _sender_cancel_delivery(
             # Update order and delivery statuses
             order.order_status = OrderStatus.CANCELLED
             order.delivery.delivery_status = DeliveryStatus.CANCELLED
+            order.order_payment_status = PaymentStatus.CANCELLED
             order.cancel_reason = reason
             order.delivery.rider_id = None
             order.delivery.dispatch_id = None
