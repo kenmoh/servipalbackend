@@ -1458,7 +1458,7 @@ async def cancel_delivery(
             vendor_id=current_user.id,
             order_id=order.id,
             amount=order.grand_total,
-            action=TransactionLogAction.CANCELLED,
+            action=TransactionLogAction.REFUNDED,
             status=order.order_payment_status,
             details={
                 "order_type": order.order_type,
@@ -1470,6 +1470,7 @@ async def cancel_delivery(
             },
         )
         redis_client.delete(f"order_by_id:{order.id}")
+        await db.commit()
         return status_update
 
     except HTTPException:
@@ -1647,6 +1648,8 @@ async def _rider_cancel_delivery(
                 ) + 1
 
             await db.flush()
+
+            await db.execute(update(User).where(User.id==old_rider_id).values(User.has_delivery==False))
 
         if was_picked_up and old_dispatch_id and order.order_payment_status == PaymentStatus.PAID:
             logger.info(f"Reversing pickup escrow for cancelled order {order.id}")
@@ -1900,10 +1903,17 @@ async def _sender_cancel_delivery(
                     "when you confirm receipt of the returned item."
                 )
 
+            rider_id = order.delivery.rider_id
+                    
             # Update order and delivery statuses
             order.order_status = OrderStatus.CANCELLED
             order.delivery.delivery_status = DeliveryStatus.CANCELLED
             order.cancel_reason = reason
+            order.delivery.rider_id = None
+            order.delivery.dispatch_id = None
+            order.delivery.rider_phone_number = None
+
+            await db.execute(update(User).where(User.id==rider_id).values(User.has_delivery==False))
             
             await db.commit()
 
