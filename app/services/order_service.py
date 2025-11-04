@@ -4457,7 +4457,7 @@ async def _order_settlement(order: Order):
                     "transaction_direction": TransactionDirection.CREDIT,
                     "payment_status": PaymentStatus.PAID,
                     "payment_method": PaymentMethod.ESCROW_SETTLEMENT,
-                    "from_user": f"Order #{order.order_number}",
+                    "from_user": f"{order.owner.profile.full_name} or {order.owner.business_name} or {order.owner.email}",
                     "idempotency_key": idempotency_key,
                     "details": {
                         "order_id": str(order.id),
@@ -4539,7 +4539,19 @@ async def _settle_dispatch(order: Order, idempotency_key: str):
             },
         },
     )
+    await producer.publish_message(
+            service="wallet",
+            operation="update_transaction",
+            payload={
+                "wallet_id": str(order.owner_id),
+                "tx_ref": str(order.tx_ref),
+                "to_user": f"{order.vendor.profile.business_name} or {order.vendor.profile.full_name} of {order.vendor.email}",
+            },
+        )
     redis_client.setex(f"idempotency:{idempotency_key}", 86400, "1")
+
+
+
 async def _package_settlement(order: Order):
     """
     1. Move money from dispatch escrow → dispatch balance
@@ -4555,6 +4567,7 @@ async def _package_settlement(order: Order):
     # ---- 2. Sender escrow clear (always run – wallet service is idempotent) ----
     sender_key = f"sender_escrow_clear:{order.id}"
     await _clear_sender_escrow(order, sender_key)
+
 
 async def customer_confirm_order_received(
     db: AsyncSession, order_id: UUID, current_user: User
@@ -4581,6 +4594,7 @@ async def customer_confirm_order_received(
             .where(Order.id == order_id)
             .options(
                 selectinload(Order.vendor).selectinload(User.profile),
+                selectinload(Order.owner).selectinload(User.profile)
             )
             .with_for_update()
         )
@@ -4754,7 +4768,7 @@ async def _validate_order_confirmation(order: Order, current_user: User):
         if order.amount_due_vendor <= 0 or order.grand_total <= 0:
             logger.error(
                 f"Invalid amounts for order {order.id}: "
-                f"due_vendor={order.amount_due_vendor}, total={order.grand_total}"
+                f"amount_due_vendor={order.amount_due_vendor}, total={order.grand_total}"
             )
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid order amounts"
