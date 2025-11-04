@@ -150,8 +150,8 @@ async def update_rider_profile(
 async def get_user_details(
     user_id: UUID,
     db: AsyncSession = Depends(get_db),
-) -> ProfileSchema:
-    return await user_service.get_user_with_profile(db=db, user_id=user_id)
+) -> VendorUserResponse:
+    return await user_service.get_single_vendor(db=db, vendor_id=user_id)
 
 
 @router.get("/all-riders", status_code=status.HTTP_200_OK)

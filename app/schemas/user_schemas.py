@@ -421,7 +421,6 @@ class ProfileSchema(BaseModel):
     backdrop_image_url: str | None = None
     can_pickup_and_dropoff: bool = False
     pickup_and_delivery_charge: Decimal | None = None
-    state: str | None = None
     review_count: float | None = None
     avg_rating: float | None = None
 
@@ -507,8 +506,12 @@ class VerificationSchema(BaseModel):
 
 
 class VendorUserResponse(BaseModel):
+
     id: str
     company_name: str | None = None
+    bank_account_number: str | None = None
+    bank_name: str | None = None
+    full_name: str | None = None
     email: str
     phone_number: str
     profile_image: str | None = None
@@ -518,6 +521,13 @@ class VendorUserResponse(BaseModel):
     closing_hour: time | None = None
     rating: RatingSchema
     distance: float
+    average_price: float
+    can_pickup_and_dropoff: bool
+    account_holder_name: str | None = None
+    business_registration_number: str | None = None
+    store_name: str | None = None
+    business_address: str | None = None
+    state: str | None = None
 
 
 class ProfileImageResponseSchema(BaseModel):

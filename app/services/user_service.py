@@ -965,19 +965,125 @@ async def get_user_with_profile(db: AsyncSession, user_id: UUID) -> ProfileSchem
 
 
 # <<<<< --------- GET USER BY FOOD CATEGORY ---------- >>>>>
+# async def get_restaurant_vendors(
+#     db: AsyncSession,
+#     lat: float,
+#     lng: float,
+#     category_id: UUID | None = None,
+# ) -> List[VendorUserResponse]:
+#     cache_key = f"restaurant_vendors:{category_id if category_id else 'all'}:{lat}:{lng}"
+#     cached_vendors = redis_client.get(cache_key)
+#     if cached_vendors:
+#         data = json.loads(cached_vendors)
+#         return data
+    
+#     point = from_shape(Point(lng, lat), srid=4326)
+    
+#     # Review stats subquery (for ORDER type reviews)
+#     review_stats_subq = (
+#         select(
+#             Order.vendor_id.label("vendor_id"),
+#             func.avg(Review.rating).label("average_rating"),
+#             func.count(Review.id).label("review_count"),
+#         )
+#         .join(Review, Review.order_id == Order.id)
+#         .where(Review.review_type == ReviewType.ORDER)
+#         .group_by(Order.vendor_id)
+#         .subquery()
+#     )
+    
+#     # Main query
+#     stmt = (
+#         select(
+#             User,
+#             Profile,
+#             ProfileImage,
+#             func.coalesce(review_stats_subq.c.average_rating, 0).label("average_rating"),
+#             func.coalesce(review_stats_subq.c.review_count, 0).label("review_count"),
+#             func.ST_Distance(User.location_coordinates, point).label("distance_meters"),
+#         )
+#         .join(Profile, Profile.user_id == User.id)
+#         .outerjoin(ProfileImage, ProfileImage.profile_id == User.id)
+#         .outerjoin(review_stats_subq, review_stats_subq.c.vendor_id == User.id)
+#         .where(
+#             func.ST_DWithin(User.location_coordinates, point, DISTANCE_IN_METERS),
+#             User.user_type == UserType.RESTAURANT_VENDOR,
+#             ProfileImage.profile_image_url != None,
+#         )
+#         .order_by("distance_meters")
+#     )
+    
+#     # If category_id is provided, filter vendors to only those with items in that category
+#     if category_id:
+#         vendors_with_category_items = (
+#             select(Item.user_id)
+#             .where(
+#                 and_(
+#                     Item.item_type == ItemType.FOOD, 
+#                     Item.category_id == category_id
+#                 )
+#             )
+#             .distinct()
+#             .subquery()
+#         )
+#         stmt = stmt.join(
+#             vendors_with_category_items,
+#             vendors_with_category_items.c.user_id == User.id,
+#         )
+    
+#     result = await db.execute(stmt)
+#     vendors = result.all()
+    
+#     vendors_list = []
+#     for user, profile, image, average_rating, review_count, distance_meters in vendors:
+#         distance_km = round(float(distance_meters) / 1000, 2)
+        
+#         vendor_dict = {
+#             "id": str(user.id),
+#             "company_name": profile.business_name or "",
+#             "email": user.email,
+#             "phone_number": profile.phone_number,
+#             "profile_image": image.profile_image_url if image else None,
+#             "location": profile.business_address,
+#             "can_pickup_and_dropoff": profile.can_pickup_and_dropoff or None,
+#             "backdrop_image_url": image.backdrop_image_url if image else None,
+#             "opening_hour": (
+#                 profile.opening_hours.strftime("%H:%M:%S")
+#                 if profile.opening_hours
+#                 else None
+#             ),
+#             "closing_hour": (
+#                 profile.closing_hours.strftime("%H:%M:%S")
+#                 if profile.closing_hours
+#                 else None
+#             ),
+#             "rating": {
+#                 "average_rating": str(round(float(average_rating or 0), 2)),
+#                 "number_of_reviews": review_count or 0,
+#             },
+#             "distance": distance_km,
+#         }
+#         vendors_list.append(vendor_dict)
+    
+#     if vendors_list:
+#         redis_client.set(cache_key, json.dumps(vendors_list, default=str), ex=300)
+    
+#     return vendors_list
+
 async def get_restaurant_vendors(
     db: AsyncSession,
-    lat: float,
-    lng: float,
+    lat: float | None = None,
+    lng: float | None = None,
     category_id: UUID | None = None,
 ) -> List[VendorUserResponse]:
-    cache_key = f"restaurant_vendors:{category_id if category_id else 'all'}:{lat}:{lng}"
+    # Determine if we're doing distance-based filtering
+    use_distance = lat is not None and lng is not None
+    
+    cache_key = f"restaurant_vendors:{category_id if category_id else 'all'}:{lat}:{lng}" if use_distance else f"restaurant_vendors:{category_id if category_id else 'all'}:all"
     cached_vendors = redis_client.get(cache_key)
     if cached_vendors:
         data = json.loads(cached_vendors)
         return data
-    
-    point = from_shape(Point(lng, lat), srid=4326)
     
     # Review stats subquery (for ORDER type reviews)
     review_stats_subq = (
@@ -992,26 +1098,60 @@ async def get_restaurant_vendors(
         .subquery()
     )
     
-    # Main query
-    stmt = (
+    # Average price subquery
+    avg_price_subq = (
         select(
+            Item.user_id.label("vendor_id"),
+            func.avg(Item.price).label("average_price"),
+        )
+        .where(Item.item_type == ItemType.FOOD, Item.is_deleted.is_(False))
+        .group_by(Item.user_id)
+        .subquery()
+    )
+    
+    # Build SELECT clause based on whether we're calculating distance
+    if use_distance:
+        point = from_shape(Point(lng, lat), srid=4326)
+        select_clause = [
             User,
             Profile,
             ProfileImage,
             func.coalesce(review_stats_subq.c.average_rating, 0).label("average_rating"),
             func.coalesce(review_stats_subq.c.review_count, 0).label("review_count"),
+            func.coalesce(avg_price_subq.c.average_price, 0).label("average_price"),
             func.ST_Distance(User.location_coordinates, point).label("distance_meters"),
-        )
+        ]
+    else:
+        select_clause = [
+            User,
+            Profile,
+            ProfileImage,
+            func.coalesce(review_stats_subq.c.average_rating, 0).label("average_rating"),
+            func.coalesce(review_stats_subq.c.review_count, 0).label("review_count"),
+            func.coalesce(avg_price_subq.c.average_price, 0).label("average_price"),
+        ]
+    
+    # Main query
+    stmt = (
+        select(*select_clause)
         .join(Profile, Profile.user_id == User.id)
         .outerjoin(ProfileImage, ProfileImage.profile_id == User.id)
         .outerjoin(review_stats_subq, review_stats_subq.c.vendor_id == User.id)
+        .outerjoin(avg_price_subq, avg_price_subq.c.vendor_id == User.id)
         .where(
-            func.ST_DWithin(User.location_coordinates, point, DISTANCE_IN_METERS),
             User.user_type == UserType.RESTAURANT_VENDOR,
             ProfileImage.profile_image_url != None,
         )
-        .order_by("distance_meters")
     )
+    
+    # Add distance filter if coordinates provided
+    if use_distance:
+        stmt = stmt.where(
+            func.ST_DWithin(User.location_coordinates, point, DISTANCE_IN_METERS)
+        ).order_by("distance_meters")
+    else:
+        # Order by created_at or any other field when no distance
+        stmt = stmt.order_by(User.created_at.desc())
     
     # If category_id is provided, filter vendors to only those with items in that category
     if category_id:
@@ -1020,7 +1160,8 @@ async def get_restaurant_vendors(
             .where(
                 and_(
                     Item.item_type == ItemType.FOOD, 
-                    Item.category_id == category_id
+                    Item.category_id == category_id,
+                    Item.is_deleted.is_(False)
                 )
             )
             .distinct()
@@ -1035,8 +1176,13 @@ async def get_restaurant_vendors(
     vendors = result.all()
     
     vendors_list = []
-    for user, profile, image, average_rating, review_count, distance_meters in vendors:
-        distance_km = round(float(distance_meters) / 1000, 2)
+    for row in vendors:
+        if use_distance:
+            user, profile, image, average_rating, review_count, average_price, distance_meters = row
+            distance_km = round(float(distance_meters) / 1000, 2)
+        else:
+            user, profile, image, average_rating, review_count, average_price = row
+            distance_km = None
         
         vendor_dict = {
             "id": str(user.id),
@@ -1046,6 +1192,135 @@ async def get_restaurant_vendors(
             "profile_image": image.profile_image_url if image else None,
             "location": profile.business_address,
             "can_pickup_and_dropoff": profile.can_pickup_and_dropoff or None,
+            "backdrop_image_url": image.backdrop_image_url if image else None,
+            "can_pickup_and_dropoff":profile.can_pickup_and_dropoff or False,
+            "opening_hour": (
+                profile.opening_hours.strftime("%H:%M:%S")
+                if profile.opening_hours
+                else None
+            ),
+            "closing_hour": (
+                profile.closing_hours.strftime("%H:%M:%S")
+                if profile.closing_hours
+                else None
+            ),
+            "rating": {
+                "average_rating": str(round(float(average_rating or 0), 2)),
+                "number_of_reviews": review_count or 0,
+            },
+            "average_price": str(round(float(average_price or 0), 2)),
+            "distance": distance_km,
+        }
+        vendors_list.append(vendor_dict)
+    
+    if vendors_list:
+        redis_client.set(cache_key, json.dumps(vendors_list, default=str), ex=300)
+    
+    return vendors_list
+
+
+
+async def get_single_vendor(
+    db: AsyncSession,
+    vendor_id: UUID,
+) -> dict | None:
+    """
+    Fetch a single vendor by ID with:
+    - basic info
+    - avg review (from Review via Order)
+    - review count
+    - average price
+    - distance calculated using PostGIS (if lat/lng provided)
+    - total items count
+    """
+     
+    cache_key = f"vendor:{vendor_id}"
+    cached_vendor = redis_client.get(cache_key)
+    if cached_vendor:
+        logger.info(f"Cache hit for {cache_key}")
+        return json.loads(cached_vendor)
+    
+    try:
+        # Review stats subquery (ORDER review type only)
+        review_stats_subq = (
+            select(
+                Order.vendor_id.label("vendor_id"),
+                func.avg(Review.rating).label("average_rating"),
+                func.count(Review.id).label("review_count"),
+            )
+            .join(Review, Review.order_id == Order.id)
+            .where(Review.review_type == ReviewType.ORDER)
+            .group_by(Order.vendor_id)
+            .subquery()
+        )
+        
+        # Item stats subquery (count and average price)
+        item_stats_subq = (
+            select(
+                Item.user_id.label("vendor_id"),
+                func.count(Item.id).label("total_items"),
+                func.avg(Item.price).label("average_price"),
+            )
+            .where(Item.is_deleted.is_(False))
+            .group_by(Item.user_id)
+            .subquery()
+        )
+        
+        # Build SELECT clause based on whether we're calculating distance
+        
+      
+        select_clause = [
+            User,
+            Profile,
+            ProfileImage,
+            func.coalesce(review_stats_subq.c.average_rating, 0).label("average_rating"),
+            func.coalesce(review_stats_subq.c.review_count, 0).label("review_count"),
+            func.coalesce(item_stats_subq.c.total_items, 0).label("total_items"),
+            func.coalesce(item_stats_subq.c.average_price, 0).label("average_price"),
+        ]
+        
+        # Main query
+        stmt = (
+            select(*select_clause)
+            .join(Profile, Profile.user_id == User.id)
+            .outerjoin(ProfileImage, ProfileImage.profile_id == User.id)
+            .outerjoin(review_stats_subq, review_stats_subq.c.vendor_id == User.id)
+            .outerjoin(item_stats_subq, item_stats_subq.c.vendor_id == User.id)
+            .where(
+                User.id == vendor_id,
+                User.user_type.in_([UserType.RESTAURANT_VENDOR, UserType.LAUNDRY_VENDOR])
+            )
+        )
+        
+        result = await db.execute(stmt)
+        vendor_row = result.first()
+        
+        if not vendor_row:
+            return None
+        
+        # Unpack the result based on whether distance was calculated
+        user, profile, image, average_rating, review_count, total_items, average_price = vendor_row
+        distance_km = None
+        
+        vendor_dict = {
+            "id": str(user.id),
+            "user_type": user.user_type.value,
+            "full_name": profile.full_name or None,
+            "store_name": profile.store_name or None,
+            "company_name": profile.business_name or "",
+            "email": user.email,
+            "bank_name": profile.bank_name or None,
+            "bank_account_number": profile.bank_account_number or None,
+            "phone_number": profile.phone_number,
+            "profile_image": image.profile_image_url if image else None,
+            "location": profile.business_address,
+            "state": profile.state,
+            "can_pickup_and_dropoff": profile.can_pickup_and_dropoff or None,
+            "pickup_and_delivery_charge": (
+                str(profile.pickup_and_delivery_charge) 
+                if profile.pickup_and_delivery_charge 
+                else None
+            ),
             "backdrop_image_url": image.backdrop_image_url if image else None,
             "opening_hour": (
                 profile.opening_hours.strftime("%H:%M:%S")
@@ -1061,14 +1336,24 @@ async def get_restaurant_vendors(
                 "average_rating": str(round(float(average_rating or 0), 2)),
                 "number_of_reviews": review_count or 0,
             },
+            "total_items": total_items,
+            "average_price": str(round(float(average_price or 0), 2)),
             "distance": distance_km,
         }
-        vendors_list.append(vendor_dict)
-    
-    if vendors_list:
-        redis_client.set(cache_key, json.dumps(vendors_list, default=str), ex=300)
-    
-    return vendors_list
+        
+        # Cache result
+        redis_client.set(
+            cache_key,
+            json.dumps(vendor_dict, default=str),
+            ex=300
+        )
+        
+        return vendor_dict
+        
+    except Exception as e:
+        logger.error(f"Error fetching vendor {vendor_id}: {str(e)}")
+        raise
+
 
 
 
@@ -1436,8 +1721,8 @@ async def upload_image_profile(
 # <<<<< --------- GET LAUNDRY SERVICE PROVIDERS ---------- >>>>>
 async def get_users_by_laundry_services(
     db: AsyncSession, 
-    lat: float, 
-    lng: float
+    lat: float | None = None, 
+    lng: float | None = None
 ) -> list[VendorUserResponse]:
     """
     Fetch all vendors who offer laundry services with:
@@ -1445,16 +1730,18 @@ async def get_users_by_laundry_services(
     - number of laundry items
     - avg review (from Review via Order)
     - review count
-    - distance calculated using PostGIS
+    - average price
+    - distance calculated using PostGIS (if lat/lng provided)
     """
-    cache_key = f"laundry_vendors:{lat}:{lng}"
+    # Determine if we're doing distance-based filtering
+    use_distance = lat is not None and lng is not None
+    
+    cache_key = f"laundry_vendors:{lat}:{lng}" if use_distance else "laundry_vendors:all"
     cached_vendors = redis_client.get(cache_key)
     if cached_vendors:
         logger.info(f"Cache hit for {cache_key}")
         data = json.loads(cached_vendors)
         return data
-    
-    point = from_shape(Point(lng, lat), srid=4326)
     
     try:
         # Review stats subquery (ORDER review type only)
@@ -1476,41 +1763,81 @@ async def get_users_by_laundry_services(
                 Item.user_id.label("vendor_id"),
                 func.count(Item.id).label("total_items"),
             )
-            .where(Item.item_type == ItemType.LAUNDRY)
+            .where(Item.item_type == ItemType.LAUNDRY, Item.is_deleted.is_(False))
             .group_by(Item.user_id)
             .subquery()
         )
         
-        # Main query
-        stmt = (
+        # Average price subquery
+        avg_price_subq = (
             select(
+                Item.user_id.label("vendor_id"),
+                func.avg(Item.price).label("average_price"),
+            )
+            .where(Item.item_type == ItemType.LAUNDRY, Item.is_deleted.is_(False))
+            .group_by(Item.user_id)
+            .subquery()
+        )
+        
+        # Build SELECT clause based on whether we're calculating distance
+        if use_distance:
+            point = from_shape(Point(lng, lat), srid=4326)
+            select_clause = [
                 User,
                 Profile,
                 ProfileImage,
                 func.coalesce(review_stats_subq.c.average_rating, 0).label("average_rating"),
                 func.coalesce(review_stats_subq.c.review_count, 0).label("review_count"),
                 func.coalesce(item_count_subq.c.total_items, 0).label("total_items"),
+                func.coalesce(avg_price_subq.c.average_price, 0).label("average_price"),
                 func.ST_Distance(User.location_coordinates, point).label("distance_meters"),
-            )
+            ]
+        else:
+            select_clause = [
+                User,
+                Profile,
+                ProfileImage,
+                func.coalesce(review_stats_subq.c.average_rating, 0).label("average_rating"),
+                func.coalesce(review_stats_subq.c.review_count, 0).label("review_count"),
+                func.coalesce(item_count_subq.c.total_items, 0).label("total_items"),
+                func.coalesce(avg_price_subq.c.average_price, 0).label("average_price"),
+            ]
+        
+        # Main query
+        stmt = (
+            select(*select_clause)
             .join(Profile, Profile.user_id == User.id)
             .outerjoin(ProfileImage, ProfileImage.profile_id == User.id)
             .outerjoin(review_stats_subq, review_stats_subq.c.vendor_id == User.id)
             .outerjoin(item_count_subq, item_count_subq.c.vendor_id == User.id)
+            .outerjoin(avg_price_subq, avg_price_subq.c.vendor_id == User.id)
             .where(
-                func.ST_DWithin(User.location_coordinates, point, DISTANCE_IN_METERS),
                 User.user_type == UserType.LAUNDRY_VENDOR,
-                item_count_subq.c.total_items > 0,  # Only vendors with laundry items
+                item_count_subq.c.total_items > 0,
                 ProfileImage.profile_image_url != None,
             )
-            .order_by("distance_meters")
         )
+        
+        # Add distance filter if coordinates provided
+        if use_distance:
+            stmt = stmt.where(
+                func.ST_DWithin(User.location_coordinates, point, DISTANCE_IN_METERS)
+            ).order_by("distance_meters")
+        else:
+            # Order by created_at or any other field when no distance
+            stmt = stmt.order_by(User.created_at.desc())
         
         result = await db.execute(stmt)
         vendors = result.all()
         
         vendors_list = []
-        for user, profile, image, average_rating, review_count, total_items, distance_meters in vendors:
-            distance_km = round(float(distance_meters) / 1000, 2)
+        for row in vendors:
+            if use_distance:
+                user, profile, image, average_rating, review_count, total_items, average_price, distance_meters = row
+                distance_km = round(float(distance_meters) / 1000, 2)
+            else:
+                user, profile, image, average_rating, review_count, total_items, average_price = row
+                distance_km = None
             
             vendor_dict = {
                 "id": str(user.id),
@@ -1520,6 +1847,7 @@ async def get_users_by_laundry_services(
                 "profile_image": image.profile_image_url if image else None,
                 "location": profile.business_address,
                 "backdrop_image_url": image.backdrop_image_url if image else None,
+                "can_pickup_and_dropoff": profile.can_pickup_and_dropoff or False,
                 "opening_hour": (
                     profile.opening_hours.strftime("%H:%M:%S")
                     if profile.opening_hours
@@ -1535,6 +1863,7 @@ async def get_users_by_laundry_services(
                     "number_of_reviews": review_count or 0,
                 },
                 "total_items": total_items,
+                "average_price": str(round(float(average_price or 0), 2)),
                 "distance": distance_km,
             }
             vendors_list.append(vendor_dict)
@@ -1551,6 +1880,8 @@ async def get_users_by_laundry_services(
     except Exception as e:
         logger.error(f"Error fetching laundry vendors: {str(e)}")
         raise
+
+
 
 async def get_users_by_laundry_services_old(
     db: AsyncSession, current_user: User
