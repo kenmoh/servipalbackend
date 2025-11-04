@@ -3347,7 +3347,7 @@ async def assign_rider_to_existing_delivery_order(
     db: AsyncSession, 
     delivery_id: UUID, 
     rider_id: UUID
-) DeliveryStatusUpdateSchema:
+) -> DeliveryStatusUpdateSchema:
     # --- 1. Load delivery + order ---
     delivery_stmt = (
         select(Delivery)

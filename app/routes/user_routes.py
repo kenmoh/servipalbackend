@@ -183,9 +183,9 @@ async def get_rider_details(
 
 @router.get("/restaurants", status_code=status.HTTP_200_OK)
 async def get_restaurants(
+    lat: float,
+    lng: float,
     category_id: UUID | None = None,
-    lat: float | None = None,
-    lng: float | None = None,
     db: AsyncSession = Depends(get_db),
    
 ) -> list[VendorUserResponse]:
@@ -195,7 +195,6 @@ async def get_restaurants(
     try:
         return await user_service.get_restaurant_vendors(
             db=db,
-           
             category_id=category_id,
             lat=lat,
             lng=lng,
@@ -212,13 +211,16 @@ async def get_restaurants(
     status_code=status.HTTP_200_OK,
 )
 async def get_laundry_vendors(
-    db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)
+     lat: float,
+    lng: float,
+    db: AsyncSession = Depends(get_db), 
+
 ) -> list[VendorUserResponse]:
     """
     Get users who provide laundry services.
     """
     return await user_service.get_users_by_laundry_services(
-        db=db, current_user=current_user
+        db=db, lng=lng, lat=lat
     )
 
 
