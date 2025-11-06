@@ -37,6 +37,7 @@ from app.routes import (
     stats_routes,
     ws_routes,
     audit_log_routes,
+    contact_route
 )
 
 
@@ -213,11 +214,10 @@ def read_root():
     return {"message": "Welcome to ServiPal API"}
 
 
-if not settings.TEST:
-    logfire.configure(service_name="ServiPal")
-    logfire.debug("App Debug mode on")
-    logfire.instrument_fastapi(app=app)
-    logfire.instrument_sqlalchemy(engine=engine)
+logfire.configure(service_name="ServiPal")
+logfire.debug("App Debug mode on")
+logfire.instrument_fastapi(app=app)
+logfire.instrument_sqlalchemy(engine=engine)
 
 origins = ["https://servi-pal.com"]
 
@@ -321,3 +321,4 @@ app.include_router(settings_routes.router)
 app.include_router(stats_routes.router)
 app.include_router(ws_routes.router)
 app.include_router(audit_log_routes.router)
+app.include_router(contact_route.router)

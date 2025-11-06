@@ -2771,7 +2771,6 @@ async def vendor_mark_order_delivered(
                 f"Failed to send notifications for order {order_id}: {str(e)}",
                 exc_info=True,
             )
-            # Don't raise - notifications should not block main flow
 
         # Invalidate caches
         try:
@@ -2781,8 +2780,7 @@ async def vendor_mark_order_delivered(
                 f"Failed to invalidate caches for order {order_id}: {str(e)}",
                 exc_info=True,
             )
-            # Don't raise - cache invalidation should not block main flow
-
+         
         # Broadcast status update
         await ws_service.broadcast_order_status_update(
             order_id=order.id, new_status=order.order_status
@@ -4457,7 +4455,7 @@ async def _order_settlement(order: Order):
                     "transaction_direction": TransactionDirection.CREDIT,
                     "payment_status": PaymentStatus.PAID,
                     "payment_method": PaymentMethod.ESCROW_SETTLEMENT,
-                    "from_user": f"{order.owner.profile.full_name} or {order.owner.business_name} or {order.owner.email}",
+                    "from_user": order.owner.profile.full_name if order.owner else order.owner.email,
                     "idempotency_key": idempotency_key,
                     "details": {
                         "order_id": str(order.id),
@@ -4545,7 +4543,7 @@ async def _settle_dispatch(order: Order, idempotency_key: str):
             payload={
                 "wallet_id": str(order.owner_id),
                 "tx_ref": str(order.tx_ref),
-                "to_user": f"{order.vendor.profile.business_name} or {order.vendor.profile.full_name} of {order.vendor.email}",
+                "to_user": order.vendor.profile.business_name if order.vendor.profile else order.vendor.email,
             },
         )
     redis_client.setex(f"idempotency:{idempotency_key}", 86400, "1")
@@ -4639,8 +4637,8 @@ async def customer_confirm_order_received(
                 details={
                     "order_type": order.order_type.value,
                     "order_number": order.order_number,
-                    "confirmed_by": current_user.profile.full_name
-                    or current_user.profile.business_name,
+                    "confirmed_by": current_user.profile.full_name if current_user.profile else
+                     current_user.profile.business_name,
                     "phone_number": current_user.profile.phone_number,
                     "vendor": order.vendor.profile.business_name
                     or order.vendor.profile.full_name,
@@ -4821,7 +4819,7 @@ async def _notify_order_completion(order: Order, db: AsyncSession):
         )
         if customer_token:
             business_name = (
-                order.vendor.profile.business_name or order.vendor.profile.full_name
+                order.vendor.profile.business_name if order.vendor.profile else order.vendor.profile.full_name
             )
             await send_push_notification(
                 tokens=[customer_token],

@@ -890,3 +890,21 @@ class TransactionLog(Base):
     status: Mapped[PaymentStatus] = mapped_column(nullable=True)
     details: Mapped[dict] = mapped_column(JSON, nullable=True)
     timestamp: Mapped[datetime] = mapped_column(default=func.now(), nullable=False)
+
+
+class Contact(Base):
+    __tablename__ 'contacts'
+
+    id: Mapped[UUID] =  mapped_column(primary_key=True, default=uuid4)
+    full_name: Mapped[str]
+    email: Mapped[str]
+    category: Mapped[str]
+    subject: Mapped[str]
+    message: Mapped[str] = mapped_column(String(400))
+
+
+class Subscribe(Base):
+    __tablename__ = 'subscribers'
+    
+    id: Mapped[UUID] =  mapped_column(primary_key=True, default=uuid4)
+    email: Mapped[str]
