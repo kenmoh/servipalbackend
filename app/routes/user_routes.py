@@ -211,8 +211,8 @@ async def get_restaurants(
     status_code=status.HTTP_200_OK,
 )
 async def get_laundry_vendors(
-     lat: float,
-    lng: float,
+     lat: float | None = None,
+    lng: float | None = None,
     db: AsyncSession = Depends(get_db), 
 
 ) -> list[VendorUserResponse]:
