@@ -59,11 +59,11 @@ async def create_new_category(
 async def create_menu_item(
     request: Request,
     name: str = Form(...),
-    description: str = Form(None),
+    description: str = Form(...),
     price: Decimal = Form(...),
     side: str = Form(None),
-    category_id: UUID = Form(None),
-    food_group: FoodGroup = Form(None),
+    category_id: UUID = Form(...),
+    food_group: FoodGroup = Form(...),
     images: list[UploadFile] = File(...),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -76,11 +76,11 @@ async def create_menu_item(
 
     item_data = MenuItemCreate(
         name=name,
-        description=description or None,
+        description=description,
         price=price,
         images=images,
-        category_id=category_id or None,
-        food_group=food_group or None,
+        category_id=category_id,
+        food_group=food_group,
         side=side or None,
     )
 

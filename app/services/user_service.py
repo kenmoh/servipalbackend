@@ -2406,7 +2406,7 @@ async def get_laundry_menu(
             .where(
                 Item.user_id == laundry_id,
                 Item.item_type == ItemType.LAUNDRY,
-                Item.is_deleted == True,
+                Item.is_deleted == False,
             )
             .options(selectinload(Item.images))
         )

@@ -19,7 +19,7 @@ class ProductBase(BaseModel):
     price: Decimal = Form(...)
     stock: int = Form(...)
     category_id: UUID = Form(...)
-    sizes: Optional[str] = Form(None)
+    sizes: str = Form(None)
     colors: Optional[List[str]] = Form(None)
 
 
