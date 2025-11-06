@@ -520,7 +520,7 @@ class VendorUserResponse(BaseModel):
     opening_hour: time | None = None
     closing_hour: time | None = None
     rating: RatingSchema
-    distance: float
+    distance: float = Field(default=0.00)
     average_price: float
     can_pickup_and_dropoff: bool
     account_holder_name: str | None = None

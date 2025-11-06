@@ -131,4 +131,4 @@ class MenuResponseSchema(MenuBase):
 
 
 class LaundryMenuResponseSchema(MenuBase):
-    pass
+    description: str | None = None
