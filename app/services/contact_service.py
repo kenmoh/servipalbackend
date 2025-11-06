@@ -1,6 +1,9 @@
-from app.schemas.conctact_schema import ContactCreate, ContactResponse, SubscriberCreate, SubscriberResponse
+
+from sqlalchemy import select
 from app.models.models import Subscribe, Contact
 from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.schemas.contact_schema import ContactCreate, ContactResponse, SubscribeCreate, SubscriberResponse
 
 
 async def create_contact(db: AsyncSession, contact: ContactCreate)-> ContactResponse:
@@ -29,14 +32,14 @@ async def create_contact(db: AsyncSession, contact: ContactCreate)-> ContactResp
 async def get_contacts(db: AsyncSession)-> list[ContactResponse]:
 
 	try:
-		stmt = select(Contact).order_by(created_at)
+		stmt = select(Contact).order_by(Contact.created_at)
 		result = await db.execute(stmt)
 		contacts = result.scalars().all()
 	except Exception as e:
 		db.rollback()
 		raise e
 
-async def subscribe(db: AsyncSession, subscribe: SubscriberCreate)-> SubscriberResponse:
+async def subscribe(db: AsyncSession, subscribe: SubscribeCreate)-> SubscriberResponse:
 	try:
 		new_sub = Subscribe(email=subscribe.email)
 		db.add(new_sub)
@@ -53,7 +56,7 @@ async def subscribe(db: AsyncSession, subscribe: SubscriberCreate)-> SubscriberR
 
 async def get_subscribers(db: AsyncSession) -> list[SubscriberResponse]:
 
-	stmt = select(Subscribe).order_by(created_at)
+	stmt = select(Subscribe)
 	result = await db.execute(stmt)
 	subscribers = result.scalars().all()
 

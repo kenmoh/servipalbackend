@@ -2,14 +2,14 @@ from pydantic import BaseModel
 from uuid import UUID
 
 
-class ContanctCreate(BaseModel):
+class ContactCreate(BaseModel):
     full_name: str
     email: str
     category: str
     subject: str
     message: str
 
-class ContactResponse(ContanctCreate):
+class ContactResponse(ContactCreate):
 	id: UUID
 
 

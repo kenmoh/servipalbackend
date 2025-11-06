@@ -893,7 +893,7 @@ class TransactionLog(Base):
 
 
 class Contact(Base):
-    __tablename__ 'contacts'
+    __tablename__ = 'contacts'
 
     id: Mapped[UUID] =  mapped_column(primary_key=True, default=uuid4)
     full_name: Mapped[str]
@@ -901,6 +901,7 @@ class Contact(Base):
     category: Mapped[str]
     subject: Mapped[str]
     message: Mapped[str] = mapped_column(String(400))
+    created_at: Mapped[datetime] = mapped_column(server_default=func.now())
 
 
 class Subscribe(Base):
