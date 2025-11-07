@@ -133,29 +133,39 @@ async def authenticated_user(
         "phone_number": f"+12345{unique_id[:5]}",
     }
 
-    # Create user
+    # Create user (without phone_number as it belongs to Profile)
     user = User(
         email=f"testuser_{unique_id}@example.com",
-        user_type=UserType.CUSTOMER.value,
-        phone_number=f"+12345{unique_id[:5]}",
-        password="Password123!",
+        user_type=UserType.CUSTOMER,
+        password=hash_password("Password123!"),
         account_status=AccountStatus.CONFIRMED,
     )
 
     async_db.add(user)
     await async_db.flush()
 
-    profile = Profile(user_id=user.id, full_name="Test User")
+    # Create wallet
+    wallet = Wallet(id=user.id, balance=0.0, escrow_balance=0.0)
+    async_db.add(wallet)
 
-    async_db.add(profile)
-    await async_db.flush(profile)
-
-    Profile_image = ProfileImage(
-        profile_id=profile.user_id, profile_image_url="https://text-image.png"
+    # Create profile with phone_number
+    profile = Profile(
+        user_id=user.id, 
+        full_name="Test User",
+        phone_number=f"+12345{unique_id[:5]}"
     )
-    async_db.add(Profile_image)
+    async_db.add(profile)
+    await async_db.flush()
+
+    # Create profile image
+    profile_image = ProfileImage(
+        profile_id=profile.user_id, 
+        profile_image_url="https://text-image.png"
+    )
+    async_db.add(profile_image)
 
     await async_db.commit()
+    await async_db.refresh(user)
 
     # Log in user
     login_data = {
@@ -167,6 +177,7 @@ async def authenticated_user(
     auth_data = login_response.json()
 
     return {
+        "user": user,
         "access_token": auth_data["access_token"],
         "refresh_token": auth_data["refresh_token"],
         "headers": {"Authorization": f"Bearer {auth_data['access_token']}"},
@@ -301,67 +312,92 @@ async def authenticated_dispatch_admin(
 
 
 @pytest_asyncio.fixture
-async def authenticated_rider(authenticated_dispatch_admin, async_client: AsyncClient):
+async def authenticated_rider(async_client: AsyncClient, async_db: AsyncSession):
     """
-    Fixture to create a rider (by a dispatch admin), log them in, and return authentication details.
+    Fixture to create a rider, log them in, and return authentication details.
     """
     unique_id = str(uuid.uuid4())[:8]
 
-    rider_payload = {
-        "email": f"rider_{unique_id}@example.com",
-        "password": "Password123!",
-        "user_type": UserType.RIDER.value,
-        "phone_number": f"12349{unique_id[:5]}",
-        "bike_number": f"BIKE{unique_id[:5]}",
-        "business_name": authenticated_dispatch_admin.profile.business_name,
-        "business_address": authenticated_dispatch_admin.profile.business_address,
-        "full_name": f"Rider {unique_id}",
-        "user_id": unique_id,
-    }
-
-    # Create rider using dispatch admin's client
-    # Assuming there's an endpoint for dispatch admin to create users
-    # For now, we'll use the general register endpoint, but with admin's auth headers
-    register_response = await async_client.post(
-        "/api/auth/register",
-        json=rider_payload,
-        headers=authenticated_dispatch_admin["headers"],
+    # Create dispatch admin first
+    dispatch_user = User(
+        email=f"dispatch_{unique_id}@example.com",
+        user_type=UserType.DISPATCH,
+        password=hash_password("Password123!"),
+        account_status=AccountStatus.CONFIRMED,
     )
-    assert register_response.status_code == 201
-    assert register_response.json().get("email") == rider_payload["email"]
-    rider_data = register_response.json()
+    async_db.add(dispatch_user)
+    await async_db.flush()
+
+    dispatch_wallet = Wallet(id=dispatch_user.id, balance=0.0, escrow_balance=0.0)
+    async_db.add(dispatch_wallet)
+
+    dispatch_profile = Profile(
+        user_id=dispatch_user.id,
+        business_name=f"Dispatch Business {unique_id}",
+        business_registration_number="RC675",
+        phone_number=f"+12348{unique_id[:5]}",
+        business_address="123 Dispatch St, City, Country",
+    )
+    async_db.add(dispatch_profile)
+    await async_db.flush()
+
+    # Create rider
+    rider_user = User(
+        email=f"rider_{unique_id}@example.com",
+        user_type=UserType.RIDER,
+        password=hash_password("Password123!"),
+        account_status=AccountStatus.CONFIRMED,
+        dispatcher_id=dispatch_user.id,
+    )
+    async_db.add(rider_user)
+    await async_db.flush()
+
+    rider_wallet = Wallet(id=rider_user.id, balance=0.0, escrow_balance=0.0)
+    async_db.add(rider_wallet)
+
+    rider_profile = Profile(
+        user_id=rider_user.id,
+        full_name=f"Rider {unique_id}",
+        phone_number=f"+12349{unique_id[:5]}",
+        bike_number=f"BIKE{unique_id[:5]}",
+    )
+    async_db.add(rider_profile)
+
+    await async_db.commit()
+    await async_db.refresh(rider_user)
 
     # Log in rider
     login_data = {
-        "username": rider_payload["email"],
-        "password": rider_payload["password"],
+        "username": f"rider_{unique_id}@example.com",
+        "password": "Password123!",
     }
     login_response = await async_client.post("/api/auth/login", data=login_data)
     assert login_response.status_code == 200
     auth_data = login_response.json()
 
     return {
-        "user": rider_data,
+        "user": rider_user,
         "access_token": auth_data["access_token"],
         "refresh_token": auth_data["refresh_token"],
         "headers": {"Authorization": f"Bearer {auth_data['access_token']}"},
     }
 
 
-@pytest.fixture(scope="function")
-async def create_charge_and_commission(async_db: AsyncClient):
+@pytest_asyncio.fixture
+async def create_charge_and_commission(async_db: AsyncSession):
+    """Create charge and commission data for testing."""
     charge = ChargeAndCommission(
-        payment_gate_way_fee=Decimal("0.14"),
-        value_added_tax=Decimal("0.075"),
+        payment_gate_way_fee=Decimal("1.4"),
+        value_added_tax=Decimal("7.5"),
         payout_charge_transaction_upto_5000_naira=Decimal("10"),
         payout_charge_transaction_from_5001_to_50_000_naira=Decimal("25"),
         payout_charge_transaction_above_50_000_naira=Decimal("50"),
         stamp_duty=Decimal("50"),
-        base_delivery_fee=Decimal("1500"),
-        delivery_fee_per_km=Decimal("1500"),
-        delivery_commission_percentage=Decimal("0.15"),
-        food_laundry_commission_percentage=Decimal("0.10"),
-        product_commission_percentage=Decimal("0.10"),
+        base_delivery_fee=Decimal("300"),
+        delivery_fee_per_km=Decimal("50"),
+        delivery_commission_percentage=Decimal("20"),
+        food_laundry_commission_percentage=Decimal("15"),
+        product_commission_percentage=Decimal("10"),
     )
 
     async_db.add(charge)
@@ -369,6 +405,129 @@ async def create_charge_and_commission(async_db: AsyncClient):
     await async_db.refresh(charge)
 
     return charge
+    """Create a restaurant vendor user for testing."""
+    unique_id = str(uuid.uuid4())[:8]
+    user = User(
+        email=f"restaurant_{unique_id}@example.com",
+        password=hash_password("Password123!"),
+        user_type=UserType.RESTAURANT_VENDOR,
+        account_status=AccountStatus.CONFIRMED,
+    )
+    async_db.add(user)
+    await async_db.flush()
+    
+    wallet = Wallet(id=user.id, balance=0.0, escrow_balance=0.0)
+    async_db.add(wallet)
+    
+    profile = Profile(
+        user_id=user.id,
+        business_name="Test Restaurant",
+        business_address="Test Restaurant Address",
+        business_registration_number="RC1234",
+        phone_number=f"+12346{unique_id[:5]}",
+    )
+    async_db.add(profile)
+    await async_db.commit()
+    await async_db.refresh(user)
+    return user
+
+
+@pytest_asyncio.fixture
+async def laundry_vendor(async_db: AsyncSession) -> User:
+    """Create a laundry vendor user for testing."""
+    unique_id = str(uuid.uuid4())[:8]
+    user = User(
+        email=f"laundry_{unique_id}@example.com",
+        password=hash_password("Password123!"),
+        user_type=UserType.LAUNDRY_VENDOR,
+        account_status=AccountStatus.CONFIRMED,
+    )
+    async_db.add(user)
+    await async_db.flush()
+    
+    wallet = Wallet(id=user.id, balance=0.0, escrow_balance=0.0)
+    async_db.add(wallet)
+    
+    profile = Profile(
+        user_id=user.id,
+        business_name="Test Laundry",
+        business_address="Test Laundry Address",
+        business_registration_number="RC1234",
+        phone_number=f"+12347{unique_id[:5]}",
+    )
+    async_db.add(profile)
+    await async_db.commit()
+    await async_db.refresh(user)
+    return user
+
+
+@pytest_asyncio.fixture
+async def food_item(async_db: AsyncSession, restaurant_vendor: User):
+    """Create a food item for testing."""
+    from app.models.models import Item, ItemImage
+    from app.schemas.item_schemas import ItemType
+    
+    item = Item(
+        name="Test Food Item",
+        description="A delicious test food item",
+        price=Decimal("12.50"),
+        user_id=restaurant_vendor.id,
+        item_type=ItemType.FOOD,
+    )
+    async_db.add(item)
+    await async_db.flush()
+
+    item_image = ItemImage(
+        item_id=item.id, 
+        url="https://example.com/test-food-image.jpg", 
+        is_primary=True
+    )
+    async_db.add(item_image)
+    await async_db.commit()
+    await async_db.refresh(item)
+    return item
+
+
+@pytest_asyncio.fixture
+async def laundry_item(async_db: AsyncSession, laundry_vendor: User):
+    """Create a laundry item for testing."""
+    from app.models.models import Item, ItemImage
+    from app.schemas.item_schemas import ItemType
+    
+    item = Item(
+        name="Test Laundry Item",
+        description="A test laundry service",
+        price=Decimal("25.00"),
+        user_id=laundry_vendor.id,
+        item_type=ItemType.LAUNDRY,
+    )
+    async_db.add(item)
+    await async_db.flush()
+
+    item_image = ItemImage(
+        item_id=item.id,
+        url="https://example.com/test-laundry-image.jpg",
+        is_primary=True,
+    )
+    async_db.add(item_image)
+    await async_db.commit()
+    await async_db.refresh(item)
+    return item
+
+
+@pytest_asyncio.fixture
+async def authenticated_laundry_vendor(async_client: AsyncClient, laundry_vendor: User):
+    """Create authenticated laundry vendor for testing."""
+    login_data = {"username": laundry_vendor.email, "password": "Password123!"}
+    login_response = await async_client.post("/api/auth/login", data=login_data)
+    assert login_response.status_code == 200
+    auth_data = login_response.json()
+
+    return {
+        "user": laundry_vendor,
+        "access_token": auth_data["access_token"],
+        "headers": {"Authorization": f"Bearer {auth_data['access_token']}"},
+    }
 
 
 async def create_category(async_db: AsyncClient):

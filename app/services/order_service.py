@@ -2735,11 +2735,11 @@ async def vendor_mark_order_delivered(
             )
 
         # Order type validation
-        if order.require_delivery != RequireDeliverySchema.PICKUP:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="This operation is only valid for pickup orders.",
-            )
+        # if order.require_delivery != RequireDeliverySchema.PICKUP:
+        #     raise HTTPException(
+        #         status_code=status.HTTP_400_BAD_REQUEST,
+        #         detail="This operation is only valid for pickup orders.",
+        #     )
 
         # Status transition validation
         if order.order_status == OrderStatus.DELIVERED:
