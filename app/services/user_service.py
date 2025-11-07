@@ -2421,7 +2421,7 @@ async def get_laundry_menu(
                 "user_id": menu.user_id,
                 "name": menu.name,
                 "item_type": menu.item_type,
-                "item_type": menu.description or None,
+                "description": menu.description or None,
                 "is_deleted": menu.is_deleted,
                 "price": menu.price,
                 "images": [

@@ -131,4 +131,5 @@ class MenuResponseSchema(MenuBase):
 
 
 class LaundryMenuResponseSchema(MenuBase):
+    user_id: UUID
     description: str | None = None

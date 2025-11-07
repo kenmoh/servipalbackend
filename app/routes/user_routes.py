@@ -33,7 +33,7 @@ from app.schemas.user_schemas import (
     UserLocationResonse
 )
 from app.services import user_service
-from app.schemas.item_schemas import MenuResponseSchema, FoodGroup
+from app.schemas.item_schemas import MenuResponseSchema, FoodGroup, LaundryMenuResponseSchema
 
 
 router = APIRouter(prefix="/api/users", tags=["Users"])
@@ -292,7 +292,7 @@ async def get_restaurant_menu(
 async def get_laundry_menu(
     laundry_id: UUID,
     db: AsyncSession = Depends(get_db),
-) -> list[MenuResponseSchema]:
+) -> list[LaundryMenuResponseSchema]:
     """
     Get restaurant menu with individual item reviews.
     Used when customer visits a specific restaurant.
