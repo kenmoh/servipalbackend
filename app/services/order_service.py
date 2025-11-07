@@ -884,14 +884,14 @@ async def _handle_post_order_creation(
 
     await ws_service.broadcast_new_order({"order_id": order.id})
 
-    token = await get_user_notification_token(db=db, user_id=vendor_id)
-    if token:
-        await send_push_notification(
-            tokens=[token],
-            title="New Order",
-            message=f"You have a new order from {current_user.profile.full_name or current_user.profile.business_name}",
-            navigate_to="/delivery/orders",
-        )
+    # token = await get_user_notification_token(db=db, user_id=vendor_id)
+    # if token:
+    #     await send_push_notification(
+    #         tokens=[token],
+    #         title="New Order",
+    #         message=f"You have a new order from {current_user.profile.full_name or current_user.profile.business_name}",
+    #         navigate_to="/delivery/orders",
+    #     )
 
     return format_delivery_response(order=order, delivery=None)
 

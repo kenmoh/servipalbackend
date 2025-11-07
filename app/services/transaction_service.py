@@ -1614,7 +1614,7 @@ async def order_payment_callback(request: Request, db: AsyncSession):
                     await send_push_notification(
                         tokens=[customer_token],
                         title="Payment Successful",
-                        message=f"Your payment of ₦{charged_amount:,.2f} was successful.",
+                        message=f"Your payment of ₦{charged_amount:,.2f} is successful.",
                     )
                 if vendor_token:
                     await send_push_notification(
