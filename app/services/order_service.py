@@ -737,6 +737,7 @@ async def _validate_profile_and_authorization(
 async def _validate_order_items(
     db: AsyncSession, order_items: list[OrderItemCreate], vendor_id: UUID
 ):
+    
     item_ids = [
         UUID(item.item_id) if isinstance(item.item_id, str) else item.item_id
         for item in order_items
@@ -3528,6 +3529,18 @@ async def laundry_pickup(
     order.order_status = OrderStatus.VENDOR_PICKUP_LAUNDRY
     await db.commit()
     await db.refresh(order)
+
+
+    # Vendor wallet update (add full amount to escrow)
+    await producer.publish_message(
+        service="wallet",
+        operation="update_wallet",
+        payload={
+            "wallet_id": str(order.vendor_id),
+            "escrow_change": str(order.grand_total),
+            "balance_change": str(0),
+        },
+    )
 
     _invalidate_order_caches(order, current_user)
     redis_client.delete(f"order_by_id:{order_id}")

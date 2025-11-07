@@ -1523,7 +1523,7 @@ async def order_payment_callback(request: Request, db: AsyncSession):
                 )
 
             # --- FOOD/LAUNDRY ORDER ---
-            elif order.order_type in [OrderType.FOOD, OrderType.LAUNDRY]:
+            elif order.order_type == OrderType.FOOD or (OrderType.LAUNDRY and order.require_delivery != RequireDeliverySchema.VENDOR_PICKUP_AND_DROPOFF):
                 # Validate vendor exists
                 if not order.vendor_id:
                     raise HTTPException(
@@ -1585,22 +1585,22 @@ async def order_payment_callback(request: Request, db: AsyncSession):
                     },
                 )
 
-                # Vendor transaction record
-                await producer.publish_message(
-                    service="wallet",
-                    operation="create_transaction",
-                    payload={
-                        "wallet_id": str(order.vendor_id),
-                        "tx_ref": tx_ref,
-                        "amount": str(charged_amount),
-                        "payment_status": PaymentStatus.ESCROWED,
-                        "transaction_type": TransactionType.USER_TO_USER,
-                        "transaction_direction": TransactionDirection.CREDIT,
-                        "from_user": customer.full_name or customer.business_name,
-                        "to_user": vendor_profile.full_name
-                        or vendor_profile.business_name,
-                    },
-                )
+                # # Vendor transaction record
+                # await producer.publish_message(
+                #     service="wallet",
+                #     operation="create_transaction",
+                #     payload={
+                #         "wallet_id": str(order.vendor_id),
+                #         "tx_ref": tx_ref,
+                #         "amount": str(charged_amount),
+                #         "payment_status": PaymentStatus.ESCROWED,
+                #         "transaction_type": TransactionType.USER_TO_USER,
+                #         "transaction_direction": TransactionDirection.CREDIT,
+                #         "from_user": customer.full_name or customer.business_name,
+                #         "to_user": vendor_profile.full_name
+                #         or vendor_profile.business_name,
+                #     },
+                # )
 
                 # Send notifications
                 customer_token = await get_user_notification_token(
