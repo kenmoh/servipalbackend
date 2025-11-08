@@ -4466,6 +4466,7 @@ async def _order_settlement(order: Order):
                 payload={
                     "wallet_id": str(order.vendor_id),
                     "tx_ref": str(uuid.uuid4()),
+                    "to_wallet_id": str(order.vendor_id),
                     "amount": str(order.amount_due_vendor),
                     "transaction_type": TransactionType.USER_TO_USER,
                     "transaction_direction": TransactionDirection.CREDIT,
@@ -4559,9 +4560,27 @@ async def _settle_dispatch(order: Order, idempotency_key: str):
             payload={
                 "wallet_id": str(order.owner_id),
                 "tx_ref": str(order.tx_ref),
-                "to_user": order.vendor.profile.business_name if order.vendor.profile else order.vendor.email,
+                "to_user": order.owner.profile.business_name if order.owner.profile else order.owner.email,
             },
         )
+
+
+    await producer.publish_message(
+        service="wallet",
+        operation="create_transaction",
+        payload={
+            "wallet_id": str(order.delivery.dispatch_id),
+            "tx_ref": str(order.tx_ref),
+            "to_wallet_id": str(order.delivery.dispatch_id),
+            "amount": str(order.delivery.amount_due_dispatch),
+            "transaction_type": transaction.transaction_type,
+            "transaction_direction": TransactionDirection.CREDIT,
+            "payment_method": transaction.payment_method,
+            "payment_status": transaction.payment_status,
+            "from_user": sender_profile.full_name if sender_profile.full_name else sender_profile.business_name,
+            "to_user": dispatch_profile.full_name if dispatch_profile.full_name else dispatch_profile.business_name,
+        },
+    )
     redis_client.setex(f"idempotency:{idempotency_key}", 86400, "1")
 
 
