@@ -69,7 +69,14 @@ async def clear_order_caches(order):
         redis_client.delete(f"user_orders:{order.delivery.dispatch_id}")
         redis_client.delete(f"user_orders:{order.delivery.rider_id}")
         redis_client.delete(f"order_by_id:{order.id}")
+        redis_client.delete(f'wallet_transactions:{order.owner_id}')
+
+        if order.delivery:
+            redis_client.delete(f'wallet_transactions:{order.delivery.dispatch_id}')
+            redis_client.delete(f'wallet_transactions:{order.delivery.sender_id}')
+
         if order.vendor_id:
+            redis_client.delete(f'wallet_transactions:{order.vendor_id}')
             redis_client.delete(f"user_related_orders:{order.vendor_id}")
             redis_client.delete(f"user_orders:{order.vendor_id}")
         redis_client.delete("paid_pending_deliveries")

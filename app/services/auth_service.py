@@ -1112,7 +1112,6 @@ async def generate_verification_codes(
 async def _send_verification_codes(
     user_id: int,
     email: str,
-    phone_number: str,
     email_code: str,
     phone_code: str,
 ):
@@ -1162,9 +1161,6 @@ async def _send_verification_codes(
             )
             return {"message": "Verification codes sent to your email and phone"}
 
-            logger.info(
-                f"Background task: Verification codes sent successfully to {email}"
-            )
 
         except Exception as e:
             logger.error(
@@ -1480,6 +1476,8 @@ async def register_user(
 
         # Refresh to get the generated codes
         await db.refresh(verification)
+        await db.refresh(profile)
+        await db.refresh(user)
 
         # Send verification codes
         if not settings.TEST:
@@ -1490,7 +1488,7 @@ async def register_user(
                     _send_verification_codes,
                     user_id=user.id,
                     email=user.email,
-                    phone_number=formatted_phone,
+                    phone_number=profile.phone_number,
                     email_code=verification.email_code,
                     phone_code=verification.phone_code,
                 )
@@ -1586,7 +1584,7 @@ async def create_user(
         # Send verification code to phone and email
         if not settings.TEST:
             logger.info("Sending otp... ")
-            await send_verification_codes(
+            await _send_verification_codes(
                 user=user, email_code=email_code, phone_code=phone_code, db=db
             )
             logger.info("Otp sent")
@@ -1682,7 +1680,7 @@ async def resend_otp(email: str, db: AsyncSession) -> dict:
         )
 
     # Check rate limiting
-    rate_limit_key = f"otp_rate_limit:{user_id}"
+    rate_limit_key = f"otp_rate_limit:{user.id}"
     if redis_client.exists(rate_limit_key):
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
@@ -1704,7 +1702,7 @@ async def resend_otp(email: str, db: AsyncSession) -> dict:
     await db.commit()
 
     # Check rate limiting
-    rate_limit_key = f"otp_rate_limit:{user_id}"
+    rate_limit_key = f"otp_rate_limit:{user.id}"
     if redis_client.exists(rate_limit_key):
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
@@ -1712,7 +1710,7 @@ async def resend_otp(email: str, db: AsyncSession) -> dict:
         )
 
     if codes.email_code and codes.phone_code:
-        await send_verification_codes(
+        await _send_verification_codes(
             user=user, email_code=codes.email_code, phone_code=codes.phone_code, db=db
         )
 
@@ -1722,7 +1720,7 @@ async def resend_otp(email: str, db: AsyncSession) -> dict:
     else:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to send OTP: {otp_result.get('message')}",
+            detail=f"Failed to send OTP",
         )
 
     # Flutterwave option

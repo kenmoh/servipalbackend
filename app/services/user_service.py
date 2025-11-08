@@ -642,6 +642,12 @@ async def get_user_wallets(
 
 
 async def get_user_wallet(db: AsyncSession, current_user: User) -> WalletSchema:
+
+    cache_key = f'wallet_transactions:{current_user.id}'
+    if cache_key:
+        data = json.loads(cache_key)
+        return WalletSchema(**data)
+    
     stmt = (
         select(Wallet)
         .where(Wallet.id == current_user.id)
@@ -653,6 +659,12 @@ async def get_user_wallet(db: AsyncSession, current_user: User) -> WalletSchema:
         wallet.transactions.sort(
             key=lambda t: getattr(t, "created_at", None), reverse=True
         )
+    wallet_dict = WalletSchema(
+        id=wallet.id, balance=wallet.balance, escrow_balance=wallet.escrow_balance, transactions=wallet.transactions
+    ).model_dump()
+
+    redis_client.setex(settings.REDIS_EX, json.dumps(wallet_dict, default=str))
+
     return wallet
 
 

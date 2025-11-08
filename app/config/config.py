@@ -189,7 +189,7 @@ class Settings(BaseSettings):
     UPSTASH_TOKEN: str
 
     # API URL
-    FRONTEND_URL: str
+    FRONTEND_URL: str = 'https://servi-pal.com'
     API_URL: str = "http://localhost:8000"
     TEST_API_URL: str = "http://localhost:8000"
     TEST_BASE_URL: str = "http://test"

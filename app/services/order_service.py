@@ -3908,6 +3908,7 @@ def _invalidate_caches(order: Order, current_user: User):
             f"delivery:{order.delivery.id}",
             f"order_by_id:{order.id}",
             f"near_by_riders",
+             redis_client.delete(f'wallet_transactions:{current_user.id}')
         ]
 
         # Add vendor-related caches if exists
@@ -3916,6 +3917,7 @@ def _invalidate_caches(order: Order, current_user: User):
                 [
                     f"user_related_orders:{order.vendor_id}",
                     f"vendor_orders:{order.vendor_id}",
+                     redis_client.delete(f'wallet_transactions:{order.vendor_id}')
                 ]
             )
 
@@ -3925,6 +3927,7 @@ def _invalidate_caches(order: Order, current_user: User):
                 [
                     f"user_related_orders:{order.delivery.dispatch_id}",
                     f"dispatch_orders:{order.delivery.dispatch_id}",
+                     redis_client.delete(f'wallet_transactions:{order.delivery.dispatch_id}')
                 ]
             )
 
@@ -4864,6 +4867,8 @@ def _invalidate_order_caches(order: Order, current_user: User):
             "orders",
             "near_by_riders"
         ]
+        redis_client.delete(f'wallet_transactions:{order.vendor_id}')
+        redis_client.delete(f'wallet_transactions:{order.owner_id}')
         redis_client.delete(f"user_related_orders:{current_user.id}")
         redis_client.delete(f"user_related_orders:{order.vendor_id}")
         redis_client.delete(f"user_related_orders:{order.owner_id}")
