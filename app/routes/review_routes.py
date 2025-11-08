@@ -110,15 +110,15 @@ async def get_reviews_for_admin(
     )
 
 
-# @report.get("", status_code=status.HTTP_200_OK, operation_id="get_user_report")
-# async def get_reports_by_user(
-#     db: AsyncSession = Depends(get_db),
-#     current_user: User = Depends(get_current_user),
-# ) -> list[ReportMessage]:
-#     """
-#     Endpoint to get current user reviews
-#     """
-#     return await review_service.get_reports_by_user(db=db, current_user=current_user)
+@report.get("", status_code=status.HTTP_200_OK, operation_id="get_user_report")
+async def fetch_rider_reviews(
+    rider_id:UUID,
+    db: AsyncSession = Depends(get_db),
+) -> list[ReviewResponse]:
+    """
+    Endpoint to get rider reviews
+    """
+    return await review_service.fetch_rider_reviews(db=db, rider_id=rider_id)
 
 
 # @report.get(

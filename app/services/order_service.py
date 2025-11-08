@@ -4413,6 +4413,15 @@ async def _order_settlement(order: Order):
     retry_count = 0
     settlement_succeeded = False
 
+    # business_stmt = select(Profile.business_name).where(Profile.user_id == order.vendor_id)
+    # business_result = await db.execute(business_stmt)
+    # business_name = business_result.scalar_one()
+
+    # sender_stmt = select(Profile.full_name, Profile.full_name).where(Profile.user_id == order.owner_id)
+    # owner_result = await db.execute(sender_stmt)
+    # full_name, owner_business_name = owner_result.scalar_one()
+
+
     while retry_count < MAX_RETRIES and not settlement_succeeded:
         try:
             # Calculate and validate amounts
@@ -4472,13 +4481,25 @@ async def _order_settlement(order: Order):
                     "transaction_direction": TransactionDirection.CREDIT,
                     "payment_status": PaymentStatus.PAID,
                     "payment_method": PaymentMethod.ESCROW_SETTLEMENT,
-                    "from_user": order.owner.profile.full_name if order.owner else order.owner.email,
+                    "from_user": order.owner.profile.full_name if order.owner.profile.full_name else order.owner.email,
+                    "to_user": order.vendor.profile.business_name,
                     "idempotency_key": idempotency_key,
                     "details": {
                         "order_id": str(order.id),
                         "settlement_type": order.order_type.value,
                         "commission": str(order.grand_total - order.amount_due_vendor),
                     },
+                },
+            )
+
+            await producer.publish_message(
+                service="wallet",
+                operation="update_transaction",
+                payload={
+                    "wallet_id": str(order.owner_id),
+                    "tx_ref": str(order.tx_ref),
+                    "to_user": order.vendor.profile.business_name
+,
                 },
             )
 
@@ -4539,6 +4560,15 @@ async def _settle_dispatch(order: Order, idempotency_key: str):
     total_spent = order.delivery.delivery_fee
     dispatch_amount = order.delivery.amount_due_dispatch
 
+    dispatch_stmt = select(Profile.business_name).where(profile.user_id == order.delivery.dispatch_id)
+    dispatch_result = await db.execute(dispatch_stmt)
+    business_name = dispatch_result.scalar_one()
+
+    sender_stmt = select(Profile.full_name, Profile.business_name).where(profile.user_id == order.delivery.sender_id)
+    sender_result = await db.execute(sender_stmt)
+    full_name, sender_business_name = sender_result.scalar_one()
+
+
     await producer.publish_message(
         service="wallet",
         operation="update_wallet",
@@ -4560,7 +4590,7 @@ async def _settle_dispatch(order: Order, idempotency_key: str):
             payload={
                 "wallet_id": str(order.owner_id),
                 "tx_ref": str(order.tx_ref),
-                "to_user": order.owner.profile.business_name if order.owner.profile else order.owner.email,
+                "to_user": business_name,
             },
         )
 
@@ -4577,10 +4607,20 @@ async def _settle_dispatch(order: Order, idempotency_key: str):
             "transaction_direction": TransactionDirection.CREDIT,
             "payment_method": transaction.payment_method,
             "payment_status": transaction.payment_status,
-            "from_user": sender_profile.full_name if sender_profile.full_name else sender_profile.business_name,
-            "to_user": dispatch_profile.full_name if dispatch_profile.full_name else dispatch_profile.business_name,
+            "from_user": full_name is not None else sender_business_name,
+            "to_user": business_name
         },
     )
+
+    await producer.publish_message(
+            service="wallet",
+            operation="update_transaction",
+            payload={
+                "wallet_id": str(order.owner_id),
+                "tx_ref": str(order.tx_ref),
+                "to_user": business_name,
+            },
+        )
     redis_client.setex(f"idempotency:{idempotency_key}", 86400, "1")
 
 

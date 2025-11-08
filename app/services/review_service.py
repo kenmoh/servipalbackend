@@ -163,7 +163,7 @@ async def create_review(
         await db.rollback()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Could not save the review due to a database error.",
+            detail="Err creating review. Please try again.",
         )
     except Exception as e:
         await db.rollback()
@@ -176,7 +176,7 @@ async def create_review(
 async def create_rider_review(
     db: AsyncSession, current_user: User, data: ReviewCreate
 ) -> ReviewCreate:
-    """Creates a review for a completed food or laundry order."""
+    """Creates a review for a completed delivery order."""
     # 1. Fetch the order and verify its existence
 
     result = await db.execute(
@@ -201,11 +201,6 @@ async def create_rider_review(
             detail="You can only review a delivery order you created.",
         )
 
-    if order.vendor_id == current_user.id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="You cannot review your own order.",
-        )
 
     if order.order_status != OrderStatus.RECEIVED:
         raise HTTPException(
@@ -241,7 +236,7 @@ async def create_rider_review(
         await db.commit()
         await db.refresh(review)
 
-        redis_client.delete(f"reviews:{order.vendor_id}")
+        redis_client.delete(f"reviews:{order.delivery.rider_id}")
 
         return ReviewResponse(
             id=review.id,
@@ -254,7 +249,7 @@ async def create_rider_review(
         await db.rollback()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Could not save the review due to a database error.",
+            detail="Error creating review. Please try again.",
         )
     except Exception as e:
         await db.rollback()
@@ -431,6 +426,76 @@ async def fetch_vendor_reviews(
         redis_client.setex(cache_key, 3600, value)
     return response_list
 
+
+async def fetch_rider_reviews(
+    rider_id: UUID, db: AsyncSession
+) -> list[ReviewResponse]:
+    cache_key = f"reviews:{rider_id}"
+    cached_reviews = redis_client.get(cache_key)
+    if cached_reviews:
+        # Parse the JSON string back to a list of dictionaries
+        reviews_data = json.loads(cached_reviews)
+        return [ReviewResponse(**r) for r in reviews_data]
+
+    # Subquery to get the latest review ID for each reviewer
+    latest_review_subquery = (
+        select(
+            Review.reviewer_id, func.max(Review.created_at).label("latest_created_at")
+        )
+        .where(Review.reviewee_id == rider_id, Review.review_type == ReviewType.RIDER)
+        .group_by(Review.reviewer_id)
+        .subquery()
+    )
+
+    # Main query to get the full review details for the latest reviews
+    stmt = (
+        select(Review)
+        .options(
+            selectinload(Review.reviewer)
+            .selectinload(User.profile)
+            .selectinload(Profile.profile_image)
+        )
+        .join(
+            latest_review_subquery,
+            and_(
+                Review.reviewer_id == latest_review_subquery.c.reviewer_id,
+                Review.created_at == latest_review_subquery.c.latest_created_at,
+            ),
+        )
+        .where(Review.reviewee_id == rider_id, Review.review_type == ReviewType.RIDER)
+    )
+    stmt = stmt.order_by(Review.created_at.desc())
+    result = await db.execute(stmt)
+    reviews = result.scalars().all()
+
+    response_list = [
+        ReviewResponse(
+            id=r.id,
+            rating=r.rating,
+            comment=r.comment,
+            created_at=r.created_at,
+            reviewer=ReviewerProfile(
+                id=r.reviewer.id,
+                full_name=r.reviewer.profile.full_name
+                if r.reviewer.profile and r.reviewer.profile.full_name
+                else r.reviewer.profile.business_name
+                if r.reviewer.profile
+                else None,
+                profile_image_url=(
+                    r.reviewer.profile.profile_image.profile_image_url
+                    if r.reviewer.profile and r.reviewer.profile.profile_image
+                    else None
+                ),
+            ),
+        )
+        for r in reviews
+    ]
+
+    # Only cache if we have reviews
+    if response_list:
+        value = json.dumps([r.model_dump() for r in response_list], default=str)
+        redis_client.setex(cache_key, 3600, value)
+    return response_list
 
 # async def fetch_vendor_reviews(
 #     vendor_id: UUID, db: AsyncSession
