@@ -4066,7 +4066,7 @@ async def sender_confirm_package_received(
 
                 # Process normal settlement
                 try:
-                    await _package_settlement(order)
+                    await _package_settlement(order, db=db)
                 except Exception as e:
                     logger.error(
                         f"Settlement failed for order {order.id}: {str(e)}", 
@@ -4556,15 +4556,20 @@ async def _clear_sender_escrow(order: Order, idempotency_key: str):
     redis_client.setex(cache_key, 86400, "1")  # 24 hours
     logger.info(f"Sender escrow cleared for order {order.id}")
 
-async def _settle_dispatch(order: Order, idempotency_key: str):
+async def _settle_dispatch(order: Order, idempotency_key: str, db: AsyncSession):
     total_spent = order.delivery.delivery_fee
     dispatch_amount = order.delivery.amount_due_dispatch
 
-    dispatch_stmt = select(Profile.business_name).where(profile.user_id == order.delivery.dispatch_id)
+    transaction_result = await db.execute(
+                select(Transaction).where(Transaction.tx_ref == order.tx_ref)
+            )
+    transaction = transaction_result.scalar_one_or_none()
+
+    dispatch_stmt = select(Profile.business_name).where(Profile.user_id == order.delivery.dispatch_id)
     dispatch_result = await db.execute(dispatch_stmt)
     business_name = dispatch_result.scalar_one()
 
-    sender_stmt = select(Profile.full_name, Profile.business_name).where(profile.user_id == order.delivery.sender_id)
+    sender_stmt = select(Profile.full_name, Profile.business_name).where(Profile.user_id == order.delivery.sender_id)
     sender_result = await db.execute(sender_stmt)
     full_name, sender_business_name = sender_result.scalar_one()
 
@@ -4603,11 +4608,11 @@ async def _settle_dispatch(order: Order, idempotency_key: str):
             "tx_ref": str(order.tx_ref),
             "to_wallet_id": str(order.delivery.dispatch_id),
             "amount": str(order.delivery.amount_due_dispatch),
-            "transaction_type": transaction.transaction_type,
-            "transaction_direction": TransactionDirection.CREDIT,
+            "transaction_type": TransactionType.USER_TO_USER,
+            "transaction_direction": transaction.transaction_direction,
             "payment_method": transaction.payment_method,
             "payment_status": transaction.payment_status,
-            "from_user": full_name is not None else sender_business_name,
+            "from_user": full_name if full_name is not None else sender_business_name,
             "to_user": business_name
         },
     )
@@ -4625,7 +4630,7 @@ async def _settle_dispatch(order: Order, idempotency_key: str):
 
 
 
-async def _package_settlement(order: Order):
+async def _package_settlement(order: Order, db: AsyncSession):
     """
     1. Move money from dispatch escrow → dispatch balance
     2. ALWAYS clear the sender’s escrow (idempotent on wallet side)
@@ -4635,7 +4640,7 @@ async def _package_settlement(order: Order):
     if redis_client.get(f"idempotency:{dispatch_key}"):
         logger.info(f"Dispatch settlement already done for order {order.id}")
     else:
-        await _settle_dispatch(order, dispatch_key)
+        await _settle_dispatch(order, dispatch_key, db)
 
     # ---- 2. Sender escrow clear (always run – wallet service is idempotent) ----
     sender_key = f"sender_escrow_clear:{order.id}"

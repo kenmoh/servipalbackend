@@ -193,7 +193,7 @@ async def get_user_from_token(token: str, db: AsyncSession) -> User | None:
     result = await db.execute(query)
     user = result.scalar_one_or_none()
 
-    if user is None or user.is_blocked:
+    if user is None or user.is_blocked or user.rider_is_suspended_for_order_cancel:
         return None
 
     return user

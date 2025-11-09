@@ -51,7 +51,7 @@ async def seed_charges(async_db: AsyncSession):
         payout_charge_transaction_from_5001_to_50_000_naira=Decimal("25"),
         payout_charge_transaction_above_50_000_naira=Decimal("50"),
         stamp_duty=Decimal("50"),
-        base_delivery_fee=Decimal("300"),
+        base_delivery_fee=Decimal("1350"),
         delivery_fee_per_km=Decimal("50"),
         delivery_commission_percentage=Decimal("20"),
         food_laundry_commission_percentage=Decimal("15"),

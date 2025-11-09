@@ -110,7 +110,7 @@ async def get_reviews_for_admin(
     )
 
 
-@report.get("/rider-reviews", status_code=status.HTTP_200_OK, operation_id="get_user_report")
+@router.get("/rider-reviews", status_code=status.HTTP_200_OK, operation_id="get_user_report")
 async def fetch_rider_reviews(
     rider_id:UUID,
     db: AsyncSession = Depends(get_db),
