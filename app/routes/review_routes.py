@@ -35,7 +35,7 @@ async def create_new_review(
     )
 
 @router.post(
-    "/rider-review",
+    "/rider-reviews",
     status_code=status.HTTP_201_CREATED,
 )
 async def create_rider_review(
