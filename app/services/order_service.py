@@ -1919,7 +1919,7 @@ async def _sender_cancel_delivery(
             order.delivery.rider_phone_number = None
           
 
-            await db.execute(update(User).where(User.id==rider_id).values(User.has_delivery=False))
+            await db.execute(update(User).where(User.id==rider_id).values(has_delivery=False))
             
             await db.commit()
 
