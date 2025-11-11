@@ -3983,7 +3983,6 @@ async def sender_confirm_package_received(
         HTTPException: With appropriate status code and detailed error message
     """
     try:
-    # Start a transaction
         # 1. Fetch order with relationships
         result = await db.execute(
             select(Order)
@@ -4078,98 +4077,98 @@ async def sender_confirm_package_received(
 
             settlement_message = "delivery"
 
-    # 4. Create audit log (outside nested transaction)
-    distance_travelled = Decimal(f"{order.delivery.distance}")
-    rider_id = order.delivery.rider_id
+        # 4. Create audit log (outside nested transaction)
+        distance_travelled = Decimal(f"{order.delivery.distance}")
+        rider_id = order.delivery.rider_id
 
-    
-    await TransactionLogService.create_log(
-        db=db,
-        vendor_id=current_user.id,
-        order_id=order.id,
-        amount=order.delivery.delivery_fee - order.delivery.amount_due_dispatch,
-        action=TransactionLogAction.RECEIVED,
-        status=order.order_payment_status,
-        details={
-            "order_type": order.order_type,
-            "order_number": order.order_number,
-            "confirmed_by": current_user.profile.full_name
-            or current_user.profile.business_name,
-            "phone_number": current_user.profile.phone_number,
-            "delivery_fee": str(order.delivery.delivery_fee),
-            "amount_due_dispatch": str(order.delivery.amount_due_dispatch),
-            "dispatch_id": str(order.delivery.dispatch_id),
-            "rider_id": str(order.delivery.rider_id)
-            if order.delivery.rider_id
-            else None,
-            "is_cancelled_return": is_cancelled_return,
-        },
-    )
-
-
-    if rider_id:
-        # update has_delivery
-        await db.execute(
-            update(User)
-            .where(User.id == rider_id)
-            .values(has_delivery=False)
+        
+        await TransactionLogService.create_log(
+            db=db,
+            vendor_id=current_user.id,
+            order_id=order.id,
+            amount=order.delivery.delivery_fee - order.delivery.amount_due_dispatch,
+            action=TransactionLogAction.RECEIVED,
+            status=order.order_payment_status,
+            details={
+                "order_type": order.order_type,
+                "order_number": order.order_number,
+                "confirmed_by": current_user.profile.full_name
+                or current_user.profile.business_name,
+                "phone_number": current_user.profile.phone_number,
+                "delivery_fee": str(order.delivery.delivery_fee),
+                "amount_due_dispatch": str(order.delivery.amount_due_dispatch),
+                "dispatch_id": str(order.delivery.dispatch_id),
+                "rider_id": str(order.delivery.rider_id)
+                if order.delivery.rider_id
+                else None,
+                "is_cancelled_return": is_cancelled_return,
+            },
         )
+
+
+        if rider_id:
+            # update has_delivery
+            await db.execute(
+                update(User)
+                .where(User.id == rider_id)
+                .values(has_delivery=False)
+            )
+            await db.commit()
+
+            # safe profile update (load-and-mutate)
+            stmt = select(Profile).where(Profile.user_id == rider_id).with_for_update()
+            result = await db.execute(stmt)
+            profile = result.scalar_one_or_none()
+
+            if profile:
+
+                current_distance = profile.total_distance_travelled or Decimal('0.0')
+                profile.total_distance_travelled = current_distance + distance_travelled
+                db.add(profile)
+            else:
+                logger.warning(f"Profile not found for rider {rider_id}; cannot update distance.")
+
+        else:
+            logger.warning(f"No rider_id on order {order.id}; skipping rider profile updates.")
+
+
+        await db.execute(
+            update(Profile)
+            .where(Profile.user_id == order.delivery.rider_id)
+            .values(
+                total_distance_travelled=Profile.total_distance_travelled + distance_travelled
+            )
+        )
+        
         await db.commit()
 
-        # safe profile update (load-and-mutate)
-        stmt = select(Profile).where(Profile.user_id == rider_id).with_for_update()
-        result = await db.execute(stmt)
-        profile = result.scalar_one_or_none()
+        # 6. Post-transaction operations (non-critical)
+        try:
+            # Send notifications
+            if is_cancelled_return:
+                await _send_return_confirmation_notifications(order, db)
+            else:
+                await _send_notifications(order, db)
 
-        if profile:
+            # Invalidate caches
+            _invalidate_caches(order, current_user)
 
-            current_distance = profile.total_distance_travelled or Decimal('0.0')
-            profile.total_distance_travelled = current_distance + distance_travelled
-            db.add(profile)
-        else:
-            logger.warning(f"Profile not found for rider {rider_id}; cannot update distance.")
+        except Exception as e:
+            logger.warning(
+                f"Non-critical post-confirmation operations failed for order {order.id}: {str(e)}",
+                exc_info=True,
+            )
 
-    else:
-        logger.warning(f"No rider_id on order {order.id}; skipping rider profile updates.")
-
-
-    await db.execute(
-        update(Profile)
-        .where(Profile.user_id == order.delivery.rider_id)
-        .values(
-            total_distance_travelled=Profile.total_distance_travelled + distance_travelled
+        # 7. Log successful completion
+        logger.info(
+            f"Package {settlement_message} confirmation completed successfully for order {order.id}"
         )
-    )
-    
-    await db.commit()
-
-    # 6. Post-transaction operations (non-critical)
-    try:
-        # Send notifications
-        if is_cancelled_return:
-            await _send_return_confirmation_notifications(order, db)
-        else:
-            await _send_notifications(order, db)
-
-        # Invalidate caches
-        _invalidate_caches(order, current_user)
-
-    except Exception as e:
-        logger.warning(
-            f"Non-critical post-confirmation operations failed for order {order.id}: {str(e)}",
-            exc_info=True,
+        redis_client.delete(f"order_by_id:{order_id}")
+        
+        return DeliveryStatusUpdateSchema(
+            delivery_status=order.delivery.delivery_status,
+            order_status=order.order_status,
         )
-
-    # 7. Log successful completion
-    logger.info(
-        f"Package {settlement_message} confirmation completed successfully for order {order.id}"
-    )
-    redis_client.delete(f"order_by_id:{order_id}")
-    
-    return DeliveryStatusUpdateSchema(
-        delivery_status=order.delivery.delivery_status,
-        order_status=order.order_status,
-    )
 
     except HTTPException:
         await db.rollback()
