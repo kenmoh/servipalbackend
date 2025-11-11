@@ -34,6 +34,23 @@ async def create_new_review(
         db=db, current_user=current_user, data=data
     )
 
+@router.post(
+    "/rider-review",
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_rider_review(
+    data: ReviewCreate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> ReviewResponse:
+    """
+    Endpoint to create a rider review
+    """
+    return await review_service.create_rider_review(
+        db=db, current_user=current_user, data=data
+    )
+
+
 
 @router.post(
     "/item-review",
