@@ -1893,7 +1893,7 @@ async def _sender_cancel_delivery(
                     },
                 )
                 
-                refund_message = f"₦{order.delivery.delivery_fee} has been refunded to your wallet balance."
+                refund_message = f"₦{order.delivery.delivery_fee} has been credited to your wallet."
             else:
                 logger.info(
                     f"Package was already picked up for order {order.id}. "
@@ -3983,194 +3983,193 @@ async def sender_confirm_package_received(
         HTTPException: With appropriate status code and detailed error message
     """
     try:
-        # Start a transaction
-        async with db.begin_nested():
-            # 1. Fetch order with relationships
-            result = await db.execute(
-                select(Order)
-                .where(Order.id == order_id)
-                .options(
-                    selectinload(Order.delivery),
-                    selectinload(Order.vendor).selectinload(User.profile),
-                )
-                .with_for_update()
+    # Start a transaction
+        # 1. Fetch order with relationships
+        result = await db.execute(
+            select(Order)
+            .where(Order.id == order_id)
+            .options(
+                selectinload(Order.delivery),
+                selectinload(Order.vendor).selectinload(User.profile),
             )
-            order = result.scalar_one_or_none()
+            .with_for_update()
+        )
+        order = result.scalar_one_or_none()
 
-            # 2. Basic validation
-            if not order:
-                raise HTTPException(
-                    status_code=status.HTTP_404_NOT_FOUND, 
-                    detail="Order not found"
-                )
+        # 2. Basic validation
+        if not order:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, 
+                detail="Order not found"
+            )
 
-            if order.owner_id != current_user.id:
-                raise HTTPException(
-                    status_code=status.HTTP_403_FORBIDDEN,
-                    detail="You are not authorized to confirm this delivery"
-                )
+        if order.owner_id != current_user.id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="You are not authorized to confirm this delivery"
+            )
 
-            if not order.delivery:
+        if not order.delivery:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="This order has no associated delivery record"
+            )
+
+        # 3. Check if this is a CANCELLED order (return scenario)
+        is_cancelled_return = order.order_status == OrderStatus.CANCELLED
+
+        if is_cancelled_return:
+            logger.info(
+                f"Processing return confirmation for cancelled order {order.id}"
+            )
+            
+            # Validate it was actually picked up before cancellation
+            if order.delivery.delivery_status != DeliveryStatus.CANCELLED:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="This order has no associated delivery record"
+                    detail="Invalid order state for return confirmation"
                 )
 
-            # 3. Check if this is a CANCELLED order (return scenario)
-            is_cancelled_return = order.order_status == OrderStatus.CANCELLED
-
-            if is_cancelled_return:
-                logger.info(
-                    f"Processing return confirmation for cancelled order {order.id}"
-                )
-                
-                # Validate it was actually picked up before cancellation
-                if order.delivery.delivery_status != DeliveryStatus.CANCELLED:
-                    raise HTTPException(
-                        status_code=status.HTTP_400_BAD_REQUEST,
-                        detail="Invalid order state for return confirmation"
-                    )
-
-                # Check if already confirmed
-                if order.delivery.delivery_status == DeliveryStatus.RECEIVED:
-                    raise HTTPException(
-                        status_code=status.HTTP_400_BAD_REQUEST,
-                        detail="Return has already been confirmed"
-                    )
-
-                # Process return settlement - sender is charged, dispatch is paid
-                await _process_cancelled_order_return_settlement(order)
-
-                # Update to RECEIVED status to mark return as confirmed
-                order.delivery.delivery_status = DeliveryStatus.RECEIVED
-                # Order status stays CANCELLED
-
-                settlement_message = "cancelled order return"
-                
-            else:
-                # Normal delivery flow
-                logger.info(
-                    f"Processing normal delivery confirmation for order {order.id}"
+            # Check if already confirmed
+            if order.delivery.delivery_status == DeliveryStatus.RECEIVED:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Return has already been confirmed"
                 )
 
-                # Validate normal delivery state
-                await _validate_delivery(order, current_user)
+            # Process return settlement - sender is charged, dispatch is paid
+            await _process_cancelled_order_return_settlement(order)
 
-                # Update delivery status
-                await _update_delivery_status(
-                    order=order,
-                    db=db,
-                    order_status=OrderStatus.RECEIVED,
-                    delivery_status=DeliveryStatus.RECEIVED,
-                )
+            # Update to RECEIVED status to mark return as confirmed
+            order.delivery.delivery_status = DeliveryStatus.RECEIVED
+            # Order status stays CANCELLED
 
-                # Process normal settlement
-                try:
-                    await _package_settlement(order, db=db)
-                except Exception as e:
-                    logger.error(
-                        f"Settlement failed for order {order.id}: {str(e)}", 
-                        exc_info=True
-                    )
-                    raise HTTPException(
-                        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                        detail="Failed to process payment settlement. Please contact support.",
-                    )
-
-                settlement_message = "delivery"
-
-        # 4. Create audit log (outside nested transaction)
-        distance_travelled = Decimal(f"{order.delivery.distance}")
-        rider_id = order.delivery.rider_id
-
-        
-        await TransactionLogService.create_log(
-            db=db,
-            vendor_id=current_user.id,
-            order_id=order.id,
-            amount=order.delivery.delivery_fee - order.delivery.amount_due_dispatch,
-            action=TransactionLogAction.RECEIVED,
-            status=order.order_payment_status,
-            details={
-                "order_type": order.order_type,
-                "order_number": order.order_number,
-                "confirmed_by": current_user.profile.full_name
-                or current_user.profile.business_name,
-                "phone_number": current_user.profile.phone_number,
-                "delivery_fee": str(order.delivery.delivery_fee),
-                "amount_due_dispatch": str(order.delivery.amount_due_dispatch),
-                "dispatch_id": str(order.delivery.dispatch_id),
-                "rider_id": str(order.delivery.rider_id)
-                if order.delivery.rider_id
-                else None,
-                "is_cancelled_return": is_cancelled_return,
-            },
-        )
-
-
-        if rider_id:
-            # update has_delivery
-            await db.execute(
-                update(User)
-                .where(User.id == rider_id)
-                .values(has_delivery=False)
-            )
-            await db.commit()
-
-            # safe profile update (load-and-mutate)
-            stmt = select(Profile).where(Profile.user_id == rider_id).with_for_update()
-            result = await db.execute(stmt)
-            profile = result.scalar_one_or_none()
-
-            if profile:
-
-                current_distance = profile.total_distance_travelled or Decimal('0.0')
-                profile.total_distance_travelled = current_distance + distance_travelled
-                db.add(profile)
-            else:
-                logger.warning(f"Profile not found for rider {rider_id}; cannot update distance.")
-
+            settlement_message = "cancelled order return"
+            
         else:
-            logger.warning(f"No rider_id on order {order.id}; skipping rider profile updates.")
-
-
-        await db.execute(
-            update(Profile)
-            .where(Profile.user_id == order.delivery.rider_id)
-            .values(
-                total_distance_travelled=Profile.total_distance_travelled + distance_travelled
+            # Normal delivery flow
+            logger.info(
+                f"Processing normal delivery confirmation for order {order.id}"
             )
+
+            # Validate normal delivery state
+            await _validate_delivery(order, current_user)
+
+            # Update delivery status
+            await _update_delivery_status(
+                order=order,
+                db=db,
+                order_status=OrderStatus.RECEIVED,
+                delivery_status=DeliveryStatus.RECEIVED,
+            )
+
+            # Process normal settlement
+            try:
+                await _package_settlement(order, db=db)
+            except Exception as e:
+                logger.error(
+                    f"Settlement failed for order {order.id}: {str(e)}", 
+                    exc_info=True
+                )
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail="Failed to process payment settlement. Please contact support.",
+                )
+
+            settlement_message = "delivery"
+
+    # 4. Create audit log (outside nested transaction)
+    distance_travelled = Decimal(f"{order.delivery.distance}")
+    rider_id = order.delivery.rider_id
+
+    
+    await TransactionLogService.create_log(
+        db=db,
+        vendor_id=current_user.id,
+        order_id=order.id,
+        amount=order.delivery.delivery_fee - order.delivery.amount_due_dispatch,
+        action=TransactionLogAction.RECEIVED,
+        status=order.order_payment_status,
+        details={
+            "order_type": order.order_type,
+            "order_number": order.order_number,
+            "confirmed_by": current_user.profile.full_name
+            or current_user.profile.business_name,
+            "phone_number": current_user.profile.phone_number,
+            "delivery_fee": str(order.delivery.delivery_fee),
+            "amount_due_dispatch": str(order.delivery.amount_due_dispatch),
+            "dispatch_id": str(order.delivery.dispatch_id),
+            "rider_id": str(order.delivery.rider_id)
+            if order.delivery.rider_id
+            else None,
+            "is_cancelled_return": is_cancelled_return,
+        },
+    )
+
+
+    if rider_id:
+        # update has_delivery
+        await db.execute(
+            update(User)
+            .where(User.id == rider_id)
+            .values(has_delivery=False)
         )
-        
         await db.commit()
 
-        # 6. Post-transaction operations (non-critical)
-        try:
-            # Send notifications
-            if is_cancelled_return:
-                await _send_return_confirmation_notifications(order, db)
-            else:
-                await _send_notifications(order, db)
+        # safe profile update (load-and-mutate)
+        stmt = select(Profile).where(Profile.user_id == rider_id).with_for_update()
+        result = await db.execute(stmt)
+        profile = result.scalar_one_or_none()
 
-            # Invalidate caches
-            _invalidate_caches(order, current_user)
+        if profile:
 
-        except Exception as e:
-            logger.warning(
-                f"Non-critical post-confirmation operations failed for order {order.id}: {str(e)}",
-                exc_info=True,
-            )
+            current_distance = profile.total_distance_travelled or Decimal('0.0')
+            profile.total_distance_travelled = current_distance + distance_travelled
+            db.add(profile)
+        else:
+            logger.warning(f"Profile not found for rider {rider_id}; cannot update distance.")
 
-        # 7. Log successful completion
-        logger.info(
-            f"Package {settlement_message} confirmation completed successfully for order {order.id}"
+    else:
+        logger.warning(f"No rider_id on order {order.id}; skipping rider profile updates.")
+
+
+    await db.execute(
+        update(Profile)
+        .where(Profile.user_id == order.delivery.rider_id)
+        .values(
+            total_distance_travelled=Profile.total_distance_travelled + distance_travelled
         )
-        redis_client.delete(f"order_by_id:{order_id}")
-        
-        return DeliveryStatusUpdateSchema(
-            delivery_status=order.delivery.delivery_status,
-            order_status=order.order_status,
+    )
+    
+    await db.commit()
+
+    # 6. Post-transaction operations (non-critical)
+    try:
+        # Send notifications
+        if is_cancelled_return:
+            await _send_return_confirmation_notifications(order, db)
+        else:
+            await _send_notifications(order, db)
+
+        # Invalidate caches
+        _invalidate_caches(order, current_user)
+
+    except Exception as e:
+        logger.warning(
+            f"Non-critical post-confirmation operations failed for order {order.id}: {str(e)}",
+            exc_info=True,
         )
+
+    # 7. Log successful completion
+    logger.info(
+        f"Package {settlement_message} confirmation completed successfully for order {order.id}"
+    )
+    redis_client.delete(f"order_by_id:{order_id}")
+    
+    return DeliveryStatusUpdateSchema(
+        delivery_status=order.delivery.delivery_status,
+        order_status=order.order_status,
+    )
 
     except HTTPException:
         await db.rollback()
