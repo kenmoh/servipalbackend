@@ -156,24 +156,78 @@ async def get_fund_wallet_payment_link(id: UUID, amount: Decimal, current_user: 
         )
 
 
+# async def get_all_banks() -> list[BankSchema]:
+#     cache_key = "banks_list"
+#     cached_banks = redis_client.get(cache_key)
+
+#     if cached_banks:
+#         return json.loads(cached_banks)
+#     try:
+#         headers = {"Authorization": f"Bearer {settings.FLW_SECRET_KEY}"}
+
+#         async with httpx.AsyncClient(timeout=30.0) as client:
+#             response = await client.get(bank_url, headers=headers)
+#             banks = response.json()["data"]
+
+#             sorted_banks = sorted(banks, key=lambda bank: bank["name"])
+
+#             redis_client.set(cache_key, json.dumps(sorted_banks, default=str), ex=86400)
+#             return sorted_banks
+
+#     except httpx.HTTPStatusError as e:
+#         raise HTTPException(
+#             status_code=status.HTTP_502_BAD_GATEWAY,
+#             detail=f"Failed to get banks: {str(e)}",
+#         )
+#     except Exception as e:
+#         raise HTTPException(
+#             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+#             detail=f"Failed to get banks: {str(e)}",
+#         )
+
 async def get_all_banks() -> list[BankSchema]:
     cache_key = "banks_list"
     cached_banks = redis_client.get(cache_key)
-
     if cached_banks:
         return json.loads(cached_banks)
     try:
         headers = {"Authorization": f"Bearer {settings.FLW_SECRET_KEY}"}
-
         async with httpx.AsyncClient(timeout=30.0) as client:
             response = await client.get(bank_url, headers=headers)
             banks = response.json()["data"]
-
-            sorted_banks = sorted(banks, key=lambda bank: bank["name"])
-
+            
+            # List of commercial bank names based on CBN's official list
+            commercial_bank_names = {
+                # International Authorization
+                "Access Bank", "Fidelity Bank", "First City Monument Bank", "FCMB",
+                "First Bank of Nigeria", "Guaranty Trust Bank", "GTBank", "GTBank Plc",
+                "United Bank for Africa", "UBA", "Zenith Bank",
+                
+                # National Authorization
+                "CitiBank", "Ecobank", "Heritage", "Globus Bank",
+                "Keystone Bank", "Polaris Bank", "Stanbic IBTC Bank",
+                "Standard Chartered Bank", "Sterling Bank", "Titan Trust Bank",
+                "Union Bank", "Unity Bank", "Wema Bank", "PremiumTrust Bank",
+                "Optimus Bank",
+                
+                # Regional Authorization
+                "ProvidusBank", "Providus Bank", "Parallex Bank", "SunTrust Bank",
+                "Signature Bank",
+                
+                # Non-Interest Banks (Islamic Banking)
+                "JAIZ Bank", "Taj Bank", "Lotus Bank"
+            }
+            
+            # Filter for commercial banks by name matching
+            commercial_banks = [
+                bank for bank in banks 
+                if any(commercial_name.lower() in bank["name"].lower() 
+                      for commercial_name in commercial_bank_names)
+            ]
+            
+            sorted_banks = sorted(commercial_banks, key=lambda bank: bank["name"])
             redis_client.set(cache_key, json.dumps(sorted_banks, default=str), ex=86400)
             return sorted_banks
-
     except httpx.HTTPStatusError as e:
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
@@ -184,7 +238,7 @@ async def get_all_banks() -> list[BankSchema]:
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to get banks: {str(e)}",
         )
-
+        
 
 # <<<< ---------- PASSWORD VALIDATION ---------- >>>>>
 

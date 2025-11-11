@@ -1773,7 +1773,7 @@ async def _rider_cancel_delivery(
 
 
 async def _sender_cancel_delivery(
-    order: Order, db: AsyncSession, current_user: User, reason: CancelOrderSchema
+    order: Order, db: AsyncSession, current_user: User, reason: str
 ) -> DeliveryStatusUpdateSchema:
     """
     Process a sender-initiated delivery cancellation.
