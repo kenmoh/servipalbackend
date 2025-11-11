@@ -4565,11 +4565,11 @@ async def _settle_dispatch(order: Order, idempotency_key: str, db: AsyncSession)
 
     dispatch_stmt = select(Profile.business_name).where(Profile.user_id == order.delivery.dispatch_id)
     dispatch_result = await db.execute(dispatch_stmt)
-    business_name = dispatch_result.scalar_one()
+    business_name = dispatch_result.one_or_none()
 
     sender_stmt = select(Profile.full_name, Profile.business_name).where(Profile.user_id == order.delivery.sender_id)
     sender_result = await db.execute(sender_stmt)
-    full_name, sender_business_name = sender_result.scalar_one()
+    full_name, sender_name = sender_result.one_or_none()
 
 
     await producer.publish_message(
@@ -4610,7 +4610,7 @@ async def _settle_dispatch(order: Order, idempotency_key: str, db: AsyncSession)
             "transaction_direction": transaction.transaction_direction,
             "payment_method": transaction.payment_method,
             "payment_status": transaction.payment_status,
-            "from_user": full_name if full_name is not None else sender_business_name,
+            "from_user": full_name if full_name is not None else sender_name,
             "to_user": business_name
         },
     )
