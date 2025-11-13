@@ -487,7 +487,7 @@ async def generate_new_payment_link(
             order.order_type in [OrderType.FOOD, OrderType.LAUNDRY, OrderType.PACKAGE]
             and order.order_payment_status != PaymentStatus.PAID
         ):
-            tx_ref = uuid.uuid()
+            tx_ref = uuid.uuid4()
 
             try:
                 # Get payment link from Flutterwave
@@ -518,7 +518,7 @@ async def generate_new_payment_link(
             order.order_type == OrderType.PRODUCT
             and order.order_payment_status != PaymentStatus.PAID
         ):
-            tx_ref = uuid.uuid()
+            tx_ref = uuid.uuid4()
             try:
                 # Get payment link from Flutterwave
                 order_payment_link = await get_product_payment_link(
