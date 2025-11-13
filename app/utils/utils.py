@@ -198,30 +198,31 @@ async def get_all_banks() -> list[BankSchema]:
             # List of commercial bank names based on CBN's official list
             commercial_bank_names = {
                 # International Authorization
-                "Access Bank", "Fidelity Bank", "First City Monument Bank", "FCMB",
-                "First Bank of Nigeria", "Guaranty Trust Bank", "GTBank", "GTBank Plc",
-                "United Bank for Africa", "UBA", "Zenith Bank",
+                "Access Bank", "Fidelity Bank", "First City Monument Bank",
+                "First Bank of Nigeria", "GTBank Plc",
+                "United Bank for Africa", "Zenith Bank",
                 
                 # National Authorization
-                "CitiBank", "Ecobank", "Heritage", "Globus Bank",
+                "CitiBank", "Ecobank Plc", "Heritage", "Globus Bank",
                 "Keystone Bank", "Polaris Bank", "Stanbic IBTC Bank",
                 "Standard Chartered Bank", "Sterling Bank", "Titan Trust Bank",
                 "Union Bank", "Unity Bank", "Wema Bank", "PremiumTrust Bank",
                 "Optimus Bank",
                 
                 # Regional Authorization
-                "ProvidusBank", "Providus Bank", "Parallex Bank", "SunTrust Bank",
-                "Signature Bank",
+                "ProvidusBank PLC", "Parallex Bank", "SunTrust Bank",
+                "SIGNATURE BANK",
                 
                 # Non-Interest Banks (Islamic Banking)
-                "JAIZ Bank", "Taj Bank", "Lotus Bank"
+                "JAIZ Bank", "Taj Bank Limited", "Lotus Bank"
             }
             
-            # Filter for commercial banks by name matching
+            # Filter for commercial banks by name matching AND 3-digit ID
             commercial_banks = [
                 bank for bank in banks 
                 if any(commercial_name.lower() in bank["name"].lower() 
                       for commercial_name in commercial_bank_names)
+                and 100 <= bank["id"] <= 999
             ]
             
             sorted_banks = sorted(commercial_banks, key=lambda bank: bank["name"])
