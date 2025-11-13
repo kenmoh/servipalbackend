@@ -2734,12 +2734,6 @@ async def vendor_mark_order_delivered(
                 detail="You are not authorized to update this order's status.",
             )
 
-        # Order type validation
-        # if order.require_delivery != RequireDeliverySchema.PICKUP:
-        #     raise HTTPException(
-        #         status_code=status.HTTP_400_BAD_REQUEST,
-        #         detail="This operation is only valid for pickup orders.",
-        #     )
 
         # Status transition validation
         if order.order_status == OrderStatus.DELIVERED:
@@ -4466,28 +4460,28 @@ async def _order_settlement(order: Order):
             )
 
             # 3. Record settlement transaction
-            await producer.publish_message(
-                service="wallet",
-                operation="create_transaction",
-                payload={
-                    "wallet_id": str(order.vendor_id),
-                    "tx_ref": str(uuid.uuid4()),
-                    "to_wallet_id": str(order.vendor_id),
-                    "amount": str(order.amount_due_vendor),
-                    "transaction_type": TransactionType.USER_TO_USER,
-                    "transaction_direction": TransactionDirection.CREDIT,
-                    "payment_status": PaymentStatus.PAID,
-                    "payment_method": PaymentMethod.ESCROW_SETTLEMENT,
-                    "from_user": order.owner.profile.full_name if order.owner.profile.full_name else order.owner.email,
-                    "to_user": order.vendor.profile.business_name,
-                    "idempotency_key": idempotency_key,
-                    "details": {
-                        "order_id": str(order.id),
-                        "settlement_type": order.order_type.value,
-                        "commission": str(order.grand_total - order.amount_due_vendor),
-                    },
-                },
-            )
+            # await producer.publish_message(
+            #     service="wallet",
+            #     operation="create_transaction",
+            #     payload={
+            #         "wallet_id": str(order.vendor_id),
+            #         "tx_ref": str(uuid.uuid4()),
+            #         "to_wallet_id": str(order.vendor_id),
+            #         "amount": str(order.amount_due_vendor),
+            #         "transaction_type": TransactionType.USER_TO_USER,
+            #         "transaction_direction": TransactionDirection.CREDIT,
+            #         "payment_status": PaymentStatus.PAID,
+            #         "payment_method": PaymentMethod.ESCROW_SETTLEMENT,
+            #         "from_user": order.owner.profile.full_name if order.owner.profile.full_name else order.owner.email,
+            #         "to_user": order.vendor.profile.business_name,
+            #         "idempotency_key": idempotency_key,
+            #         "details": {
+            #             "order_id": str(order.id),
+            #             "settlement_type": order.order_type.value,
+            #             "commission": str(order.grand_total - order.amount_due_vendor),
+            #         },
+            #     },
+            # )
 
             await producer.publish_message(
                 service="wallet",
@@ -4495,7 +4489,19 @@ async def _order_settlement(order: Order):
                 payload={
                     "wallet_id": str(order.owner_id),
                     "tx_ref": str(order.tx_ref),
-                    "to_user": order.vendor.profile.business_name
+                    "to_user": order.vendor.profile.business_name,
+                    
+,
+                },
+            )
+
+            await producer.publish_message(
+                service="wallet",
+                operation="update_transaction",
+                payload={
+                    "wallet_id": str(order.vendor_id),
+                    "tx_ref": str(order.tx_ref),
+                    "payment_status": order.order_payment_status,
 ,
                 },
             )

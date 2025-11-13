@@ -20,8 +20,7 @@ class PaymentMethod(str, Enum):
 
 class ProductBuyRequest(BaseModel):
     quantity: int = Field(1, gt=0, description="Number of units to purchase")
-
-    sizes: str | None = None
+    sizes: list[str]  = []
     colors: list[str] = []
     additional_info: str
 
@@ -54,8 +53,8 @@ class OrderItem(BaseModel):
     item_id: UUID
     order_id: UUID
     quantity: int
-    sizes: List = []
-    colors: List = []
+    sizes: List[str] = []
+    colors: List[str] = []
     created_at: datetime
     item: Item
 

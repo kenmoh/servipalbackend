@@ -1656,95 +1656,114 @@ async def order_payment_callback(request: Request, db: AsyncSession):
 async def _process_successful_payment(order: Order, db: AsyncSession, tx_ref: str):
     customer = order.owner
     vendor = order.vendor
-    charged_amount = order.grand_total
+    charged_amount = Decimal(order.grand_total)
 
-    # ————— PACKAGE ORDER —————
+    # PACKAGE ORDER — only delivery fee to customer escrow
     if order.order_type == OrderType.PACKAGE:
         if not order.delivery or not order.delivery.delivery_fee:
             logger.error(f"Package order {order.id} missing delivery fee")
             return
-        amount = order.delivery.delivery_fee
+        amount = Decimal(order.delivery.delivery_fee)
 
+        # Customer escrow + delivery fee
         await producer.publish_message(
-            service="wallet", operation="update_wallet",
-            payload={"wallet_id": str(order.owner_id), "escrow_change": str(amount), "balance_change": "0"}
+            service="wallet",
+            operation="update_wallet",
+            payload={
+                "wallet_id": str(order.owner_id),
+                "escrow_change": str(amount),
+                "balance_change": "0",
+            },
         )
 
+        # Transaction record (customer → platform for delivery)
         await producer.publish_message(
-            service="wallet", operation="create_transaction",
+            service="wallet",
+            operation="create_transaction",
             payload={
                 "wallet_id": str(order.owner_id),
                 "tx_ref": tx_ref,
                 "amount": str(amount),
-                "transaction_type": TransactionType.USER_TO_USER,
-                "payment_status": PaymentStatus.PAID,
+                "transaction_type": TransactionType.USER_TO_PLATFORM,
                 "transaction_direction": TransactionDirection.DEBIT,
+                "payment_status": PaymentStatus.PAID,
+                "payment_method": PaymentMethod.CARD,
                 "from_user": customer.full_name or customer.business_name,
+                "to_user": "Platform (Delivery Fee)",
             },
         )
 
-        # Notify rider
-        if order.delivery.rider_id:
-            rider_token = await get_user_notification_token(db=db, user_id=order.delivery.rider_id)
-            if rider_token:
-                await send_push_notification([rider_token], "New Delivery", "You have a new package order!")
-
-    # ————— FOOD OR LAUNDRY (with delivery or vendor pickup) —————
+    # FOOD & LAUNDRY — full amount to both escrows
     elif order.order_type in (OrderType.FOOD, OrderType.LAUNDRY):
         if not order.vendor_id:
-            logger.error(f"Order {order.id} missing vendor")
             return
 
-        # Escrow full amount to both customer and vendor
+        # Customer escrow (money held)
         await producer.publish_message(
-            service="wallet", operation="update_wallet",
-            payload={"wallet_id": str(order.owner_id), "escrow_change": str(charged_amount), "balance_change": "0"}
-        )
-        await producer.publish_message(
-            service="wallet", operation="update_wallet",
-            payload={"wallet_id": str(order.vendor_id), "escrow_change": str(charged_amount), "balance_change": "0"}
+            service="wallet",
+            operation="update_wallet",
+            payload={
+                "wallet_id": str(order.owner_id),
+                "escrow_change": str(charged_amount),
+                "balance_change": "0",
+            },
         )
 
+        # Vendor escrow (money held until delivery)
         await producer.publish_message(
-            service="wallet", operation="create_transaction",
+            service="wallet",
+            operation="update_wallet",
+            payload={
+                "wallet_id": str(order.vendor_id),
+                "escrow_change": str(charged_amount),
+                "balance_change": "0",
+            },
+        )
+
+        # Transaction: Customer → Vendor (escrowed)
+        await producer.publish_message(
+            service="wallet",
+            operation="create_transaction",
             payload={
                 "wallet_id": str(order.owner_id),
                 "tx_ref": tx_ref,
-                "amount": str(charged_amount),
                 "to_wallet_id": str(order.vendor_id),
-                "payment_status": PaymentStatus.PAID,
-                "transaction_direction": TransactionDirection.DEBIT,
+                "amount": str(charged_amount),
                 "transaction_type": TransactionType.USER_TO_USER,
+                "transaction_direction": TransactionDirection.DEBIT,
+                "payment_status": PaymentStatus.PAID,
+                "payment_method": PaymentMethod.CARD,
                 "from_user": customer.full_name or customer.business_name,
                 "to_user": vendor.full_name or vendor.business_name,
             },
         )
 
-        # Notify vendor
-        vendor_token = await get_user_notification_token(db=db, user_id=order.vendor_id)
-        if vendor_token:
-            await send_push_notification(
-                [vendor_token],
-                "New Order",
-                f"New {order.order_type.value.lower()} order from {customer.full_name or customer.business_name} – #{order.order_number}"
-            )
+        # Vendor receives credit (escrowed)
+        await producer.publish_message(
+            service="wallet",
+            operation="create_transaction",
+            payload={
+                "wallet_id": str(order.vendor_id),
+                "tx_ref": tx_ref,
+                "from_wallet_id": str(order.owner_id),
+                "amount": str(charged_amount),
+                "transaction_type": TransactionType.USER_TO_USER,
+                "transaction_direction": TransactionDirection.CREDIT,
+                "payment_status": PaymentStatus.ESCROWED,
+                "payment_method": PaymentMethod.CARD,
+                "from_user": customer.full_name or customer.business_name,
+                "to_user": vendor.full_name or vendor.business_name,
+            },
+        )
 
-    # Common: update order status via queue
+    # Common: Notify + update order status
     await producer.publish_message(
         service="order_status",
         operation="order_payment_status",
         payload={"new_status": PaymentStatus.PAID.value, "order_id": str(order.id)}
     )
 
-    # Notifications to customer (all types)
-    customer_token = await get_user_notification_token(db=db, user_id=order.owner_id)
-    if customer_token:
-        await send_push_notification(
-            [customer_token],
-            "Payment Successful",
-            f"Your payment of ₦{charged_amount:,.2f} was successful!"
-        )
-
+    await clear_order_caches(order)
 
 # ===================================================================
 # Safe page renderer
@@ -2637,44 +2656,84 @@ def _render_payment_status(order, request: Request, transx_id: str, payment_stat
         raise
 
 # ———————— Helper: All side effects after payment is secured ————————
-async def _process_successful_payment_side_effects(order: Order, db: AsyncSession, request: Request):
-    """All operations that can fail — but MUST NOT revert the PAID status"""
+async def _process_successful_payment_side_effects(order: Order, db: AsyncSession):
     customer = order.owner
     vendor = order.vendor
 
-    # Update escrow (fire-and-forget via queue)
+    total = Decimal(order.grand_total)
+
+    # ESCROW BOTH SIDES
     await producer.publish_message(
-        service="wallet", operation="update_wallet",
-        payload={"wallet_id": str(order.owner_id), "escrow_change": f"{order.grand_total:.2f}", "balance_change": "0"}
+        service="wallet",
+        operation="update_wallet",
+        payload={
+            "wallet_id": str(order.owner_id),
+            "escrow_change": str(total),
+            "balance_change": "0",
+        },
     )
     await producer.publish_message(
-        service="wallet", operation="update_wallet",
-        payload={"wallet_id": str(order.vendor_id), "escrow_change": f"{order.grand_total:.2f}", "balance_change": "0"}
+        service="wallet",
+        operation="update_wallet",
+        payload={
+            "wallet_id": str(order.vendor_id),
+            "escrow_change": str(total),
+            "balance_change": "0",
+        },
     )
 
-    # Deduct stock atomically
+    # TRANSACTION: Customer debit
+    await producer.publish_message(
+        service="wallet",
+        operation="create_transaction",
+        payload={
+            "wallet_id": str(order.owner_id),
+            "tx_ref": str(order.tx_ref),
+            "to_wallet_id": str(order.vendor_id),
+            "amount": str(total),
+            "transaction_type": TransactionType.USER_TO_USER,
+            "transaction_direction": TransactionDirection.DEBIT,
+            "payment_status": PaymentStatus.PAID,
+            "payment_method": PaymentMethod.CARD,
+            "from_user": customer.full_name or customer.business_name,
+            "to_user": vendor.full_name or vendor.business_name,
+        },
+    )
+
+    # TRANSACTION: Vendor credit (escrowed)
+    await producer.publish_message(
+        service="wallet",
+        operation="create_transaction",
+        payload={
+            "wallet_id": str(order.vendor_id),
+            "tx_ref": str(order.tx_ref),
+            "from_wallet_id": str(order.owner_id),
+            "amount": str(total),
+            "transaction_type": TransactionType.USER_TO_USER,
+            "transaction_direction": TransactionDirection.CREDIT,
+            "payment_status": PaymentStatus.ESCROWED,
+            "payment_method": PaymentMethod.CARD,
+            "from_user": customer.full_name or customer.business_name,
+            "to_user": vendor.full_name or vendor.business_name,
+        },
+    )
+
+    # STOCK DEDUCTION (already safe with rowcount check)
     if order.order_items:
         item = order.order_items[0].item
-        deducted = await db.execute(
+        qty = order.order_items[0].quantity
+        result = await db.execute(
             update(Item)
-            .where(Item.id == item.id, Item.stock >= order.order_items[0].quantity)
-            .values(stock=Item.stock - order.order_items[0].quantity)
+            .where(Item.id == item.id, Item.stock >= qty)
+            .values(stock=Item.stock - qty)
         )
-        if deducted.rowcount == 0:
-            logger.error(f"Stock deduction failed for item {item.id} — possible oversell!")
-            await trigger_stock_alert(order)
+       rowcount == 0:
+            logger.error(f"Stock deduction failed for item {item.id}")
 
-    # Queue transactions
-    await producer.publish_message(service="wallet", operation="create_transaction", payload={...})  # buyer debit
-    await producer.publish_message(service="wallet", operation="create_transaction", payload={...})  # vendor credit
-
-    # Clear caches
-    for key in [
-        f"marketplace_user_orders:{order.owner_id}",
-        f"marketplace_user_orders:{order.vendor_id}",
-        f"marketplace_order_details:{order.id}",
-    ]:
-        redis_client.delete(key)
+    # CACHE CLEAR
+    redis_client.delete(f"marketplace_user_orders:{order.owner_id}")
+    redis_client.delete(f"marketplace_user_orders:{order.vendor_id}")
+    redis_client.delete(f"marketplace_order_details:{order.id}")
 
 # ———————— Optional: Alert on partial failure ————————
 async def trigger_payment_reconciliation_alert(order: Order, error: Exception):

@@ -2,6 +2,7 @@ from typing import Optional
 import secrets
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 from geoalchemy2 import Geography
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy import func
 import random
 from uuid import UUID, uuid4
@@ -550,8 +551,21 @@ class OrderItem(Base):
         ForeignKey("items.id", ondelete="SET NULL"), primary_key=True
     )
     quantity: Mapped[int] = mapped_column(default=1)
-    sizes: Mapped[str] = mapped_column(ARRAY(String), nullable=True)
-    colors: Mapped[list[str]] = mapped_column(ARRAY(String), nullable=True)
+    # sizes: Mapped[str] = mapped_column(ARRAY(String), nullable=True)
+    # colors: Mapped[list[str]] = mapped_column(ARRAY(String), nullable=True)
+    sizes: Mapped[Optional[List[str]]] = mapped_column(
+        JSONB, 
+        nullable=True,
+        default=list,
+        server_default="[]"
+    )
+    
+    colors: Mapped[Optional[List[str]]] = mapped_column(
+        JSONB,
+        nullable=True,
+        default=list,
+        server_default="[]"
+    )
     created_at: Mapped[datetime] = mapped_column(default=datetime.now)
 
     order: Mapped["Order"] = relationship(back_populates="order_items")
