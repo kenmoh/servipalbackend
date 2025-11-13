@@ -644,8 +644,9 @@ async def get_user_wallets(
 async def get_user_wallet(db: AsyncSession, current_user: User) -> WalletSchema:
 
     cache_key = f'wallet_transactions:{current_user.id}'
-    if cache_key:
-        data = json.loads(cache_key)
+    cached_wallet = redis_client.get(cache_key)
+    if cached_wallet:
+        data = json.loads(cached_wallet)
         return WalletSchema(**data)
     
     stmt = (
