@@ -21,6 +21,7 @@ from app.models.models import (
     Wallet,
     Transaction,
     OrderItem,
+    TransactionLogAction
 )
 
 from app.queue.producer import producer
@@ -1229,85 +1230,276 @@ async def handle_payment_webhook(
         )
 
 
+# async def fund_wallet_callback(request: Request, db: AsyncSession):
+#     # Get query parameters without awaiting them (they're not coroutines)
+#     tx_ref = request.query_params["tx_ref"]
+#     tx_status = request.query_params["status"]
+#     transx_id = request.query_params["transaction_id"]
+
+#     # First get the transaction
+#     stmt = (
+#         select(Transaction).where(Transaction.tx_ref == UUID(tx_ref)).with_for_update()
+#     )
+#     result = await db.execute(stmt)
+#     transaction = result.scalar_one_or_none()
+
+#     new_status = None
+
+#     if not transaction:
+#         raise HTTPException(status_code=404, detail="Transaction not found")
+
+#     verify_tranx = await verify_transaction_tx_ref(tx_ref)
+#     if verify_tranx is None:
+#         logging.error(f"verify_transaction_tx_ref returned None for tx_ref: {tx_ref}")
+#         raise HTTPException(
+#             status_code=502, detail="Failed to verify transaction status"
+#         )
+
+#     # Ensure verify_tranx is a dict and has 'data'
+#     verify_data = verify_tranx.get("data") if isinstance(verify_tranx, dict) else None
+#     verify_status = verify_data.get("status") if verify_data else None
+
+#     if tx_status == "successful" and verify_status == "successful":
+#         new_status = PaymentStatus.PAID
+#     elif tx_status == "cancelled":
+#         new_status = PaymentStatus.CANCELLED
+#     else:
+#         new_status = PaymentStatus.FAILED
+
+#     try:
+#         if new_status == PaymentStatus.PAID:
+#             # Update transaction status
+#             await producer.publish_message(
+#                 service="wallet",
+#                 operation="update_transaction",
+#                 payload={
+#                     "wallet_id": f"{transaction.wallet_id}",
+#                     "tx_ref": f"{transaction.tx_ref}",
+#                     "payment_status": new_status,
+#                     "payment_method": PaymentMethod.CARD,
+#                     "transaction_direction": TransactionDirection.CREDIT,
+#                     "is_fund_wallet": True,
+#                 },
+#             )
+#             # Update wallet
+#             await producer.publish_message(
+#                 service="wallet",
+#                 operation="update_wallet",
+#                 payload={
+#                     "wallet_id": f"{transaction.wallet_id}",
+#                     "balance_change": f"{transaction.amount}",
+#                     "escrow_change": "0",
+#                 },
+#             )
+
+#             return templates.TemplateResponse(
+#                 "payment-status.html",
+#                 {
+#                     "request": request,
+#                     "payment_status": new_status,
+#                     "amount": str(transaction.amount),
+#                     "date": datetime.now().strftime("%b %d, %Y"),
+#                     "transaction_id": transx_id,
+#                 },
+#             )
+
+#     except Exception as e:
+#         logging.error(f"Error updating transaction status: {e}")
+#         raise HTTPException(
+#             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+#             detail="Failed to update transaction status",
+#         )
+
+
+# ==============================================================
+# WALLET FUNDING CALLBACK
+# ==============================================================
 async def fund_wallet_callback(request: Request, db: AsyncSession):
-    # Get query parameters without awaiting them (they're not coroutines)
-    tx_ref = request.query_params["tx_ref"]
-    tx_status = request.query_params["status"]
-    transx_id = request.query_params["transaction_id"]
+    # Safely extract params (no KeyError crash)
+    tx_ref = request.query_params.get("tx_ref")
+    tx_status = request.query_params.get("status")
+    transx_id = request.query_params.get("transaction_id")
 
-    # First get the transaction
-    stmt = (
-        select(Transaction).where(Transaction.tx_ref == UUID(tx_ref)).with_for_update()
-    )
-    result = await db.execute(stmt)
-    transaction = result.scalar_one_or_none()
+    if not all([tx_ref, tx_status, transx_id]):
+        raise HTTPException(status_code=400, detail="Missing tx_ref, status or transaction_id")
 
-    new_status = None
+    logger.info(f"Wallet funding callback → tx_ref: {tx_ref} | status: {tx_status}")
 
-    if not transaction:
-        raise HTTPException(status_code=404, detail="Transaction not found")
-
-    verify_tranx = await verify_transaction_tx_ref(tx_ref)
-    if verify_tranx is None:
-        logging.error(f"verify_transaction_tx_ref returned None for tx_ref: {tx_ref}")
-        raise HTTPException(
-            status_code=502, detail="Failed to verify transaction status"
-        )
-
-    # Ensure verify_tranx is a dict and has 'data'
-    verify_data = verify_tranx.get("data") if isinstance(verify_tranx, dict) else None
-    verify_status = verify_data.get("status") if verify_data else None
-
-    if tx_status == "successful" and verify_status == "successful":
-        new_status = PaymentStatus.PAID
-    elif tx_status == "cancelled":
-        new_status = PaymentStatus.CANCELLED
-    else:
-        new_status = PaymentStatus.FAILED
+    transaction = None
 
     try:
-        if new_status == PaymentStatus.PAID:
-            # Update transaction status
-            await producer.publish_message(
-                service="wallet",
-                operation="update_transaction",
-                payload={
-                    "wallet_id": f"{transaction.wallet_id}",
-                    "tx_ref": f"{transaction.tx_ref}",
-                    "payment_status": new_status,
-                    "payment_method": PaymentMethod.CARD,
-                    "transaction_direction": TransactionDirection.CREDIT,
-                    "is_fund_wallet": True,
-                },
-            )
-            # Update wallet
-            await producer.publish_message(
-                service="wallet",
-                operation="update_wallet",
-                payload={
-                    "wallet_id": f"{transaction.wallet_id}",
-                    "balance_change": f"{transaction.amount}",
-                    "escrow_change": "0",
-                },
-            )
-
-            return templates.TemplateResponse(
-                "payment-status.html",
-                {
-                    "request": request,
-                    "payment_status": new_status,
-                    "amount": str(transaction.amount),
-                    "date": datetime.now().strftime("%b %d, %Y"),
-                    "transaction_id": transx_id,
-                },
-            )
-
-    except Exception as e:
-        logging.error(f"Error updating transaction status: {e}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to update transaction status",
+        # 1. Fetch transaction with lock
+        result = await db.execute(
+            select(Transaction)
+            .where(Transaction.tx_ref == UUID(tx_ref))
+            .with_for_update()
         )
+        transaction = result.scalar_one_or_none()
+
+        if not transaction:
+            raise HTTPException(status_code=404, detail="Transaction not found")
+
+        # 2. IDEMPOTENCY: Already funded? → Show success and exit
+        if transaction.payment_status == PaymentStatus.PAID:
+            logger.info(f"Idempotent: Wallet funding already completed for tx_ref {tx_ref}")
+            return _render_success_page(transaction, request, transx_id)
+
+        # 3. Verify with provider — THIS IS THE ONLY TRUTH
+        verify_tranx = await verify_transaction_tx_ref(tx_ref)
+        if not verify_tranx or not isinstance(verify_tranx, dict):
+            logger.error(f"Invalid verification response for {tx_ref}")
+            raise HTTPException(status_code=502, detail="Payment gateway error")
+
+        verify_data = verify_tranx.get("data", {})
+        verify_status = verify_data.get("status")
+
+        verified_success = (verify_status == "successful")
+
+        # 4. Final status decision
+        if verified_success and tx_status == "successful":
+            new_status = PaymentStatus.PAID
+        elif tx_status == "cancelled":
+            new_status = PaymentStatus.CANCELLED
+        else:
+            new_status = PaymentStatus.FAILED
+
+        # 5. COMMIT TO DB FIRST — THIS IS SACRED
+        transaction.payment_status = new_status
+        transaction.updated_at = datetime.utcnow()
+        await db.commit()
+        await db.refresh(transaction)
+
+        logger.info(f"Transaction {tx_ref} → {new_status.value}")
+
+        # 6. ONLY AFTER commit → fire side effects (they can fail, money is safe)
+        if new_status == PaymentStatus.PAID:
+            try:
+                await _credit_wallet_safely(transaction, transx_id)
+            except Exception as e:
+                logger.critical(
+                    f"CRITICAL: Wallet funding PAID but side effects FAILED! tx_ref: {tx_ref} | Error: {e}",
+                    exc_info=True
+                )
+                # Send alert — this is emergency
+                await _alert_wallet_funding_failure(transaction, e)
+                
+
+        # 7. Always show success/failure page — even if template crash
+        return _render_success_page(transaction, request, transx_id)
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception(f"Fatal error in fund_wallet_callback: {tx_ref}")
+        # Last resort — user must not see 500
+        return HTMLResponse(
+            "<h1>Wallet Funding In Progress</h1>"
+            "<p>Your payment was received. We're crediting your wallet now.<br>"
+            "Refresh in 1 minute or contact support if not credited.</p>",
+            status_code=200,
+        )
+
+
+# ==============================================================
+# CREDIT WALLET — FIRE AND FORGET (but logged + alerted if fail)
+# ==============================================================
+async def _credit_wallet_safely(transaction: Transaction, transx_id: str):
+    amount_str = f"{transaction.amount:.2f}"
+
+    # Update transaction status
+    await producer.publish_message(
+        service="wallet",
+        operation="update_transaction",
+        payload={
+            "wallet_id": str(transaction.wallet_id),
+            "tx_ref": str(transaction.tx_ref),
+            "payment_status": PaymentStatus.PAID.value,
+            "payment_method": PaymentMethod.CARD.value,
+            "transaction_direction": TransactionDirection.CREDIT.value,
+            "is_fund_wallet": True,
+            "transaction_id": transx_id,
+        },
+    )
+
+    # Credit wallet balance
+    await producer.publish_message(
+        service="wallet",
+        operation="update_wallet",
+        payload={
+            "wallet_id": str(transaction.wallet_id),
+            "balance_change": amount_str,
+            "escrow_change": "0",
+        },
+    )
+
+    logger.info(f"Wallet credited: +₦{amount_str} → wallet {transaction.wallet_id}")
+
+
+# ==============================================================
+# RENDER PAGE — SAFE EVEN IF JINJA CRASH
+# ==============================================================
+def _render_success_page(transaction: Transaction, request: Request, transx_id: str):
+    try:
+        context = {
+            "request": request,
+            "payment_status": transaction.payment_status.value,
+            "amount": f"{transaction.amount:,.2f}",
+            "date": transaction.updated_at.strftime("%b %d, %Y"),
+            "transaction_id": transx_id,
+        }
+        return templates.TemplateResponse("payment-status.html", context)
+    except Exception as e:
+        logger.error(f"Template failed in fund_wallet_callback: {e}", exc_info=True)
+        return HTMLResponse(
+            f"<h1>Wallet Funding {transaction.payment_status.value.title()}!</h1>"
+            f"<p>Amount: ₦{transaction.amount:,.2f}<br>"
+            f"Date: {datetime.utcnow().strftime('%b %d, %Y')}</p>"
+            f"<p>If not credited in 2 mins, contact support with ID: {transx_id}</p>",
+            status_code=200,
+        )
+
+
+# ==============================================================
+# EMERGENCY ALERT — WHEN MONEY IS PAID BUT NOT CREDITED
+# ==============================================================
+async def _alert_wallet_funding_failure(transaction: Transaction, error: Exception):
+    """
+    CRITICAL: User paid, DB says PAID, but wallet not credited!
+    We log this as a FAILED_INTERNAL action so ops can reconcile.
+    """
+    log_entry = TransactionLog(
+        id=uuid4(),
+        vendor_id=transaction.wallet.id if hasattr(transaction.wallet, 'id') else None,
+        order_id=None,
+        amount=transaction.amount,
+        action=TransactionLogAction.WALLET_FUNDING_FAILED_INTERNAL,
+        status=PaymentStatus.FAILED,
+        details={
+            "error": str(error),
+            "error_type": error.__class__.__name__,
+            "tx_ref": str(transaction.tx_ref),
+            "wallet_id": str(transaction.wallet_id),
+            "transaction_id": transx_id if 'transx_id' in locals() else "unknown",
+            "traceback": traceback.format_exc(),
+            "alert_type": "WALLET_FUNDING_SIDE_EFFECT_FAILURE",
+            "requires_manual_reconciliation": True,
+            "timestamp": datetime.utcnow().isoformat(),
+        },
+        timestamp=datetime.utcnow(),
+    )
+
+    try:
+        db.add(log_entry)
+        await db.commit()
+        logger.critical(
+            f"WALLET FUNDING EMERGENCY LOGGED → tx_ref: {transaction.tx_ref} | "
+            f"Amount: ₦{transaction.amount:,.2f} | Log ID: {log_entry.id}"
+        )
+    except Exception as log_error:
+        logger.critical(
+            f"FAILED TO EVEN LOG THE WALLET FUNDING FAILURE! tx_ref: {transaction.tx_ref} | "
+            f"Log error: {log_error}", exc_info=True
+
 
 
 # Helper function to calculate the net amount after charges

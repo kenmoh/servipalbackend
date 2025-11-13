@@ -126,3 +126,4 @@ class TransactionLogAction(str, Enum):
     RECEIVED: str = "received"
     REFUNDED: str = "refunded"
     CANCELLED: str = "cancelled"
+    WALLET_FUNDING_FAILED_INTERNAL = "wallet_funding_failed_internal"

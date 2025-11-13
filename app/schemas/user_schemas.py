@@ -523,6 +523,7 @@ class VendorUserResponse(BaseModel):
     distance: float = Field(default=0.00)
     average_price: float
     can_pickup_and_dropoff: bool
+    pickup_and_delivery_charge: Decimal | None = None
     account_holder_name: str | None = None
     business_registration_number: str | None = None
     store_name: str | None = None

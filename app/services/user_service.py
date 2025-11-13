@@ -1203,6 +1203,7 @@ async def get_restaurant_vendors(
             "phone_number": profile.phone_number,
             "profile_image": image.profile_image_url if image else None,
             "location": profile.business_address,
+            "pickup_and_delivery_charge": profile.pickup_and_delivery_charge or None,
             "can_pickup_and_dropoff": profile.can_pickup_and_dropoff or None,
             "backdrop_image_url": image.backdrop_image_url if image else None,
             "can_pickup_and_dropoff":profile.can_pickup_and_dropoff or False,
