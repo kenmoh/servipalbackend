@@ -4092,8 +4092,7 @@ async def sender_confirm_package_received(
             details={
                 "order_type": order.order_type,
                 "order_number": order.order_number,
-                "confirmed_by": current_user.profile.full_name
-                or current_user.profile.business_name,
+                "confirmed_by": current_user.id,
                 "phone_number": current_user.profile.phone_number,
                 "delivery_fee": str(order.delivery.delivery_fee),
                 "amount_due_dispatch": str(order.delivery.amount_due_dispatch),

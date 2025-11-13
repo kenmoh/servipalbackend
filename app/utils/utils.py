@@ -1,5 +1,4 @@
 from datetime import datetime, timedelta
-import requests
 import secrets
 import re
 from decimal import Decimal

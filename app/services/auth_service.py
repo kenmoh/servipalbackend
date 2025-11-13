@@ -267,7 +267,6 @@ async def create_new_rider(
                 # Send verification codes in background
                 background_tasks.add_task(
                     _send_verification_codes,
-                    user_id=new_rider.id,
                     email=new_rider.email,
                     phone_number=formatted_phone,
                     email_code=verification.email_code,
@@ -1110,62 +1109,47 @@ async def generate_verification_codes(
 
 
 async def _send_verification_codes(
-    user_id: int,
     email: str,
+    phone_number: str,
     email_code: str,
     phone_code: str,
 ):
     """Background task to send verification codes"""
+    
+    try:
+        logger.info(
+            f"Background task: Sending verification codes to user {email}"
+            f"Background task: Sending verification codes to user {phone_number}"
+        )
 
-    async with async_session as db:
-        try:
-            logger.info(
-                f"Background task: Sending verification codes to user {user_id}"
-            )
+        _html = send_email_verification_code(
+            code=email_code, expires_in="30 minutes"
+        )
 
-            # Create new DB session for background task
+        # Send Email(Resend)
+        resend.Emails.send(
+            {
+                "from": "servipal@verification.servi-pal.com",
+                "to": [email],
+                "subject": "Verification Code",
+                "html": _html,
+            }
+        )
 
-            # Fetch user with profile
-            result = await db.execute(
-                select(User)
-                .options(selectinload(User.profile))
-                .where(User.id == user_id)
-            )
-            user = result.scalar_one_or_none()
+        # Send SMS code (using Termii)
+        await send_sms(
+            phone_number=phone_number,
+            phone_code=phone_code,
+        )
+        logger.info(
+            f"Background task: Verification codes sent successfully to {email}"
+        )
+        return {"message": "Verification codes sent to your email and phone"}
 
-            if not user:
-                logger.error(f"User {user_id} not found in background task")
-                return
-
-            _html = send_email_verification_code(
-                code=email_code, expires_in="30 minutes"
-            )
-
-            # Send Email(Resend)
-            resend.Emails.send(
-                {
-                    "from": "servipal@verification.servi-pal.com",
-                    "to": [user.email],
-                    "subject": "Verification Code",
-                    "html": _html,
-                }
-            )
-
-            # Send SMS code (using Termii)
-            await send_sms(
-                phone_number=user.profile.phone_number,
-                phone_code=phone_code,
-            )
-            logger.info(
-                f"Background task: Verification codes sent successfully to {email}"
-            )
-            return {"message": "Verification codes sent to your email and phone"}
-
-
-        except Exception as e:
-            logger.error(
-                f"Background task failed for user {user_id}: {str(e)}", exc_info=True
-            )
+    except Exception as e:
+        logger.error(
+            f"Background task failed for user {email}: {str(e)}", exc_info=True
+        )
 
 
 # async def send_verification_codes(
@@ -1486,9 +1470,8 @@ async def register_user(
                 logger.info("Sending otp...")
                 background_tasks.add_task(
                     _send_verification_codes,
-                    user_id=user.id,
                     email=user.email,
-                    phone_number=profile.phone_number,
+                    phone_number=formatted_phone,
                     email_code=verification.email_code,
                     phone_code=verification.phone_code,
                 )
@@ -1585,7 +1568,11 @@ async def create_user(
         if not settings.TEST:
             logger.info("Sending otp... ")
             await _send_verification_codes(
-                user=user, email_code=email_code, phone_code=phone_code, db=db
+                
+                email=user.email,
+                phone_number=formatted_phone,
+                email_code=email_code,
+                phone_code=phone_code,
             )
             logger.info("Otp sent")
 
@@ -1690,11 +1677,11 @@ async def resend_otp(email: str, db: AsyncSession) -> dict:
     # Generate new OTP
     # otp_result = await generate_otp(user.email, user.profile.phone_number)
 
-    email_code = lambda: "".join([str(secrets.randbelow(10)) for _ in range(6)])
-    phone_code = lambda: "".join([str(secrets.randbelow(10)) for _ in range(6)])
+    email_code = "".join([str(secrets.randbelow(10)) for _ in range(6)])
+    phone_code = "".join([str(secrets.randbelow(10)) for _ in range(6)])
     expires_at = datetime.now() + timedelta(minutes=30)
 
-    codes = await db.execute(
+    await db.execute(
         update(VerificationCode)
         .where(VerificationCode.user_id == user.id)
         .values(email_code=email_code, phone_code=phone_code, expires_at=expires_at)
@@ -1709,19 +1696,22 @@ async def resend_otp(email: str, db: AsyncSession) -> dict:
             detail="Please wait before requesting another OTP",
         )
 
-    if codes.email_code and codes.phone_code:
-        await _send_verification_codes(
-            user=user, email_code=codes.email_code, phone_code=codes.phone_code, db=db
-        )
+    # Send verification codes
+    await _send_verification_codes(
+       
+        email=user.email,
+        phone_number=user.profile.phone_number,
+        email_code=email_code,
+        phone_code=phone_code,
+    )
 
-        # Set rate limit (60 seconds cooldown)
-        redis_client.setex(rate_limit_key, 60, "1")
+    # Set rate limit (60 seconds cooldown)
+    redis_client.setex(rate_limit_key, 60, "1")
 
-    else:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to send OTP",
-        )
+    return {
+        "message": "OTP resent successfully to email and phone",
+        "user_id": user.id
+    }
 
     # Flutterwave option
     # if otp_result["status"] == "success":
