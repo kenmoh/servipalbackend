@@ -10,7 +10,7 @@ import uuid
 from datetime import datetime, time
 from decimal import Decimal
 import logging
-from typing import Optional, Tuple
+from typing import Optional, Tuple, List
 
 from sqlalchemy import (
     JSON,

@@ -2727,7 +2727,7 @@ async def _process_successful_payment_side_effects(order: Order, db: AsyncSessio
             .where(Item.id == item.id, Item.stock >= qty)
             .values(stock=Item.stock - qty)
         )
-       rowcount == 0:
+        if result.rowcount == 0:
             logger.error(f"Stock deduction failed for item {item.id}")
 
     # CACHE CLEAR

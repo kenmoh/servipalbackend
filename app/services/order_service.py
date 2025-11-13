@@ -4490,8 +4490,6 @@ async def _order_settlement(order: Order):
                     "wallet_id": str(order.owner_id),
                     "tx_ref": str(order.tx_ref),
                     "to_user": order.vendor.profile.business_name,
-                    
-,
                 },
             )
 
@@ -4502,7 +4500,6 @@ async def _order_settlement(order: Order):
                     "wallet_id": str(order.vendor_id),
                     "tx_ref": str(order.tx_ref),
                     "payment_status": order.order_payment_status,
-,
                 },
             )
 
