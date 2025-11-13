@@ -556,15 +556,16 @@ class OrderItem(Base):
     sizes: Mapped[Optional[List[str]]] = mapped_column(
         JSONB, 
         nullable=True,
-        default=list,
-        server_default="[]"
+        default=lambda: [],
+        # server_default="[]"
+        server_default=text("'[]'::jsonb")
     )
     
     colors: Mapped[Optional[List[str]]] = mapped_column(
         JSONB,
         nullable=True,
-        default=list,
-        server_default="[]"
+        default=lambda: [],
+        server_default=text("'[]'::jsonb")
     )
     created_at: Mapped[datetime] = mapped_column(default=datetime.now)
 

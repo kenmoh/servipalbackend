@@ -295,8 +295,8 @@ async def buy_product(
             order_id=order.id,
             item_id=product.id,
             quantity=buy_request.quantity,
-            colors=buy_request.colors,
-            sizes=buy_request.sizes,
+            colors=buy_request.colors or [],
+            sizes=buy_request.sizes or [],
         )
         db.add(order_item)
         await db.flush()
