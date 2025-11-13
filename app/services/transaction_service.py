@@ -1498,7 +1498,7 @@ async def _alert_wallet_funding_failure(transaction: Transaction, error: Excepti
     except Exception as log_error:
         logger.critical(
             f"FAILED TO EVEN LOG THE WALLET FUNDING FAILURE! tx_ref: {transaction.tx_ref} | "
-            f"Log error: {log_error}", exc_info=True
+            f"Log error: {log_error}", exc_info=True)
 
 
 
