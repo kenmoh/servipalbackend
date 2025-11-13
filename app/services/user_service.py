@@ -56,7 +56,7 @@ from app.schemas.user_schemas import (
 
 
 logger = setup_logger()
-DISTANCE_IN_METERS = 100_000  # 100 km
+DISTANCE_IN_METERS = 100_000_000  # 100 km
 
 
 def _build_user_profile_response(
