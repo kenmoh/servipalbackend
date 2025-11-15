@@ -1,10 +1,11 @@
 import asyncio
 from datetime import datetime
 from decimal import Decimal
-from uuid import UUID
+from uuid import UUID, uuid4
 import logging
 import uuid
 from fastapi import BackgroundTasks, HTTPException, Request, status
+from fastapi.responses import HTMLResponse
 import httpx
 from sqlalchemy import insert, select, update, and_, func
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -17,11 +18,12 @@ from app.models.models import (
     ChargeAndCommission,
     Order,
     Item,
+    TransactionLog,
     User,
     Wallet,
     Transaction,
     OrderItem,
-    TransactionLogAction
+   
 )
 
 from app.queue.producer import producer
@@ -45,6 +47,7 @@ from app.schemas.status_schema import (
     PaymentStatus,
     RequireDeliverySchema,
     TransactionDirection,
+    TransactionLogAction,
     TransactionType,
 )
 from app.utils.logger_config import setup_logger
@@ -1381,7 +1384,7 @@ async def fund_wallet_callback(request: Request, db: AsyncSession):
                     exc_info=True
                 )
                 # Send alert — this is emergency
-                await _alert_wallet_funding_failure(transaction, e)
+                await _alert_wallet_funding_failure(transaction, e, db=db)
                 
 
         # 7. Always show success/failure page — even if template crash
@@ -1462,7 +1465,7 @@ def _render_success_page(transaction: Transaction, request: Request, transx_id: 
 # ==============================================================
 # EMERGENCY ALERT — WHEN MONEY IS PAID BUT NOT CREDITED
 # ==============================================================
-async def _alert_wallet_funding_failure(transaction: Transaction, error: Exception):
+async def _alert_wallet_funding_failure(transaction: Transaction, db: AsyncSession, error: Exception):
     """
     CRITICAL: User paid, DB says PAID, but wallet not credited!
     We log this as a FAILED_INTERNAL action so ops can reconcile.
@@ -1479,8 +1482,7 @@ async def _alert_wallet_funding_failure(transaction: Transaction, error: Excepti
             "error_type": error.__class__.__name__,
             "tx_ref": str(transaction.tx_ref),
             "wallet_id": str(transaction.wallet_id),
-            "transaction_id": transx_id if 'transx_id' in locals() else "unknown",
-            "traceback": traceback.format_exc(),
+            "transaction_id": transaction.id,
             "alert_type": "WALLET_FUNDING_SIDE_EFFECT_FAILURE",
             "requires_manual_reconciliation": True,
             "timestamp": datetime.utcnow().isoformat(),
@@ -1585,7 +1587,7 @@ async def order_payment_callback(request: Request, db: AsyncSession):
             .options(
                 selectinload(Order.delivery),
                 selectinload(Order.owner),
-                selectinload(Order.vendor),
+                selectinload(Order.vendor)
             )
             .with_for_update()
         )
@@ -1608,7 +1610,7 @@ async def order_payment_callback(request: Request, db: AsyncSession):
 
         # 5. COMMIT STATUS FIRST — THIS CANNOT BE ROLLED BACK
         order.order_payment_status = new_status
-        order.updated_at = datetime.utcnow()
+        order.updated_at = datetime.now()
         await db.commit()
         await db.refresh(order)
 
@@ -1620,7 +1622,7 @@ async def order_payment_callback(request: Request, db: AsyncSession):
                 await _process_successful_payment(order, db, tx_ref)
             except Exception as e:
                 logger.critical(f"PAID but side effects failed for order {order.id}: {e}", exc_info=True)
-                await _alert_admin_partial_failure(order, e)
+                await _alert_admin_partial_failure(order, db, e)
                 # DO NOT REVERT — money was taken!
 
         elif new_status in (PaymentStatus.CANCELLED, PaymentStatus.FAILED):
@@ -1684,11 +1686,11 @@ async def _process_successful_payment(order: Order, db: AsyncSession, tx_ref: st
                 "wallet_id": str(order.owner_id),
                 "tx_ref": tx_ref,
                 "amount": str(amount),
-                "transaction_type": TransactionType.USER_TO_PLATFORM,
+                "transaction_type": TransactionType.USER_TO_USER,
                 "transaction_direction": TransactionDirection.DEBIT,
-                "payment_status": PaymentStatus.PAID,
+                "payment_status": order.order_payment_status,
                 "payment_method": PaymentMethod.CARD,
-                "from_user": customer.full_name or customer.business_name,
+                "from_user": customer.profile.full_name or customer.profile.business_name,
                 "to_user": "Platform (Delivery Fee)",
             },
         )
@@ -1731,10 +1733,10 @@ async def _process_successful_payment(order: Order, db: AsyncSession, tx_ref: st
                 "amount": str(charged_amount),
                 "transaction_type": TransactionType.USER_TO_USER,
                 "transaction_direction": TransactionDirection.DEBIT,
-                "payment_status": PaymentStatus.PAID,
+                "payment_status": order.order_payment_status,
                 "payment_method": PaymentMethod.CARD,
-                "from_user": customer.full_name or customer.business_name,
-                "to_user": vendor.full_name or vendor.business_name,
+                "from_user": customer.profile.full_name or customer.profile.business_name,
+                "to_user": vendor.profile.business_name or vendor.profile.full_name
             },
         )
 
@@ -1751,8 +1753,8 @@ async def _process_successful_payment(order: Order, db: AsyncSession, tx_ref: st
                 "transaction_direction": TransactionDirection.CREDIT,
                 "payment_status": PaymentStatus.ESCROWED,
                 "payment_method": PaymentMethod.CARD,
-                "from_user": customer.full_name or customer.business_name,
-                "to_user": vendor.full_name or vendor.business_name,
+                "from_user": customer.profile.full_name or customer.profile.business_name,
+                "to_user": vendor.profile.business_name or vendor.profile.full_name,
             },
         )
 
@@ -1792,8 +1794,42 @@ async def _render_payment_page(order: Order, request: Request, transx_id: str):
         )
 
 
-async def _alert_admin_partial_failure(order: Order, error: Exception):
-    pass  # Slack / email / ticket
+async def _alert_admin_partial_failure(order: Order, db: AsyncSession, error: Exception):
+    """
+    CRITICAL: User paid, DB says PAID, but wallet not credited!
+    We log this as a FAILED_INTERNAL action so ops can reconcile.
+    """
+    log_entry = TransactionLog(
+        id=uuid4(),
+        vendor_id=order.vendor_id,
+        order_id=None,
+        amount=order.grand_total,
+        action=TransactionLogAction.WALLET_FUNDING_FAILED_INTERNAL,
+        status=PaymentStatus.FAILED,
+        details={
+            "error": str(error),
+            "error_type": error.__class__.__name__,
+            "tx_ref": str(order.tx_ref),
+            "wallet_id": str(order.owner_id),
+            "order_id": order.id,
+            "alert_type": "ORDER_PAYMENT_SIDE_EFFECT_FAILURE",
+            "requires_manual_reconciliation": True,
+            "timestamp": datetime.now().isoformat(),
+        },
+        timestamp=datetime.now(),
+    )
+
+    try:
+        db.add(log_entry)
+        await db.commit()
+        logger.critical(
+            f"WALLET FUNDING EMERGENCY LOGGED → tx_ref: {order.tx_ref} | "
+            f"Amount: ₦{order.grand_total:,.2f} | Log ID: {log_entry.id}"
+        )
+    except Exception as log_error:
+        logger.critical(
+            f"FAILED TO EVEN LOG THE WALLET FUNDING FAILURE! tx_ref: {order.tx_ref} | "
+            f"Log error: {log_error}", exc_info=True)
 
 
 # ===================================================================
@@ -2598,7 +2634,8 @@ async def product_order_payment_callback(request: Request, db: AsyncSession):
 
             # 6. All the risky/async side effects (fire-and-forget if needed)
             try:
-                await _process_successful_payment_side_effects(order, db, request)
+                if payment_was_processed:
+                    await _process_successful_payment_side_effects(order, db)
             except Exception as side_effect_error:
                 logger.critical(
                     f"CRITICAL: Payment marked PAID but side effects failed for order {order.id}: {side_effect_error}",
@@ -2616,7 +2653,7 @@ async def product_order_payment_callback(request: Request, db: AsyncSession):
             logger.info(f"Order {order.id} marked as {new_status}")
 
         # 7. ALWAYS return HTML — even if things partially failed
-        # This can NEVER throw ResponseValidationError if route is not under /api/
+        # This can NEVER throw ResponseValidationError if route is not under
         return _render_payment_status(order, request, transx_id, order.order_payment_status)
 
     except HTTPException:
@@ -2639,7 +2676,7 @@ def _render_payment_status(order, request: Request, transx_id: str, payment_stat
     try:
         amount = f"{getattr(order, 'grand_total', 0):.2f}"
         order_number = getattr(order, 'order_number', 'N/A')
-        date_str = datetime.utcnow().strftime("%b %d, %Y")
+        date_str = datetime.now().strftime("%b %d, %Y")
         
         context = {
             "request": request,
@@ -2657,8 +2694,8 @@ def _render_payment_status(order, request: Request, transx_id: str, payment_stat
 
 # ———————— Helper: All side effects after payment is secured ————————
 async def _process_successful_payment_side_effects(order: Order, db: AsyncSession):
-    customer = order.owner
-    vendor = order.vendor
+    customer = order.owner.profile
+    vendor = order.vendor.profile
 
     total = Decimal(order.grand_total)
 
@@ -2693,10 +2730,10 @@ async def _process_successful_payment_side_effects(order: Order, db: AsyncSessio
             "amount": str(total),
             "transaction_type": TransactionType.USER_TO_USER,
             "transaction_direction": TransactionDirection.DEBIT,
-            "payment_status": PaymentStatus.PAID,
+            "payment_status": order.order_payment_status,
             "payment_method": PaymentMethod.CARD,
             "from_user": customer.full_name or customer.business_name,
-            "to_user": vendor.full_name or vendor.business_name,
+            "to_user": vendor.business_name or vendor.full_name,
         },
     )
 
@@ -2714,7 +2751,7 @@ async def _process_successful_payment_side_effects(order: Order, db: AsyncSessio
             "payment_status": PaymentStatus.ESCROWED,
             "payment_method": PaymentMethod.CARD,
             "from_user": customer.full_name or customer.business_name,
-            "to_user": vendor.full_name or vendor.business_name,
+            "to_user": vendor.business_name or vendor.full_name,
         },
     )
 
