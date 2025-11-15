@@ -1569,6 +1569,7 @@ async def order_payment_callback(request: Request, db: AsyncSession):
     logger.info(f"Payment callback → tx_ref: {tx_ref}, status: {tx_status}")
 
     order = None
+    is_payment_success = False
 
     try:
         # 1. Verify with provider — SOURCE OF TRUTH
@@ -1620,6 +1621,7 @@ async def order_payment_callback(request: Request, db: AsyncSession):
         if new_status == PaymentStatus.PAID:
             try:
                 await _process_successful_payment(order, db, tx_ref)
+                is_payment_success = True
             except Exception as e:
                 logger.critical(f"PAID but side effects failed for order {order.id}: {e}", exc_info=True)
                 await _alert_admin_partial_failure(order, db, e)
@@ -1640,7 +1642,7 @@ async def order_payment_callback(request: Request, db: AsyncSession):
         await clear_order_caches(order)
 
         # 7. Always return page
-        return await _render_payment_page(order, request, transx_id)
+        return await _render_payment_page(order, request, transx_id, is_payment_success=is_payment_success)
 
     except HTTPException:
         raise
@@ -1653,7 +1655,7 @@ async def order_payment_callback(request: Request, db: AsyncSession):
 
 
 # ===================================================================
-# CORRECTED & SAFE LOGIC FOR FOOD / LAUNDRY
+# FOOD / LAUNDRY
 # ===================================================================
 async def _process_successful_payment(order: Order, db: AsyncSession, tx_ref: str):
     customer = order.owner
@@ -1770,7 +1772,7 @@ async def _process_successful_payment(order: Order, db: AsyncSession, tx_ref: st
 # ===================================================================
 # Safe page renderer
 # ===================================================================
-async def _render_payment_page(order: Order, request: Request, transx_id: str):
+async def _render_payment_page(order: Order, request: Request, transx_id: str, is_payment_success: bool | None = None):
     try:
         amount = order.grand_total
         if order.order_type == OrderType.PACKAGE and order.delivery:
@@ -1787,11 +1789,22 @@ async def _render_payment_page(order: Order, request: Request, transx_id: str):
         return templates.TemplateResponse("payment-status.html", context)
     except Exception as e:
         logger.error(f"Template failed: {e}", exc_info=True)
-        return HTMLResponse(
-            f"<h1>Payment {order.order_payment_status.value.title()}</h1>"
-            f"<p>Order #{order.order_number} • ₦{amount:,.2f}</p>",
-            status_code=200
-        )
+        context = {
+            "request": request,
+            "payment_status": order.order_payment_status.value,
+            "amount": f"{amount:,.2f}",
+            "date": order.updated_at.strftime("%b %d, %Y"),
+            "transaction_id": transx_id or "N/A",
+            "order_number": order.order_number,
+            "note": 'We received your payment but encountered an issue. Support has been notified.' if is_payment_success  else 'N/A'
+        }
+
+        return templates.TemplateResponse("payment-processing.html", context)
+        # return HTMLResponse(
+        #     f"<h1>Payment {order.order_payment_status.value.title()}</h1>"
+        #     f"<p>Order #{order.order_number} • ₦{amount:,.2f}</p>",
+        #     status_code=200
+        # )
 
 
 async def _alert_admin_partial_failure(order: Order, db: AsyncSession, error: Exception):
@@ -1830,234 +1843,6 @@ async def _alert_admin_partial_failure(order: Order, db: AsyncSession, error: Ex
         logger.critical(
             f"FAILED TO EVEN LOG THE WALLET FUNDING FAILURE! tx_ref: {order.tx_ref} | "
             f"Log error: {log_error}", exc_info=True)
-
-
-# ===================================================================
-# MAIN CALLBACK — SAFE, IDEMPOTENT, NEVER LOSES A SUCCESSFUL PAYMENT
-# ===================================================================
-async def order_payment_callback_new(request: Request, db: AsyncSession):
-    tx_ref = request.query_params.get("tx_ref")
-    tx_status = request.query_params.get("status")
-    transx_id = request.query_params.get("transaction_id")
-
-    if not tx_ref or not tx_status:
-        raise HTTPException(status_code=400, detail="Missing tx_ref or status")
-
-    logger.info(f"Payment callback → tx_ref: {tx_ref}, status: {tx_status}")
-
-    order = None
-
-    try:
-        # 1. Verify with payment provider — SOURCE OF TRUTH
-        verify_tranx = await verify_transaction_tx_ref(tx_ref)
-        verified_success = (
-            verify_tranx
-            and verify_tranx.get("status") == "success"
-            and verify_tranx.get("data", {}).get("status") == "successful"
-        )
-
-        # 2. Fetch order with lock
-        result = await db.execute(
-            select(Order)
-            .where(Order.tx_ref == UUID(tx_ref))
-            .where(Order.order_type.in_([OrderType.PACKAGE, OrderType.FOOD, OrderType.LAUNDRY]))
-            .options(
-                selectinload(Order.delivery),
-                selectinload(Order.owner),
-                selectinload(Order.vendor),
-            )
-            .with_for_update()
-        )
-        order = result.scalar_one_or_none()
-        if not order:
-            raise HTTPException(status_code=404, detail="Order not found")
-
-        # 3. IDEMPOTENCY: Already processed?
-        if order.order_payment_status == PaymentStatus.PAID:
-            logger.info(f"Idempotent callback: Order {order.id} already PAID")
-            return await _render_final_page(order, request, transx_id)
-
-        # 4. Determine final status — ONLY verified payments become PAID
-        if verified_success and tx_status == "successful":
-            new_status = PaymentStatus.PAID
-        elif tx_status == "cancelled":
-            new_status = PaymentStatus.CANCELLED
-        else:
-            new_status = PaymentStatus.FAILED
-
-        # 5. COMMIT PAYMENT STATUS FIRST — THIS MUST SURVIVE EVERYTHING
-        order.order_payment_status = new_status
-        order.updated_at = datetime.utcnow()
-        await db.commit()
-        await db.refresh(order)
-
-        logger.info(f"Order {order.id} → {new_status.value}")
-
-        # 6. ONLY AFTER commit → run side effects (they can fail safely)
-        if new_status == PaymentStatus.PAID:
-            try:
-                await _process_paid_order_side_effects(order, db, tx_ref, transx_id)
-            except Exception as e:
-                logger.critical(
-                    f"PAID order {order.id} committed, but side effects failed: {e}",
-                    exc_info=True,
-                )
-                await _alert_admin_payment_partial_failure(order, e)
-                # DO NOT ROLLBACK — money was taken!
-
-        elif new_status in (PaymentStatus.CANCELLED, PaymentStatus.FAILED):
-            # Handle cleanup for failed/cancelled
-            if order.order_type == OrderType.PACKAGE and order.delivery and order.delivery.rider_id:
-                await db.execute(
-                    update(User)
-                    .where(User.id == order.delivery.rider_id)
-                    .values(has_delivery=False)
-                )
-                order.delivery.rider_id = None
-                order.delivery.dispatch_id = None
-                order.delivery.rider_phone_number = None
-                await db.commit()
-
-        # 7. Always return a page — even if everything else crashes
-        return await _render_final_page(order, request, transx_id)
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.exception(f"Unexpected error in order payment callback: {tx_ref}")
-        # Absolute fallback — user sees something
-        return HTMLResponse(
-            "<h1>Payment Processing Issue</h1>"
-            "<p>We received your payment but encountered a problem. Our team has been notified.</p>",
-            status_code=200,
-        )
-
-
-# ===================================================================
-# Render final page — safe wrapper
-# ===================================================================
-async def _render_final_page(order: Order, request: Request, transx_id: str):
-    try:
-        amount = order.grand_total
-        if order.order_type == OrderType.PACKAGE and order.delivery:
-            amount = order.delivery.delivery_fee or 0
-
-        context = {
-            "request": request,
-            "payment_status": order.order_payment_status.value,
-            "amount": f"{amount:,.2f}",
-            "date": order.updated_at.strftime("%b %d, %Y"),
-            "transaction_id": transx_id or "N/A",
-            "order_number": order.order_number,
-        }
-        return templates.TemplateResponse("payment-status.html", context)
-    except Exception as e:
-        logger.error(f"Template render failed: {e}", exc_info=True)
-        return HTMLResponse(
-            f"<h1>Payment {order.order_payment_status.value.title()}</h1>"
-            f"<p>Amount: ₦{amount:,.2f}<br>Order: {order.order_number}</p>",
-            status_code=200,
-        )
-
-
-# ===================================================================
-# All side effects — run only AFTER payment is safely committed
-# ===================================================================
-async def _process_paid_order_side_effects(order: Order, db: AsyncSession, tx_ref: str, transx_id: str):
-    customer = order.owner
-    vendor = order.vendor
-    charged_amount = order.grand_total
-
-    # PACKAGE ORDER
-    if order.order_type == OrderType.PACKAGE:
-        if not order.delivery or not order.delivery.delivery_fee:
-            logger.error(f"Package order {order.id} missing delivery fee")
-            return
-        amount = order.delivery.delivery_fee
-
-        # Customer escrow
-        await producer.publish_message(
-            service="wallet", operation="update_wallet",
-            payload={"wallet_id": str(order.owner_id), "escrow_change": str(amount), "balance_change": "0"}
-        )
-
-        # Transaction record
-        await producer.publish_message(
-            service="wallet", operation="create_transaction",
-            payload={
-                "wallet_id": str(order.owner_id),
-                "tx_ref": tx_ref,
-                "amount": str(amount),
-                "transaction_type": TransactionType.USER_TO_USER,
-                "payment_status": PaymentStatus.PAID,
-                "transaction_direction": TransactionDirection.DEBIT,
-                "from_user": customer.full_name or customer.business_name,
-            },
-        )
-
-        # Notifications
-        customer_token = await get_user_notification_token(db=db, user_id=order.owner_id)
-        rider_token = await get_user_notification_token(db=db, user_id=order.delivery.rider_id) if order.delivery.rider_id else None
-        if customer_token:
-            await send_push_notification([customer_token], "Payment Successful", f"Your payment of ₦{amount:,.2f} is successful.")
-        if rider_token:
-            await send_push_notification([rider_token], "New Order", "You have a new delivery order.", navigate_to="/delivery/orders")
-
-    # FOOD / LAUNDRY (with delivery or pickup)
-    else:
-        if not order.vendor_id:
-            return
-
-        # Escrow both sides
-        await producer.publish_message(
-            service="wallet", operation="update_wallet",
-            payload={"wallet_id": str(order.owner_id), "escrow_change": str(charged_amount), "balance_change": "0"}
-        )
-        await producer.publish_message(
-            service="wallet", operation="update_wallet",
-            payload={"wallet_id": str(order.vendor_id), "escrow_change": str(charged_amount), "balance_change": "0"}
-        )
-
-        # Transaction record
-        await producer.publish_message(
-            service="wallet", operation="create_transaction",
-            payload={
-                "wallet_id": str(order.owner_id),
-                "tx_ref": tx_ref,
-                "amount": str(charged_amount),
-                "to_wallet_id": str(order.vendor_id),
-                "payment_status": PaymentStatus.PAID,
-                "transaction_type": TransactionType.USER_TO_USER,
-                "transaction_direction": TransactionDirection.DEBIT,
-                "from_user": customer.full_name or customer.business_name,
-                "to_user": vendor.full_name or vendor.business_name,
-            },
-        )
-
-        # Notifications
-        customer_token = await get_user_notification_token(db=db, user_id=order.owner_id)
-        vendor_token = await get_user_notification_token(db=db, user_id=order.vendor_id)
-        if customer_token:
-            await send_push_notification([customer_token], "Payment Successful", f"Your payment of ₦{charged_amount:,.2f} is successful.")
-        if vendor_token:
-            await send_push_notification([vendor_token], "New Order", f"New order from {customer.full_name or customer.business_name} – #{order.order_number}")
-
-    # Common actions
-    await producer.publish_message(
-        service="order_status",
-        operation="order_payment_status",
-        payload={"new_status": PaymentStatus.PAID.value, "order_id": str(order.id)}
-    )
-
-    await clear_order_caches(order)
-
-
-# ===================================================================
-# Alert on partial failure
-# ===================================================================
-async def _alert_admin_payment_partial_failure(order: Order, error: Exception):
-    # Send to Slack, create ticket, etc.
-    pass
 
 
 # async def order_payment_callback(request: Request, db: AsyncSession):
@@ -2626,7 +2411,7 @@ async def product_order_payment_callback(request: Request, db: AsyncSession):
         # 5. ONLY if verified successful → mark as paid FIRST
         if new_status == PaymentStatus.PAID:
             order.order_payment_status = PaymentStatus.PAID
-            order.updated_at = datetime.utcnow()
+            order.updated_at = datetime.now()
             await db.commit()           # COMMIT #1 — Payment is now PAID forever
             await db.refresh(order)
             logger.info(f"Payment marked PAID for order {order.id} (tx_ref: {tx_ref})")
@@ -2666,10 +2451,21 @@ async def product_order_payment_callback(request: Request, db: AsyncSession):
             return _render_payment_status(order or {}, request, transx_id, final_status, error=True)
         except:
             # Absolute last resort — raw HTML to avoid template crash
-            return HTMLResponse(
-                "<h1>Payment Processing Error</h1><p>We received your payment but encountered an issue. Support has been notified.</p>",
-                status_code=500
-            )
+            context = {
+            "request": request,
+            "payment_status": final_status,
+            "amount": f"{order.grand_total:,.2f}",
+            "date": order.updated_at.strftime("%b %d, %Y"),
+            "transaction_id": transx_id or "N/A",
+            "order_number": order.order_number,
+            "note": 'We received your payment but encountered an issue. Support has been notified.' if payment_was_processed  else 'N/A'
+        }
+
+            return templates.TemplateResponse("payment-processing.html", context)
+            # return HTMLResponse(
+            #     "<h1>Payment Processing Error</h1><p>We received your payment but encountered an issue. Support has been notified.</p>",
+            #     status_code=500
+            # )
 
 # ———————— Helper: Render template safely ————————
 def _render_payment_status(order, request: Request, transx_id: str, payment_status, error=False):
