@@ -622,8 +622,8 @@ async def _create_order_in_database(
         "amount_due_vendor": amount_due_vendor,
         "vendor_pickup_dropoff_charge": vendor_pickup_dropoff_charge,
         "additional_info": order_item.additional_info,
-        "pickup_location": order_item.origin if require_delivery else None,
-        "destination": order_item.destination if require_delivery else None,
+        "pickup_location": order_item.origin if order_item.require_delivery in [RequireDeliverySchema.DELIVERY, RequireDeliverySchema.VENDOR_PICKUP_AND_DROPOFF] else None,
+        "destination": order_item.destination if order_item.require_delivery in [RequireDeliverySchema.DELIVERY, RequireDeliverySchema.VENDOR_PICKUP_AND_DROPOFF] else None,
     }
     order_insert_result = await db.execute(
         insert(Order)
