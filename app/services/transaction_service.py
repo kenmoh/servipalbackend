@@ -1370,6 +1370,13 @@ async def handle_payment_webhook(request: Request, db: AsyncSession):
         await db.commit()
         await db.refresh(order)
 
+        asyncio.create_task(
+            run_payment_side_effects_once(order, db, tx_ref)
+        )
+        asyncio.create_task(
+            create_payment_audit_log_once(order)
+        )
+
         # Mark webhook processed
         redis_client.setex(idempotency_key, 86400, "processed")
 
@@ -1409,7 +1416,7 @@ async def run_payment_side_effects_once(order: Order, db: AsyncSession, tx_ref: 
         return True
     except Exception as e:
         logger.error(f"Side effects FAILED for order {order.id}: {e}", exc_info=True)
-        redis_client.delete(key)  # release lock so callback can retry
+        redis_client.delete(key)
         return False
 
 async def _process_successful_payment_webhook(
@@ -1842,6 +1849,8 @@ async def get_current_charge_settings(db: AsyncSession) -> ChargeAndCommission:
 #             "<h1>Payment Received</h1><p>We're processing your payment. Support notified.</p>",
 #             status_code=200,
 #         )
+
+
 async def order_payment_callback(request: Request, db: AsyncSession):
     tx_ref = request.query_params.get("tx_ref")
     status = request.query_params.get("status")
@@ -1862,15 +1871,18 @@ async def order_payment_callback(request: Request, db: AsyncSession):
     order = result.scalar_one_or_none()
 
     if not order:
-        return HTMLResponse("<h1>Order Not Found</h1>", status_code=404)
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f'No found')
 
     is_success = order.order_payment_status == PaymentStatus.PAID
 
-    # THIS IS THE SAFETY NET
     if is_success:
         asyncio.create_task(
             run_payment_side_effects_once(order, db, tx_ref)
         )
+
+    asyncio.create_task(
+        create_payment_audit_log_once(order)
+    )
 
     return await _render_payment_page(
         order=order,
@@ -1878,6 +1890,59 @@ async def order_payment_callback(request: Request, db: AsyncSession):
         transaction_id=request.query_params.get("transaction_id"),
         is_payment_success=is_success
     )
+
+async def create_payment_audit_log_once(order: Order, current_user: User | None = None):
+    """
+    Creates audit log for successful payment — runs ONLY ONCE
+    Called from webhook OR callback — no duplicates ever
+    """
+    key = f"audit_log:payment_success:{order.id}"
+    
+    # Already created? Skip fast
+    if await redis_client.get(key):
+        logger.info(f"[Audit] Log already created for order {order.id}")
+        return
+
+    # Claim lock (10 min window)
+    if not await redis_client.set(key, "running", nx=True, ex=600):
+        logger.info(f"[Audit] Another process creating log for {order.id}")
+        return
+
+    try:
+        await producer.publish_message(
+            service="audit",
+            operation="create_transaction_log",
+            payload={
+                "order_id": str(order.id),
+                "vendor_id": str(order.vendor_id) if order.vendor_id else None,
+                "amount": str(order.grand_total),
+                "action": TransactionLogAction.PAYMENT_RECEIVED,
+                "status": order.order_payment_status,
+                "details": {
+                    "order_type": order.order_type,
+                    "order_number": order.order_number,
+                    "customer_name": (
+                        order.owner.profile.full_name or 
+                        order.owner.profile.business_name or 
+                        "Customer"
+                    ),
+                    "vendor_name": (
+                        order.vendor.profile.business_name if order.vendor and order.vendor.profile
+                        else "Platform"
+                    ) if order.vendor else "Platform",
+                    "source": "webhook+callback_idempotent",
+                    "timestamp": datetime.now().isoformat(),
+                },
+            },
+        )
+
+       
+        await redis_client.setex(key, 86400 * 90, "done")
+        logger.info(f"Audit log created for order {order.id}")
+
+    except Exception as e:
+        logger.error(f"Failed to create audit log for order {order.id}: {e}", exc_info=True)
+        await redis_client.delete(key)
 
 # ===================================================================
 # FOOD / LAUNDRY / DELIVERY

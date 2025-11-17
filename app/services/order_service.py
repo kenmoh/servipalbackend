@@ -609,7 +609,6 @@ async def _create_order_in_database(
     final_amount: Decimal,
     amount_due_vendor: Decimal,
     vendor_pickup_dropoff_charge: Decimal,
-    requires_delivery: RequireDeliverySchema,
 ):
     order_values = {
         "owner_id": current_user.id,
@@ -733,7 +732,7 @@ async def create_food_or_laundry_order(
                 final_amount,
                 amount_due_vendor,
                 vendor_pickup_dropoff_charge,
-                requires_delivery,
+                
             )
 
         await db.commit()
