@@ -717,7 +717,7 @@ async def create_food_or_laundry_order(
             items_data,
             vendor_id,
             distance=order_item.distance,
-            requires_delivery=order_item.require_delivery,
+            require_delivery=order_item.require_delivery,
 
            
         )

@@ -1158,170 +1158,259 @@ async def handle_charge_completed_callback_old(
     return {"status": "ignored", "reason": "Not a successful charge.completed event"}
 
 
-async def handle_payment_webhook(
-    request: Request,
-    background_task: BackgroundTasks,
-    db: AsyncSession,
-):
-    """
-    Handle Flutterwave payment webhook with idempotency.
-    Webhook is sent when payment status changes.
-    """
+# async def handle_payment_webhook(
+#     request: Request,
+#     background_task: BackgroundTasks,
+#     db: AsyncSession,
+# ):
+#     """
+#     Handle Flutterwave payment webhook with idempotency.
+#     Webhook is sent when payment status changes.
+#     """
+#     try:
+#         # Get payload
+#         payload = await request.json()
+        
+#         # Validate webhook signature
+#         signature = request.headers.get("verif-hash")
+#         if signature is None or signature != settings.FLW_SECRET_HASH:
+#             logger.warning(f"Invalid webhook signature: {signature}")
+#             raise HTTPException(status_code=401, detail="Unauthorized")
+        
+#         # Extract data from Flutterwave webhook structure
+#         event = payload.get("event")
+#         data = payload.get("data", {})
+        
+#         # Flutterwave sends tx_ref in data object
+#         tx_ref = data.get("tx_ref")
+#         status = data.get("status")
+#         amount = data.get("amount")
+#         charged_amount = data.get("charged_amount")
+#         currency = data.get("currency")
+#         flw_ref = data.get("flw_ref")
+        
+#         if not tx_ref:
+#             logger.error(f"Missing tx_ref in webhook payload: {payload}")
+#             raise HTTPException(status_code=400, detail="Missing tx_ref")
+        
+#         logger.info(
+#             f"Webhook received: event={event}, tx_ref={tx_ref}, "
+#             f"status={status}, amount={amount}"
+#         )
+        
+#         # Idempotency check - prevent duplicate processing
+#         idempotency_key = f"webhook:{tx_ref}:{flw_ref}"
+#         if redis_client.get(idempotency_key):
+#             logger.info(f"Webhook already processed: {idempotency_key}")
+#             return {"message": "Already processed"}
+        
+#         # Convert tx_ref to UUID
+#         try:
+#             tx_ref_uuid = UUID(tx_ref)
+#         except (ValueError, TypeError):
+#             logger.error(f"Invalid tx_ref format: {tx_ref}")
+#             raise HTTPException(status_code=400, detail="Invalid tx_ref format")
+        
+#         # Get order with lock
+#         stmt = (
+#             select(Order)
+#             .where(Order.tx_ref == tx_ref_uuid)
+#             .options(
+#                 selectinload(Order.owner).selectinload(User.profile),
+#                 selectinload(Order.delivery),
+#                 selectinload(Order.vendor)
+#             )
+#             .with_for_update()
+#         )
+#         result = await db.execute(stmt)
+#         order = result.scalar_one_or_none()
+        
+#         if not order:
+#             logger.warning(f"Order not found for tx_ref: {tx_ref}")
+#             # Mark as processed to avoid repeated lookups
+#             redis_client.setex(idempotency_key, 3600, "not_found")
+#             return {"message": "Order not found"}
+        
+#         # Check if already processed
+#         if order.order_payment_status == PaymentStatus.PAID:
+#             logger.info(f"Order {order.id} already marked as PAID")
+#             redis_client.setex(idempotency_key, 86400, "processed")
+#             return {"message": "Already processed"}
+        
+#         # Validate payment
+#         if status != "successful":
+#             logger.warning(
+#                 f"Payment not successful for order {order.id}: status={status}"
+#             )
+#             return {"message": "Payment not successful"}
+        
+#         # Verify amount matches
+#         expected_amount = None
+#         if order.order_type == OrderType.PACKAGE:
+#             expected_amount = order.delivery.delivery_fee if order.delivery else None
+#         else:
+#             expected_amount = order.grand_total
+        
+#         if expected_amount and abs(Decimal(amount) - Decimal(expected_amount)) > Decimal("0.01"):
+#             logger.error(
+#                 f"Amount mismatch for order {order.id}: "
+#                 f"expected={expected_amount}, received={amount}"
+#             )
+#             return {"message": "Amount mismatch"}
+        
+#         # Verify with Flutterwave as source of truth
+#         try:
+#             verify_result = await verify_transaction_tx_ref(tx_ref)
+#             verified_status = verify_result.get("data", {}).get("status")
+            
+#             if verified_status != "successful":
+#                 logger.warning(
+#                     f"Verification failed for tx_ref {tx_ref}: status={verified_status}"
+#                 )
+#                 return {"message": "Verification failed"}
+                
+#         except Exception as e:
+#             logger.error(f"Verification error for tx_ref {tx_ref}: {e}", exc_info=True)
+#             # Don't process if verification fails
+#             return {"message": "Verification error"}
+        
+#         # Update order status
+#         try:
+#             order.order_payment_status = PaymentStatus.PAID
+#             order.updated_at = datetime.utcnow()
+#             await db.commit()
+#             await db.refresh(order)
+            
+#             logger.info(f"✓ Order {order.id} marked as PAID via webhook")
+            
+#         except Exception as e:
+#             await db.rollback()
+#             logger.error(
+#                 f"Failed to update order {order.id}: {e}", 
+#                 exc_info=True
+#             )
+#             raise HTTPException(
+#                 status_code=500, 
+#                 detail="Failed to update order"
+#             )
+#         try:
+#             await _run_payment_side_effects_once(order, db, tx_ref)
+#         except Exception as e:
+#             logger.error(f"Webhook side effects failed (will retry via callback): {e}")
+        
+#         # Mark webhook as processed (24 hour TTL)
+#         redis_client.setex(idempotency_key, 86400, "processed")
+        
+#         # Process settlement and notifications in background
+#         background_task.add_task(
+#             _process_successful_payment_webhook,
+#             order_id=order.id,
+#             tx_ref=tx_ref,
+#             amount=amount,
+#         )
+        
+#         logger.info(f"✓ Webhook processed successfully for order {order.id}")
+        
+#         return {
+#             "message": "Success",
+#             "order_id": str(order.id),
+#             "status": "paid"
+#         }
+        
+#     except HTTPException:
+#         raise
+#     except Exception as e:
+#         logger.error(f"Webhook processing error: {e}", exc_info=True)
+#         raise HTTPException(
+#             status_code=500,
+#             detail="Internal server error"
+#         )
+
+async def handle_payment_webhook(request: Request, db: AsyncSession):
     try:
-        # Get payload
         payload = await request.json()
-        
-        # Validate webhook signature
         signature = request.headers.get("verif-hash")
-        if signature is None or signature != settings.FLW_SECRET_HASH:
-            logger.warning(f"Invalid webhook signature: {signature}")
-            raise HTTPException(status_code=401, detail="Unauthorized")
-        
-        # Extract data from Flutterwave webhook structure
-        event = payload.get("event")
+        if signature != settings.FLW_SECRET_HASH:
+            raise HTTPException(401, "Unauthorized")
+
         data = payload.get("data", {})
-        
-        # Flutterwave sends tx_ref in data object
         tx_ref = data.get("tx_ref")
         status = data.get("status")
-        amount = data.get("amount")
-        charged_amount = data.get("charged_amount")
-        currency = data.get("currency")
         flw_ref = data.get("flw_ref")
-        
-        if not tx_ref:
-            logger.error(f"Missing tx_ref in webhook payload: {payload}")
-            raise HTTPException(status_code=400, detail="Missing tx_ref")
-        
-        logger.info(
-            f"Webhook received: event={event}, tx_ref={tx_ref}, "
-            f"status={status}, amount={amount}"
-        )
-        
-        # Idempotency check - prevent duplicate processing
+
+        if not tx_ref or status != "successful":
+            return {"message": "ignored"}
+
         idempotency_key = f"webhook:{tx_ref}:{flw_ref}"
         if redis_client.get(idempotency_key):
-            logger.info(f"Webhook already processed: {idempotency_key}")
-            return {"message": "Already processed"}
-        
-        # Convert tx_ref to UUID
-        try:
-            tx_ref_uuid = UUID(tx_ref)
-        except (ValueError, TypeError):
-            logger.error(f"Invalid tx_ref format: {tx_ref}")
-            raise HTTPException(status_code=400, detail="Invalid tx_ref format")
-        
-        # Get order with lock
-        stmt = (
-            select(Order)
-            .where(Order.tx_ref == tx_ref_uuid)
-            .options(
-                selectinload(Order.owner).selectinload(User.profile),
-                selectinload(Order.delivery),
-                selectinload(Order.vendor)
-            )
-            .with_for_update()
-        )
-        result = await db.execute(stmt)
-        order = result.scalar_one_or_none()
-        
-        if not order:
-            logger.warning(f"Order not found for tx_ref: {tx_ref}")
-            # Mark as processed to avoid repeated lookups
-            redis_client.setex(idempotency_key, 3600, "not_found")
-            return {"message": "Order not found"}
-        
-        # Check if already processed
-        if order.order_payment_status == PaymentStatus.PAID:
-            logger.info(f"Order {order.id} already marked as PAID")
-            redis_client.setex(idempotency_key, 86400, "processed")
-            return {"message": "Already processed"}
-        
-        # Validate payment
-        if status != "successful":
-            logger.warning(
-                f"Payment not successful for order {order.id}: status={status}"
-            )
-            return {"message": "Payment not successful"}
-        
-        # Verify amount matches
-        expected_amount = None
-        if order.order_type == OrderType.PACKAGE:
-            expected_amount = order.delivery.delivery_fee if order.delivery else None
-        else:
-            expected_amount = order.grand_total
-        
-        if expected_amount and abs(Decimal(amount) - Decimal(expected_amount)) > Decimal("0.01"):
-            logger.error(
-                f"Amount mismatch for order {order.id}: "
-                f"expected={expected_amount}, received={amount}"
-            )
-            return {"message": "Amount mismatch"}
-        
-        # Verify with Flutterwave as source of truth
-        try:
-            verify_result = await verify_transaction_tx_ref(tx_ref)
-            verified_status = verify_result.get("data", {}).get("status")
-            
-            if verified_status != "successful":
-                logger.warning(
-                    f"Verification failed for tx_ref {tx_ref}: status={verified_status}"
+            return {"message": "already processed"}
+
+        result = await db.execute(
+                select(Order)
+                .where(Order.tx_ref == UUID(tx_ref))
+                .options(
+                    selectinload(Order.owner).selectinload(User.profile),
+                    selectinload(Order.vendor).selectinload(User.profile),
+                    selectinload(Order.delivery),
                 )
-                return {"message": "Verification failed"}
-                
-        except Exception as e:
-            logger.error(f"Verification error for tx_ref {tx_ref}: {e}", exc_info=True)
-            # Don't process if verification fails
-            return {"message": "Verification error"}
-        
-        # Update order status
-        try:
-            order.order_payment_status = PaymentStatus.PAID
-            order.updated_at = datetime.utcnow()
-            await db.commit()
-            await db.refresh(order)
-            
-            logger.info(f"✓ Order {order.id} marked as PAID via webhook")
-            
-        except Exception as e:
-            await db.rollback()
-            logger.error(
-                f"Failed to update order {order.id}: {e}", 
-                exc_info=True
+                .with_for_update()
             )
-            raise HTTPException(
-                status_code=500, 
-                detail="Failed to update order"
-            )
-        
-        # Mark webhook as processed (24 hour TTL)
+        order = order.scalar_one_or_none()
+        if not order:
+            redis_client.setex(idempotency_key, 3600, "not_found")
+            return {"message": "order not found"}
+
+        if order.order_payment_status == PaymentStatus.PAID:
+            redis_client.setex(idempotency_key, 86400, "already_paid")
+            return {"message": "already paid"}
+
+        # Mark as paid
+        order.order_payment_status = PaymentStatus.PAID
+        order.updated_at = datetime.utcnow()
+        await db.commit()
+        await db.refresh(order)
+
+        # Mark webhook processed
         redis_client.setex(idempotency_key, 86400, "processed")
-        
-        # Process settlement and notifications in background
-        background_task.add_task(
-            _process_successful_payment_webhook,
-            order_id=order.id,
-            tx_ref=tx_ref,
-            amount=amount,
-        )
-        
-        logger.info(f"✓ Webhook processed successfully for order {order.id}")
-        
-        return {
-            "message": "Success",
-            "order_id": str(order.id),
-            "status": "paid"
-        }
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Webhook processing error: {e}", exc_info=True)
-        raise HTTPException(
-            status_code=500,
-            detail="Internal server error"
+
+        # RUN SIDE EFFECTS (will skip if callback already did it)
+        asyncio.create_task(
+            run_payment_side_effects_once(order, db, tx_ref)
         )
 
+        return {"message": "success", "order_id": str(order.id)}
+
+    except Exception as e:
+        logger.error(f"Webhook error: {e}", exc_info=True)
+        raise HTTPException(500, "error")
+
+
+async def run_payment_side_effects_once(order: Order, db: AsyncSession, tx_ref: str):
+    key = f"payment_success_processed:{order.id}"
+    
+    # Already done? Skip fast
+    if redis_client.get(key):
+        logger.info(f"[Idempotent] Side effects already done for order {order.id}")
+        return True
+
+    # Try to claim the lock (5 min window)
+    locked = redis_client.set(key, "running", nx=True, ex=300)
+    if not locked:
+        logger.info(f"[Idempotent] Another process running side effects for {order.id}")
+        return False
+
+    try:
+        logger.info(f"Running payment side effects for order {order.id}")
+        await _process_successful_payment(order, db, tx_ref)
+        
+        # Mark as done forever (30 days)
+        redis_client.setex(key, 86400 * 30, "done")
+        logger.info(f"Side effects completed for order {order.id}")
+        return True
+    except Exception as e:
+        logger.error(f"Side effects FAILED for order {order.id}: {e}", exc_info=True)
+        redis_client.delete(key)  # release lock so callback can retry
+        return False
 
 async def _process_successful_payment_webhook(
     order_id: UUID,
@@ -1658,100 +1747,137 @@ async def get_current_charge_settings(db: AsyncSession) -> ChargeAndCommission:
     return charge_model
 
 
-async def order_payment_callback(request: Request, db: AsyncSession):
-    tx_ref = request.query_params.get("tx_ref")
-    tx_status = request.query_params.get("status")
-    transx_id = request.query_params.get("transaction_id")
+# async def order_payment_callback(request: Request, db: AsyncSession):
+#     tx_ref = request.query_params.get("tx_ref")
+#     tx_status = request.query_params.get("status")
+#     transx_id = request.query_params.get("transaction_id")
 
-    if not tx_ref or not tx_status:
-        raise HTTPException(status_code=400, detail="Missing tx_ref or status")
+#     if not tx_ref or not tx_status:
+#         raise HTTPException(status_code=400, detail="Missing tx_ref or status")
 
-    logger.info(f"Payment callback → tx_ref: {tx_ref}, status: {tx_status}")
+#     logger.info(f"Payment callback → tx_ref: {tx_ref}, status: {tx_status}")
 
-    order = None
-    is_payment_success = False
+#     order = None
 
-    try:
-        # 1. Verify with provider — SOURCE OF TRUTH
-        verify_tranx = await verify_transaction_tx_ref(tx_ref)
-        verified_success = (
-            verify_tranx
-            and verify_tranx.get("status") == "success"
-            and verify_tranx.get("data", {}).get("status") == "successful"
-        )
+#     try:
+#         # 1. Verify with provider — SOURCE OF TRUTH
+#         verify_tranx = await verify_transaction_tx_ref(tx_ref)
+#         verified_success = (
+#             verify_tranx
+#             and verify_tranx.get("status") == "success"
+#             and verify_tranx.get("data", {}).get("status") == "successful"
+#         )
 
-        # 2. Fetch order with lock
-        result = await db.execute(
-            select(Order)
-            .where(Order.tx_ref == UUID(tx_ref))
-            .where(Order.order_type.in_([OrderType.PACKAGE, OrderType.FOOD, OrderType.LAUNDRY]))
-            .options(
-                selectinload(Order.delivery),
-                selectinload(Order.owner),
-                selectinload(Order.vendor)
-            )
-            .with_for_update()
-        )
-        order = result.scalar_one_or_none()
-        if not order:
-            raise HTTPException(status_code=404, detail="Order not found")
+#         # 2. Fetch order with lock
+#         result = await db.execute(
+#             select(Order)
+#             .where(Order.tx_ref == UUID(tx_ref))
+#             .where(Order.order_type.in_([OrderType.PACKAGE, OrderType.FOOD, OrderType.LAUNDRY]))
+#             .options(
+#                 selectinload(Order.delivery),
+#                 selectinload(Order.owner),
+#                 selectinload(Order.vendor)
+#             )
+#             .with_for_update()
+#         )
+#         order = result.scalar_one_or_none()
 
-        # 3. IDEMPOTENCY
-        if order.order_payment_status == PaymentStatus.PAID:
-            logger.info(f"Idempotent: Order {order.id} already PAID")
-            return await _render_payment_page(order, request, transx_id)
+#         if not order:
+#             raise HTTPException(status_code=404, detail="Order not found")
 
-        # 4. Determine final status — ONLY verified + successful → PAID
-        if verified_success and tx_status == "successful":
-            new_status = PaymentStatus.PAID
-        elif tx_status == "cancelled":
-            new_status = PaymentStatus.CANCELLED
-        else:
-            new_status = PaymentStatus.FAILED
+#         # 3. IDEMPOTENCY
+#         if order.order_payment_status == PaymentStatus.PAID:
+#             logger.info(f"Idempotent: Order {order.id} already PAID")
+#             return await _render_payment_page(order, request, transx_id)
 
-        # 5. COMMIT STATUS FIRST — THIS CANNOT BE ROLLED BACK
-        order.order_payment_status = new_status
-        order.updated_at = datetime.now()
-        await db.commit()
-        await db.refresh(order)
+#         # 4. Determine final status — ONLY verified + successful → PAID
+#         if verified_success and tx_status == "successful":
+#             new_status = PaymentStatus.PAID
+#         elif tx_status == "cancelled":
+#             new_status = PaymentStatus.CANCELLED
+#         else:
+#             new_status = PaymentStatus.FAILED
 
-        logger.info(f"Order {order.id} marked as {new_status.value}")
+#         # 5. COMMIT STATUS FIRST — THIS CANNOT BE ROLLED BACK
+#         order.order_payment_status = new_status
+#         order.updated_at = datetime.now()
+#         await db.commit()
+#         await db.refresh(order)
 
-        # 6. ONLY AFTER commit → run side effects
-        if new_status == PaymentStatus.PAID:
-            try:
-                await _process_successful_payment(order, db, tx_ref)
-                is_payment_success = True
-            except Exception as e:
-                logger.critical(f"PAID but side effects failed for order {order.id}: {e}", exc_info=True)
-                await _alert_admin_partial_failure(order, db, e)
+#         logger.info(f"Order {order.id} marked as {new_status.value}")
+
+#         is_payment_success = order.order_payment_status == PaymentStatus.PAID
+
+#         # 6. ONLY AFTER commit → run side effects
+#         if new_status == PaymentStatus.PAID:
+#             try:
+#                 await _process_successful_payment(order, db, tx_ref)
+#                 is_payment_success = True
+#             except Exception as e:
+#                 logger.critical(f"PAID but side effects failed for order {order.id}: {e}", exc_info=True)
+#                 await _alert_admin_partial_failure(order, db, e)
                
-        elif new_status in (PaymentStatus.CANCELLED, PaymentStatus.FAILED):
-            if order.order_type == OrderType.PACKAGE and order.delivery and order.delivery.rider_id:
-                await db.execute(
-                    update(User)
-                    .where(User.id == order.delivery.rider_id)
-                    .values(has_delivery=False)
-                )
-                order.delivery.rider_id = None
-                order.delivery.dispatch_id = None
-                order.delivery.rider_phone_number = None
-                await db.commit()
+#         elif new_status in (PaymentStatus.CANCELLED, PaymentStatus.FAILED):
+#             if order.order_type == OrderType.PACKAGE and order.delivery and order.delivery.rider_id:
+#                 await db.execute(
+#                     update(User)
+#                     .where(User.id == order.delivery.rider_id)
+#                     .values(has_delivery=False)
+#                 )
+#                 order.delivery.rider_id = None
+#                 order.delivery.dispatch_id = None
+#                 order.delivery.rider_phone_number = None
+#                 await db.commit()
 
-        await clear_order_caches(order)
+#         await clear_order_caches(order)
 
       
-        return await _render_payment_page(order, request, transx_id, is_payment_success=is_payment_success)
+#         return await _render_payment_page(order, request, transx_id, is_payment_success=is_payment_success)
 
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.exception(f"Critical error in payment callback: {tx_ref}")
-        return HTMLResponse(
-            "<h1>Payment Received</h1><p>We're processing your payment. Support notified.</p>",
-            status_code=200,
+#     except HTTPException:
+#         raise
+#     except Exception as e:
+#         logger.exception(f"Critical error in payment callback: {tx_ref}")
+#         return HTMLResponse(
+#             "<h1>Payment Received</h1><p>We're processing your payment. Support notified.</p>",
+#             status_code=200,
+#         )
+async def order_payment_callback(request: Request, db: AsyncSession):
+    tx_ref = request.query_params.get("tx_ref")
+    status = request.query_params.get("status")
+
+    if not tx_ref:
+        raise HTTPException(400, "Missing tx_ref")
+
+    try:
+        UUID(tx_ref)
+    except ValueError:
+        raise HTTPException(400, "Invalid tx_ref")
+
+    # Fetch order (no lock needed)
+    result = await db.execute(
+        select(Order).where(Order.tx_ref == UUID(tx_ref))
+        .options(selectinload(Order.delivery), selectinload(Order.owner), selectinload(Order.vendor))
+    )
+    order = result.scalar_one_or_none()
+
+    if not order:
+        return HTMLResponse("<h1>Order Not Found</h1>", status_code=404)
+
+    is_success = order.order_payment_status == PaymentStatus.PAID
+
+    # THIS IS THE SAFETY NET
+    if is_success:
+        asyncio.create_task(
+            run_payment_side_effects_once(order, db, tx_ref)
         )
 
+    return await _render_payment_page(
+        order=order,
+        request=request,
+        transaction_id=request.query_params.get("transaction_id"),
+        is_payment_success=is_success
+    )
 
 # ===================================================================
 # FOOD / LAUNDRY / DELIVERY
