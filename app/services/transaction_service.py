@@ -3470,7 +3470,7 @@ async def pay_with_wallet(
                     "tx_ref": str(order.tx_ref),
                     "to_wallet_id": str(order.vendor_id),
                     "amount": str(charged_amount),
-                    "transaction_type": TransactionType.USER_TO_USER
+                    "transaction_type": TransactionType.USER_TO_USER,
                     "transaction_direction": TransactionDirection.DEBIT,
                     "payment_status": PaymentStatus.PAID,
                     "from_user": customer.profile.full_name or customer.profile.business_name,
