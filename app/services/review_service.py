@@ -140,6 +140,7 @@ async def create_review(
     try:
         review = Review(
             order_id=data.order_id,
+            reviewer_id=current_user.id,
             reviewee_id=order.vendor_id,
             rating=data.rating,
             comment=data.comment,
