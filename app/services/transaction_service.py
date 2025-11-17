@@ -1754,7 +1754,7 @@ async def order_payment_callback(request: Request, db: AsyncSession):
 
 
 # ===================================================================
-# FOOD / LAUNDRY / DELIVER
+# FOOD / LAUNDRY / DELIVERY
 # ===================================================================
 async def _process_successful_payment(order: Order, db: AsyncSession, tx_ref: str):
     customer = order.owner
