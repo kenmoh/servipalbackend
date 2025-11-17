@@ -53,6 +53,7 @@ from app.database.database import engine
 from app.schemas.user_schemas import AccountDetails, AccountDetailResponse
 from app.queue.order_consumer import OrderStatusQueueConsumer
 from app.queue.wallet_consumer import WalletQueueConsumer
+from app.queue.audit_consumer import AuditQueueConsumer
 from app.queue.producer import CentralQueueProducer
 
 
@@ -102,6 +103,7 @@ scheduler.add_job(
 scheduler.start()
 
 wallet_queue_consumer = WalletQueueConsumer()
+auth_log_consumer = AuditQueueConsumer()
 order_status_queue_consumer = OrderStatusQueueConsumer()
 central_queue_producer = CentralQueueProducer()
 
@@ -129,6 +131,7 @@ async def lifespan(application: FastAPI):
         await central_queue_producer.connect()
         await wallet_queue_consumer.start_consuming()
         await order_status_queue_consumer.start_consuming()
+        await auth_log_consumer.start_consuming()
         logger.info("Queue system initialized successfully")
 
         # Log scheduler status
@@ -145,7 +148,7 @@ async def lifespan(application: FastAPI):
         # Shutdown: Stop consumers and close producer
         await wallet_queue_consumer.stop_consuming()
         await order_status_queue_consumer.stop_consuming()
-        # await notification_queue_consumer.stop_consuming()
+        await auth_log_consumer.stop_consuming()
         await central_queue_producer.close()
         logger.info("Queue system shut down successfully")
         logger.info("Cleaning up resources...")
