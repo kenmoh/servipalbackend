@@ -324,7 +324,6 @@ async def create_new_staff(
     Creates a new rider user and assigns them to the current dispatch user.
     Ultra-optimized version using database constraints for validation.
     """
-
     if current_user.user_type not in [UserType.ADMIN, UserType.SUPER_ADMIN]:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -1413,6 +1412,17 @@ async def register_user(
     """
     # Validate password
     validate_password(user_data.password)
+
+    allowed_user_type = [
+            settings.CUSTOMER,
+            settings.DISPATCH,
+            settings.RESTAURANT_VENDOR,
+            settings.LAUNDRY_VENDOR
+  
+    ]
+
+    if user_data.user_type not in allowed_user_type:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail='User type not allowed')
 
     # Format the phone number to international format (+234...)
     if user_data.phone_number.startswith("0"):

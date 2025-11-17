@@ -218,14 +218,14 @@ class Settings(BaseSettings):
     RESEND_API_KEY: str
 
     # Customer types (from your Cloud Run env vars)
-    CUSTOMER: Optional[str] = None
-    RESTAURANT_VENDOR: Optional[str] = None
-    LAUNDRY_VENDOR: Optional[str] = None
-    RIDER: Optional[str] = None
-    DISPATCH: Optional[str] = None
-    ADMIN: Optional[str] = None
-    SUPER_ADMIN: Optional[str] = None
-    MODERATOR: Optional[str] = None
+    CUSTOMER: Optional[str] = 'customer'
+    RESTAURANT_VENDOR: Optional[str] = 'restaurant_vendor'
+    LAUNDRY_VENDOR: Optional[str] = 'laundry_vendor'
+    RIDER: Optional[str] = 'rider'
+    DISPATCH: Optional[str] = 'dispatch'
+    ADMIN: Optional[str] = 'admin'
+    SUPER_ADMIN: Optional[str] = 'moderator'
+    MODERATOR: Optional[str] = 'super-admin'
 
     class Config:
         # This tells Pydantic to load from .env file in development

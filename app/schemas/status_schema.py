@@ -1,7 +1,7 @@
 import os
 from enum import Enum
 from pydantic import BaseModel
-
+from app.config.config import settings
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -22,14 +22,14 @@ class RequireDeliverySchema(str, Enum):
 
 
 class UserType(str, Enum):
-    CUSTOMER: str = os.getenv("CUSTOMER")
-    DISPATCH: str = os.getenv("DISPATCH")
-    RESTAURANT_VENDOR: str = os.getenv("RESTAURANT_VENDOR")
-    LAUNDRY_VENDOR: str = os.getenv("LAUNDRY_VENDOR")
-    RIDER: str = os.getenv("RIDER")
-    ADMIN: str = os.getenv("ADMIN")
-    SUPER_ADMIN = os.getenv("SUPER_ADMIN")
-    MODERATOR = os.getenv("MODERATOR")
+    CUSTOMER: str = settings.CUSTOMER
+    DISPATCH: str = settings.DISPATCH
+    RESTAURANT_VENDOR: str = settings.RESTAURANT_VENDOR
+    LAUNDRY_VENDOR: str = settings.LAUNDRY_VENDOR
+    RIDER: str = settings.RIDER
+    ADMIN: str = settings.ADMIN
+    MODERATOR = settings.MODERATOR
+    SUPER_ADMIN = settings.SUPER_ADMIN
 
 
 class DeliveryStatus(str, Enum):
