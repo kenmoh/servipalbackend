@@ -4379,40 +4379,30 @@ async def _process_cancelled_order_return_settlement(order: Order):
                 )
 
 
-
 async def _order_settlement(order: Order):
     """
     Process wallet settlements for order completion with retries and failure handling.
     All wallet operations are atomic and must either all succeed or all fail.
-
+    
     Args:
         order: Order instance
-
+        
     Raises:
         HTTPException: If wallet operations fail after retries
     """
-    # Idempotency key to prevent duplicate processing
-    idempotency_key = f"order_settlement:{order.id}"
-    cache_key = f"idempotency:{idempotency_key}"
+    # Base idempotency key
+    base_idempotency_key = f"order_settlement:{order.id}"
     
-    # Check if already processed
+    # Check if already processed using base key
+    cache_key = f"idempotency:{base_idempotency_key}"
     if redis_client.get(cache_key):
         logger.info(f"Order settlement for order {order.id} already processed. Skipping.")
         return
-
+    
     MAX_RETRIES = 3
     retry_count = 0
     settlement_succeeded = False
-
-    # business_stmt = select(Profile.business_name).where(Profile.user_id == order.vendor_id)
-    # business_result = await db.execute(business_stmt)
-    # business_name = business_result.scalar_one()
-
-    # sender_stmt = select(Profile.full_name, Profile.full_name).where(Profile.user_id == order.owner_id)
-    # owner_result = await db.execute(sender_stmt)
-    # full_name, owner_business_name = owner_result.scalar_one()
-
-
+    
     while retry_count < MAX_RETRIES and not settlement_succeeded:
         try:
             # Calculate and validate amounts
@@ -4420,28 +4410,44 @@ async def _order_settlement(order: Order):
                 raise ValueError("Settlement amounts cannot be negative or zero")
             if order.amount_due_vendor > order.grand_total:
                 raise ValueError("Vendor amount cannot exceed total")
-
-            # 1. Update vendor wallet - move from escrow to balance
+            
+            logger.info(
+                f"Starting settlement for order {order.id}: "
+                f"grand_total={order.grand_total}, vendor_amount={order.amount_due_vendor}"
+            )
+            
+            # 1. Update vendor wallet - UNIQUE KEY
+            vendor_idempotency_key = f"{base_idempotency_key}:vendor:{order.vendor_id}"
+            logger.info(
+                f"Sending vendor wallet update: wallet_id={order.vendor_id}, "
+                f"balance_change={order.amount_due_vendor}, "
+                f"escrow_change={-abs(order.grand_total)}, "
+                f"idempotency_key={vendor_idempotency_key}"
+            )
             await producer.publish_message(
                 service="wallet",
                 operation="update_wallet",
                 payload={
                     "wallet_id": str(order.vendor_id),
                     "balance_change": str(order.amount_due_vendor),
-                    "escrow_change": str(-abs(order.grand_total)),
-                    "idempotency_key": idempotency_key,
+                    "escrow_change": str(-abs(Decimal(order.grand_total))),
+                    "idempotency_key": vendor_idempotency_key,
                     "details": {
                         "order_id": str(order.id),
                         "operation": "order_settlement",
                         "order_number": order.order_number,
+                        "role": "vendor",
                     },
                 },
             )
-
-            # 2. Update customer wallet - clear escrow
+            
+            # 2. Update customer wallet - UNIQUE KEY (DIFFERENT FROM VENDOR)
+            customer_idempotency_key = f"{base_idempotency_key}:customer:{order.owner_id}"
             logger.info(
-                f"Sending customer wallet update for order {order.id}: "
-                f"wallet_id={order.owner_id}, escrow_change={-abs(order.grand_total)}"
+                f"Sending customer wallet update: wallet_id={order.owner_id}, "
+                f"balance_change=0, "
+                f"escrow_change={-abs(order.grand_total)}, "
+                f"idempotency_key={customer_idempotency_key}"
             )
             await producer.publish_message(
                 service="wallet",
@@ -4449,80 +4455,166 @@ async def _order_settlement(order: Order):
                 payload={
                     "wallet_id": str(order.owner_id),
                     "balance_change": "0",
-                    "escrow_change": str(-abs(order.grand_total)),
-                    "idempotency_key": idempotency_key,
+                    "escrow_change": str(-abs(Decimal(order.grand_total))),
+                    "idempotency_key": customer_idempotency_key,
                     "details": {
                         "order_id": str(order.id),
                         "operation": "order_settlement",
                         "order_number": order.order_number,
+                        "role": "customer",
                     },
                 },
             )
-
-            # 3. Record settlement transaction
-            # await producer.publish_message(
-            #     service="wallet",
-            #     operation="create_transaction",
-            #     payload={
-            #         "wallet_id": str(order.vendor_id),
-            #         "tx_ref": str(uuid.uuid4()),
-            #         "to_wallet_id": str(order.vendor_id),
-            #         "amount": str(order.amount_due_vendor),
-            #         "transaction_type": TransactionType.USER_TO_USER,
-            #         "transaction_direction": TransactionDirection.CREDIT,
-            #         "payment_status": PaymentStatus.PAID,
-            #         "payment_method": PaymentMethod.ESCROW_SETTLEMENT,
-            #         "from_user": order.owner.profile.full_name if order.owner.profile.full_name else order.owner.email,
-            #         "to_user": order.vendor.profile.business_name,
-            #         "idempotency_key": idempotency_key,
-            #         "details": {
-            #             "order_id": str(order.id),
-            #             "settlement_type": order.order_type.value,
-            #             "commission": str(order.grand_total - order.amount_due_vendor),
-            #         },
-            #     },
-            # )
-
-            await producer.publish_message(
-                service="wallet",
-                operation="update_transaction",
-                payload={
-                    "wallet_id": str(order.owner_id),
-                    "tx_ref": str(order.tx_ref),
-                    "to_user": order.vendor.profile.business_name,
-                },
+            
+            # 3. Update transaction status
+            transaction_idempotency_key = f"{base_idempotency_key}:transaction:{order.tx_ref}"
+            logger.info(
+                f"Updating transaction: tx_ref={order.tx_ref}, "
+                f"status={order.order_payment_status.value}, "
+                f"idempotency_key={transaction_idempotency_key}"
             )
-
             await producer.publish_message(
                 service="wallet",
                 operation="update_transaction",
                 payload={
                     "wallet_id": str(order.vendor_id),
                     "tx_ref": str(order.tx_ref),
-                    "payment_status": order.order_payment_status,
+                    "payment_status": order.order_payment_status.value,
+                    "idempotency_key": transaction_idempotency_key,
                 },
             )
-
-            # Set idempotency marker (expires after 24 hours)
+            
+            # Set base idempotency marker (expires after 24 hours)
             redis_client.setex(cache_key, 86400, "1")
             
             settlement_succeeded = True
             logger.info(
-                f"Order settlement completed for order {order.id}: "
-                f"vendor_amount={order.amount_due_vendor}, total={order.grand_total}"
+                f"✓ Order settlement completed for order {order.id}: "
+                f"vendor_amount={order.amount_due_vendor}, "
+                f"escrows_cleared={order.grand_total}"
             )
-
+            
         except Exception as e:
             retry_count += 1
             logger.error(
-                f"Order settlement attempt {retry_count} failed for order {order.id}: {str(e)}",
+                f"Order settlement attempt {retry_count}/{MAX_RETRIES} failed for order {order.id}: {str(e)}",
                 exc_info=True,
             )
-            if retry_count >= MAX_RETRIES:
+            
+            if retry_count < MAX_RETRIES:
+                # Wait before retrying (exponential backoff)
+                await asyncio.sleep(2 ** retry_count)
+            else:
+                logger.critical(
+                    f"CRITICAL: Order settlement failed after {MAX_RETRIES} attempts for order {order.id}. "
+                    f"Manual intervention required!"
+                )
                 raise HTTPException(
                     status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                     detail=f"Failed to process order settlement after {MAX_RETRIES} attempts",
                 )
+
+
+# async def _order_settlement(order: Order):
+#     """
+#     Process wallet settlements for order completion with retries and failure handling.
+#     All wallet operations are atomic and must either all succeed or all fail.
+
+#     Args:
+#         order: Order instance
+
+#     Raises:
+#         HTTPException: If wallet operations fail after retries
+#     """
+#     # Idempotency key to prevent duplicate processing
+#     idempotency_key = f"order_settlement:{order.id}"
+#     cache_key = f"idempotency:{idempotency_key}"
+    
+#     # Check if already processed
+#     if redis_client.get(cache_key):
+#         logger.info(f"Order settlement for order {order.id} already processed. Skipping.")
+#         return
+
+#     MAX_RETRIES = 3
+#     retry_count = 0
+#     settlement_succeeded = False
+
+#     while retry_count < MAX_RETRIES and not settlement_succeeded:
+#         try:
+#             # Calculate and validate amounts
+#             if order.amount_due_vendor <= 0 or order.grand_total <= 0:
+#                 raise ValueError("Settlement amounts cannot be negative or zero")
+#             if order.amount_due_vendor > order.grand_total:
+#                 raise ValueError("Vendor amount cannot exceed total")
+
+#             # 1. Update vendor wallet - move from escrow to balance
+#             await producer.publish_message(
+#                 service="wallet",
+#                 operation="update_wallet",
+#                 payload={
+#                     "wallet_id": str(order.vendor_id),
+#                     "balance_change": str(order.amount_due_vendor),
+#                     "escrow_change": str(-abs(order.grand_total)),
+#                     "idempotency_key": idempotency_key,
+#                     "details": {
+#                         "order_id": str(order.id),
+#                         "operation": "order_settlement",
+#                         "order_number": order.order_number,
+#                     },
+#                 },
+#             )
+
+#             # 2. Update customer wallet - clear escrow
+#             logger.info(
+#                 f"Sending customer wallet update for order {order.id}: "
+#                 f"wallet_id={order.owner_id}, escrow_change={-abs(order.grand_total)}"
+#             )
+#             await producer.publish_message(
+#                 service="wallet",
+#                 operation="update_wallet",
+#                 payload={
+#                     "wallet_id": str(order.owner_id),
+#                     "balance_change": "0",
+#                     "escrow_change": str(-abs(Decimal(order.grand_total))),
+#                     "idempotency_key": idempotency_key,
+#                     "details": {
+#                         "order_id": str(order.id),
+#                         "operation": "order_settlement",
+#                         "order_number": order.order_number,
+#                     },
+#                 },
+#             )
+
+#             await producer.publish_message(
+#                 service="wallet",
+#                 operation="update_transaction",
+#                 payload={
+#                     "wallet_id": str(order.vendor_id),
+#                     "tx_ref": str(order.tx_ref),
+#                     "payment_status": order.order_payment_status,
+#                 },
+#             )
+
+#             # Set idempotency marker (expires after 24 hours)
+#             redis_client.setex(cache_key, 86400, "1")
+            
+#             settlement_succeeded = True
+#             logger.info(
+#                 f"Order settlement completed for order {order.id}: "
+#                 f"vendor_amount={order.amount_due_vendor}, total={order.grand_total}"
+#             )
+
+#         except Exception as e:
+#             retry_count += 1
+#             logger.error(
+#                 f"Order settlement attempt {retry_count} failed for order {order.id}: {str(e)}",
+#                 exc_info=True,
+#             )
+#             if retry_count >= MAX_RETRIES:
+#                 raise HTTPException(
+#                     status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+#                     detail=f"Failed to process order settlement after {MAX_RETRIES} attempts",
+#                 )
 
 
 
