@@ -1416,9 +1416,9 @@ async def _credit_wallet_safely(transaction: Transaction, transx_id: str):
         payload={
             "wallet_id": str(transaction.wallet_id),
             "tx_ref": str(transaction.tx_ref),
-            "payment_status": PaymentStatus.PAID.value,
-            "payment_method": PaymentMethod.CARD.value,
-            "transaction_direction": TransactionDirection.CREDIT.value,
+            "payment_status": PaymentStatus.PAID,
+            "payment_method": PaymentMethod.CARD,
+            "transaction_direction": TransactionDirection.CREDIT,
             "is_fund_wallet": True,
             "transaction_id": transx_id,
         },
@@ -1764,7 +1764,7 @@ async def _process_successful_payment(order: Order, db: AsyncSession, tx_ref: st
     await producer.publish_message(
         service="order_status",
         operation="order_payment_status",
-        payload={"new_status": PaymentStatus.PAID.value, "order_id": str(order.id)}
+        payload={"new_status": PaymentStatus.PAID, "order_id": str(order.id)}
     )
 
     await clear_order_caches(order)
@@ -2380,7 +2380,6 @@ async def product_order_payment_callback(request: Request, db: AsyncSession):
         verify_tranx = await verify_transaction_tx_ref(tx_ref)
         if not verify_tranx or verify_tranx.get("status") != "success":
             logger.warning(f"Payment verification failed for tx_ref: {tx_ref}")
-            # Do NOT trust query params. Only verified payments count.
             new_status = PaymentStatus.FAILED
         elif tx_status == "successful":
             new_status = PaymentStatus.PAID
@@ -3342,10 +3341,10 @@ async def pay_with_wallet(
                         "wallet_id": str(customer_wallet.id),
                         "tx_ref": str(order.tx_ref),
                         "amount": str(delivery_fee),
-                        "transaction_type": TransactionType.USER_TO_USER.value,
-                        "payment_method": PaymentMethod.WALLET.value,
-                        "transaction_direction": TransactionDirection.DEBIT.value,
-                        "payment_status": PaymentStatus.PAID.value,
+                        "transaction_type": TransactionType.USER_TO_USER,
+                        "payment_method": PaymentMethod.WALLET,
+                        "transaction_direction": TransactionDirection.DEBIT,
+                        "payment_status": PaymentStatus.PAID,
                         "from_user": customer.profile.full_name or customer.profile.business_name,
                         "to_user": "System Escrow",
                     },
@@ -3471,9 +3470,9 @@ async def pay_with_wallet(
                     "tx_ref": str(order.tx_ref),
                     "to_wallet_id": str(order.vendor_id),
                     "amount": str(charged_amount),
-                    "transaction_type": TransactionType.USER_TO_USER.value,
-                    "transaction_direction": TransactionDirection.DEBIT.value,
-                    "payment_status": PaymentStatus.PAID.value,
+                    "transaction_type": TransactionType.USER_TO_USER
+                    "transaction_direction": TransactionDirection.DEBIT,
+                    "payment_status": PaymentStatus.PAID,
                     "from_user": customer.profile.full_name or customer.profile.business_name,
                     "to_user": vendor.full_name or vendor.business_name,
                 },
@@ -3487,9 +3486,9 @@ async def pay_with_wallet(
                     "wallet_id": str(order.vendor_id),
                     "tx_ref": str(order.tx_ref),
                     "amount": str(order.amount_due_vendor),
-                    "transaction_type": TransactionType.USER_TO_USER.value,
-                    "transaction_direction": TransactionDirection.CREDIT.value,
-                    "payment_status": PaymentStatus.PAID.value,
+                    "transaction_type": TransactionType.USER_TO_USER,
+                    "transaction_direction": TransactionDirection.CREDIT,
+                    "payment_status": PaymentStatus.PAID,
                     "from_user": customer.profile.full_name or customer.profile.business_name,
                     "to_user": vendor.full_name or vendor.business_name,
                 },
