@@ -119,7 +119,7 @@ async def send_item(
     status_code=status.HTTP_201_CREATED,
 )
 @limiter.limit("5/minute")
-async def order_food_or_request_laundy_service(
+async def create_food_or_laundry_order(
     request: Request,
     vendor_id: UUID,
     order_item: OrderAndDeliverySchema,

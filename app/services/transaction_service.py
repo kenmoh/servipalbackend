@@ -2752,9 +2752,3 @@ async def bank_payment_transfer_callback_old(request: Request, db: AsyncSession)
 
     return {"status": "ignored", "reason": "Not a successful charge.completed event"}
 
-
-
-"""
-WEBHOOK ERROR
-Missing required fields in webhook payload: {'event': 'charge.completed', 'data': {'id': 9798295, 'tx_ref': '4b63c680-214f-4e23-ba8d-6e702384a2a0', 'flw_ref': 'FLW-MOCK-24cab8b2e0b1309a837c4823ede2f686', 'device_fingerprint': 'N/A', 'amount': 26000, 'currency': 'NGN', 'charged_amount': 26988, 'app_fee': 988, 'merchant_fee': 0, 'processor_response': 'Approved. Successful', 'auth_model': 'VBVSECURECODE', 'ip': '54.75.161.64', 'narration': 'CARD Transaction ', 'status': 'successful', 'payment_type': 'card', 'created_at': '2025-11-17T05:31:36.000Z', 'account_id': 1883202, 'customer': {'id': 3403513, 'name': 'MohStack', 'phone_number': None, 'email': '[email]', 'created_at': '2025-11-17T05:31:36.000Z'}, 'card': {'first_6digits': '424242', 'last_4digits': '4242', 'issuer': 'VISA  CREDIT', 'country': 'US', 'type': 'VISA', 'expiry': '09/20'}}}
-"""

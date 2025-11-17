@@ -17,7 +17,7 @@ class RequireDeliverySchema(str, Enum):
     PICKUP = "pickup"
     DELIVERY = "delivery"
     VENDOR_PICKUP_AND_DROPOFF = "vendor-pickup-and-dropoff"
-    # USER_DROPOFF_AND_PICKUP = 'user-dropoff-and-pickup'
+   
 
 
 
