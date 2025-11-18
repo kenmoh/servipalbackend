@@ -547,48 +547,51 @@ async def _calculate_order_costs(
     vendor_id: UUID,
     require_delivery: RequireDeliverySchema,
     distance: Decimal | None = None,
-    
-):
-
-
+) -> tuple[Decimal, Decimal, Decimal, Decimal]:
+    """
+    Returns: (
+        total_price (items only),
+        vendor_pickup_dropoff_charge,
+        final_amount (grand total),
+        amount_due_vendor
+    )
+    """
+    # 1. Calculate items total
     total_price = sum(
-        Decimal(
-            items_data[
-                UUID(item.item_id) if isinstance(item.item_id, str) else item.item_id
-            ].price
-        )
+        Decimal(items_data[UUID(item.item_id) if isinstance(item.item_id, str) else item.item_id].price)
         * Decimal(item.quantity)
         for item in order_item_details
     )
 
-    vendor_pickup_dropoff_charge = Decimal("0.00")
+    # 2. Early return if no delivery needed
+    if require_delivery == RequireDeliverySchema.PICKUP or distance is None:
+        final_amount = total_price
+        amount_due_vendor = await calculate_amount_due_vendor(db, total_price, Decimal("0"))
+        return total_price, Decimal("0"), final_amount, amount_due_vendor
 
-    # for only delivery(food/laundry)
+    # 3. fetch charge once
+    charge_result = await db.execute(
+        select(Profile.pickup_and_delivery_charge)
+        .where(Profile.user_id == vendor_id)
+    )
+    per_km_charge = charge_result.scalar_one_or_none() or Decimal("0.00")
+
+    # 4. Calculate delivery charge based on type
     if require_delivery == RequireDeliverySchema.DELIVERY:
-        charge_result = await db.execute(
-            select(Profile.pickup_and_delivery_charge).where(
-                Profile.user_id == vendor_id
-            )
-        )
-        charge = charge_result.scalar_one_or_none() or Decimal("0.00")
-        vendor_pickup_dropoff_charge = Decimal(charge * distance)
+        multiplier = Decimal("1")
+    elif require_delivery == RequireDeliverySchema.VENDOR_PICKUP_AND_DROPOFF:
+        multiplier = Decimal("2")  # to and fro
+    else:
+        multiplier = Decimal("0")
 
-    # For to and fro delivery(Laundry only)    
-    if require_delivery == RequireDeliverySchema.VENDOR_PICKUP_AND_DROPOFF:
-        charge_result = await db.execute(
-            select(Profile.pickup_and_delivery_charge).where(
-                Profile.user_id == vendor_id
-            )
-        )
-
-        charge = charge_result.scalar_one_or_none() or Decimal("0.00")
-        vendor_pickup_dropoff_charge = Decimal(charge * distance) * 2
-
-
-
+    vendor_pickup_dropoff_charge = per_km_charge * distance * multiplier
     final_amount = total_price + vendor_pickup_dropoff_charge
+
+    # 5. Calculate vendor commission
     amount_due_vendor = await calculate_amount_due_vendor(
-        db, total_price, vendor_pickup_dropoff_charge
+        db=db,
+        items_total=total_price,
+        delivery_charge=vendor_pickup_dropoff_charge,
     )
 
     return (
@@ -597,7 +600,6 @@ async def _calculate_order_costs(
         final_amount,
         amount_due_vendor,
     )
-
 
 async def _create_order_in_database(
     db: AsyncSession,
@@ -620,8 +622,11 @@ async def _create_order_in_database(
         "order_payment_status": PaymentStatus.PENDING,
         "order_status": OrderStatus.PENDING,
         "amount_due_vendor": amount_due_vendor,
-        "vendor_pickup_dropoff_charge": vendor_pickup_dropoff_charge,
+        "vendor_pickup_dropoff_charge": vendor_pickup_dropoff_charge ,
         "additional_info": order_item.additional_info,
+        "pickup_coordinates": order_item.pickup_coordinates if order_item.require_delivery in [RequireDeliverySchema.DELIVERY, RequireDeliverySchema.VENDOR_PICKUP_AND_DROPOFF] else None,
+        "dropoff_coordinates": order_item.dropoff_coordinates if order_item.require_delivery in [RequireDeliverySchema.DELIVERY, RequireDeliverySchema.VENDOR_PICKUP_AND_DROPOFF] else None,
+        "distance": order_item.distance if order_item.require_delivery in [RequireDeliverySchema.DELIVERY, RequireDeliverySchema.VENDOR_PICKUP_AND_DROPOFF] else None,
         "pickup_location": order_item.origin if order_item.require_delivery in [RequireDeliverySchema.DELIVERY, RequireDeliverySchema.VENDOR_PICKUP_AND_DROPOFF] else None,
         "destination": order_item.destination if order_item.require_delivery in [RequireDeliverySchema.DELIVERY, RequireDeliverySchema.VENDOR_PICKUP_AND_DROPOFF] else None,
     }
@@ -673,15 +678,6 @@ async def _handle_post_order_creation(
     order = (await db.execute(stmt)).scalar_one()
 
     await ws_service.broadcast_new_order({"order_id": order.id})
-
-    # token = await get_user_notification_token(db=db, user_id=vendor_id)
-    # if token:
-    #     await send_push_notification(
-    #         tokens=[token],
-    #         title="New Order",
-    #         message=f"You have a new order from {current_user.profile.full_name or current_user.profile.business_name}",
-    #         navigate_to="/delivery/orders",
-    #     )
 
     return format_delivery_response(order=order, delivery=None)
 

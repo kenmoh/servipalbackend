@@ -89,9 +89,9 @@ class OrderAndDeliverySchema(BaseModel):
     dropoff_coordinates: list[float] | None = None
     distance: Decimal | None = None
     require_delivery: RequireDeliverySchema
-    is_one_way_delivery: bool = True
     duration: str | None = None
     origin: str | None = None
+    # pickup_location: str | None = None
     destination: str | None = None
     additional_info: str | None = None
 

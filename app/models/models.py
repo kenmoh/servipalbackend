@@ -499,8 +499,12 @@ class Order(Base):
     payment_link: Mapped[str] = mapped_column(nullable=True)
     additional_info: Mapped[str] = mapped_column(nullable=True)
     pickup_location: Mapped[str] = mapped_column(nullable=True)
+    destination: Mapped[str] = mapped_column(nullable=True)
+    pickup_coordinates: Mapped[Tuple[float, float]] = mapped_column(ARRAY(Float), nullable=True)
+    dropoff_coordinates: Mapped[Tuple[float, float]] = mapped_column(ARRAY(Float), nullable=True)
+    distance: Mapped[Decimal] = mapped_column(nullable=True)
     is_deleted: Mapped[bool] = mapped_column(default=False, nullable=True)
-    is_one_way_delivery: Mapped[bool] = mapped_column(default=True, nullable=True)
+    # is_one_way_delivery: Mapped[bool] = mapped_column(default=True, nullable=True) # Remove
     vendor_pickup_dropoff_charge: Mapped[Decimal] = mapped_column(
         nullable=True, default=0.00
     )
