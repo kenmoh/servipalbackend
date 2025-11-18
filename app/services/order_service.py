@@ -5000,14 +5000,14 @@ async def rider_mark_package_delivered(
         delivery = result.scalar_one_or_none()
 
         if not delivery:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, "Delivery not found")
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Delivery not found")
 
 
         if delivery.delivery_status not in [DeliveryStatus.ACCEPTED, DeliveryStatus.PICKED_UP]:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, f"Invalid status: {delivery.delivery_status.value}")
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail= f"Invalid status: {delivery.delivery_status.value}")
 
         if delivery.order.order_payment_status != PaymentStatus.PAID:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, "Payment not completed")
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Payment not completed")
 
         if delivery.delivery_status == DeliveryStatus.DELIVERED:
             return DeliveryStatusUpdateSchema(
