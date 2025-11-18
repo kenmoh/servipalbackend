@@ -4987,30 +4987,27 @@ def _invalidate_order_caches(order: Order, current_user: User):
 
 
 async def rider_mark_package_delivered(
-    delivery_id: UUID, current_user: User, db: AsyncSession
+    delivery_id: UUID, rider_id: UUID, db: AsyncSession
 ) -> DeliveryStatusUpdateSchema:
     try:
         # === 1. CRITICAL PATH ONLY – Fast & atomic ===
         result = await db.execute(
             select(Delivery)
-            .where(Delivery.id == delivery_id)
-            .where(or_(Delivery.rider_id == current_user.id, Delivery.dispatch_id == current_user.id))
+            .where(Delivery.id == delivery_id, Delivery.rider_id == rider_id)
             .options(selectinload(Delivery.order))
             .with_for_update()
         )
         delivery = result.scalar_one_or_none()
 
         if not delivery:
-            raise HTTPException(404, "Delivery not found")
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, "Delivery not found")
 
-        if current_user.user_type != UserType.RIDER and delivery.rider_id != current_user.id:
-            raise HTTPException(403, "Not authorized")
 
         if delivery.delivery_status not in [DeliveryStatus.ACCEPTED, DeliveryStatus.PICKED_UP]:
-            raise HTTPException(400, f"Invalid status: {delivery.delivery_status.value}")
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, f"Invalid status: {delivery.delivery_status.value}")
 
         if delivery.order.order_payment_status != PaymentStatus.PAID:
-            raise HTTPException(400, "Payment not completed")
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, "Payment not completed")
 
         if delivery.delivery_status == DeliveryStatus.DELIVERED:
             return DeliveryStatusUpdateSchema(
@@ -5018,16 +5015,16 @@ async def rider_mark_package_delivered(
                 order_status=delivery.order.order_status,
             )
 
-        # === UPDATE STATUS – This is what user care about ===
+        # === UPDATE STATUS ===
         delivery.delivery_status = DeliveryStatus.DELIVERED
         delivery.order.order_status = OrderStatus.DELIVERED
 
         await db.commit()
 
         # === 2. FIRE-AND-FORGET EVERYTHING ELSE ===
-        asyncio.create_task(
-            _run_post_delivery_background_tasks(delivery, current_user)
-        )
+        # asyncio.create_task(
+        #     _run_post_delivery_background_tasks(delivery, current_user)
+        # )
 
         # === 3. RETURN SUCCESS IMMEDIATELY ===
         logger.info(f"Rider {current_user.id} marked delivery {delivery_id} as DELIVERED")

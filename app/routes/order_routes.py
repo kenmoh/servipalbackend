@@ -318,12 +318,12 @@ async def re_list_item_for_delivery(
 @router.put("/{delivery_id}/package-delivered", status_code=status.HTTP_202_ACCEPTED)
 async def rider_mark_package_delivered(
     delivery_id: UUID,
+    rider_id: UUID,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
 ) -> DeliveryStatusUpdateSchema:
     try:
         return await order_service.rider_mark_package_delivered(
-            db=db, current_user=current_user, delivery_id=delivery_id
+            db=db, rider_id=rider_id, delivery_id=delivery_id
         )
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
