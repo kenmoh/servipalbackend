@@ -641,522 +641,6 @@ async def top_up_wallet(
             )
 
 
-# --- Fallback webhook handler for charge.completed with custom escrow/wallet/transaction logic ---
-async def handle_charge_completed_callback(
-    request: Request, db: AsyncSession, payload=None
-):
-    if payload is None:
-        payload = await request.json()
-    event = payload.get("event")
-    data = payload.get("data", {})
-
-    if event == "charge.completed" and data.get("status") == "successful":
-        payment_type = data.get("payment_type") or data.get("paymentType")
-        tx_ref = data.get("tx_ref") or data.get("txRef") or data.get("reference")
-        amount_paid = data.get("amount")
-        currency = data.get("currency")
-
-        # Try to get Order first
-        order = None
-        if tx_ref:
-            result = await db.execute(
-                select(Order)
-                .where(Order.id == UUID(tx_ref))
-                .options(
-                    selectinload(Order.owner).selectinload(User.profile),
-                    selectinload(Order.vendor).selectinload(User.profile),
-                )
-                .with_for_update()
-            )
-            order = result.scalar_one_or_none()
-
-        if order:
-            if order.order_payment_status == PaymentStatus.PAID:
-                await db.execute(
-                    update(Transaction)
-                    .where(Transaction.id == order.id)
-                    .values(payment_method=payment_type)
-                )
-                await db.commit()
-                return {"status": "ignored", "reason": "Order already paid"}
-
-            # Mark order as paid
-            order.order_payment_status = PaymentStatus.PAID
-            await db.execute(
-                update(Transaction)
-                .where(Transaction.id == order.id)
-                .values(payment_method=payment_type)
-            )
-            await db.commit()
-
-            # --- Custom escrow/wallet/transaction logic ---
-            current_time = datetime.now()
-            transaction_values = []
-
-            # --- PACKAGE ORDER ---
-            if order.order_type == OrderType.PACKAGE:
-                delivery_fee = None
-                if order.delivery_id:
-                    delivery_result = await db.execute(
-                        select(Order.delivery).where(Order.id == order.id)
-                    )
-                    delivery = delivery_result.scalar_one_or_none()
-                    if delivery and hasattr(delivery, "delivery_fee"):
-                        delivery_fee = delivery.delivery_fee
-                if not delivery_fee:
-                    delivery_fee = order.total_price
-                # Move delivery fee to customer escrow
-                customer_wallet_result = await db.execute(
-                    select(Wallet).where(Wallet.id == order.owner_id).with_for_update()
-                )
-                customer_wallet = customer_wallet_result.scalar_one_or_none()
-                if customer_wallet:
-                    customer_wallet.escrow_balance += delivery_fee
-                # Create customer transaction (DEBIT)
-                customer_name = None
-                if (
-                    order.owner
-                    and hasattr(order.owner, "profile")
-                    and order.owner.profile
-                ):
-                    customer_name = (
-                        order.owner.profile.full_name
-                        or order.owner.profile.business_name
-                    )
-                transaction_values.append(
-                    {
-                        "wallet_id": order.owner_id,
-                        "amount": delivery_fee,
-                        "transaction_type": TransactionType.DEBIT,
-                        "payment_status": PaymentStatus.PAID,
-                        "created_at": current_time,
-                        "payment_method": payment_type,
-                        "payment_by": customer_name,
-                        "updated_at": current_time,
-                    }
-                )
-                await db.execute(insert(Transaction), transaction_values)
-                await db.commit()
-
-            # --- FOOD/LAUNDRY ORDER ---
-            elif order.order_type in [OrderType.FOOD, OrderType.LAUNDRY]:
-                total_paid = order.grand_total
-
-                # Move total paid to customer escrow
-                customer_wallet_result = await db.execute(
-                    select(Wallet).where(Wallet.id == order.owner_id).with_for_update()
-                )
-                customer_wallet = customer_wallet_result.scalar_one_or_none()
-                if customer_wallet:
-                    customer_wallet.escrow_balance += total_paid
-
-                # Move order amount to vendor escrow
-                vendor_wallet_result = await db.execute(
-                    select(Wallet).where(Wallet.id == order.vendor_id).with_for_update()
-                )
-                vendor_wallet = vendor_wallet_result.scalar_one_or_none()
-                if vendor_wallet:
-                    vendor_wallet.escrow_balance += order.grand_total
-
-                # Get customer and vendor names
-                customer_name = None
-                if (
-                    order.owner
-                    and hasattr(order.owner, "profile")
-                    and order.owner.profile
-                ):
-                    customer_name = (
-                        order.owner.profile.full_name
-                        or order.owner.profile.business_name
-                    )
-                vendor_name = None
-                if (
-                    order.vendor
-                    and hasattr(order.vendor, "profile")
-                    and order.vendor.profile
-                ):
-                    vendor_name = (
-                        order.vendor.profile.business_name
-                        or order.vendor.profile.full_name
-                    )
-                # Create customer transaction (DEBIT)
-                transaction_values.append(
-                    {
-                        "wallet_id": order.owner_id,
-                        "amount": total_paid,
-                        "transaction_type": TransactionType.DEBIT,
-                        "payment_status": PaymentStatus.PAID,
-                        "created_at": current_time,
-                        "payment_method": payment_type,
-                        "payment_by": vendor_name,
-                        "updated_at": current_time,
-                    }
-                )
-                # Create vendor transaction (CREDIT)
-                if vendor_wallet:
-                    transaction_values.append(
-                        {
-                            "wallet_id": order.vendor_id,
-                            "amount": order.total_price,
-                            "transaction_type": TransactionType.CREDIT,
-                            "payment_status": PaymentStatus.PAID,
-                            "created_at": current_time,
-                            "payment_method": payment_type,
-                            "payment_by": customer_name,
-                            "updated_at": current_time,
-                        }
-                    )
-                await db.execute(insert(Transaction), transaction_values)
-                await db.commit()
-
-            # Send notifications
-            customer_token = await get_user_notification_token(
-                db=db, user_id=order.owner_id
-            )
-            vendor_token = await get_user_notification_token(
-                db=db, user_id=order.vendor_id
-            )
-            amount_str = (
-                f"₦{amount_paid}" if currency == "NGN" else f"{amount_paid} {currency}"
-            )
-            if customer_token:
-                await send_push_notification(
-                    tokens=[customer_token],
-                    title="Payment Successful",
-                    message=f"Your payment of {amount_str} was successful.",
-                )
-            if vendor_token:
-                await send_push_notification(
-                    tokens=[vendor_token],
-                    title="Order Paid",
-                    message=f"You have received a new order payment of {amount_str}.",
-                )
-
-            # Clear relevant caches
-            redis_client.delete(f"user_related_orders:{order.owner_id}")
-            redis_client.delete(f"user_orders:{order.owner_id}")
-            redis_client.delete(f"user_orders:{order.vendor_id}")
-            redis_client.delete("paid_pending_deliveries")
-            redis_client.delete("orders")
-
-            return {
-                "status": "success",
-                "order_id": str(order.id),
-                "payment_type": payment_type,
-            }
-
-        # --- If not an order, try as a wallet top-up transaction ---
-        transaction = None
-        if tx_ref:
-            result = await db.execute(
-                select(Transaction)
-                .where(Transaction.id == UUID(tx_ref))
-                .with_for_update()
-            )
-            transaction = result.scalar_one_or_none()
-
-        if transaction:
-            if transaction.payment_status == PaymentStatus.PAID:
-                transaction.payment_method = payment_type
-                await db.commit()
-
-            # Mark transaction as paid
-            transaction.payment_status = PaymentStatus.PAID
-            transaction.payment_method = payment_type
-
-            # Update wallet balance
-            wallet = await db.get(Wallet, transaction.wallet_id)
-            if wallet:
-                charge = await get_current_charge_settings(db)
-                amount_to_add = calculate_net_amount(transaction.amount, charge)
-                wallet.balance += amount_to_add
-
-            await db.commit()
-
-            # Notify user
-            token = await get_user_notification_token(db=db, user_id=wallet.id)
-            if token:
-                await send_push_notification(
-                    tokens=[token],
-                    title="Wallet Top-up",
-                    message=f"Your wallet top-up of ₦{amount_paid} was successful.",
-                )
-
-            return {
-                "status": "success",
-                "transaction_id": str(transaction.id),
-                "payment_type": payment_type,
-            }
-
-        # If neither order nor transaction found
-        return {"status": "ignored", "reason": "Order/Transaction not found"}
-
-    return {"status": "ignored", "reason": "Not a successful charge.completed event"}
-
-
-# --- Fallback webhook handler for charge.completed with custom escrow/wallet/transaction logic ---
-async def handle_charge_completed_callback_old(
-    request: Request, db: AsyncSession, payload=None
-):
-    if payload is None:
-        payload = await request.json()
-    event = payload.get("event")
-    data = payload.get("data", {})
-
-    if event == "charge.completed" and data.get("status") == "successful":
-        payment_type = data.get("payment_type") or data.get("paymentType")
-        tx_ref = data.get("tx_ref") or data.get("txRef") or data.get("reference")
-        amount_paid = data.get("amount")
-        currency = data.get("currency")
-
-        # Try to get Order first
-        order = None
-        if tx_ref:
-            result = await db.execute(
-                select(Order)
-                .where(Order.id == UUID(tx_ref))
-                .options(
-                    selectinload(Order.owner).selectinload(User.profile),
-                    selectinload(Order.vendor).selectinload(User.profile),
-                )
-                .with_for_update()
-            )
-            order = result.scalar_one_or_none()
-
-        if order:
-            if order.order_payment_status == PaymentStatus.PAID:
-                await db.execute(
-                    update(Transaction)
-                    .where(Transaction.id == order.id)
-                    .values(payment_method=payment_type)
-                )
-                await db.commit()
-                return {"status": "ignored", "reason": "Order already paid"}
-
-            # Mark order as paid
-            order.order_payment_status = PaymentStatus.PAID
-            await db.execute(
-                update(Transaction)
-                .where(Transaction.id == order.id)
-                .values(payment_method=payment_type)
-            )
-            await db.commit()
-
-            # --- Custom escrow/wallet/transaction logic ---
-            current_time = datetime.now()
-            transaction_values = []
-
-            # --- PACKAGE ORDER ---
-            if order.order_type == OrderType.PACKAGE:
-                delivery_fee = None
-                if order.delivery_id:
-                    delivery_result = await db.execute(
-                        select(Order.delivery).where(Order.id == order.id)
-                    )
-                    delivery = delivery_result.scalar_one_or_none()
-                    if delivery and hasattr(delivery, "delivery_fee"):
-                        delivery_fee = delivery.delivery_fee
-                if not delivery_fee:
-                    delivery_fee = order.total_price
-                # Move delivery fee to customer escrow
-                customer_wallet_result = await db.execute(
-                    select(Wallet).where(Wallet.id == order.owner_id).with_for_update()
-                )
-                customer_wallet = customer_wallet_result.scalar_one_or_none()
-                if customer_wallet:
-                    customer_wallet.escrow_balance += delivery_fee
-                # Create customer transaction (DEBIT)
-                customer_name = None
-                if (
-                    order.owner
-                    and hasattr(order.owner, "profile")
-                    and order.owner.profile
-                ):
-                    customer_name = (
-                        order.owner.profile.full_name
-                        or order.owner.profile.business_name
-                    )
-                transaction_values.append(
-                    {
-                        "wallet_id": order.owner_id,
-                        "amount": delivery_fee,
-                        "transaction_type": TransactionType.DEBIT,
-                        "payment_status": PaymentStatus.PAID,
-                        "created_at": current_time,
-                        "payment_method": payment_type,
-                        "payment_by": customer_name,
-                        "updated_at": current_time,
-                    }
-                )
-                await db.execute(insert(Transaction), transaction_values)
-                await db.commit()
-
-            # --- FOOD/LAUNDRY ORDER ---
-            elif order.order_type in [OrderType.FOOD, OrderType.LAUNDRY]:
-                total_paid = order.total_price
-                delivery_fee = 0
-                if order.require_delivery == RequireDeliverySchema.DELIVERY:
-                    if order.delivery_id:
-                        delivery_result = await db.execute(
-                            select(Order.delivery)
-                            .where(Order.id == order.id)
-                            .with_for_update()
-                        )
-                        delivery = delivery_result.scalar_one_or_none()
-                        if delivery and hasattr(delivery, "delivery_fee"):
-                            delivery_fee = delivery.delivery_fee
-                    else:
-                        delivery_fee = 0
-                    total_paid += delivery_fee
-                # Move total paid to customer escrow
-                customer_wallet_result = await db.execute(
-                    select(Wallet).where(Wallet.id == order.owner_id).with_for_update()
-                )
-                customer_wallet = customer_wallet_result.scalar_one_or_none()
-                if customer_wallet:
-                    customer_wallet.escrow_balance += total_paid
-                # Move order amount to vendor escrow
-                vendor_wallet_result = await db.execute(
-                    select(Wallet).where(Wallet.id == order.vendor_id).with_for_update()
-                )
-                vendor_wallet = vendor_wallet_result.scalar_one_or_none()
-                if vendor_wallet:
-                    vendor_wallet.escrow_balance += order.total_price
-                # Get customer and vendor names
-                customer_name = None
-                if (
-                    order.owner
-                    and hasattr(order.owner, "profile")
-                    and order.owner.profile
-                ):
-                    customer_name = (
-                        order.owner.profile.full_name
-                        or order.owner.profile.business_name
-                    )
-                vendor_name = None
-                if (
-                    order.vendor
-                    and hasattr(order.vendor, "profile")
-                    and order.vendor.profile
-                ):
-                    vendor_name = (
-                        order.vendor.profile.business_name
-                        or order.vendor.profile.full_name
-                    )
-                # Create customer transaction (DEBIT)
-                transaction_values.append(
-                    {
-                        "wallet_id": order.owner_id,
-                        "amount": total_paid,
-                        "transaction_type": TransactionType.DEBIT,
-                        "payment_status": PaymentStatus.PAID,
-                        "created_at": current_time,
-                        "payment_method": payment_type,
-                        "payment_by": vendor_name,
-                        "updated_at": current_time,
-                    }
-                )
-                # Create vendor transaction (CREDIT)
-                if vendor_wallet:
-                    transaction_values.append(
-                        {
-                            "wallet_id": order.vendor_id,
-                            "amount": order.total_price,
-                            "transaction_type": TransactionType.CREDIT,
-                            "payment_status": PaymentStatus.PAID,
-                            "created_at": current_time,
-                            "payment_method": payment_type,
-                            "payment_by": customer_name,
-                            "updated_at": current_time,
-                        }
-                    )
-                await db.execute(insert(Transaction), transaction_values)
-                await db.commit()
-
-            # Send notifications
-            customer_token = await get_user_notification_token(
-                db=db, user_id=order.owner_id
-            )
-            vendor_token = await get_user_notification_token(
-                db=db, user_id=order.vendor_id
-            )
-            amount_str = (
-                f"₦{amount_paid}" if currency == "NGN" else f"{amount_paid} {currency}"
-            )
-            if customer_token:
-                await send_push_notification(
-                    tokens=[customer_token],
-                    title="Payment Successful",
-                    message=f"Your payment of {amount_str} was successful.",
-                )
-            if vendor_token:
-                await send_push_notification(
-                    tokens=[vendor_token],
-                    title="Order Paid",
-                    message=f"You have received a new order payment of {amount_str}.",
-                )
-
-            # Clear relevant caches
-            redis_client.delete(f"user_related_orders:{order.owner_id}")
-            redis_client.delete(f"user_orders:{order.owner_id}")
-            redis_client.delete(f"user_orders:{order.vendor_id}")
-            redis_client.delete("paid_pending_deliveries")
-            redis_client.delete("orders")
-
-            return {
-                "status": "success",
-                "order_id": str(order.id),
-                "payment_type": payment_type,
-            }
-
-        # --- If not an order, try as a wallet top-up transaction ---
-        transaction = None
-        if tx_ref:
-            result = await db.execute(
-                select(Transaction)
-                .where(Transaction.id == UUID(tx_ref))
-                .with_for_update()
-            )
-            transaction = result.scalar_one_or_none()
-
-        if transaction:
-            if transaction.payment_status == PaymentStatus.PAID:
-                transaction.payment_method = payment_type
-                await db.commit()
-
-            # Mark transaction as paid
-            transaction.payment_status = PaymentStatus.PAID
-            transaction.payment_method = payment_type
-
-            # Update wallet balance
-            wallet = await db.get(Wallet, transaction.wallet_id)
-            if wallet:
-                charge = await get_current_charge_settings(db)
-                amount_to_add = calculate_net_amount(transaction.amount, charge)
-                wallet.balance += amount_to_add
-
-            await db.commit()
-
-            # Notify user
-            token = await get_user_notification_token(db=db, user_id=wallet.id)
-            if token:
-                await send_push_notification(
-                    tokens=[token],
-                    title="Wallet Top-up",
-                    message=f"Your wallet top-up of ₦{amount_paid} was successful.",
-                )
-
-            return {
-                "status": "success",
-                "transaction_id": str(transaction.id),
-                "payment_type": payment_type,
-            }
-
-        # If neither order nor transaction found
-        return {"status": "ignored", "reason": "Order/Transaction not found"}
-
-    return {"status": "ignored", "reason": "Not a successful charge.completed event"}
-
 
 # async def handle_payment_webhook(
 #     request: Request,
@@ -1326,192 +810,192 @@ async def handle_charge_completed_callback_old(
 #             detail="Internal server error"
 #         )
 
-async def handle_payment_webhook(request: Request, db: AsyncSession):
-    try:
-        payload = await request.json()
-        signature = request.headers.get("verif-hash")
-        if signature != settings.FLW_SECRET_HASH:
-            raise HTTPException(401, "Unauthorized")
+# async def handle_payment_webhook(request: Request, db: AsyncSession):
+#     try:
+#         payload = await request.json()
+#         signature = request.headers.get("verif-hash")
+#         if signature != settings.FLW_SECRET_HASH:
+#             raise HTTPException(401, "Unauthorized")
 
-        data = payload.get("data", {})
-        tx_ref = data.get("tx_ref")
-        status = data.get("status")
-        flw_ref = data.get("flw_ref")
+#         data = payload.get("data", {})
+#         tx_ref = data.get("tx_ref")
+#         status = data.get("status")
+#         flw_ref = data.get("flw_ref")
 
-        if not tx_ref or status != "successful":
-            return {"message": "ignored"}
+#         if not tx_ref or status != "successful":
+#             return {"message": "ignored"}
 
-        idempotency_key = f"webhook:{tx_ref}:{flw_ref}"
-        if redis_client.get(idempotency_key):
-            return {"message": "already processed"}
+#         idempotency_key = f"webhook:{tx_ref}:{flw_ref}"
+#         if redis_client.get(idempotency_key):
+#             return {"message": "already processed"}
 
-        result = await db.execute(
-                select(Order)
-                .where(Order.tx_ref == UUID(tx_ref))
-                .options(
-                    selectinload(Order.owner).selectinload(User.profile),
-                    selectinload(Order.vendor).selectinload(User.profile),
-                    selectinload(Order.delivery),
-                )
-                .with_for_update()
-            )
-        order = order.scalar_one_or_none()
-        if not order:
-            redis_client.setex(idempotency_key, 3600, "not_found")
-            return {"message": "order not found"}
+#         result = await db.execute(
+#                 select(Order)
+#                 .where(Order.tx_ref == UUID(tx_ref))
+#                 .options(
+#                     selectinload(Order.owner).selectinload(User.profile),
+#                     selectinload(Order.vendor).selectinload(User.profile),
+#                     selectinload(Order.delivery),
+#                 )
+#                 .with_for_update()
+#             )
+#         order = order.scalar_one_or_none()
+#         if not order:
+#             redis_client.setex(idempotency_key, 3600, "not_found")
+#             return {"message": "order not found"}
 
-        if order.order_payment_status == PaymentStatus.PAID:
-            redis_client.setex(idempotency_key, 86400, "already_paid")
-            return {"message": "already paid"}
+#         if order.order_payment_status == PaymentStatus.PAID:
+#             redis_client.setex(idempotency_key, 86400, "already_paid")
+#             return {"message": "already paid"}
 
-        # Mark as paid
-        order.order_payment_status = PaymentStatus.PAID
-        order.updated_at = datetime.utcnow()
-        await db.commit()
-        await db.refresh(order)
+#         # Mark as paid
+#         order.order_payment_status = PaymentStatus.PAID
+#         order.updated_at = datetime.utcnow()
+#         await db.commit()
+#         await db.refresh(order)
 
-        asyncio.create_task(
-            run_payment_side_effects_once(order, db, tx_ref)
-        )
-        asyncio.create_task(
-            create_payment_audit_log_once(order)
-        )
+#         asyncio.create_task(
+#             run_payment_side_effects_once(order, db, tx_ref)
+#         )
+#         asyncio.create_task(
+#             create_payment_audit_log_once(order)
+#         )
 
-        # Mark webhook processed
-        redis_client.setex(idempotency_key, 86400, "processed")
+#         # Mark webhook processed
+#         redis_client.setex(idempotency_key, 86400, "processed")
 
-        # RUN SIDE EFFECTS (will skip if callback already did it)
-        asyncio.create_task(
-            run_payment_side_effects_once(order, db, tx_ref)
-        )
+#         # RUN SIDE EFFECTS (will skip if callback already did it)
+#         asyncio.create_task(
+#             run_payment_side_effects_once(order, db, tx_ref)
+#         )
 
-        return {"message": "success", "order_id": str(order.id)}
+#         return {"message": "success", "order_id": str(order.id)}
 
-    except Exception as e:
-        logger.error(f"Webhook error: {e}", exc_info=True)
-        await _alert_admin_partial_failure(order=order, status=order.order_payment_status, db=db, e=e)
+#     except Exception as e:
+#         logger.error(f"Webhook error: {e}", exc_info=True)
+#         await _alert_admin_partial_failure(order=order, status=order.order_payment_status, db=db, e=e)
 
-        raise HTTPException(500, "error")
+#         raise HTTPException(500, "error")
 
 
-async def run_payment_side_effects_once(order: Order, db: AsyncSession, tx_ref: str):
-    key = f"payment_success_processed:{order.id}"
+# async def run_payment_side_effects_once(order: Order, db: AsyncSession, tx_ref: str):
+#     key = f"payment_success_processed:{order.id}"
     
-    # Already done? Skip fast
-    if redis_client.get(key):
-        logger.info(f"[Idempotent] Side effects already done for order {order.id}")
-        return True
+#     # Already done? Skip fast
+#     if redis_client.get(key):
+#         logger.info(f"[Idempotent] Side effects already done for order {order.id}")
+#         return True
 
-    # Try to claim the lock (5 min window)
-    locked = redis_client.set(key, "running", nx=True, ex=300)
-    if not locked:
-        logger.info(f"[Idempotent] Another process running side effects for {order.id}")
-        return False
+#     # Try to claim the lock (5 min window)
+#     locked = redis_client.set(key, "running", nx=True, ex=300)
+#     if not locked:
+#         logger.info(f"[Idempotent] Another process running side effects for {order.id}")
+#         return False
 
-    try:
-        logger.info(f"Running payment side effects for order {order.id}")
-        await _process_successful_payment(order, db, tx_ref)
+#     try:
+#         logger.info(f"Running payment side effects for order {order.id}")
+#         await _process_successful_payment(order, db, tx_ref)
         
-        # Mark as done (30 days)
-        redis_client.setex(key, 86400 * 30, "done")
-        logger.info(f"Side effects completed for order {order.id}")
-        return True
-    except Exception as e:
-        logger.error(f"Side effects FAILED for order {order.id}: {e}", exc_info=True)
-        await _alert_admin_partial_failure(order=order, status=order.order_payment_status, db=db, e=e)
+#         # Mark as done (30 days)
+#         redis_client.setex(key, 86400 * 30, "done")
+#         logger.info(f"Side effects completed for order {order.id}")
+#         return True
+#     except Exception as e:
+#         logger.error(f"Side effects FAILED for order {order.id}: {e}", exc_info=True)
+#         await _alert_admin_partial_failure(order=order, status=order.order_payment_status, db=db, e=e)
 
-        redis_client.delete(key)
-        return False
+#         redis_client.delete(key)
+#         return False
 
-async def _process_successful_payment_webhook(
-    order_id: UUID,
-    tx_ref: str,
-    amount: Decimal,
-):
-    """
-    Process post-payment tasks in background with retries.
-    This runs after order status is already committed.
-    """
-    MAX_RETRIES = 3
-    retry_count = 0
+# async def _process_successful_payment_webhook(
+#     order_id: UUID,
+#     tx_ref: str,
+#     amount: Decimal,
+# ):
+#     """
+#     Process post-payment tasks in background with retries.
+#     This runs after order status is already committed.
+#     """
+#     MAX_RETRIES = 3
+#     retry_count = 0
     
-    async for db in get_db():
-        while retry_count < MAX_RETRIES:
-            try:
-                # Fetch order with relationships
-                result = await db.execute(
-                    select(Order)
-                    .where(Order.id == order_id)
-                    .options(
-                        selectinload(Order.owner).selectinload(User.profile),
-                        selectinload(Order.delivery),
-                        selectinload(Order.vendor).selectinload(User.profile),
-                    )
-                )
-                order = result.scalar_one_or_none()
+#     async for db in get_db():
+#         while retry_count < MAX_RETRIES:
+#             try:
+#                 # Fetch order with relationships
+#                 result = await db.execute(
+#                     select(Order)
+#                     .where(Order.id == order_id)
+#                     .options(
+#                         selectinload(Order.owner).selectinload(User.profile),
+#                         selectinload(Order.delivery),
+#                         selectinload(Order.vendor).selectinload(User.profile),
+#                     )
+#                 )
+#                 order = result.scalar_one_or_none()
                 
-                if not order:
-                    logger.error(f"Order {order_id} not found in background task")
-                    return
+#                 if not order:
+#                     logger.error(f"Order {order_id} not found in background task")
+#                     return
                 
-                # Process wallet settlement
-                try:
-                    await _process_successful_payment(order, db, tx_ref)
-                    logger.info(f"✓ Settlement completed for order {order_id}")
-                except Exception as e:
-                    logger.error(
-                        f"Settlement failed for order {order_id}: {e}",
-                        exc_info=True
-                    )
-                    # Continue to notifications even if settlement fails
+#                 # Process wallet settlement
+#                 try:
+#                     await _process_successful_payment(order, db, tx_ref)
+#                     logger.info(f"✓ Settlement completed for order {order_id}")
+#                 except Exception as e:
+#                     logger.error(
+#                         f"Settlement failed for order {order_id}: {e}",
+#                         exc_info=True
+#                     )
+#                     # Continue to notifications even if settlement fails
                 
-                # Send notifications
-                try:
-                    owner_token = await get_user_notification_token(
-                        db=db, 
-                        user_id=order.owner_id
-                    )
+#                 # Send notifications
+#                 try:
+#                     owner_token = await get_user_notification_token(
+#                         db=db, 
+#                         user_id=order.owner_id
+#                     )
                     
-                    if owner_token:
-                        await send_push_notification(
-                            tokens=[owner_token],
-                            title="Payment Successful",
-                            message=f"Your payment of ₦{amount:,.2f} has been received.",
-                        )
-                        logger.info(f"✓ Notification sent for order {order_id}")
+#                     if owner_token:
+#                         await send_push_notification(
+#                             tokens=[owner_token],
+#                             title="Payment Successful",
+#                             message=f"Your payment of ₦{amount:,.2f} has been received.",
+#                         )
+#                         logger.info(f"✓ Notification sent for order {order_id}")
                         
-                except Exception as e:
-                    logger.warning(
-                        f"Failed to send notification for order {order_id}: {e}"
-                    )
+#                 except Exception as e:
+#                     logger.warning(
+#                         f"Failed to send notification for order {order_id}: {e}"
+#                     )
                 
-                # Clear order cache
-                try:
-                    await clear_order_caches(order)
-                except Exception as e:
-                    logger.warning(f"Failed to clear cache for order {order_id}: {e}")
+#                 # Clear order cache
+#                 try:
+#                     await clear_order_caches(order)
+#                 except Exception as e:
+#                     logger.warning(f"Failed to clear cache for order {order_id}: {e}")
                 
-                # Success - exit retry loop
-                logger.info(f"✓ Background processing completed for order {order_id}")
-                return
+#                 # Success - exit retry loop
+#                 logger.info(f"✓ Background processing completed for order {order_id}")
+#                 return
                 
-            except Exception as e:
-                retry_count += 1
-                logger.error(
-                    f"Background processing attempt {retry_count}/{MAX_RETRIES} "
-                    f"failed for order {order_id}: {e}",
-                    exc_info=True
-                )
+#             except Exception as e:
+#                 retry_count += 1
+#                 logger.error(
+#                     f"Background processing attempt {retry_count}/{MAX_RETRIES} "
+#                     f"failed for order {order_id}: {e}",
+#                     exc_info=True
+#                 )
                 
-                if retry_count < MAX_RETRIES:
-                    await asyncio.sleep(2 ** retry_count)  # Exponential backoff
-                else:
-                    logger.critical(
-                        f"CRITICAL: Background processing failed after {MAX_RETRIES} "
-                        f"attempts for order {order_id}. Manual intervention required!"
-                    )
-                    # Alert admin
-                    await _alert_admin_partial_failure(order=order, status=order.order_payment_status, db=db, e=e)
+#                 if retry_count < MAX_RETRIES:
+#                     await asyncio.sleep(2 ** retry_count)  # Exponential backoff
+#                 else:
+#                     logger.critical(
+#                         f"CRITICAL: Background processing failed after {MAX_RETRIES} "
+#                         f"attempts for order {order_id}. Manual intervention required!"
+#                     )
+#                     # Alert admin
+#                     await _alert_admin_partial_failure(order=order, status=order.order_payment_status, db=db, e=e)
 
 
 # ==============================================================
@@ -1855,45 +1339,483 @@ async def get_current_charge_settings(db: AsyncSession) -> ChargeAndCommission:
 #         )
 
 
-async def order_payment_callback(request: Request, db: AsyncSession):
-    tx_ref = request.query_params.get("tx_ref")
-    status = request.query_params.get("status")
+# async def order_payment_callback(request: Request, db: AsyncSession):
+#     tx_ref = request.query_params.get("tx_ref")
+#     status = request.query_params.get("status")
 
-    if not tx_ref:
-        raise HTTPException(400, "Missing tx_ref")
+#     if not tx_ref:
+#         raise HTTPException(400, "Missing tx_ref")
 
+#     try:
+#         UUID(tx_ref)
+#     except ValueError:
+#         raise HTTPException(400, "Invalid tx_ref")
+
+#     # Fetch order (no lock needed)
+#     result = await db.execute(
+#         select(Order).where(Order.tx_ref == UUID(tx_ref))
+#         .options(selectinload(Order.delivery), selectinload(Order.owner), selectinload(Order.vendor))
+#     )
+#     order = result.scalar_one_or_none()
+
+#     if not order:
+#         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f'No found')
+
+#     is_success = order.order_payment_status == PaymentStatus.PAID
+
+#     if is_success:
+#         asyncio.create_task(
+#             run_payment_side_effects_once(order, db, tx_ref)
+#         )
+
+#     asyncio.create_task(
+#         create_payment_audit_log_once(order)
+#     )
+
+#     return await _render_payment_page(
+#         order=order,
+#         request=request,
+#         transx_id=request.query_params.get("transaction_id"),
+#         is_payment_success=is_success
+#     )
+
+
+# ===================================================================
+# ROBUST FLUTTERWAVE WEBHOOK + CALLBACK IMPLEMENTATION
+# ===================================================================
+
+async def handle_payment_webhook(request: Request, db: AsyncSession):
+    """
+    Flutterwave webhook handler with idempotency and error recovery.
+    This is the PRIMARY payment processor - callback is backup.
+    """
     try:
-        UUID(tx_ref)
-    except ValueError:
-        raise HTTPException(400, "Invalid tx_ref")
+        payload = await request.json()
+        
+        # 1. Validate webhook signature
+        signature = request.headers.get("verif-hash")
+        if not signature or signature != settings.FLW_SECRET_HASH:
+            logger.warning(f"Invalid webhook signature: {signature}")
+            raise HTTPException(status_code=401, detail="Unauthorized")
+        
+        # 2. Extract payment data
+        event = payload.get("event")
+        data = payload.get("data", {})
+        tx_ref = data.get("tx_ref")
+        status = data.get("status")
+        flw_ref = data.get("flw_ref")
+        amount = data.get("amount")
+        
+        if not tx_ref or not flw_ref:
+            logger.error(f"Missing tx_ref or flw_ref in webhook: {payload}")
+            raise HTTPException(status_code=400, detail="Invalid webhook payload")
+        
+        logger.info(
+            f"Webhook received: event={event}, tx_ref={tx_ref}, "
+            f"status={status}, flw_ref={flw_ref}"
+        )
+        
+        # 3. Webhook idempotency (prevents duplicate webhook processing)
+        webhook_key = f"webhook_received:{tx_ref}:{flw_ref}"
+        if redis_client.get(webhook_key):
+            logger.info(f"Webhook already processed: {webhook_key}")
+            return {"message": "already_processed", "tx_ref": tx_ref}
+        
+        # 4. Validate payment status
+        if status != "successful":
+            logger.warning(f"Non-successful payment status: {status} for {tx_ref}")
+            redis_client.setex(webhook_key, 3600, "failed")
+            return {"message": "payment_not_successful", "status": status}
+        
+        # 5. Convert tx_ref to UUID
+        try:
+            tx_ref_uuid = UUID(tx_ref)
+        except (ValueError, TypeError) as e:
+            logger.error(f"Invalid tx_ref format: {tx_ref} - {e}")
+            raise HTTPException(status_code=400, detail="Invalid tx_ref format")
+        
+        # 6. Fetch order with lock
+        result = await db.execute(
+            select(Order)
+            .where(Order.tx_ref == tx_ref_uuid)
+            .options(
+                selectinload(Order.owner).selectinload(User.profile),
+                selectinload(Order.vendor).selectinload(User.profile),
+                selectinload(Order.delivery),
+            )
+            .with_for_update()
+        )
+        order = result.scalar_one_or_none()
+        
+        if not order:
+            logger.warning(f"Order not found for tx_ref: {tx_ref}")
+            redis_client.setex(webhook_key, 3600, "not_found")
+            return {"message": "order_not_found"}
+        
+        # 7. Check if already paid (by previous webhook or callback)
+        if order.order_payment_status == PaymentStatus.PAID:
+            logger.info(f"Order {order.id} already PAID")
+            redis_client.setex(webhook_key, 86400, "already_paid")
+            
+            # Still try side effects in case they failed before
+            asyncio.create_task(_run_payment_side_effects_once(order, db, tx_ref))
+            
+            return {"message": "already_paid", "order_id": str(order.id)}
+        
+        # 8. Verify with Flutterwave (source of truth)
+        try:
+            verify_result = await verify_transaction_tx_ref(tx_ref)
+            verified = (
+                verify_result 
+                and verify_result.get("status") == "success"
+                and verify_result.get("data", {}).get("status") == "successful"
+            )
+            
+            if not verified:
+                logger.error(f"Verification failed for {tx_ref}: {verify_result}")
+                redis_client.setex(webhook_key, 3600, "verification_failed")
+                return {"message": "verification_failed"}
+                
+        except Exception as e:
+            logger.error(f"Verification error for {tx_ref}: {e}", exc_info=True)
+            # Don't mark as processed - allow retry
+            return {"message": "verification_error"}
+        
+        # 9. Validate amount
+        expected_amount = _get_expected_amount(order)
+        if expected_amount and abs(Decimal(amount) - expected_amount) > Decimal("0.01"):
+            logger.error(
+                f"Amount mismatch for order {order.id}: "
+                f"expected={expected_amount}, received={amount}"
+            )
+            redis_client.setex(webhook_key, 86400, "amount_mismatch")
+            return {"message": "amount_mismatch"}
+        
+        # 10. UPDATE DATABASE FIRST (CRITICAL - THIS IS THE COMMITMENT)
+        try:
+            order.order_payment_status = PaymentStatus.PAID
+            order.updated_at = datetime.utcnow()
+            await db.commit()
+            await db.refresh(order)
+            
+            logger.info(f"✓ Order {order.id} marked PAID via webhook")
+            
+        except Exception as e:
+            await db.rollback()
+            logger.error(f"Failed to update order {order.id}: {e}", exc_info=True)
+            # Don't mark webhook as processed - allow retry
+            raise HTTPException(status_code=500, detail="Database update failed")
+        
+        # 11. Mark webhook as processed AFTER successful DB commit
+        redis_client.setex(webhook_key, 86400, "processed")
+        
+        # 12. Run side effects asynchronously (idempotent)
+        asyncio.create_task(_run_payment_side_effects_once(order, db, tx_ref))
+        asyncio.create_task(_create_payment_audit_log_once(order))
+        
+        logger.info(f"✓ Webhook processed successfully for order {order.id}")
+        
+        return {
+            "message": "success",
+            "order_id": str(order.id),
+            "status": "paid"
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Webhook error: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Internal error")
 
-    # Fetch order (no lock needed)
-    result = await db.execute(
-        select(Order).where(Order.tx_ref == UUID(tx_ref))
-        .options(selectinload(Order.delivery), selectinload(Order.owner), selectinload(Order.vendor))
-    )
-    order = result.scalar_one_or_none()
 
-    if not order:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f'No found')
-
-    is_success = order.order_payment_status == PaymentStatus.PAID
-
-    if is_success:
-        asyncio.create_task(
-            run_payment_side_effects_once(order, db, tx_ref)
+async def order_payment_callback(request: Request, db: AsyncSession):
+    """
+    Payment callback (backup processor if webhook fails).
+    This is the USER-FACING response after payment.
+    """
+    tx_ref = request.query_params.get("tx_ref")
+    tx_status = request.query_params.get("status")
+    transx_id = request.query_params.get("transaction_id")
+    
+    if not tx_ref:
+        raise HTTPException(status_code=400, detail="Missing tx_ref")
+    
+    logger.info(f"Callback received: tx_ref={tx_ref}, status={tx_status}")
+    
+    try:
+        # 1. Convert tx_ref to UUID
+        try:
+            tx_ref_uuid = UUID(tx_ref)
+        except (ValueError, TypeError):
+            logger.error(f"Invalid tx_ref format: {tx_ref}")
+            raise HTTPException(status_code=400, detail="Invalid tx_ref")
+        
+        # 2. Fetch order (no lock needed - read-only check first)
+        result = await db.execute(
+            select(Order)
+            .where(Order.tx_ref == tx_ref_uuid)
+            .options(
+                selectinload(Order.delivery),
+                selectinload(Order.owner).selectinload(User.profile),
+                selectinload(Order.vendor).selectinload(User.profile),
+            )
+        )
+        order = result.scalar_one_or_none()
+        
+        if not order:
+            logger.error(f"Order not found for tx_ref: {tx_ref}")
+            raise HTTPException(status_code=404, detail="Order not found")
+        
+        # 3. Check if already paid (webhook likely processed it)
+        if order.order_payment_status == PaymentStatus.PAID:
+            logger.info(f"Order {order.id} already PAID (likely via webhook)")
+            
+            # Try side effects in case webhook failed on that part
+            asyncio.create_task(_run_payment_side_effects_once(order, db, tx_ref))
+            asyncio.create_task(_create_payment_audit_log_once(order))
+            
+            return await _render_payment_page(
+                order, request, transx_id, is_payment_success=True
+            )
+        
+        # 4. Webhook didn't process it - callback becomes primary processor
+        logger.warning(f"Webhook missed order {order.id} - callback processing")
+        
+        # 5. Verify with Flutterwave
+        try:
+            verify_result = await verify_transaction_tx_ref(tx_ref)
+            verified_success = (
+                verify_result
+                and verify_result.get("status") == "success"
+                and verify_result.get("data", {}).get("status") == "successful"
+            )
+        except Exception as e:
+            logger.error(f"Verification error: {e}", exc_info=True)
+            verified_success = False
+        
+        # 6. Determine status
+        if verified_success and tx_status == "successful":
+            new_status = PaymentStatus.PAID
+        elif tx_status == "cancelled":
+            new_status = PaymentStatus.CANCELLED
+        else:
+            new_status = PaymentStatus.FAILED
+        
+        # 7. Acquire lock and update
+        result_locked = await db.execute(
+            select(Order)
+            .where(Order.id == order.id)
+            .with_for_update()
+        )
+        order_locked = result_locked.scalar_one()
+        
+        # Double-check payment status after lock
+        if order_locked.order_payment_status == PaymentStatus.PAID:
+            logger.info(f"Order {order.id} paid by another process during lock wait")
+            asyncio.create_task(_run_payment_side_effects_once(order_locked, db, tx_ref))
+            return await _render_payment_page(
+                order_locked, request, transx_id, is_payment_success=True
+            )
+        
+        # 8. Update order status
+        order_locked.order_payment_status = new_status
+        order_locked.updated_at = datetime.utcnow()
+        await db.commit()
+        await db.refresh(order_locked)
+        
+        logger.info(f"Order {order_locked.id} marked as {new_status.value} via callback")
+        
+        # 9. Run side effects for successful payments
+        if new_status == PaymentStatus.PAID:
+            asyncio.create_task(_run_payment_side_effects_once(order_locked, db, tx_ref))
+            asyncio.create_task(_create_payment_audit_log_once(order_locked))
+        
+        # 10. Handle failed/cancelled
+        elif new_status in (PaymentStatus.CANCELLED, PaymentStatus.FAILED):
+            if (
+                order_locked.order_type == OrderType.PACKAGE 
+                and order_locked.delivery 
+                and order_locked.delivery.rider_id
+            ):
+                await db.execute(
+                    update(User)
+                    .where(User.id == order_locked.delivery.rider_id)
+                    .values(has_delivery=False)
+                )
+                order_locked.delivery.rider_id = None
+                order_locked.delivery.dispatch_id = None
+                order_locked.delivery.rider_phone_number = None
+                await db.commit()
+        
+        # 11. Clear caches
+        await clear_order_caches(order_locked)
+        
+        # 12. Render page
+        return await _render_payment_page(
+            order_locked,
+            request,
+            transx_id,
+            is_payment_success=(new_status == PaymentStatus.PAID)
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception(f"Critical callback error: {tx_ref}")
+        # Return user-friendly page even on error
+        return HTMLResponse(
+            "<h1>Payment Received</h1>"
+            "<p>We're processing your payment. Please check your orders in a few minutes.</p>"
+            "<p>If payment doesn't reflect in 5 minutes, contact support.</p>",
+            status_code=200,
         )
 
-    asyncio.create_task(
-        create_payment_audit_log_once(order)
-    )
 
-    return await _render_payment_page(
-        order=order,
-        request=request,
-        transx_id=request.query_params.get("transaction_id"),
-        is_payment_success=is_success
-    )
+# ===================================================================
+# IDEMPOTENT SIDE EFFECTS
+# ===================================================================
+
+async def _run_payment_side_effects_once(order: Order, db: AsyncSession, tx_ref: str):
+    """
+    Run wallet updates and transactions with strict idempotency.
+    Can be called by both webhook and callback safely.
+    """
+    side_effects_key = f"payment_side_effects:{order.id}:{tx_ref}"
+    
+    # Check if already done
+    if redis_client.get(side_effects_key):
+        logger.info(f"Side effects already processed for order {order.id}")
+        return
+    
+    # Try to acquire lock (5 min window)
+    locked = redis_client.set(side_effects_key, "running", nx=True, ex=300)
+    if not locked:
+        logger.info(f"Another process running side effects for {order.id}")
+        return
+    
+    try:
+        logger.info(f"Processing side effects for order {order.id}")
+        
+        # Run the actual payment processing
+        await _process_successful_payment(order, db, tx_ref)
+        
+        # Mark as completed (90 days TTL)
+        redis_client.setex(side_effects_key, 86400 * 90, "completed")
+        
+        logger.info(f"✓ Side effects completed for order {order.id}")
+        
+    except Exception as e:
+        logger.error(f"Side effects failed for order {order.id}: {e}", exc_info=True)
+        
+        # Alert admin
+        await _alert_admin_partial_failure(
+            order=order,
+            status=order.order_payment_status,
+            db=db,
+            e=e
+        )
+        
+        # Remove lock to allow retry
+        redis_client.delete(side_effects_key)
+
+
+async def _create_payment_audit_log_once(order: Order):
+    """Create audit log with idempotency."""
+    audit_key = f"audit_log:payment:{order.id}"
+    
+    if redis_client.get(audit_key):
+        return
+    
+    if not redis_client.set(audit_key, "running", nx=True, ex=600):
+        return
+    
+    try:
+        await producer.publish_message(
+            service="audit",
+            operation="create_transaction_log",
+            payload={
+                "order_id": str(order.id),
+                "vendor_id": str(order.vendor_id) if order.vendor_id else None,
+                "amount": str(order.grand_total),
+                "action": TransactionLogAction.PAYMENT_RECEIVED.value,
+                "status": order.order_payment_status.value,
+                "details": {
+                    "order_type": order.order_type.value,
+                    "order_number": order.order_number,
+                    "timestamp": datetime.utcnow().isoformat(),
+                },
+            },
+        )
+        
+        redis_client.setex(audit_key, 86400 * 90, "done")
+        logger.info(f"Audit log created for order {order.id}")
+        
+    except Exception as e:
+        logger.error(f"Audit log failed for order {order.id}: {e}")
+        redis_client.delete(audit_key)
+
+
+# ===================================================================
+# HELPER FUNCTIONS
+# ===================================================================
+
+def _get_expected_amount(order: Order) -> Decimal:
+    """Get expected payment amount based on order type."""
+    if order.order_type == OrderType.PACKAGE:
+        return Decimal(order.delivery.delivery_fee) if order.delivery else Decimal(0)
+    else:
+        return Decimal(order.grand_total)
+
+
+async def _render_payment_page(
+    order: Order,
+    request: Request,
+    transx_id: str,
+    is_payment_success: bool = False
+) -> HTMLResponse:
+    """Render payment status page safely."""
+    try:
+        amount = _get_expected_amount(order)
+        
+        context = {
+            "request": request,
+            "payment_status": order.order_payment_status.value,
+            "amount": f"{amount:,.2f}",
+            "date": order.updated_at.strftime("%b %d, %Y"),
+            "transaction_id": transx_id or "N/A",
+            "order_number": order.order_number,
+        }
+        
+        return templates.TemplateResponse("payment-status.html", context)
+        
+    except Exception as e:
+        logger.error(f"Template rendering failed: {e}", exc_info=True)
+        
+        # Fallback: Simple HTML
+        status_text = order.order_payment_status.value.title()
+        note = (
+            "Your payment was successful but we encountered a display issue. "
+            "Your order has been processed."
+            if is_payment_success
+            else "Please contact support if you need assistance."
+        )
+        
+        return HTMLResponse(
+            f"""
+            <html>
+            <head><title>Payment {status_text}</title></head>
+            <body>
+                <h1>Payment {status_text}</h1>
+                <p><strong>Amount:</strong> ₦{amount:,.2f}</p>
+                <p><strong>Order:</strong> {order.order_number}</p>
+                <p><strong>Transaction ID:</strong> {transx_id or 'N/A'}</p>
+                <p><strong>Date:</strong> {order.updated_at.strftime('%b %d, %Y')}</p>
+                <p>{note}</p>
+            </body>
+            </html>
+            """,
+            status_code=200
+        )
 
 async def create_payment_audit_log_once(order: Order, current_user: User | None = None):
     """
@@ -2071,40 +1993,36 @@ async def _process_successful_payment(order: Order, db: AsyncSession, tx_ref: st
 # ===================================================================
 # Safe page renderer
 # ===================================================================
-async def _render_payment_page(order: Order, request: Request, transx_id: str, is_payment_success: bool | None = None):
-    try:
-        amount = order.grand_total
-        if order.order_type == OrderType.PACKAGE and order.delivery:
-            amount = order.delivery.delivery_fee or amount
+# async def _render_payment_page(order: Order, request: Request, transx_id: str, is_payment_success: bool | None = None):
+#     try:
+#         amount = order.grand_total
+#         if order.order_type == OrderType.PACKAGE and order.delivery:
+#             amount = order.delivery.delivery_fee or amount
 
-        context = {
-            "request": request,
-            "payment_status": order.order_payment_status.value,
-            "amount": f"{amount:,.2f}",
-            "date": order.updated_at.strftime("%b %d, %Y"),
-            "transaction_id": transx_id or "N/A",
-            "order_number": order.order_number,
-        }
-        return templates.TemplateResponse("payment-status.html", context)
-    except Exception as e:
-        logger.error(f"Template failed: {e}", exc_info=True)
-        context = {
-            "request": request,
-            "payment_status": order.order_payment_status.value,
-            "amount": f"{amount:,.2f}",
-            "date": order.updated_at.strftime("%b %d, %Y"),
-            "transaction_id": transx_id or "N/A",
-            "order_number": order.order_number,
-            "note": 'We received your payment but encountered an issue. Support has been notified.' if is_payment_success  else 'N/A'
-        }
+#         context = {
+#             "request": request,
+#             "payment_status": order.order_payment_status.value,
+#             "amount": f"{amount:,.2f}",
+#             "date": order.updated_at.strftime("%b %d, %Y"),
+#             "transaction_id": transx_id or "N/A",
+#             "order_number": order.order_number,
+#         }
+#         return templates.TemplateResponse("payment-status.html", context)
+#     except Exception as e:
+#         logger.error(f"Template failed: {e}", exc_info=True)
+#         context = {
+#             "request": request,
+#             "payment_status": order.order_payment_status.value,
+#             "amount": f"{amount:,.2f}",
+#             "date": order.updated_at.strftime("%b %d, %Y"),
+#             "transaction_id": transx_id or "N/A",
+#             "order_number": order.order_number,
+#             "note": 'We received your payment but encountered an issue. Support has been notified.' if is_payment_success  else 'N/A'
+#         }
         
 
-        return templates.TemplateResponse("payment-processing.html", context)
-        # return HTMLResponse(
-        #     f"<h1>Payment {order.order_payment_status.value.title()}</h1>"
-        #     f"<p>Order #{order.order_number} • ₦{amount:,.2f}</p>",
-        #     status_code=200
-        # )
+#         return templates.TemplateResponse("payment-processing.html", context)
+
 
 
 async def _alert_admin_partial_failure(order: Order, status: PaymentStatus, db: AsyncSession, error: Exception):
