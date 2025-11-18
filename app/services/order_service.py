@@ -1185,7 +1185,7 @@ async def _rider_cancel_delivery(
 
             await db.flush()
 
-            await db.execute(update(User).where(User.id==old_rider_id).values(User.has_delivery==False))
+            await db.execute(update(User).where(User.id==old_rider_id).values(has_delivery==False))
 
         if was_picked_up and old_dispatch_id and order.order_payment_status == PaymentStatus.PAID:
             logger.info(f"Reversing pickup escrow for cancelled order {order.id}")
@@ -3137,7 +3137,7 @@ async def laundry_returned(
     return DeliveryStatusUpdateSchema(order_status=order.order_status)
 
 
-async def _validate_delivery(order: Order, current_user: User):
+async def _validate_delivery(order: Order, user_id: UUID):
     """
     Validates a delivery for confirmation with comprehensive error checking.
 
@@ -3160,9 +3160,9 @@ async def _validate_delivery(order: Order, current_user: User):
             )
 
         # 2. Authorization check
-        if order.owner_id != current_user.id:
+        if order.owner_id != user_id:
             logger.warning(
-                f"Unauthorized confirmation attempt: User {current_user.id} tried to confirm "
+                f"Unauthorized confirmation attempt: User {user_id} tried to confirm "
                 f"order {order.id} owned by {order.owner_id}"
             )
             raise HTTPException(
@@ -3486,7 +3486,7 @@ def _invalidate_caches(order: Order, current_user: User):
 
 
 async def sender_confirm_package_received(
-    db: AsyncSession, order_id: UUID, current_user: User
+    db: AsyncSession, order_id: UUID, sender_id: UUID
 ) -> DeliveryStatusUpdateSchema:
     try:
         # === 1. FETCH & VALIDATE ORDER (CRITICAL) ===
@@ -3495,7 +3495,7 @@ async def sender_confirm_package_received(
             .where(Order.id == order_id)
             .options(
                 selectinload(Order.delivery),
-                selectinload(Order.vendor).selectinload(User.profile),
+                # selectinload(Order.vendor).selectinload(User.profile),
             )
             .with_for_update()
         )
@@ -3503,7 +3503,7 @@ async def sender_confirm_package_received(
 
         if not order:
             raise HTTPException(status_code=404, detail="Order not found")
-        if order.owner_id != current_user.id:
+        if order.owner_id != sender_id:
             raise HTTPException(status_code=403, detail="Not authorized")
         if not order.delivery:
             raise HTTPException(status_code=400, detail="No delivery record")
@@ -3520,7 +3520,7 @@ async def sender_confirm_package_received(
             # Just mark as received — settlement already handled during cancellation
             order.delivery.delivery_status = DeliveryStatus.RECEIVED
         else:
-            await _validate_delivery(order, current_user)
+            await _validate_delivery(order, user_id=sender_id)
             await _update_delivery_status(
                 order=order,
                 db=db,
@@ -3539,7 +3539,7 @@ async def sender_confirm_package_received(
 
         # === 4. FIRE-AND-FORGET ALL OTHER TASKS ===
         asyncio.create_task(
-            _run_post_confirmation_tasks(order, current_user, is_cancelled_return)
+            _run_post_confirmation_tasks(order, is_cancelled_return)
         )
 
         # === 5. RETURN SUCCESS IMMEDIATELY ===
@@ -3574,11 +3574,11 @@ async def _attempt_package_settlement_later(order: Order, db: AsyncSession):
 
 
 
-async def _run_post_confirmation_tasks(order: Order, current_user: User, is_cancelled_return: bool):
+async def _run_post_confirmation_tasks(order: Order, is_cancelled_return: bool):
     """All non-critical operations - if any fail, we log but never crash the request"""
     try:
         # 1. Queue the transaction log (100% JSON safe)
-        await _create_audit_log(order=order, current_user=current_user)
+        await _create_audit_log(order=order)
         # 2. Update rider's total distance (safe, no objects leaked)
         if order.delivery.rider_id:
             distance = Decimal(str(order.delivery.distance))
@@ -3586,8 +3586,7 @@ async def _run_post_confirmation_tasks(order: Order, current_user: User, is_canc
                 update(Profile)
                 .where(Profile.user_id == order.delivery.rider_id)
                 .values(
-                    total_distance_travelled=Profile.total_distance_travelled + distance,
-                    has_delivery=False 
+                    total_distance_travelled=Profile.total_distance_travelled + distance
                 )
             )
             await db.execute(
@@ -4079,7 +4078,7 @@ async def _settle_dispatch(order: Order, base_idempotency_key: str, db: AsyncSes
     logger.info(f"✓ Dispatch settlement published for order {order.id}")
 
 
-async def _create_audit_log(order: Order, current_user: User):
+async def _create_audit_log(order: Order):
     await producer.publish_message(
                 service="audit",
                 operation="create_transaction_log",
@@ -4092,13 +4091,6 @@ async def _create_audit_log(order: Order, current_user: User):
                     "details": {
                         "order_type": order.order_type,
                         "order_number": order.order_number,
-                        "confirmed_by": current_user.profile.full_name 
-                            if current_user.profile and current_user.profile.full_name
-                            else current_user.profile.business_name if current_user.profile else "Unknown",
-                        "phone_number": current_user.profile.phone_number if current_user.profile else None,
-                        "vendor": order.vendor.profile.business_name
-                            if order.vendor.profile and order.vendor.profile.business_name
-                            else order.vendor.profile.full_name if order.vendor.profile else "Unknown",
                         "amount_due_vendor": str(order.amount_due_vendor),
                         "total_amount": str(order.grand_total),
                         "commission": str(order.grand_total - order.amount_due_vendor),
@@ -4212,32 +4204,8 @@ async def customer_confirm_order_received(
 
         # 5. Create audit log
         try:
-            await _create_audit_log(order=order, current_user=current_user)
-            # await producer.publish_message(
-            #     service="audit",
-            #     operation="create_transaction_log",
-            #     payload={
-            #         "vendor_id": str(order.vendor_id),
-            #         "order_id": str(order.id),
-            #         "amount": str(order.grand_total - order.amount_due_vendor),
-            #         "action": TransactionLogAction.RECEIVED.value,
-            #         "status": order.order_payment_status.value,
-            #         "details": {
-            #             "order_type": order.order_type.value,
-            #             "order_number": order.order_number,
-            #             "confirmed_by": current_user.profile.full_name 
-            #                 if current_user.profile and current_user.profile.full_name
-            #                 else current_user.profile.business_name if current_user.profile else "Unknown",
-            #             "phone_number": current_user.profile.phone_number if current_user.profile else None,
-            #             "vendor": order.vendor.profile.business_name
-            #                 if order.vendor.profile and order.vendor.profile.business_name
-            #                 else order.vendor.profile.full_name if order.vendor.profile else "Unknown",
-            #             "amount_due_vendor": str(order.amount_due_vendor),
-            #             "total_amount": str(order.grand_total),
-            #             "commission": str(order.grand_total - order.amount_due_vendor),
-            #         },
-            #     },
-            # )
+            await _create_audit_log(order=order)
+            
         except Exception as e:
             logger.error(
                 f"Failed to create audit log for order {order.id}: {str(e)}",

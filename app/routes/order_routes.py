@@ -184,13 +184,14 @@ async def assign_rider_to_existing_delivery_order(
 )
 async def sender_confirm_package_received(
     order_id: UUID,
+    sender_id: UUID,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+
 ) -> DeliveryStatusUpdateSchema:
     try:
         return await order_service.sender_confirm_package_received(
             db=db,
-            current_user=current_user,
+            sender_id=sender_id,
             order_id=order_id,
         )
     except Exception as e:
