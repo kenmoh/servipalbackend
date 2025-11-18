@@ -145,13 +145,14 @@ async def get_order_by_id(
 )
 async def customer_confirm_order_received(
     order_id: UUID,
+    customer_id: UUID,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    
 ) -> DeliveryStatusUpdateSchema:
     try:
         return await order_service.customer_confirm_order_received(
             db=db,
-            current_user=current_user,
+            customer_id=customer_id,
             order_id=order_id,
         )
     except Exception as e:
@@ -203,15 +204,15 @@ async def sender_confirm_package_received(
 )
 async def vendor_mark_order_delivered(
     order_id: UUID,
+    vendor_id: UUID,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
 ) -> DeliveryStatusUpdateSchema:
     """
     Mark order delivered(for order without delivery) by vendor
     """
     return await order_service.vendor_mark_order_delivered(
         db=db,
-        current_user=current_user,
+        vendor_id=vendor_id,
         order_id=order_id,
     )
 
