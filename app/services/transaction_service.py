@@ -1389,6 +1389,8 @@ async def handle_payment_webhook(request: Request, db: AsyncSession):
 
     except Exception as e:
         logger.error(f"Webhook error: {e}", exc_info=True)
+        await _alert_admin_partial_failure(order=order, status=order.order_payment_status, db=db, e=e)
+
         raise HTTPException(500, "error")
 
 
@@ -1410,12 +1412,14 @@ async def run_payment_side_effects_once(order: Order, db: AsyncSession, tx_ref: 
         logger.info(f"Running payment side effects for order {order.id}")
         await _process_successful_payment(order, db, tx_ref)
         
-        # Mark as done forever (30 days)
+        # Mark as done (30 days)
         redis_client.setex(key, 86400 * 30, "done")
         logger.info(f"Side effects completed for order {order.id}")
         return True
     except Exception as e:
         logger.error(f"Side effects FAILED for order {order.id}: {e}", exc_info=True)
+        await _alert_admin_partial_failure(order=order, status=order.order_payment_status, db=db, e=e)
+
         redis_client.delete(key)
         return False
 
@@ -1507,7 +1511,7 @@ async def _process_successful_payment_webhook(
                         f"attempts for order {order_id}. Manual intervention required!"
                     )
                     # Alert admin
-                    await _alert_admin_partial_failure(order, db, e)
+                    await _alert_admin_partial_failure(order=order, status=order.order_payment_status, db=db, e=e)
 
 
 # ==============================================================
@@ -1887,7 +1891,7 @@ async def order_payment_callback(request: Request, db: AsyncSession):
     return await _render_payment_page(
         order=order,
         request=request,
-        transaction_id=request.query_params.get("transaction_id"),
+        transx_id=request.query_params.get("transaction_id"),
         is_payment_success=is_success
     )
 
@@ -2093,6 +2097,7 @@ async def _render_payment_page(order: Order, request: Request, transx_id: str, i
             "order_number": order.order_number,
             "note": 'We received your payment but encountered an issue. Support has been notified.' if is_payment_success  else 'N/A'
         }
+        
 
         return templates.TemplateResponse("payment-processing.html", context)
         # return HTMLResponse(
@@ -2102,7 +2107,7 @@ async def _render_payment_page(order: Order, request: Request, transx_id: str, i
         # )
 
 
-async def _alert_admin_partial_failure(order: Order, db: AsyncSession, error: Exception):
+async def _alert_admin_partial_failure(order: Order, status: PaymentStatus, db: AsyncSession, error: Exception):
     """
     CRITICAL: User paid, DB says PAID, but wallet not credited!
     We log this as a FAILED_INTERNAL action so ops can reconcile.
@@ -2113,7 +2118,7 @@ async def _alert_admin_partial_failure(order: Order, db: AsyncSession, error: Ex
         order_id=None,
         amount=order.grand_total,
         action=TransactionLogAction.WALLET_FUNDING_FAILED_INTERNAL,
-        status=PaymentStatus.FAILED,
+        status=status,
         details={
             "error": str(error),
             "error_type": error.__class__.__name__,
