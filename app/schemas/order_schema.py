@@ -91,7 +91,6 @@ class OrderAndDeliverySchema(BaseModel):
     require_delivery: RequireDeliverySchema
     duration: str | None = None
     origin: str | None = None
-    # pickup_location: str | None = None
     destination: str | None = None
     additional_info: str | None = None
 
