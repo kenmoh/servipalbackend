@@ -2760,7 +2760,7 @@ async def _dispatch_post_pickup_tasks(order: Order, rider: User, db: AsyncSessio
 
 #         logger.info(f"Rider accepted order {order_id}. Funds will move to escrow at pickup.")
 
-#         _invalidate_order_caches(order=order)
+#         _invalidate_order_caches(order=order, current_user=current_user)
 #         redis_client.delete(f"order_by_id:{order_id}")
         
 #         redis_client.setex(cache_key, 86400, "completed")
@@ -4505,7 +4505,7 @@ async def _package_settlement(order: Order, db: AsyncSession):
 #             await _notify_order_completion(order, db)
 
 #             # Invalidate caches
-#             _invalidate_order_caches(order)
+#             _invalidate_order_caches(order, current_user)
 
 #         except Exception as e:
 #             logger.warning(
@@ -4676,7 +4676,7 @@ async def _process_order_confirmation_side_effects(
                 
                 # 4. INVALIDATE CACHES (non-critical)
                 try:
-                    _invalidate_order_caches(order)
+                    _invalidate_order_caches(order, customer_id)
                     logger.info(f"✓ Caches cleared for order {order_id}")
                 except Exception as e:
                     logger.warning(
@@ -4856,8 +4856,8 @@ async def _notify_order_completion(order: Order, db: AsyncSession):
                 tokens=[customer_token],
                 title="Order Confirmation",
                 message=(
-                    f"You have confirmed receipt of your {order.order_type.value.lower()} "
-                    f"order #{order.order_number} from {business_name}. Thank you for using our service!"
+                    f"You have confirmed receipt of your order."
+                    f"Order #{order.order_number} from {business_name}."
                 ),
                 navigate_to="/delivery/orders",
             )
@@ -4884,8 +4884,8 @@ def _invalidate_order_caches(order: Order):
         ]
         redis_client.delete(f'wallet_transactions:{order.vendor_id}')
         redis_client.delete(f'wallet_transactions:{order.owner_id}')
-        redis_client.delete(f"user_related_orders:{order.vendor_id}")
         redis_client.delete(f"user_related_orders:{order.owner_id}")
+        redis_client.delete(f"user_related_orders:{order.vendor_id}")
         redis_client.delete(f"user_orders:{order.delivery.rider_id}")
         redis_client.delete(f"user_orders:{order.delivery.dispatch_id}")
         redis_client.delete(f"order_by_id:{order.id}")
@@ -4894,143 +4894,6 @@ def _invalidate_order_caches(order: Order):
         logger.warning(f"Failed to invalidate some order caches: {str(e)}")
     
 
-
-
-
-# async def rider_mark_package_delivered(
-#     delivery_id: UUID, current_user: User, db: AsyncSession
-# ) -> DeliveryStatusUpdateSchema:
-#     """
-#     Mark a package as delivered by the rider with comprehensive validation and error handling.
-
-#     Args:
-#         delivery_id: UUID of the delivery
-#         current_user: Currently authenticated user
-#         db: Database session
-
-#     Returns:
-#         DeliveryStatusUpdateSchema with updated status
-
-#     Raises:
-#         HTTPException: With appropriate status code and message for various failure cases
-#     """
-#     try:
-#         # Fetch delivery with order using pessimistic lock
-#         result = await db.execute(
-#             select(Delivery)
-#             .where(Delivery.id == delivery_id)
-#             .where(
-#                 or_(
-#                     Delivery.rider_id == current_user.id,
-#                     Delivery.dispatch_id == current_user.id,
-#                 )
-#             )
-#             .options(selectinload(Delivery.order))
-#             .with_for_update()
-#         )
-
-#         delivery = result.scalar_one_or_none()
-
-#         # Comprehensive validation
-#         if not delivery:
-#             logger.error(
-#                 f"Delivery {delivery_id} not found for rider {current_user.id}"
-#             )
-#             raise HTTPException(
-#                 status_code=status.HTTP_404_NOT_FOUND,
-#                 detail="Delivery not found or has been deleted.",
-#             )
-
-#         # Authorization validation
-#         if (
-#             current_user.user_type != UserType.RIDER
-#             and delivery.rider_id != current_user.id
-#         ):
-#             logger.warning(
-#                 f"Unauthorized delivery status update attempt by user {current_user.id}:{current_user.email} "
-#                 f"for delivery {delivery_id}"
-#             )
-#             raise HTTPException(
-#                 status_code=status.HTTP_403_FORBIDDEN,
-#                 detail="You are not authorized to update this delivery's status.",
-#             )
-
-#         # Status transition validation
-#         if delivery.delivery_status not in [
-#             DeliveryStatus.ACCEPTED,
-#             DeliveryStatus.PICKED_UP,
-#         ]:
-#             raise HTTPException(
-#                 status_code=status.HTTP_400_BAD_REQUEST,
-#                 detail=f"Cannot mark as delivered. Current status: {delivery.delivery_status.value}",
-#             )
-
-#         # Payment validation
-#         if delivery.order.order_payment_status != PaymentStatus.PAID:
-#             raise HTTPException(
-#                 status_code=status.HTTP_400_BAD_REQUEST,
-#                 detail="Cannot mark as delivered: Order payment is not completed.",
-#             )
-
-#         # Idempotency check: If already delivered, return current status
-#         if delivery.delivery_status == DeliveryStatus.DELIVERED:
-#             logger.info(
-#                 f"Delivery {delivery_id} already marked as delivered. Returning current status."
-#             )
-#             return DeliveryStatusUpdateSchema(
-#                 delivery_status=delivery.delivery_status,
-#                 order_status=delivery.order.order_status,
-#             )
-
-#         # Update delivery status
-#         delivery.delivery_status = DeliveryStatus.DELIVERED
-#         delivery.order.order_status = OrderStatus.DELIVERED
-
-#         await db.commit()
-
-#         # Send notifications to all stakeholders (after commit)
-#         try:
-#             await _notify_delivery_completion(delivery, db)
-#         except Exception as e:
-#             logger.error(
-#                 f"Failed to send notifications for delivery {delivery_id}: {str(e)}",
-#                 exc_info=True,
-#             )
-
-#         # Invalidate caches
-#         try:
-#             _invalidate_delivery_caches(delivery)
-#             _invalidate_pickup_order_caches(delivery.order)
-#         except Exception as e:
-#             logger.error(
-#                 f"Failed to invalidate caches for delivery {delivery_id}: {str(e)}",
-#                 exc_info=True,
-#             )
-
-#         logger.info(
-#             f"Successfully marked delivery {delivery_id} as delivered by rider {current_user.id}"
-#         )
-
-#         redis_client.delete(f"order_by_id:{delivery.order.id}")
-
-#         return DeliveryStatusUpdateSchema(
-#             delivery_status=delivery.delivery_status,
-#             order_status=delivery.order.order_status,
-#         )
-
-#     except HTTPException:
-#         await db.rollback()
-#         raise
-#     except Exception as e:
-#         await db.rollback()
-#         logger.error(
-#             f"Unexpected error marking delivery {delivery_id} as delivered: {str(e)}",
-#             exc_info=True,
-#         )
-#         raise HTTPException(
-#             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-#             detail="An unexpected error occurred while updating delivery status.",
-#         )
 
 
 async def rider_mark_package_delivered(
