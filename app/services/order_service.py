@@ -4581,7 +4581,7 @@ async def customer_confirm_order_received(
         asyncio.create_task(
             _process_order_confirmation_side_effects(
                 order_id=order.id,
-                customer_id=current_user.id,
+                customer_id=customer_id,
                 old_status=old_status,
             )
         )
@@ -5075,7 +5075,7 @@ async def rider_mark_package_delivered(
         # )
 
         # === 3. RETURN SUCCESS IMMEDIATELY ===
-        logger.info(f"Rider {current_user.id} marked delivery {delivery_id} as DELIVERED")
+        logger.info(f"Rider {rider_id} marked delivery {delivery_id} as DELIVERED")
         
         return DeliveryStatusUpdateSchema(
             delivery_status=DeliveryStatus.DELIVERED,

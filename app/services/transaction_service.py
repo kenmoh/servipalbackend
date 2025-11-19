@@ -1244,8 +1244,8 @@ async def _create_payment_audit_log_once(order: Order):
                 "order_id": str(order.id),
                 "vendor_id": str(order.vendor_id) if order.vendor_id else None,
                 "amount": str(order.grand_total),
-                "action": TransactionLogAction.PAYMENT_RECEIVED.value,
-                "status": order.order_payment_status.value,
+                "action": TransactionLogAction.RECEIVED,
+                "status": order.order_payment_status,
                 "details": {
                     "order_type": order.order_type.value,
                     "order_number": order.order_number,
@@ -1324,58 +1324,6 @@ async def _render_payment_page(
             status_code=200
         )
 
-async def create_payment_audit_log_once(order: Order, current_user: User | None = None):
-    """
-    Creates audit log for successful payment — runs ONLY ONCE
-    Called from webhook OR callback — no duplicates ever
-    """
-    key = f"audit_log:payment_success:{order.id}"
-    
-    # Already created? Skip fast
-    if await redis_client.get(key):
-        logger.info(f"[Audit] Log already created for order {order.id}")
-        return
-
-    # Claim lock (10 min window)
-    if not await redis_client.set(key, "running", nx=True, ex=600):
-        logger.info(f"[Audit] Another process creating log for {order.id}")
-        return
-
-    try:
-        await producer.publish_message(
-            service="audit",
-            operation="create_transaction_log",
-            payload={
-                "order_id": str(order.id),
-                "vendor_id": str(order.vendor_id) if order.vendor_id else None,
-                "amount": str(order.grand_total),
-                "action": TransactionLogAction.PAYMENT_RECEIVED,
-                "status": order.order_payment_status,
-                "details": {
-                    "order_type": order.order_type,
-                    "order_number": order.order_number,
-                    "customer_name": (
-                        order.owner.profile.full_name or 
-                        order.owner.profile.business_name or 
-                        "Customer"
-                    ),
-                    "vendor_name": (
-                        order.vendor.profile.business_name if order.vendor and order.vendor.profile
-                        else "Platform"
-                    ) if order.vendor else "Platform",
-                    "source": "webhook+callback_idempotent",
-                    "timestamp": datetime.now().isoformat(),
-                },
-            },
-        )
-
-       
-        await redis_client.setex(key, 86400 * 90, "done")
-        logger.info(f"Audit log created for order {order.id}")
-
-    except Exception as e:
-        logger.error(f"Failed to create audit log for order {order.id}: {e}", exc_info=True)
-        await redis_client.delete(key)
 
 # ===================================================================
 # FOOD / LAUNDRY / DELIVERY
