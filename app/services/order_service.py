@@ -2760,7 +2760,7 @@ async def _dispatch_post_pickup_tasks(order: Order, rider: User, db: AsyncSessio
 
 #         logger.info(f"Rider accepted order {order_id}. Funds will move to escrow at pickup.")
 
-#         _invalidate_order_caches(order=order, current_user=current_user)
+#         _invalidate_order_caches(order=order)
 #         redis_client.delete(f"order_by_id:{order_id}")
         
 #         redis_client.setex(cache_key, 86400, "completed")
@@ -4505,7 +4505,7 @@ async def _package_settlement(order: Order, db: AsyncSession):
 #             await _notify_order_completion(order, db)
 
 #             # Invalidate caches
-#             _invalidate_order_caches(order, current_user)
+#             _invalidate_order_caches(order)
 
 #         except Exception as e:
 #             logger.warning(
@@ -4651,7 +4651,7 @@ async def _process_order_confirmation_side_effects(
                         continue
                     else:
                         # Max retries reached - alert admin
-                        await _alert_settlement_failure(order, db, e)
+                        await _create_audit_log(order)
                         # Continue with other operations
                 
                 # 2. CREATE AUDIT LOG (important but not critical)
@@ -4676,7 +4676,7 @@ async def _process_order_confirmation_side_effects(
                 
                 # 4. INVALIDATE CACHES (non-critical)
                 try:
-                    await _invalidate_order_caches_async(order, customer_id)
+                    _invalidate_order_caches(order)
                     logger.info(f"✓ Caches cleared for order {order_id}")
                 except Exception as e:
                     logger.warning(
@@ -4714,7 +4714,7 @@ async def _process_order_confirmation_side_effects(
                         f"CRITICAL: Background processing failed after {MAX_RETRIES} "
                         f"attempts for order {order_id}"
                     )
-                    await _alert_admin_background_failure(order_id, e)
+                    await _create_audit_log(order)
                     return
 
 
@@ -4884,7 +4884,6 @@ def _invalidate_order_caches(order: Order):
         ]
         redis_client.delete(f'wallet_transactions:{order.vendor_id}')
         redis_client.delete(f'wallet_transactions:{order.owner_id}')
-        redis_client.delete(f"user_related_orders:{current_user.id}")
         redis_client.delete(f"user_related_orders:{order.vendor_id}")
         redis_client.delete(f"user_related_orders:{order.owner_id}")
         redis_client.delete(f"user_orders:{order.delivery.rider_id}")
