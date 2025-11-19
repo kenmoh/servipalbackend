@@ -1487,10 +1487,14 @@ async def _alert_admin_partial_failure(order: Order, status: PaymentStatus, db: 
 async def _send_notifications(db: AsyncSession, order: Order):
     # Extract the unique user IDs we need tokens for
     user_ids = {
-        order.owner_id,                
-        order.delivery.rider_id,      
-        order.vendor_id,         
+        order.owner_id,
+        order.vendor_id,
     }
+    
+    # Add rider_id only if delivery exists
+    if order.delivery and order.delivery.rider_id:
+        user_ids.add(order.delivery.rider_id)
+    
     # Remove None values just in case
     user_ids = {uid for uid in user_ids if uid is not None}
 
@@ -1505,7 +1509,7 @@ async def _send_notifications(db: AsyncSession, order: Order):
     token_map = {row.id: row.notification_token for row in result.all()}
 
     customer_token = token_map.get(order.owner_id)
-    rider_token    = token_map.get(order.delivery.rider_id)
+    rider_token    = token_map.get(order.delivery.rider_id) if order.delivery else None
     vendor_token   = token_map.get(order.vendor_id)
 
     # Send notifications (you can even parallelize these with gather)
@@ -1515,7 +1519,7 @@ async def _send_notifications(db: AsyncSession, order: Order):
                 send_push_notification(
                     tokens=[customer_token],
                     title="Payment Successful",
-                    message=f"Your payment of ₦{order.delivery_fee:,.2f} is successful.",
+                    message=f"Your payment of ₦{order.grand_total:,.2f} is successful.",
                 )
             )
         if rider_token:
