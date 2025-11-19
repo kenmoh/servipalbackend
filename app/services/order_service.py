@@ -2852,10 +2852,12 @@ async def rider_accept_booking(
     
     try:
         # 2. Validate and update order (critical path - fast)
-        order = await _validate_and_accept_delivery(
-            db=db,
-            order_id=order_id,
-            current_user=current_user,
+        order = await _validate_delivery_acceptance(
+            db,
+            order_id,
+            current_user,
+            order_status=OrderStatus.ACCEPTED,
+            delivery_status=DeliveryStatus.ACCEPTED,
         )
         
         # 3. COMMIT IMMEDIATELY (critical operation only)
@@ -2905,14 +2907,7 @@ async def _process_delivery_acceptance_side_effects(order_id, current_user):
     cache_key = f"idempotency:{endpoint_idempotency_key}"
 
     try:
-        order = await _validate_delivery_acceptance(
-            db,
-            order_id,
-            current_user,
-            order_status=OrderStatus.ACCEPTED,
-            delivery_status=DeliveryStatus.ACCEPTED,
-        )
-        await db.commit()
+      
 
         logger.info(f"Rider accepted order {order_id}. Funds will move to escrow at pickup.")
 
