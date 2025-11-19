@@ -2632,19 +2632,6 @@ async def _decline_delivery_order_and_update_db(
         update(User).where(User.id == rider.id).values(has_delivery=False)
     )
 
-
-async def _rider_pickup_and_update_db(
-    db: AsyncSession, order: Order, rider: User, dispatch_id: UUID
-):
-    """Atomically updates the database to assign the rider and update statuses."""
-    order.delivery.delivery_status = DeliveryStatus.PICKED_UP
-    
-    db.add(order)
-    db.add(order.delivery)
-    await db.refresh(order)
-    
-
-
 async def _dispatch_post_pickup_tasks(order: Order, rider: User, db: AsyncSession):
     """
     Handles tasks that should occur after the database transaction is committed.
@@ -2902,8 +2889,8 @@ async def rider_accept_booking(
         )
 
 
-async def _process_delivery_acceptance_side_effects(order_id, current_user):
-    endpoint_idempotency_key = f"rider_accept:{order_id}:{current_user.id}"
+async def _process_delivery_acceptance_side_effects(order_id, rider_id):
+    endpoint_idempotency_key = f"rider_accept:{order_id}:{rider_id}"
     cache_key = f"idempotency:{endpoint_idempotency_key}"
 
     try:
@@ -2911,7 +2898,7 @@ async def _process_delivery_acceptance_side_effects(order_id, current_user):
 
         logger.info(f"Rider accepted order {order_id}. Funds will move to escrow at pickup.")
 
-        _invalidate_order_caches(order=order, current_user=current_user)
+        _invalidate_order_caches(order=order)
         redis_client.delete(f"order_by_id:{order_id}")
 
         redis_client.setex(cache_key, 86400, "completed")
@@ -3055,6 +3042,65 @@ async def _update_wallet_at_pickup(order: Order):
         detail="Unexpected error in pickup escrow processing",
     )
 
+
+async def _process_pickup_side_effects(order_id: UUID):
+    """
+    Background task to handle non-critical pickup operations.
+    Runs asynchronously after the main pickup response is returned.
+    
+    Operations:
+    1. Move funds to dispatch escrow
+    2. Invalidate caches
+    3. Send notifications (future)
+    
+    Args:
+        order_id: UUID of the order that was picked up
+    """
+    try:
+        # Get a new DB session for background task
+        from app.database.database import get_db
+        
+        async for db in get_db():
+            try:
+                # Fetch the order with delivery
+                order = await db.scalar(
+                    select(Order)
+                    .where(Order.id == order_id)
+                    .options(selectinload(Order.delivery))
+                )
+                
+                if not order:
+                    logger.error(f"Order {order_id} not found in background task")
+                    return
+                
+                # 1. Move funds to escrow (critical financial operation)
+                logger.info(f"Background: Moving funds to escrow for order {order_id}")
+                await _update_wallet_at_pickup(order)
+                logger.info(f"Background: Escrow allocation completed for order {order_id}")
+                
+                # 2. Invalidate caches
+                _invalidate_order_caches(order)
+                redis_client.delete(f"order_by_id:{order_id}")
+                
+                # 3. Future: Send notifications to customer, dispatch, etc.
+                # await _send_pickup_notifications(order, db)
+                
+                logger.info(f"Background: Pickup side effects completed for order {order_id}")
+                
+            except Exception as e:
+                logger.error(
+                    f"Error in pickup background task for order {order_id}: {e}",
+                    exc_info=True
+                )
+            finally:
+                break  # Exit the async generator
+                
+    except Exception as e:
+        logger.error(
+            f"Failed to get DB session in pickup background task for order {order_id}: {e}",
+            exc_info=True
+        )
+
 async def rider_decline_booking(
     db: AsyncSession, order_id: UUID, current_user: User
 ) -> DeliveryStatusUpdateSchema:
@@ -3084,7 +3130,7 @@ async def rider_decline_booking(
         await db.commit()
 
         # 4. Invalidate cache
-        _invalidate_order_caches(order, current_user)
+        _invalidate_order_caches(order)
 
         return DeliveryStatusUpdateSchema(
             delivery_status=order.delivery.delivery_status
@@ -3163,14 +3209,15 @@ async def assign_rider_to_existing_delivery_order(
 
 
 async def rider_pickup_delivery_order(
-    db: AsyncSession, order_id: UUID, current_user: User
+    db: AsyncSession, order_id: UUID, rider_id: UUID
 ) -> DeliveryStatusUpdateSchema:
     """
     Allows a rider to pickup a delivery order from customer.
-    THIS is where funds move to dispatch escrow.
+    Fast response - immediate DB update, background wallet operations.
+    THIS is where funds move to dispatch escrow (in background).
     """
-    # Add endpoint-level idempotency FIRST
-    endpoint_idempotency_key = f"rider_pickup:{order_id}:{current_user.id}"
+    # 1. Endpoint-level idempotency check
+    endpoint_idempotency_key = f"rider_pickup:{order_id}:{rider_id}"
     cache_key = f"idempotency:{endpoint_idempotency_key}"
     
     is_first_call = redis_client.setnx(cache_key, "processing")
@@ -3193,9 +3240,11 @@ async def rider_pickup_delivery_order(
             detail="This pickup is already being processed."
         )
     
+    # Set expiration for processing lock (5 min)
     redis_client.expire(cache_key, 300)
     
     try:
+        # 2. Validate and fetch order (critical path - fast)
         order = await db.scalar(
             select(Order)
             .where(Order.id == order_id)
@@ -3209,7 +3258,7 @@ async def rider_pickup_delivery_order(
                 status_code=status.HTTP_404_NOT_FOUND, detail="Order not found."
             )
 
-        if current_user.id != order.delivery.rider_id:
+        if rider_id != order.delivery.rider_id:
             redis_client.delete(cache_key)
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN, detail="Invalid rider."
@@ -3233,25 +3282,29 @@ async def rider_pickup_delivery_order(
                 detail=f"Cannot pickup. Current status: {order.delivery.delivery_status.value}. Must be ACCEPTED."
             )
 
-        # Update status FIRST
-        await _rider_pickup_and_update_db(
-            db, order, current_user, dispatch_id=current_user.dispatcher_id
+        # 3. Update status (critical operation only)
+        order.delivery.delivery_status = DeliveryStatus.PICKED_UP
+        
+        # 4. COMMIT IMMEDIATELY (critical operation only)
+        await db.commit()
+        await db.refresh(order)
+        
+        logger.info(
+            f"✓ Rider {rider_id} picked up order {order_id}. "
+            f"Status: {order.delivery.delivery_status.value}"
         )
         
-        await db.commit()
-
-        logger.info(f"Pickup confirmed. Moving funds to escrow for order {order_id}")
-        await _update_wallet_at_pickup(order)
-        logger.info(f"Escrow allocation completed for order {order_id}")
-
-        # Post-pickup tasks
-        # await _dispatch_post_pickup_tasks(order, current_user, db)
-        _invalidate_order_caches(order, current_user)
-        redis_client.delete(f"order_by_id:{order_id}")
-        
-        # Mark as completed
+        # 5. Mark as completed
         redis_client.setex(cache_key, 86400, "completed")
-
+        
+        # 6. FIRE BACKGROUND TASKS (non-blocking)
+        asyncio.create_task(
+            _process_pickup_side_effects(
+                order_id=order.id,
+            )
+        )
+        
+        # 7. RETURN IMMEDIATELY (instant response)
         return DeliveryStatusUpdateSchema(
             delivery_status=order.delivery.delivery_status
         )
@@ -3304,7 +3357,7 @@ async def laundry_pickup(
         },
     )
 
-    _invalidate_order_caches(order, current_user)
+    _invalidate_order_caches(order)
     redis_client.delete(f"order_by_id:{order_id}")
 
 
@@ -3350,7 +3403,7 @@ async def laundry_returned(
     await db.commit()
     await db.refresh(order)
 
-    _invalidate_order_caches(order, current_user)
+    _invalidate_order_caches(order)
 
     await ws_service.broadcast_order_status_update(
         order_id=order.id, new_status=order.order_status
@@ -4820,7 +4873,7 @@ async def _notify_order_completion(order: Order, db: AsyncSession):
 
 
 
-def _invalidate_order_caches(order: Order, current_user: User):
+def _invalidate_order_caches(order: Order):
      
     try:
         cache_keys = [

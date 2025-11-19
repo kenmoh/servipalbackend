@@ -248,12 +248,13 @@ async def rider_decline_booking(
 @router.put("/{order_id}/pickup", status_code=status.HTTP_202_ACCEPTED)
 async def rider_pickup_delivery_order(
     order_id: UUID,
+    rider_id: UUID,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    
 ) -> DeliveryStatusUpdateSchema:
     try:
         return await order_service.rider_pickup_delivery_order(
-            db=db, current_user=current_user, order_id=order_id
+            db=db, rider_id=rider_id, order_id=order_id
         )
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
