@@ -238,6 +238,7 @@ async def create_new_rider(
 
         rider_profile = Profile(
             user_id=new_rider.id,
+            dispatch_id=current_user.id,
             full_name=data.full_name,
             phone_number=formatted_phone,
             bike_number=data.bike_number,

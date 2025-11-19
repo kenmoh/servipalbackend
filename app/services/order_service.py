@@ -28,6 +28,7 @@ from app.services import ws_service
 from app.queue.producer import producer
 from app.services.audit_log_service import TransactionLogService
 from app.utils.map import get_distance_between_addresses
+from app.database.database import get_db
 
 
 import json
@@ -89,11 +90,13 @@ async def get_order_by_id(
 
     cache_key = f"order_by_id:{order_id}"
 
+    # Check cache first (no DB connection needed)
     cached_delivery = redis_client.get(cache_key)
     if cached_delivery:
         delivery = json.loads(cached_delivery)
         return DeliveryResponse(**delivery)
 
+    # Ensure proper session lifecycle management
     try:
         order_stmt = (
             select(Order)
@@ -115,19 +118,29 @@ async def get_order_by_id(
                 status_code=status.HTTP_404_NOT_FOUND, detail="Order not found"
             )
 
+        # Format response before caching
         oder_response = format_delivery_response(order=order, delivery=order.delivery)
 
-        redis_client.setex(
-            cache_key,
-            CACHE_TTL,
-            json.dumps(oder_response.model_dump(), default=str),
-        )
+        # Expunge all objects from session to prevent lazy loading after session closes
+        db.expunge_all()
+
+        # Cache the response
+        try:
+            redis_client.setex(
+                cache_key,
+                CACHE_TTL,
+                json.dumps(oder_response.model_dump(), default=str),
+            )
+        except Exception as cache_error:
+            # Log cache error but don't fail the request
+            logger.error(f"Failed to cache order {order_id}: {cache_error}")
 
         return oder_response
 
     except HTTPException:
         raise
     except Exception as e:
+        logger.error(f"Error retrieving order {order_id}: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error retrieving delivery: {str(e)}",
@@ -2220,112 +2233,6 @@ async def re_list_item_for_delivery(
         )
 
 
-# # For orders without delivery
-# async def vendor_mark_order_delivered(
-#     db: AsyncSession, order_id: UUID, vendor_id: UUID
-# ) -> DeliveryStatusUpdateSchema:
-#     """
-#     Mark an order as delivered by the vendor. This is specifically for pickup orders
-#     without delivery service.
-
-#     Args:
-#         db: Database session
-#         order_id: UUID of the order to mark as delivered
-#         current_user: The vendor marking the order as delivered
-
-#     Returns:
-#         DeliveryStatusUpdateSchema with updated order status
-
-#     Raises:
-#         HTTPException: With appropriate status code and message for various failure cases
-#     """
-#     try:
-#         # Fetch order with lock
-#         order_result = await db.execute(
-#             select(Order)
-#             .where(Order.id == order_id)
-#             .where(Order.vendor_id == vendor_id)
-#             # .options(selectinload(Order.owner))
-#             .with_for_update()
-#         )
-#         order = order_result.scalar_one_or_none()
-
-    
-#         if not order:
-#             logger.error(f"Order {order_id} not found for vendor {vendor_id}")
-#             raise HTTPException(
-#                 status_code=status.HTTP_404_NOT_FOUND,
-#                 detail="Order not found or has been deleted.",
-#             )
-
-
-#         # Status transition validation
-#         if order.order_status == OrderStatus.DELIVERED:
-#             raise HTTPException(
-#                 status_code=status.HTTP_400_BAD_REQUEST,
-#                 detail="This order has already been marked as delivered.",
-#             )
-
-#         if order.order_status not in [OrderStatus.PENDING, OrderStatus.ACCEPTED]:
-#             raise HTTPException(
-#                 status_code=status.HTTP_400_BAD_REQUEST,
-#                 detail=f"Cannot mark as delivered. Current status: {order.order_status.value}",
-#             )
-
-#         # Payment validation
-#         if order.order_payment_status != PaymentStatus.PAID:
-#             raise HTTPException(
-#                 status_code=status.HTTP_400_BAD_REQUEST,
-#                 detail="Cannot mark as delivered: Order payment is not completed.",
-#             )
-
-#         order.order_status = OrderStatus.DELIVERED
-#         await db.commit()
-
-# #         # Send notifications to all stakeholders
-#         try:
-#             await _notify_order_pickup_delivered(order, db)
-#         except Exception as e:
-#             logger.error(
-#                 f"Failed to send notifications for order {order_id}: {str(e)}",
-#                 exc_info=True,
-#             )
-
-#         # Invalidate caches
-#         try:
-#             _invalidate_pickup_order_caches(order)
-#         except Exception as e:
-#             logger.error(
-#                 f"Failed to invalidate caches for order {order_id}: {str(e)}",
-#                 exc_info=True,
-#             )
-         
-#         # Broadcast status update
-#         await ws_service.broadcast_order_status_update(
-#             order_id=order.id, new_status=order.order_status
-#         )
-
-#         redis_client.delete(f"order_by_id:{order_id}")
-#         logger.info(
-#             f"Successfully marked order {order_id} as delivered by vendor {order.vendor_id}"
-#         )
-
-#         return DeliveryStatusUpdateSchema(order_status=order.order_status)
-
-#     except HTTPException:
-#         await db.rollback()
-#         raise
-#     except Exception as e:
-#         await db.rollback()
-#         logger.error(
-#             f"Unexpected error marking order {order_id} as delivered: {str(e)}",
-#             exc_info=True,
-#         )
-#         raise HTTPException(
-#             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-#             detail="An unexpected error occurred while updating order status.",
-#         )
-
 
 async def vendor_mark_order_delivered(
     db: AsyncSession, order_id: UUID, vendor_id: UUID
@@ -2508,19 +2415,19 @@ def _invalidate_pickup_order_caches(order: Order):
 async def _validate_delivery_acceptance(
     db: AsyncSession,
     order_id: UUID,
-    rider: User,
+    current_user: User,
     delivery_status: DeliveryStatus,
     order_status: OrderStatus,
 ) -> Order:
     """Validates all preconditions for a rider to accept a delivery."""
-    if rider.user_type != UserType.RIDER:
+    if current_user.user_type != UserType.RIDER:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only a rider can accept orders.",
         )
 
     if (
-        rider.profile.profile_image is None
+        current_user.profile.profile_image is None
         or not rider.profile.profile_image.profile_image_url
     ):
         raise HTTPException(
@@ -2528,7 +2435,7 @@ async def _validate_delivery_acceptance(
             detail="Profile image is missing. Please update your profile.",
         )
 
-    if rider.rider_is_suspended_for_order_cancel:
+    if current_user.rider_is_suspended_for_order_cancel:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Your account is suspended due to too many cancellations.",
@@ -2547,7 +2454,7 @@ async def _validate_delivery_acceptance(
             status_code=status.HTTP_404_NOT_FOUND, detail="Delivery not found."
         )
 
-    if order.delivery.rider_id != rider.id:
+    if order.delivery.rider_id != current_user.id:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Invalid user",
@@ -2561,6 +2468,7 @@ async def _validate_delivery_acceptance(
 
     order.order_status = order_status
     order.delivery.delivery_status = delivery_status
+    order.delivery.dispatch_id = current_user.dispatcher_id
 
     return order
 
@@ -2624,7 +2532,6 @@ async def _decline_delivery_order_and_update_db(
     order.delivery.rider_phone_number = None
     order.order_status = OrderStatus.CANCELLED
     order.delivery.delivery_status = DeliveryStatus.CANCELLED
-    # rider.has_delivery = False
     db.add(order)
     db.add(order.delivery)
 
@@ -2714,77 +2621,6 @@ async def _dispatch_post_pickup_tasks(order: Order, rider: User, db: AsyncSessio
         )
 
 
-
-# async def rider_accept_booking(
-#     db: AsyncSession, order_id: UUID, current_user: User
-# ) -> DeliveryStatusUpdateSchema:
-#     """
-#     Allows a rider to accept a delivery order.
-#     Note: Funds are NOT moved to escrow yet - this happens at pickup.
-#     """
-#     # Add endpoint-level idempotency
-#     endpoint_idempotency_key = f"rider_accept:{order_id}:{current_user.id}"
-#     cache_key = f"idempotency:{endpoint_idempotency_key}"
-    
-#     is_first_call = redis_client.setnx(cache_key, "processing")
-    
-#     if not is_first_call:
-#         existing_status = redis_client.get(cache_key)
-#         if existing_status == b"completed":
-#             logger.info(f"Rider acceptance for order {order_id} already processed.")
-#             order = await db.scalar(
-#                 select(Order)
-#                 .where(Order.id == order_id)
-#                 .options(selectinload(Order.delivery))
-#             )
-#             if order:
-#                 return DeliveryStatusUpdateSchema(
-#                     delivery_status=order.delivery.delivery_status
-#                 )
-#         raise HTTPException(
-#             status_code=status.HTTP_409_CONFLICT,
-#             detail="This delivery acceptance is already being processed."
-#         )
-    
-#     redis_client.expire(cache_key, 300)
-    
-#     try:
-#         order = await _validate_delivery_acceptance(
-#             db,
-#             order_id,
-#             current_user,
-#             order_status=OrderStatus.ACCEPTED,
-#             delivery_status=DeliveryStatus.ACCEPTED,
-#         )
-#         await db.commit()
-
-#         logger.info(f"Rider accepted order {order_id}. Funds will move to escrow at pickup.")
-
-#         _invalidate_order_caches(order=order, current_user=current_user)
-#         redis_client.delete(f"order_by_id:{order_id}")
-        
-#         redis_client.setex(cache_key, 86400, "completed")
-
-#         return DeliveryStatusUpdateSchema(
-#             delivery_status=order.delivery.delivery_status
-#         )
-
-#     except HTTPException:
-#         await db.rollback()
-#         redis_client.delete(cache_key)
-#         raise
-#     except Exception as e:
-#         await db.rollback()
-#         redis_client.delete(cache_key)
-#         logger.error(
-#             f"Failed to accept delivery for order {order_id}: {e}", exc_info=True
-#         )
-#         raise HTTPException(
-#             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-#             detail="An unexpected error occurred while accepting the delivery.",
-#         )
-
-
 async def rider_accept_booking(
     db: AsyncSession, order_id: UUID, current_user: User
 ) -> DeliveryStatusUpdateSchema:
@@ -2852,7 +2688,7 @@ async def rider_accept_booking(
         await db.refresh(order)
         
         logger.info(
-            f"✓ Rider {current_user.id} accepted order {order_id}. "
+            f"✓ Rider {rider_id} accepted order {order_id}. "
             f"Status: {order.delivery.delivery_status.value}"
         )
         
@@ -2863,7 +2699,7 @@ async def rider_accept_booking(
         asyncio.create_task(
             _process_delivery_acceptance_side_effects(
                 order_id=order.id,
-                rider_id=current_user,
+                rider_id=rider_id,
             )
         )
         
@@ -3058,9 +2894,10 @@ async def _process_pickup_side_effects(order_id: UUID):
     """
     try:
         # Get a new DB session for background task
-        from app.database.database import get_db
+        
         
         async for db in get_db():
+            
             try:
                 # Fetch the order with delivery
                 order = await db.scalar(
@@ -3073,7 +2910,7 @@ async def _process_pickup_side_effects(order_id: UUID):
                     logger.error(f"Order {order_id} not found in background task")
                     return
                 
-                # 1. Move funds to escrow (critical financial operation)
+                # 1b. Move funds to escrow (critical financial operation)
                 logger.info(f"Background: Moving funds to escrow for order {order_id}")
                 await _update_wallet_at_pickup(order)
                 logger.info(f"Background: Escrow allocation completed for order {order_id}")
@@ -4341,7 +4178,7 @@ async def _settle_dispatch(order: Order, base_idempotency_key: str, db: AsyncSes
             "amount": str(dispatch_amount),
             "transaction_type": TransactionType.USER_TO_USER,
             "transaction_direction": TransactionDirection.CREDIT,
-            "payment_method": transaction.payment_method.value if hasattr(transaction.payment_method, 'value') else transaction.payment_method,
+            "payment_method": transaction.payment_method,
             "payment_status": PaymentStatus.COMPLETED,
             "from_user": sender_name,
             "to_user": dispatch_name,
@@ -4359,6 +4196,13 @@ async def _settle_dispatch(order: Order, base_idempotency_key: str, db: AsyncSes
             "payment_status": PaymentStatus.COMPLETED,
         },
     )
+
+    await db.execute(
+            update(User)
+            .where(User.id == order.delivery.rider_id)
+            .values(has_delivery=False)
+        )
+    await db.commit()
     
     logger.info(f"✓ Dispatch settlement published for order {order.id}")
 
@@ -4427,112 +4271,6 @@ async def _package_settlement(order: Order, db: AsyncSession):
                     status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                     detail=f"Failed to process package settlement after {MAX_RETRIES} attempts",
                 )
-
-
-# async def customer_confirm_order_received(
-#     db: AsyncSession, order_id: UUID, current_user: User
-# ) -> DeliveryStatusUpdateSchema:
-#     """
-#     Process customer confirmation of food/laundry order receipt.
-#     Handles order status update, wallet settlement, notifications and audit logging.
-
-#     Args:
-#         db: Database session
-#         order_id: UUID of order to confirm
-#         current_user: User confirming the order
-
-#     Returns:
-#         DeliveryStatusUpdateSchema with updated status
-
-#     Raises:
-#         HTTPException: With appropriate status code and message
-#     """
-#     try:
-#         # 1. Fetch order with required relationships
-#         result = await db.execute(
-#             select(Order)
-#             .where(Order.id == order_id)
-#             .options(
-#                 selectinload(Order.vendor).selectinload(User.profile),
-#                 selectinload(Order.owner).selectinload(User.profile)
-#             )
-#             .with_for_update()
-#         )
-#         order = result.scalar_one_or_none()
-
-#         # 2. Validate order state and authorization
-#         await _validate_order_confirmation(order, current_user)
-
-#         # 3. Update order status
-#         try:
-#             await _update_order_status(order, db, OrderStatus.RECEIVED)
-#         except Exception as e:
-#             logger.error(
-#                 f"Failed to update order status for {order.id}: {str(e)}", exc_info=True
-#             )
-#             raise HTTPException(
-#                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-#                 detail="Failed to update order status",
-#             )
-
-#         # 4. Process wallet settlement
-#         try:
-#             await _order_settlement(order)
-#         except Exception as e:
-#             logger.error(
-#                 f"Settlement failed for order {order.id}: {str(e)}", exc_info=True
-#             )
-#             raise HTTPException(
-#                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-#                 detail="Failed to process payment settlement",
-#             )
-
-#         # 5. Create audit log
-#         try:
-#             await _create_audit_log(order=order)
-            
-#         except Exception as e:
-#             logger.error(
-#                 f"Failed to create audit log for order {order.id}: {str(e)}",
-#                 exc_info=True,
-#             )
-
-#         await db.refresh(order)
-
-#         # 6. Post-confirmation tasks (non-critical)
-#         try:
-#             # Send notifications
-#             await _notify_order_completion(order, db)
-
-#             # Invalidate caches
-#             _invalidate_order_caches(order, current_user)
-
-#         except Exception as e:
-#             logger.warning(
-#                 f"Non-critical post-confirmation tasks failed for order {order.id}: {str(e)}",
-#                 exc_info=True,
-#             )
-
-#         # 7. Log successful completion
-#         redis_client.delete(f"order_by_id:{order_id}")
-#         logger.info(f"Order confirmation completed successfully for order {order.id}")
-
-#         return DeliveryStatusUpdateSchema(order_status=order.order_status)
-
-#     except HTTPException:
-#         await db.rollback()
-#         raise
-#     except Exception as e:
-#         await db.rollback()
-#         logger.error(f"Failed to confirm order {order_id}: {str(e)}", exc_info=True)
-#         raise HTTPException(
-#             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-#             detail=(
-#                 "An unexpected error occurred while confirming the order. "
-#                 "Please try again or contact support if the issue persists."
-#             ),
-#         )
-
 
 async def customer_confirm_order_received(
     db: AsyncSession, order_id: UUID, customer_id: UUID
@@ -4886,9 +4624,12 @@ def _invalidate_order_caches(order: Order):
         redis_client.delete(f'wallet_transactions:{order.owner_id}')
         redis_client.delete(f"user_related_orders:{order.owner_id}")
         redis_client.delete(f"user_related_orders:{order.vendor_id}")
-        redis_client.delete(f"user_orders:{order.delivery.rider_id}")
-        redis_client.delete(f"user_orders:{order.delivery.dispatch_id}")
-        redis_client.delete(f"order_by_id:{order.id}")
+
+        if order.delivery:
+            redis_client.delete(f"user_orders:{order.delivery.rider_id}")
+            redis_client.delete(f"user_orders:{order.delivery.dispatch_id}")
+            redis_client.delete(f'wallet_transactions:{order.delivery.dispatch_id}')
+            redis_client.delete(f"order_by_id:{order.id}")
         redis_client.delete(*cache_keys)
     except Exception as e:
         logger.warning(f"Failed to invalidate some order caches: {str(e)}")
@@ -4932,9 +4673,9 @@ async def rider_mark_package_delivered(
         await db.commit()
 
         # === 2. FIRE-AND-FORGET EVERYTHING ELSE ===
-        # asyncio.create_task(
-        #     _run_post_delivery_background_tasks(delivery, current_user)
-        # )
+        asyncio.create_task(
+            _run_post_delivery_background_tasks(delivery, current_user)
+        )
 
         # === 3. RETURN SUCCESS IMMEDIATELY ===
         logger.info(f"Rider {rider_id} marked delivery {delivery_id} as DELIVERED")
@@ -4975,11 +4716,11 @@ async def _run_post_delivery_background_tasks(delivery: Delivery, rider: User):
                     total_deliveries=Profile.total_deliveries + 1
                 )
             )
-            await db.execute(
-                update(User)
-                .where(User.id == delivery.rider_id)
-                .values(has_delivery=False)
-            )
+            # await db.execute(
+            #     update(User)
+            #     .where(User.id == delivery.rider_id)
+            #     .values(has_delivery=False)
+            # )
             await db.commit()
 
 

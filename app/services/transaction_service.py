@@ -1217,7 +1217,6 @@ async def _run_payment_side_effects_once(order: Order, db: AsyncSession, tx_ref:
         # Alert admin
         await _alert_admin_partial_failure(
             order=order,
-            status=order.order_payment_status,
             db=db,
             e=e
         )
@@ -1446,7 +1445,7 @@ async def _process_successful_payment(order: Order, db: AsyncSession, tx_ref: st
     await clear_order_caches(order)
 
 
-async def _alert_admin_partial_failure(order: Order, status: PaymentStatus, db: AsyncSession, error: Exception):
+async def _alert_admin_partial_failure(order: Order, db: AsyncSession, error: Exception):
     """
     CRITICAL: User paid, DB says PAID, but wallet not credited!
     We log this as a FAILED_INTERNAL action so ops can reconcile.
@@ -1454,13 +1453,12 @@ async def _alert_admin_partial_failure(order: Order, status: PaymentStatus, db: 
     log_entry = TransactionLog(
         id=uuid4(),
         vendor_id=order.vendor_id,
-        order_id=None,
+        order_id=order.id,
         amount=order.grand_total,
-        action=TransactionLogAction.WALLET_FUNDING_FAILED_INTERNAL,
-        status=status,
+        action=TransactionLogAction.FAILED,
+        status=order.order_payment_status,
         details={
             "error": str(error),
-            "error_type": error.__class__.__name__,
             "tx_ref": str(order.tx_ref),
             "wallet_id": str(order.owner_id),
             "order_id": order.id,
