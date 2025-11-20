@@ -1434,6 +1434,7 @@ async def _process_successful_payment(order: Order, db: AsyncSession, tx_ref: st
         )
 
         await _send_notifications(db=db, order=order)
+        
 
     # Common: Notify + update order status
     await producer.publish_message(
@@ -1510,7 +1511,7 @@ async def _send_notifications(db: AsyncSession, order: Order):
     rider_token    = token_map.get(order.delivery.rider_id) if order.delivery else None
     vendor_token   = token_map.get(order.vendor_id)
 
-    # Send notifications (you can even parallelize these with gather)
+    # Send notifications
     async with asyncio.TaskGroup() as tg:
         if customer_token:
             tg.create_task(

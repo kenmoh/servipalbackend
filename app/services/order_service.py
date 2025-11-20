@@ -4414,7 +4414,7 @@ async def _process_order_confirmation_side_effects(
                 
                 # 4. INVALIDATE CACHES (non-critical)
                 try:
-                    _invalidate_order_caches(order, customer_id)
+                    _invalidate_order_caches(order)
                     logger.info(f"✓ Caches cleared for order {order_id}")
                 except Exception as e:
                     logger.warning(

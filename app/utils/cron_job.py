@@ -4,9 +4,6 @@ from app.models.models import AuditLog, User
 from app.database.database import async_session
 from app.utils.logger_config import setup_logger
 
-# import logging
-
-# logger = logging.getLogger(__name__)
 logger = setup_logger()
 
 
