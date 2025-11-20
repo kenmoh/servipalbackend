@@ -420,7 +420,6 @@ async def create_package_order(
 
             await _assign_rider_and_update_db(
                 db=db,
-                order_id=order_data.id,
                 delivery_id=delivery_data.id,
                 rider_id=data.rider_id,
             )
@@ -2415,27 +2414,28 @@ def _invalidate_pickup_order_caches(order: Order):
 async def _validate_delivery_acceptance(
     db: AsyncSession,
     order_id: UUID,
-    current_user: User,
+    rider_id: UUID,
     delivery_status: DeliveryStatus,
     order_status: OrderStatus,
 ) -> Order:
     """Validates all preconditions for a rider to accept a delivery."""
-    if current_user.user_type != UserType.RIDER:
+
+    stmt = (
+        select(User.user_type, User.rider_is_suspended_for_order_cancel)
+        .where(User.id == rider_id)
+    )
+    result = await db.execute(stmt)
+    rider = result.first()
+    user_type, rider_is_suspended_for_order_cancel = rider
+    
+    if user_type != UserType.RIDER:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only a rider can accept orders.",
         )
 
-    if (
-        current_user.profile.profile_image is None
-        or not rider.profile.profile_image.profile_image_url
-    ):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Profile image is missing. Please update your profile.",
-        )
 
-    if current_user.rider_is_suspended_for_order_cancel:
+    if rider_is_suspended_for_order_cancel:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Your account is suspended due to too many cancellations.",
@@ -2454,7 +2454,7 @@ async def _validate_delivery_acceptance(
             status_code=status.HTTP_404_NOT_FOUND, detail="Delivery not found."
         )
 
-    if order.delivery.rider_id != current_user.id:
+    if order.delivery.rider_id != rider_id:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Invalid user",
@@ -2468,14 +2468,13 @@ async def _validate_delivery_acceptance(
 
     order.order_status = order_status
     order.delivery.delivery_status = delivery_status
-    order.delivery.dispatch_id = current_user.dispatcher_id
+
 
     return order
 
 
 async def _assign_rider_and_update_db(
     db: AsyncSession,
-    order_id: UUID,  # Pass IDs instead of result rows
     delivery_id: UUID,
     rider_id: UUID,
 ):
@@ -2498,15 +2497,22 @@ async def _assign_rider_and_update_db(
     _rider_id, dispatcher_id, phone_number = rider
 
     # Update the delivery record
-    await db.execute(
-        update(Delivery)
-        .where(Delivery.id == delivery_id)
-        .values(
-            rider_id=_rider_id,
-            dispatch_id=dispatcher_id,
-            rider_phone_number=phone_number,
+    try:
+        await db.execute(
+            update(Delivery)
+            .where(Delivery.id == delivery_id)
+            .values(
+                rider_id=_rider_id,
+                dispatch_id=dispatcher_id,
+                rider_phone_number=phone_number,
+            )
         )
-    )
+    except Exception as e:
+        logger.error(f'Failed to assign rider: {_rider_id}')
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Unable to complete this process. Please try again. {e}",
+        )
 
     # Update the rider's has_delivery status
     await db.execute(update(User).where(User.id == rider_id).values(has_delivery=True))
@@ -2526,14 +2532,20 @@ async def _decline_delivery_order_and_update_db(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Rider not found.",
         )
-
-    order.delivery.rider_id = None
-    order.delivery.dispatch_id = None
-    order.delivery.rider_phone_number = None
-    order.order_status = OrderStatus.CANCELLED
-    order.delivery.delivery_status = DeliveryStatus.CANCELLED
-    db.add(order)
-    db.add(order.delivery)
+    try:
+        order.delivery.rider_id = None
+        order.delivery.dispatch_id = None
+        order.delivery.rider_phone_number = None
+        order.order_status = OrderStatus.CANCELLED
+        order.delivery.delivery_status = DeliveryStatus.CANCELLED
+        db.add(order)
+        db.add(order.delivery)
+    except Exception as e:
+        logger.error(f'Failed to decline delivery: {order.delivery.id}')
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Unable to complete this process. Please try again. {e}",
+        )
 
     await db.execute(
         update(User).where(User.id == rider.id).values(has_delivery=False)
@@ -2544,8 +2556,11 @@ async def _dispatch_post_pickup_tasks(order: Order, rider: User, db: AsyncSessio
     Handles tasks that should occur after the database transaction is committed.
     Uses idempotency keys to prevent duplicate event processing.
     """
-    dispatch_profile = await get_user_profile(order.delivery.dispatch_id, db=db)
-    sender_profile = await get_user_profile(order.owner_id, db=db)
+    # dispatch_profile = await get_user_profile(order.delivery.dispatch_id, db=db)
+    # sender_profile = await get_user_profile(order.owner_id, db=db)
+
+    dispatch_company_name = await get_fullname_or_business_name(db=db, user_id=order.delivery.dispatch_id)
+    sender_name = await get_fullname_or_business_name(db=db, user_id=order.owner_id)
 
     # Use a unique idempotency key based on the order and action
     idempotency_key = f"pickup:{order.id}:{order.delivery.id}"
@@ -2570,7 +2585,7 @@ async def _dispatch_post_pickup_tasks(order: Order, rider: User, db: AsyncSessio
             "idempotency_key": f"{idempotency_key}:update_sender_tx",
             "wallet_id": str(order.owner_id),
             "tx_ref": str(order.tx_ref),
-            "to_user": dispatch_profile.full_name or dispatch_profile.business_name,
+            "to_user": dispatch_company_name,
         },
     )
 
@@ -2616,13 +2631,13 @@ async def _dispatch_post_pickup_tasks(order: Order, rider: User, db: AsyncSessio
         await send_push_notification(
             tokens=[sender_token],
             title="Order Assigned",
-            message=f"Your order has been assigned to {rider.profile.full_name}, {rider.profile.phone_number}",
+            message=f"Your order has been assigned to {sender_name}, {rider.profile.phone_number}",
             navigate_to="/(app)/delivery/orders",
         )
 
 
 async def rider_accept_booking(
-    db: AsyncSession, order_id: UUID, current_user: User
+    db: AsyncSession, order_id: UUID, rider_id: UUID
 ) -> DeliveryStatusUpdateSchema:
     """
     Allows a rider to accept a delivery order.
@@ -2678,7 +2693,7 @@ async def rider_accept_booking(
         order = await _validate_delivery_acceptance(
             db,
             order_id,
-            current_user,
+            rider_id,
             order_status=OrderStatus.ACCEPTED,
             delivery_status=DeliveryStatus.ACCEPTED,
         )
@@ -2939,7 +2954,7 @@ async def _process_pickup_side_effects(order_id: UUID):
         )
 
 async def rider_decline_booking(
-    db: AsyncSession, order_id: UUID, current_user: User
+    db: AsyncSession, order_id: UUID, rider_id: UUId
 ) -> DeliveryStatusUpdateSchema:
     """
     Allows a rider to decline a delivery order.
@@ -2954,7 +2969,7 @@ async def rider_decline_booking(
         order = result.scalar_one()
 
         # 2. Check if rider owns it
-        if order.delivery.rider_id != current_user.id:
+        if order.delivery.rider_id != rider_id:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Invalid rider"
@@ -2962,7 +2977,7 @@ async def rider_decline_booking(
 
         # 3. Decline it
         await _decline_delivery_order_and_update_db(
-            db=db, order=order, rider_id=current_user.id
+            db=db, order=order, rider_id=rider_id
         )
         await db.commit()
 
@@ -3010,6 +3025,7 @@ async def assign_rider_to_existing_delivery_order(
 
     # --- 2. Load rider ---
     rider = await get_user_profile(db=db, user_id=rider_id)
+    
     if not rider:
         raise HTTPException(status_code=404, detail="Rider not found")
 
@@ -3162,7 +3178,7 @@ async def rider_pickup_delivery_order(
         )
 
 async def laundry_pickup(
-    db: AsyncSession, order_id: UUID, current_user: User
+    db: AsyncSession, order_id: UUID, vendor_id: UUID
 ) -> DeliveryStatusUpdateSchema:
     """
     Laundry vendor pickup laundry from client
@@ -3182,46 +3198,53 @@ async def laundry_pickup(
     await db.commit()
     await db.refresh(order)
 
+    async with asyncio.TaskGroup() as tg:
+         # Vendor wallet update (add full amount to escrow)
+        # tg.create_task(
+        #     producer.publish_message(
+        #         service="wallet",
+        #         operation="update_wallet",
+        #         payload={
+        #             "wallet_id": str(order.vendor_id),
+        #             "escrow_change": str(order.grand_total),
+        #             "balance_change": str(0),
+        #         },
+        #     ) 
+        # )
 
-    # Vendor wallet update (add full amount to escrow)
-    await producer.publish_message(
-        service="wallet",
-        operation="update_wallet",
-        payload={
-            "wallet_id": str(order.vendor_id),
-            "escrow_change": str(order.grand_total),
-            "balance_change": str(0),
-        },
-    )
+        tg.create_task(_invalidate_order_caches(order))
 
-    _invalidate_order_caches(order)
-    redis_client.delete(f"order_by_id:{order_id}")
+        tg.create_task(redis_client.delete(f"order_by_id:{order_id}"))
+
+        tg.create_task(
+                ws_service.broadcast_order_status_update(
+                order_id=order.id, new_status=order.order_status
+            )
+        )
 
 
-    await ws_service.broadcast_order_status_update(
-        order_id=order.id, new_status=order.order_status
-    )
-
-    sender_token = await get_user_notification_token(db=db, user_id=order.owner_id)
-
-    if sender_token:
-        await send_push_notification(
-            tokens=[sender_token],
-            title="Vendor Received Laundry",
-            message=f"Laundry picked up by vendor. {current_user.profile.business_name}, {current_user.profile.phone_number}",
-            navigate_to="/(app)/delivery/orders",
+        sender_token = await get_user_notification_token(db=db, user_id=order.owner_id)
+        vendor_name = await get_fullname_or_business_name(db=db, user_id=order.vendor_id)
+        tg.create_task(
+            if sender_token:
+                await send_push_notification(
+                    tokens=[sender_token],
+                    title="Vendor Received Laundry",
+                    message=f"Laundry picked up by vendor. {vendor_name}",
+                    navigate_to="/(app)/delivery/orders",
+                )
         )
 
     return DeliveryStatusUpdateSchema(order_status=order.order_status)
 
 
 async def laundry_returned(
-    db: AsyncSession, order_id: UUID, current_user: User
+    db: AsyncSession, order_id: UUID, vendor_id: UUID
 ) -> DeliveryStatusUpdateSchema:
     result = await db.execute(
         select(Order)
         .where(Order.id == order_id)
-        .where(Order.vendor_id == current_user.id)
+        .where(Order.vendor_id == vendor_id)
         .with_for_update()
     )
     order = result.scalar_one_or_none()
@@ -3351,36 +3374,6 @@ async def _validate_delivery(order: Order, user_id: UUID):
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="An unexpected error occurred while validating the delivery",
-        )
-
-
-async def _update_order_status(order: Order, db: AsyncSession, status: OrderStatus):
-    """
-    Update an order's status with validation and audit logging.
-
-    Args:
-        order: Order instance to update
-        db: Database session
-        status: New OrderStatus value
-
-    Raises:
-        HTTPException: If update fails
-    """
-    try:
-        old_status = order.order_status
-        order.order_status = status
-        db.add(order)
-        await db.commit()
-
-        logger.info(f"Order {order.id} status updated: {old_status} -> {status}")
-
-    except Exception as e:
-        logger.error(
-            f"Failed to update status for order {order.id}: {str(e)}", exc_info=True
-        )
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to update order status",
         )
 
 
@@ -3533,78 +3526,7 @@ async def _send_notifications(order: Order, db: AsyncSession):
             f"Failed to send some notifications for order {order.id}: {str(e)}",
             exc_info=True,
         )
-        # Don't raise exception - notifications shouldn't block the main flow
-
-
-def _invalidate_caches(order: Order, current_user: User):
-    """
-    Invalidate all relevant caches after a delivery confirmation.
-    Uses batch deletion where possible and handles Redis errors gracefully.
-
-    Args:
-        order: Order instance with loaded relationships
-        current_user: User who confirmed the delivery
-
-    Note:
-        Failures are logged but do not halt execution since cache invalidation
-        is not critical to data consistency (cache will expire naturally)
-    """
-    try:
-        # Collect all keys to invalidate
-        cache_keys = [
-            f"{ALL_DELIVERY}",
-            "paid_pending_deliveries",
-            f"user_related_orders:{current_user.id}",
-            f"user_orders:{current_user.id}",
-            f"order_details:{order.id}",
-            f"delivery:{order.delivery.id}",
-            f"order_by_id:{order.id}",
-            f"near_by_riders",
-             redis_client.delete(f'wallet_transactions:{current_user.id}')
-        ]
-
-        # Add vendor-related caches if exists
-        if order.vendor_id:
-            cache_keys.extend(
-                [
-                    f"user_related_orders:{order.vendor_id}",
-                    f"vendor_orders:{order.vendor_id}",
-                     redis_client.delete(f'wallet_transactions:{order.vendor_id}')
-                ]
-            )
-
-        # Add dispatch-related caches
-        if order.delivery.dispatch_id:
-            cache_keys.extend(
-                [
-                    f"user_related_orders:{order.delivery.dispatch_id}",
-                    f"dispatch_orders:{order.delivery.dispatch_id}",
-                     redis_client.delete(f'wallet_transactions:{order.delivery.dispatch_id}')
-                ]
-            )
-
-        # Add rider-related caches
-        if order.delivery.rider_id:
-            cache_keys.extend(
-                [
-                    f"user_related_orders:{order.delivery.rider_id}",
-                    f"rider_orders:{order.delivery.rider_id}",
-                ]
-            )
-
-        # Batch delete all keys
-        deleted = redis_client.delete(*cache_keys)
-
-        logger.info(
-            f"Successfully invalidated {deleted} cache keys for order {order.id}"
-        )
-
-    except Exception as e:
-        logger.warning(
-            f"Failed to invalidate some caches for order {order.id}: {str(e)}. "
-            "This is non-critical and caches will expire naturally.",
-            exc_info=True,
-        )
+       
 
 
 async def sender_confirm_package_received(
@@ -4035,7 +3957,7 @@ async def _order_settlement(order: Order):
                 payload={
                     "wallet_id": str(order.vendor_id),
                     "tx_ref": str(order.tx_ref),
-                    "payment_status": order.order_payment_status.value,
+                    "payment_status": order.order_payment_status,
                     "idempotency_key": transaction_idempotency_key,
                 },
             )
@@ -4196,15 +4118,18 @@ async def _settle_dispatch(order: Order, base_idempotency_key: str, db: AsyncSes
             "payment_status": PaymentStatus.COMPLETED,
         },
     )
+    logger.info(f"✓ Dispatch settlement published for order {order.id}")
 
+    # Release rider (set has_delivery to false)
+    logger.info(f"✓ Releasing rider:{order.delivery.rider_id}")
     await db.execute(
             update(User)
             .where(User.id == order.delivery.rider_id)
             .values(has_delivery=False)
         )
     await db.commit()
+    logger.info(f"✓ Rider released")
     
-    logger.info(f"✓ Dispatch settlement published for order {order.id}")
 
 
 async def _create_audit_log(order: Order):
@@ -5372,6 +5297,21 @@ def format_delivery_response(
     }
 
     return DeliveryResponse(order=order_data, delivery=delivery_data, distance=distance)
+
+
+async def get_fullname_or_business_name(db: AsyncSession, user_id: UUID):
+    stmt = (
+        select(Profile.full_name, Profile.business_name)
+        .where(Profile.user_id == user_id)
+    )
+    result = await db.execute(stmt)
+    profile = result.first()
+
+    full_name, business_name = profile
+    name = full_name or business_name
+
+    return name
+
 
 
 async def get_user_profile(user_id: UUID, db: AsyncSession):
