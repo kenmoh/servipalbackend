@@ -4589,12 +4589,12 @@ def _invalidate_order_caches(order: Order):
         redis_client.delete(f'wallet_transactions:{order.owner_id}')
         redis_client.delete(f"user_related_orders:{order.owner_id}")
         redis_client.delete(f"user_related_orders:{order.vendor_id}")
+        redis_client.delete(f'order_by_id:{order.id}')
 
         if order.delivery:
             redis_client.delete(f"user_orders:{order.delivery.rider_id}")
             redis_client.delete(f"user_orders:{order.delivery.dispatch_id}")
             redis_client.delete(f'wallet_transactions:{order.delivery.dispatch_id}')
-            redis_client.delete(f"order_by_id:{order.id}")
         redis_client.delete(*cache_keys)
     except Exception as e:
         logger.warning(f"Failed to invalidate some order caches: {str(e)}")
