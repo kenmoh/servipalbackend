@@ -17,6 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.auth.auth import get_current_user
 from app.database.database import get_db
 from app.models.models import Transaction, User, Wallet, Order
+from pydantic import BaseModel
 from app.schemas.marketplace_schemas import (
     TopUpRequestSchema,
     TransferDetailResponseSchema,
@@ -32,6 +33,7 @@ from app.schemas.transaction_schema import (
 )
 from app.schemas.status_schema import TransactionType, PaymentStatus, PaymentMethod
 from app.utils.utils import get_fund_wallet_payment_link, get_payment_link, verify_transaction_tx_ref
+from app.auth.auth import get_current_user_with_few_data
 
 
 router = APIRouter(prefix="/api/payment", tags=["Payments/Transations"])
