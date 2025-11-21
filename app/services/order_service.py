@@ -2954,7 +2954,7 @@ async def _process_pickup_side_effects(order_id: UUID):
         )
 
 async def rider_decline_booking(
-    db: AsyncSession, order_id: UUID, rider_id: UUId
+    db: AsyncSession, order_id: UUID, rider_id: UUID
 ) -> DeliveryStatusUpdateSchema:
     """
     Allows a rider to decline a delivery order.
