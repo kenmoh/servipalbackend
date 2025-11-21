@@ -2656,7 +2656,7 @@ async def rider_accept_booking(
         HTTPException: With appropriate status code and message
     """
     # 1. Endpoint-level idempotency check
-    endpoint_idempotency_key = f"rider_accept:{order_id}:{current_user.id}"
+    endpoint_idempotency_key = f"rider_accept:{order_id}:{user_id}"
     cache_key = f"idempotency:{endpoint_idempotency_key}"
     
     is_first_call = redis_client.setnx(cache_key, "processing")
