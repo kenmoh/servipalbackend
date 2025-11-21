@@ -2747,7 +2747,6 @@ async def _process_delivery_acceptance_side_effects(order_id, rider_id, order):
 
     try:
       
-
         logger.info(f"Rider accepted order {order_id}. Funds will move to escrow at pickup.")
 
         _invalidate_order_caches(order=order)
