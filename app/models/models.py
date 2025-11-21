@@ -902,6 +902,7 @@ class TransactionLog(Base):
 
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
     vendor_id: Mapped[UUID]
+    user_id: Mapped[UUID] = mapped_column(nullable=True)
     order_id: Mapped[UUID]
     amount: Mapped[Decimal]
     action: Mapped[TransactionLogAction] = mapped_column(nullable=True)

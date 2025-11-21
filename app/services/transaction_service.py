@@ -1241,6 +1241,7 @@ async def _create_payment_audit_log_once(order: Order):
             operation="create_transaction_log",
             payload={
                 "order_id": str(order.id),
+                "user_id": str(order.owner_id),
                 "vendor_id": str(order.vendor_id) if order.vendor_id else None,
                 "amount": str(order.grand_total),
                 "action": TransactionLogAction.RECEIVED,
@@ -1731,6 +1732,13 @@ async def _process_successful_payment_side_effects(order: Order, db: AsyncSessio
     )
 
     # STOCK DEDUCTION (already safe with rowcount check)
+    await _update_stock(order)
+
+    # CACHE CLEAR
+    _clear_marketplace_cache()
+
+
+async def _update_stock(order: Order):
     if order.order_items:
         item = order.order_items[0].item
         qty = order.order_items[0].quantity
@@ -1739,10 +1747,12 @@ async def _process_successful_payment_side_effects(order: Order, db: AsyncSessio
             .where(Item.id == item.id, Item.stock >= qty)
             .values(stock=Item.stock - qty)
         )
-        if result.rowcount == 0:
-            logger.error(f"Stock deduction failed for item {item.id}")
+    if result.rowcount == 0:
+        logger.error(f"Stock deduction failed for item {item.id}")
 
-    # CACHE CLEAR
+
+def _clear_marketplace_cache():
+
     redis_client.delete(f"marketplace_user_orders:{order.owner_id}")
     redis_client.delete(f"marketplace_user_orders:{order.vendor_id}")
     redis_client.delete(f"marketplace_order_details:{order.id}")
@@ -1752,7 +1762,7 @@ async def _process_successful_payment_side_effects(order: Order, db: AsyncSessio
 # ———————— Optional: Alert on partial failure ————————
 async def trigger_payment_reconciliation_alert(order: Order, error: Exception):
     # Send to Slack, create DB ticket, email admin, etc.
-    pass
+    await _create_payment_audit_log_once(order=order)
 
 
 async def pay_with_wallet(
@@ -2088,15 +2098,20 @@ async def initiate_bank_transfer(
         httpx.RequestError: If there's a network error
     """
 
-    result = await db.execute(select(Order).where(Order.id == order_id))
+    result = await db.execute(select(Order.id, Order.total_price).where(Order.id == order_id))
 
-    order = result.scalar_one_or_none()
+    order = result.first()
+
+    if not order:
+        raise HTTPException(status_code=404, detail="Order not found")
+
+    _id, total_price
 
     payload = {
-        "amount": str(order.total_price),
+        "amount": str(total_price),
         "email": current_user.email,
         "currency": "NGN",
-        "tx_ref": str(order.id),
+        "tx_ref": str(_id),
     }
 
     headers = {
@@ -2214,7 +2229,7 @@ async def make_withdrawal(db: AsyncSession, current_user: User) -> WithdrawalShe
             bank_code=user.profile.bank_name,
             amount=str(withdrawal_amount),
             account_number=user.profile.bank_account_number,
-            beneficiary_name=user.profile.account_holder_namev
+            beneficiary_name=user.profile.account_holder_name
             or user.profile.business_name
             or user.profile.full_name,
             charge=charge,
@@ -2253,12 +2268,12 @@ async def make_withdrawal(db: AsyncSession, current_user: User) -> WithdrawalShe
         )
 
 
-async def bank_payment_transfer_callback_old(request: Request, db: AsyncSession):
+async def bank_payment_transfer_callback(request: Request, db: AsyncSession):
     payload = await request.json()
     event = payload.get("event")
     data = payload.get("data", {})
 
-    # Optional: verify webhook signature for production
+    # verify webhook signature
     secret_hash = settings.FLW_SECRET_HASH
     signature = request.headers.get("verif-hash")
     # if signature is None or signature != settings.FLW_SECRET_HASH:
@@ -2284,9 +2299,8 @@ async def bank_payment_transfer_callback_old(request: Request, db: AsyncSession)
         order.order_payment_status = PaymentStatus.PAID
         await db.commit()
 
-        # Optionally, send notifications, update caches, etc.
+        await _send_notifications(db=db, order=order)
 
         return {"status": "success", "order_id": order.id}
 
     return {"status": "ignored", "reason": "Not a successful charge.completed event"}
-

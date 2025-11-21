@@ -3177,6 +3177,50 @@ async def rider_pickup_delivery_order(
             detail="An unexpected error occurred while processing the pickup.",
         )
 
+async def _process_laundry_pickup_side_effects(order_id: UUID):
+    """
+    Background task for laundry pickup side effects.
+    """
+    try:
+        async for db in get_db():
+            try:
+                order = await db.scalar(
+                    select(Order).where(Order.id == order_id)
+                )
+                if not order:
+                    return
+
+                # 1. Invalidate caches
+                await _invalidate_order_caches(order)
+                redis_client.delete(f"order_by_id:{order_id}")
+
+                # 2. Broadcast update
+                await ws_service.broadcast_order_status_update(
+                    order_id=order.id, new_status=order.order_status
+                )
+
+                # 3. Send notification
+                sender_token = await get_user_notification_token(db=db, user_id=order.owner_id)
+                vendor_name = await get_fullname_or_business_name(db=db, user_id=order.vendor_id)
+
+                if sender_token:
+                    await send_push_notification(
+                        tokens=[sender_token],
+                        title="Vendor Received Laundry",
+                        message=f"Laundry picked up by vendor. {vendor_name}",
+                        navigate_to="/(app)/delivery/orders",
+                    )
+                
+                logger.info(f"Background: Laundry pickup side effects completed for order {order_id}")
+
+            except Exception as e:
+                logger.error(f"Error in laundry pickup background task: {e}", exc_info=True)
+            finally:
+                break
+    except Exception as e:
+        logger.error(f"Failed to get DB session for laundry pickup background task: {e}")
+
+
 async def laundry_pickup(
     db: AsyncSession, order_id: UUID, vendor_id: UUID
 ) -> DeliveryStatusUpdateSchema:
@@ -3198,44 +3242,52 @@ async def laundry_pickup(
     await db.commit()
     await db.refresh(order)
 
-    async with asyncio.TaskGroup() as tg:
-         # Vendor wallet update (add full amount to escrow)
-        # tg.create_task(
-        #     producer.publish_message(
-        #         service="wallet",
-        #         operation="update_wallet",
-        #         payload={
-        #             "wallet_id": str(order.vendor_id),
-        #             "escrow_change": str(order.grand_total),
-        #             "balance_change": str(0),
-        #         },
-        #     ) 
-        # )
-
-        tg.create_task(_invalidate_order_caches(order))
-
-        tg.create_task(redis_client.delete(f"order_by_id:{order_id}"))
-
-        tg.create_task(
-                ws_service.broadcast_order_status_update(
-                order_id=order.id, new_status=order.order_status
-            )
-        )
-
-
-        sender_token = await get_user_notification_token(db=db, user_id=order.owner_id)
-        vendor_name = await get_fullname_or_business_name(db=db, user_id=order.vendor_id)
-        tg.create_task(
-            if sender_token:
-                await send_push_notification(
-                    tokens=[sender_token],
-                    title="Vendor Received Laundry",
-                    message=f"Laundry picked up by vendor. {vendor_name}",
-                    navigate_to="/(app)/delivery/orders",
-                )
-        )
+    # Fire background tasks
+    asyncio.create_task(_process_laundry_pickup_side_effects(order.id))
 
     return DeliveryStatusUpdateSchema(order_status=order.order_status)
+
+
+async def _process_laundry_returned_side_effects(order_id: UUID):
+    """
+    Background task for laundry returned side effects.
+    """
+    try:
+        async for db in get_db():
+            try:
+                order = await db.scalar(
+                    select(Order).where(Order.id == order_id)
+                )
+                if not order:
+                    return
+
+                # 1. Invalidate caches
+                await _invalidate_order_caches(order)
+
+                # 2. Broadcast update
+                await ws_service.broadcast_order_status_update(
+                    order_id=order.id, new_status=order.order_status
+                )
+
+                # 3. Send notification
+                sender_token = await get_user_notification_token(db=db, user_id=order.owner_id)
+
+                if sender_token:
+                    await send_push_notification(
+                        tokens=[sender_token],
+                        title="Order Delivered",
+                        message=f"Laundry returned by vendor. Please confirm before marking as received.",
+                        navigate_to="/(app)/delivery/orders",
+                    )
+                
+                logger.info(f"Background: Laundry returned side effects completed for order {order_id}")
+
+            except Exception as e:
+                logger.error(f"Error in laundry returned background task: {e}", exc_info=True)
+            finally:
+                break
+    except Exception as e:
+        logger.error(f"Failed to get DB session for laundry returned background task: {e}")
 
 
 async def laundry_returned(
@@ -3263,21 +3315,8 @@ async def laundry_returned(
     await db.commit()
     await db.refresh(order)
 
-    _invalidate_order_caches(order)
-
-    await ws_service.broadcast_order_status_update(
-        order_id=order.id, new_status=order.order_status
-    )
-
-    sender_token = await get_user_notification_token(db=db, user_id=order.owner_id)
-
-    if sender_token:
-        await send_push_notification(
-            tokens=[sender_token],
-            title="Order Delivered",
-            message=f"Laundry returned by vendor. Please confirm before marking as received.",
-            navigate_to="/(app)/delivery/orders",
-        )
+    # Fire background tasks
+    asyncio.create_task(_process_laundry_returned_side_effects(order.id))
 
     return DeliveryStatusUpdateSchema(order_status=order.order_status)
 
@@ -4139,6 +4178,7 @@ async def _create_audit_log(order: Order):
                 payload={
                     "vendor_id": str(order.vendor_id),
                     "order_id": str(order.id),
+                    "user_id": str(order.owner_id),
                     "amount": str(order.grand_total - order.amount_due_vendor),
                     "action": TransactionLogAction.RECEIVED,
                     "status": order.order_payment_status,
@@ -5719,5 +5759,5 @@ async def cancel_order_old(
         logger.error(f"Error cancelling order {order_id}: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to cancel order",
+            detail=f"Failed to cancel order: {e}",
         )

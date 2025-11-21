@@ -5,7 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from jose import JWTError, jwt
 from datetime import datetime, timedelta
 from sqlalchemy import select
-from sqlalchemy.orm import joinedload
+from sqlalchemy.orm import joinedload, load_only
 from pydantic import EmailStr
 
 from app.models.models import User, RefreshToken, Session
@@ -138,6 +138,54 @@ async def get_current_user(
         session_obj.is_active = True
     if sessions:
         await db.commit()
+
+    return user
+
+async def get_current_user_with_few_data(
+    token: str = Depends(oauth2_scheme), db: AsyncSession = Depends(get_db)
+) -> User:
+    """
+    Lightweight version of get_current_user that only loads essential user data.
+    Useful for performance-critical endpoints.
+    """
+    credentials_exception = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Could not validate credentials",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+
+    try:
+        payload = jwt.decode(
+            token, settings.JWT_SECRET_KEY, algorithms=[settings.JWT_ALGORITHM]
+        )
+        user_id: str = payload.get("sub")
+        if user_id is None:
+            raise credentials_exception
+    except JWTError:
+        raise credentials_exception
+
+    # Load only specific columns to reduce overhead
+    query = (
+        select(User)
+        .where(User.id == user_id)
+        .options(
+            load_only(
+                User.id,
+                User.email,
+                User.dispatcher_id,
+                User.has_delivery,
+                User.user_type,
+                User.is_blocked,
+                User.account_status
+            )
+        )
+    )
+    
+    result = await db.execute(query)
+    user = result.scalar_one_or_none()
+
+    if user is None or user.is_blocked:
+        raise credentials_exception
 
     return user
 

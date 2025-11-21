@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, status, HTTPException, UploadFile, File,
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth.auth import get_db, get_current_user
+from app.auth.auth import get_db, get_current_user, get_current_user_with_few_data
 from app.models.models import Order, User
 from app.schemas.delivery_schemas import (
     DeliveryResponse,
@@ -167,7 +167,7 @@ async def assign_rider_to_existing_delivery_order(
     delivery_id: UUID,
     rider_id: UUID,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user_with_few_data),
 ) -> DeliveryStatusUpdateSchema:
     try:
         return await order_service.assign_rider_to_existing_delivery_order(
@@ -186,6 +186,7 @@ async def assign_rider_to_existing_delivery_order(
 async def sender_confirm_package_received(
     order_id: UUID,
     sender_id: UUID,
+    current_user: User = Depends(get_current_user_with_few_data),
     db: AsyncSession = Depends(get_db),
 
 ) -> DeliveryStatusUpdateSchema:
@@ -205,6 +206,7 @@ async def sender_confirm_package_received(
 async def vendor_mark_order_delivered(
     order_id: UUID,
     vendor_id: UUID,
+    current_user: User = Depends(get_current_user_with_few_data),
     db: AsyncSession = Depends(get_db),
 ) -> DeliveryStatusUpdateSchema:
     """
@@ -221,6 +223,7 @@ async def vendor_mark_order_delivered(
 async def rider_accept_booking(
     order_id: UUID,
     rider_id: UUID,
+    current_user: User = Depends(get_current_user_with_few_data),
     db: AsyncSession = Depends(get_db),
     
 ) -> DeliveryStatusUpdateSchema:
@@ -236,6 +239,7 @@ async def rider_accept_booking(
 async def rider_decline_booking(
     order_id: UUID,
     rider_id: UUID,
+    current_user: User = Depends(get_current_user_with_few_data),
     db: AsyncSession = Depends(get_db),
     
 ) -> DeliveryStatusUpdateSchema:
@@ -251,6 +255,7 @@ async def rider_decline_booking(
 async def rider_pickup_delivery_order(
     order_id: UUID,
     rider_id: UUID,
+    current_user: User = Depends(get_current_user_with_few_data),
     db: AsyncSession = Depends(get_db),
     
 ) -> DeliveryStatusUpdateSchema:
@@ -266,6 +271,7 @@ async def rider_pickup_delivery_order(
 async def laundry_pickup(
     order_id: UUID,
     vendor_id: UUID,
+    current_user: User = Depends(get_current_user_with_few_data),
     db: AsyncSession = Depends(get_db),
    
 ) -> DeliveryStatusUpdateSchema:
@@ -281,7 +287,9 @@ async def laundry_pickup(
 async def laundry_returned(
     order_id: UUID,
     vendor_id: UUID,
+    current_user: User = Depends(get_current_user_with_few_data),
     db: AsyncSession = Depends(get_db),
+
 ) -> DeliveryStatusUpdateSchema:
     try:
         return await order_service.laundry_returned(

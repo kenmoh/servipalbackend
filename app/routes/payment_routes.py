@@ -31,10 +31,15 @@ from app.schemas.transaction_schema import (
     TransactionResponseSchema,
 )
 from app.schemas.status_schema import TransactionType, PaymentStatus, PaymentMethod
-from app.utils.utils import get_fund_wallet_payment_link, get_payment_link
+from app.utils.utils import get_fund_wallet_payment_link, get_payment_link, verify_transaction_tx_ref
 
 
 router = APIRouter(prefix="/api/payment", tags=["Payments/Transations"])
+
+class TransferResponse(BaseModel):
+    reason: str
+    status: str
+    order_id: UUID | None = None
 
 
 @router.get(
@@ -211,7 +216,7 @@ async def fund_wallet(
 async def init_bank_transfer(
     order_id: UUID,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user_with_few_data),
 ) -> TransferDetailResponseSchema:
     return await transaction_service.initiate_bank_transfer(
         db=db, current_user=current_user, order_id=order_id
@@ -232,16 +237,22 @@ async def pay_with_wallet(
     )
 
 
-@router.post(
-    "/bank-transfer-callback", include_in_schema=False, status_code=status.HTTP_200_OK
+@router.get(
+    "/verify-bank-transfer", include_in_schema=False, status_code=status.HTTP_200_OK
 )
 async def bank_transfer_callback(
-    request: Request,
-    db: AsyncSession = Depends(get_db),
-):
-    return await transaction_service.bank_payment_transfer_callback(
-        request=request, db=db
-    )
+    tx_ref: UUID,
+) -> dict:
+
+    verify_tranx =  await verify_transaction_tx_ref(tx_ref=tx_ref)
+    verify_data = verify_tranx.get("data", {})
+    if not verify_tranx or not isinstance(verify_tranx, dict):
+        logger.error(f"Invalid verification response for {tx_ref}")
+        raise HTTPException(status_code=502, detail="Payment gateway error")
+
+    verify_status = verify_data.get("status")
+
+    return verify_status
 
 
 @router.put(

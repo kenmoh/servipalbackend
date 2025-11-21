@@ -46,6 +46,7 @@ class AuditQueueConsumer(BaseQueueConsumer):
             try:
                 async with db.begin():
                     vendor_id = UUID(payload.get("vendor_id"))
+                    user_id = UUID(payload.get("user_id"))
                     order_id = UUID(payload.get("order_id"))
                     amount = Decimal(payload.get("amount"))
                     action = payload.get("action")
@@ -55,6 +56,7 @@ class AuditQueueConsumer(BaseQueueConsumer):
                     logger.info(
                         f"Creating transaction log: order_id={order_id}, "
                         f"vendor_id={vendor_id}, action={action}"
+                        f"user_id={user_id}, action={action}"
                     )
 
                     # Check if log already exists
@@ -75,6 +77,7 @@ class AuditQueueConsumer(BaseQueueConsumer):
                     transaction_log = TransactionLog(
                         vendor_id=vendor_id,
                         order_id=order_id,
+                        user_id=user_id,
                         amount=amount,
                         action=action,
                         status=status,
