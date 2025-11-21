@@ -2060,6 +2060,12 @@ async def pay_with_wallet(
             redis_client.delete("paid_pending_deliveries")
             redis_client.delete("orders")
             redis_client.delete(f"order_by_id:{order.id}")
+            if order.delivery:
+                redis_client.delete(f"user_related_orders:{order.delivery.dispatch_id}")
+                redis_client.delete(f"user_related_orders:{order.delivery.rider_id}")
+                redis_client.delete(f"user_orders:{order.delivery.dispatch_id}")
+                redis_client.delete(f"user_orders:{oorder.delivery.rider_id}")
+
         except Exception as cache_error:
             logger.warning(f"Failed to clear cache: {str(cache_error)}")
 
