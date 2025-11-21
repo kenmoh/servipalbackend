@@ -2715,6 +2715,7 @@ async def rider_accept_booking(
             _process_delivery_acceptance_side_effects(
                 order_id=order.id,
                 rider_id=rider_id,
+                order=order
             )
         )
         
@@ -2740,7 +2741,7 @@ async def rider_accept_booking(
         )
 
 
-async def _process_delivery_acceptance_side_effects(order_id, rider_id):
+async def _process_delivery_acceptance_side_effects(order_id, rider_id, order=order):
     endpoint_idempotency_key = f"rider_accept:{order_id}:{rider_id}"
     cache_key = f"idempotency:{endpoint_idempotency_key}"
 
