@@ -603,7 +603,7 @@ async def _calculate_order_costs(
     amount_due_vendor = await calculate_amount_due_vendor(
         db=db,
         total_price=total_price,
-        delivery_charge=vendor_pickup_dropoff_charge,
+        pickup_dropoff_fee=vendor_pickup_dropoff_charge,
     )
 
     return (
