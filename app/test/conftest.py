@@ -405,6 +405,10 @@ async def create_charge_and_commission(async_db: AsyncSession):
     await async_db.refresh(charge)
 
     return charge
+
+
+@pytest_asyncio.fixture
+async def restaurant_vendor(async_db: AsyncSession) -> User:
     """Create a restaurant vendor user for testing."""
     unique_id = str(uuid.uuid4())[:8]
     user = User(

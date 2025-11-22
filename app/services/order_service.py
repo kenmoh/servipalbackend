@@ -602,8 +602,8 @@ async def _calculate_order_costs(
     # 5. Calculate vendor commission
     amount_due_vendor = await calculate_amount_due_vendor(
         db=db,
-        total_price=total_price,
-        pickup_dropoff_fee=vendor_pickup_dropoff_charge,
+        total_price=final_amount,
+        # pickup_dropoff_fee=vendor_pickup_dropoff_charge,
     )
 
     return (
@@ -4654,7 +4654,7 @@ async def rider_mark_package_delivered(
 
         # === 2. FIRE-AND-FORGET EVERYTHING ELSE ===
         asyncio.create_task(
-            _run_post_delivery_background_tasks(delivery, current_user)
+            _run_post_delivery_background_tasks(delivery)
         )
 
         # === 3. RETURN SUCCESS IMMEDIATELY ===
@@ -4674,7 +4674,7 @@ async def rider_mark_package_delivered(
         raise HTTPException(500, "Something went wrong")
 
 
-async def _run_post_delivery_background_tasks(delivery: Delivery, rider: User):
+async def _run_post_delivery_background_tasks(delivery: Delivery):
     """All non-critical operations after marking delivered"""
     try:
         # 1. Notifications + WebSocket
@@ -5220,7 +5220,7 @@ async def calculate_amount_due_dispatch(
 async def calculate_amount_due_vendor(
     db: AsyncSession,
     total_price: Decimal,
-    pickup_dropoff_fee: Decimal = Decimal("0.00"),
+    # pickup_dropoff_fee: Decimal = Decimal("0.00"),
 ) -> Decimal:
     """
     Calculate the amount due to vendor after platform commission.
@@ -5234,13 +5234,13 @@ async def calculate_amount_due_vendor(
         Amount due to vendor after commission
     """
     # Add pickup/dropoff fee to total
-    total_with_fees = total_price + pickup_dropoff_fee
+    # total_with_fees = total_price + pickup_dropoff_fee
 
     # Get platform commission
     charge = await get_charges(db)
 
     # Calculate vendor's amount after commission
-    commission_amount = total_with_fees * charge.food_laundry_commission_percentage
+    commission_amount = total_price * charge.food_laundry_commission_percentage
     amount_due_vendor = total_with_fees - commission_amount
 
     return amount_due_vendor
@@ -5281,7 +5281,7 @@ async def fetch_wallet(db: AsyncSession, user_id: UUID) -> WalletRespose:
 
 
 def format_delivery_response(
-    order: Order, distance: Optional[float] = None, delivery: Optional[Delivery] = None
+    order: Order, amount_due_vendor: Decimal, distance: Optional[float] = None, delivery: Optional[Delivery] = None
 ) -> DeliveryResponse:
     # Format order items with proper image structure
 

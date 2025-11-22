@@ -23,7 +23,7 @@ from app.models.models import (
 from app.services.auth_service import create_new_rider, register_user
 from app.services.order_service import (
     create_package_order,
-    order_food_or_request_laundy_service,
+    create_food_or_laundry_order,
 )
 from app.schemas.user_schemas import CreateUserSchema, RiderCreate
 from app.schemas.order_schema import (
