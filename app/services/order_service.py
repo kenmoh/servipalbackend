@@ -4172,25 +4172,40 @@ async def _settle_dispatch(order: Order, base_idempotency_key: str, db: AsyncSes
 
 
 async def _create_audit_log(order: Order):
+    if order.order_type == OrderType.PACKAGE:
+        commission = order.delivery.delivery_fee - order.delivery.amount_due_dispatch
+        amount = str(commission)
+        details = {
+            "order_type": order.order_type,
+            "order_number": order.order_number,
+            "delivery_fee": amount,
+            "amount_due_dispatch": str(order.delivery.amount_due_dispatch) if order.delivery else "0",
+            "commission": str(commission),
+        }
+    else:
+        commission = order.grand_total - order.amount_due_vendor
+        amount = str(commission)
+        details = {
+            "order_type": order.order_type,
+            "order_number": order.order_number,
+            "amount_due_vendor": str(order.amount_due_vendor),
+            "total_amount": str(order.grand_total),
+            "commission": str(commission),
+        }
+    
     await producer.publish_message(
-                service="audit",
-                operation="create_transaction_log",
-                payload={
-                    "vendor_id": str(order.vendor_id),
-                    "order_id": str(order.id),
-                    "user_id": str(order.owner_id),
-                    "amount": str(order.grand_total - order.amount_due_vendor),
-                    "action": TransactionLogAction.RECEIVED,
-                    "status": order.order_payment_status,
-                    "details": {
-                        "order_type": order.order_type,
-                        "order_number": order.order_number,
-                        "amount_due_vendor": str(order.amount_due_vendor),
-                        "total_amount": str(order.grand_total),
-                        "commission": str(order.grand_total - order.amount_due_vendor),
-                    },
-                },
-            )
+        service="audit",
+        operation="create_transaction_log",
+        payload={
+            "vendor_id": str(order.vendor_id) if order.vendor_id else None,
+            "order_id": str(order.id),
+            "user_id": str(order.owner_id),
+            "amount": amount,
+            "action": TransactionLogAction.RECEIVED,
+            "status": order.order_payment_status,
+            "details": details,
+        },
+    )
 
 
 async def _package_settlement(order: Order, db: AsyncSession):

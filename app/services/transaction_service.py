@@ -1112,6 +1112,11 @@ async def order_payment_callback(request: Request, db: AsyncSession):
         result_locked = await db.execute(
             select(Order)
             .where(Order.id == order.id)
+            .options(
+                selectinload(Order.delivery),
+                selectinload(Order.owner).selectinload(User.profile),
+                selectinload(Order.vendor).selectinload(User.profile),
+            )
             .with_for_update()
         )
         order_locked = result_locked.scalar_one()
