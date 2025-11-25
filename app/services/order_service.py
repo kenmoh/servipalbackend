@@ -2448,7 +2448,7 @@ async def _validate_and_update_delivery_acceptance(
         order_update AS (
             UPDATE orders
             SET 
-                order_status = :new_order_status,
+                order_status = :order_status,
                 updated_at = NOW()
             FROM validation v
             WHERE orders.id = v.order_id
@@ -2461,7 +2461,7 @@ async def _validate_and_update_delivery_acceptance(
         delivery_update AS (
             UPDATE deliveries
             SET 
-                delivery_status = :new_delivery_status,
+                delivery_status = :delivery_status,
                 updated_at = NOW()
             FROM validation v, order_update ou
             WHERE deliveries.order_id = ou.id
