@@ -5,7 +5,7 @@ from stat import ST_MTIME
 from typing import Optional
 from unittest import result
 import uuid
-from sqlalchemy import func, or_, and_, select, update, insert
+from sqlalchemy import func, or_, and_, select, update, insert, text
 
 from fastapi import UploadFile
 from app.ws_manager.ws_manager import manager
