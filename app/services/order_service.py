@@ -2879,7 +2879,7 @@ async def rider_accept_booking(
         # 5. FIRE BACKGROUND TASKS (non-blocking)
         asyncio.create_task(
             _process_delivery_acceptance_side_effects(
-                order_id=order.id,
+                order_id=order_id,
                 rider_id=rider_id,
                 dispatch_id=dispatch_id,
                 owner_id=owner_id,
