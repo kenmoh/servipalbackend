@@ -2530,7 +2530,7 @@ async def _handle_validation_failure(
     
     user_type, is_suspended, order_exists, delivery_exists, delivery_rider_id, delivery_status = row
     
-    if user_type != UserType.RIDER.value:
+    if user_type != UserType.RIDER:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only a rider can accept orders.",
@@ -2862,7 +2862,7 @@ async def rider_accept_booking(
         # )
 
        
-        order_id, rider_id, owner_id, dispatch_id, order_status = await_validate_and_update_delivery_acceptance(db, order_id, rider_id)
+        order_id, rider_id, owner_id, dispatch_id, order_status = await _validate_and_update_delivery_acceptance(db, order_id, rider_id)
 
         # 3. COMMIT IMMEDIATELY (critical operation only)
         # await db.commit()
@@ -5482,7 +5482,7 @@ async def fetch_wallet(db: AsyncSession, user_id: UUID) -> WalletRespose:
 
 
 def format_delivery_response(
-    order: Order, amount_due_vendor: Decimal, distance: Optional[float] = None, delivery: Optional[Delivery] = None
+    order: Order, amount_due_vendor: Decimal = None, distance: Optional[float] = None, delivery: Optional[Delivery] = None
 ) -> DeliveryResponse:
     # Format order items with proper image structure
 
@@ -5545,7 +5545,7 @@ def format_delivery_response(
         "total_price": str(order.total_price),
         "order_payment_status": order.order_payment_status.value,
         "order_status": order.order_status,
-        "amount_due_vendor": str(order.amount_due_vendor),
+        "amount_due_vendor": str(order.amount_due_vendor) or None,
         "payment_link": order.payment_link or "",
         "order_items": order_items,
         "created_at": order.created_at.isoformat(),
