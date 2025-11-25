@@ -2411,6 +2411,162 @@ def _invalidate_pickup_order_caches(order: Order):
             continue 
 
 
+async def _validate_and_update_delivery_acceptance(
+    db: AsyncSession,
+    order_id: UUID,
+    rider_id: UUID,
+) -> DeliveryStatus:
+    """
+    Validates and updates in a SINGLE optimized query using CTE.
+    Returns the new delivery status.
+    
+    This approach:
+    1. Validates all conditions in the WHERE clause
+    2. Updates both tables atomically
+    3. Returns the result
+    All in ONE database round-trip!
+    """
+    
+    # Use a CTE (Common Table Expression) to validate and update in one shot
+    update_stmt = """
+        WITH validation AS (
+            SELECT 
+                o.id as order_id,
+                o.owner_id,
+                d.id as delivery_id,
+                u.user_type,
+                u.rider_is_suspended_for_order_cancel,
+                d.delivery_status as current_delivery_status,
+                d.rider_id,
+                d.dispatch_id
+            FROM orders o
+            INNER JOIN deliveries d ON d.order_id = o.id
+            INNER JOIN users u ON u.id = :rider_id
+            WHERE o.id = :order_id
+            FOR UPDATE OF o, d  -- Lock both rows
+        ),
+        order_update AS (
+            UPDATE orders
+            SET 
+                order_status = :new_order_status,
+                updated_at = NOW()
+            FROM validation v
+            WHERE orders.id = v.order_id
+                AND v.user_type = :rider_type
+                AND v.rider_is_suspended_for_order_cancel = FALSE
+                AND v.rider_id = :rider_id
+                AND v.current_delivery_status = :pending_status
+            RETURNING orders.id
+        ),
+        delivery_update AS (
+            UPDATE deliveries
+            SET 
+                delivery_status = :new_delivery_status,
+                updated_at = NOW()
+            FROM validation v, order_update ou
+            WHERE deliveries.order_id = ou.id
+            RETURNING deliveries.delivery_status
+        )
+        SELECT delivery_status FROM delivery_update
+    """
+    
+    result = await db.execute(
+        text(update_stmt),
+        {
+            "order_id": order_id,
+            "rider_id": rider_id,
+            "owner_id": owner_id,
+            "dispatch_id": dispatch_id,
+            "order_status": OrderStatus.ACCEPTED,
+            "delivery_status": DeliveryStatus.ACCEPTED,
+            "user_type": UserType.RIDER,
+            "pending_status": DeliveryStatus.PENDING,
+        }
+    )
+    
+    updated_status = result.scalar_one_or_none()
+    
+    if not updated_status:
+        # Query failed - need to determine why with specific checks
+        await _handle_validation_failure(db, order_id, rider_id)
+    
+    return DeliveryStatus(updated_status)
+
+
+async def _handle_validation_failure(
+    db: AsyncSession, order_id: UUID, rider_id: UUID
+):
+    """
+    Determines why the update failed and raises appropriate error.
+    Only called when update fails (rare case).
+    """
+    
+    # Single query to get all validation info
+    check_stmt = """
+        SELECT 
+            u.user_type,
+            u.rider_is_suspended_for_order_cancel,
+            o.id as order_exists,
+            d.id as delivery_exists,
+            d.rider_id,
+            d.delivery_status
+        FROM users u
+        LEFT JOIN orders o ON o.id = :order_id
+        LEFT JOIN deliveries d ON d.order_id = o.id
+        WHERE u.id = :rider_id
+    """
+    
+    result = await db.execute(
+        text(check_stmt),
+        {"order_id": order_id, "rider_id": rider_id}
+    )
+    row = result.first()
+    
+    if not row:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Rider not found."
+        )
+    
+    user_type, is_suspended, order_exists, delivery_exists, delivery_rider_id, delivery_status = row
+    
+    if user_type != UserType.RIDER.value:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only a rider can accept orders.",
+        )
+    
+    if is_suspended:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Your account is suspended due to too many cancellations.",
+        )
+    
+    if not order_exists or not delivery_exists:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Delivery not found."
+        )
+    
+    if delivery_rider_id != rider_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Invalid user",
+        )
+    
+    if delivery_status != DeliveryStatus.PENDING:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="This delivery has already been accepted or is no longer available.",
+        )
+    
+    # Shouldn't reach here, but just in case
+    raise HTTPException(
+        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        detail="Failed to accept delivery due.",
+    )
+
+
 async def _validate_delivery_acceptance(
     db: AsyncSession,
     order_id: UUID,
@@ -2449,6 +2605,8 @@ async def _validate_delivery_acceptance(
         .with_for_update()
     )
 
+    order = await db.execute(update(Order).where(Order.id == order_id).values(order_status=order_status, delivery_status=delivery_status))
+
     if not order or not order.delivery:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Delivery not found."
@@ -2465,12 +2623,17 @@ async def _validate_delivery_acceptance(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="This delivery has already been accepted or is no longer available.",
         )
+    try:
+        order.order_status = order_status
+        order.delivery.delivery_status = delivery_status
+        return order
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Unable to complete this process. Please try again. {e}",
+        )
 
-    order.order_status = order_status
-    order.delivery.delivery_status = delivery_status
 
-
-    return order
 
 
 async def _assign_rider_and_update_db(
@@ -2647,7 +2810,7 @@ async def rider_accept_booking(
     Args:
         db: Database session
         order_id: UUID of the order to accept
-        current_user: Rider accepting the booking
+        rider_id: ID of rider accepting the booking
         
     Returns:
         DeliveryStatusUpdateSchema with updated delivery status
@@ -2690,21 +2853,24 @@ async def rider_accept_booking(
     
     try:
         # 2. Validate and update order (critical path - fast)
-        order = await _validate_delivery_acceptance(
-            db,
-            order_id,
-            rider_id,
-            order_status=OrderStatus.ACCEPTED,
-            delivery_status=DeliveryStatus.ACCEPTED,
-        )
-        
+        # order = await _validate_delivery_acceptance(
+        #     db,
+        #     order_id,
+        #     rider_id,
+        #     order_status=OrderStatus.ACCEPTED,
+        #     delivery_status=DeliveryStatus.ACCEPTED,
+        # )
+
+       
+        order_id, rider_id, owner_id, dispatch_id, order_status = await_validate_and_update_delivery_acceptance(db, order_id, rider_id)
+
         # 3. COMMIT IMMEDIATELY (critical operation only)
-        await db.commit()
-        await db.refresh(order)
-        
+        # await db.commit()
+        # await db.refresh(order)
+
         logger.info(
             f"✓ Rider {rider_id} accepted order {order_id}. "
-            f"Status: {order.delivery.delivery_status.value}"
+            f"Status: {order_status}"
         )
         
         # 4. Mark as completed
@@ -2715,13 +2881,18 @@ async def rider_accept_booking(
             _process_delivery_acceptance_side_effects(
                 order_id=order.id,
                 rider_id=rider_id,
+                dispatch_id=dispatch_id,
+                owner_id=owner_id,
                 order=order
             )
         )
         
         # 6. RETURN IMMEDIATELY (instant response)
+        # return DeliveryStatusUpdateSchema(
+        #     delivery_status=order.delivery.delivery_status
+        # )
         return DeliveryStatusUpdateSchema(
-            delivery_status=order.delivery.delivery_status
+            delivery_status=order.delivery_status
         )
         
     except HTTPException:
@@ -2741,7 +2912,7 @@ async def rider_accept_booking(
         )
 
 
-async def _process_delivery_acceptance_side_effects(order_id, rider_id, order):
+async def _process_delivery_acceptance_side_effects(order_id, rider_id, dispatch_id, owner_id):
     endpoint_idempotency_key = f"rider_accept:{order_id}:{rider_id}"
     cache_key = f"idempotency:{endpoint_idempotency_key}"
 
@@ -2749,7 +2920,17 @@ async def _process_delivery_acceptance_side_effects(order_id, rider_id, order):
       
         logger.info(f"Rider accepted order {order_id}. Funds will move to escrow at pickup.")
 
-        _invalidate_order_caches(order=order)
+        sender_token = await get_user_notification_token(db=db, user_id=owner_id)
+        if sender_token:
+            await send_push_notification(
+                tokens=[sender_token],
+                title="Order Assigned",
+                message=f"Your dispatch rider is on the way to pick up your order.",
+                navigate_to="/(app)/delivery/orders",
+            )
+        logger.info(f"Notification sent to sender for order {order_id}")
+
+        _invalidate_delivery_caches(order_id, rider_id, dispatch_id, owner_id)
         redis_client.delete(f"order_by_id:{order_id}")
 
         redis_client.setex(cache_key, 86400, "completed")
@@ -4591,6 +4772,26 @@ async def _notify_order_completion(order: Order, db: AsyncSession):
 
 
 
+def _invalidate_delivery_caches(order_id, rider_id, dispatch_id, owner_id):
+     
+    try:
+        cache_keys = [
+            ALL_DELIVERY,
+            "paid_pending_deliveries", 
+            "orders",
+            "near_by_riders"
+        ]
+        redis_client.delete(f'wallet_transactions:{owner_id}')
+        redis_client.delete(f'wallet_transactions:{dispatch_id}')
+        redis_client.delete(f"user_related_orders:{owner_id}")
+        redis_client.delete(f"user_related_orders:{dispatch_id}")
+        redis_client.delete(f'order_by_id:{order_id}')
+        redis_client.delete(f"user_orders:{rider_id}")
+        redis_client.delete(f"user_orders:{dispatch_id}")
+        redis_client.delete(f'wallet_transactions:{dispatch_id}')
+    except Exception as e:
+        logger.warning(f"Failed to invalidate some order caches: {str(e)}")
+
 def _invalidate_order_caches(order: Order):
      
     try:
@@ -5776,3 +5977,4 @@ async def cancel_order_old(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to cancel order: {e}",
         )
+
