@@ -2489,8 +2489,9 @@ async def _validate_and_update_delivery_acceptance(
     if not row:
         # Query failed - need to determine why with specific checks
         await _handle_validation_failure(db, order_id, rider_id)
+    order_id, rider_id, owner_id, dispatch_id, order_status, delivery_status = row 
     
-    return order_id, rider_id, owner_id, dispatch_id, order_status, delivery_status = row 
+    return order_id, rider_id, owner_id, dispatch_id, order_status, delivery_status
 
 
 async def _handle_validation_failure(
