@@ -2475,11 +2475,11 @@ async def _validate_and_update_delivery_acceptance(
         {
             "order_id": order_id,
             "rider_id": rider_id,
-            "owner_id": owner_id,
-            "dispatch_id": dispatch_id,
+            # "owner_id": owner_id,
+            # "dispatch_id": dispatch_id,
             "order_status": OrderStatus.ACCEPTED,
             "delivery_status": DeliveryStatus.ACCEPTED,
-            "user_type": UserType.RIDER,
+            # "user_type": UserType.RIDER,
             
         }
     )
