@@ -2454,7 +2454,7 @@ async def _validate_and_update_delivery_acceptance(
             WHERE orders.id = v.order_id
                 AND v.rider_is_suspended_for_order_cancel = FALSE
                 AND v.rider_id = :rider_id
-            RETURNING orders.id
+            RETURNING orders.id, orders.order_status
         ),
         delivery_update AS (
             UPDATE deliveries
@@ -2463,7 +2463,7 @@ async def _validate_and_update_delivery_acceptance(
                 updated_at = NOW()
             FROM validation v, order_update ou
             WHERE deliveries.order_id = ou.id
-            RETURNING deliveries.delivery_status
+            RETURNING deliveries.order_id, deliveries.delivery_status
         )
         SELECT delivery_status FROM delivery_update
     """
@@ -2473,8 +2473,8 @@ async def _validate_and_update_delivery_acceptance(
         {
             "order_id": order_id,
             "rider_id": rider_id,
-            "order_status": OrderStatus.ACCEPTED,
-            "delivery_status": DeliveryStatus.ACCEPTED,
+            "order_status": OrderStatus.ACCEPTED.value,
+            "delivery_status": DeliveryStatus.ACCEPTED.value,
         }
     )
     
