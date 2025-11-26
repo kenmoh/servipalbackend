@@ -2898,7 +2898,7 @@ async def rider_accept_booking(
         )
 
 async def _process_delivery_acceptance_side_effects(order_id, rider_id, dispatch_id, owner_id):
-    endpoint_idempotency_key = f"rider_accept:{order_id}:{rider_id}"
+    endpoint_idempotency_key = f"rider_accept_booking:{order_id}:{rider_id}"
     cache_key = f"idempotency:{endpoint_idempotency_key}"
 
     try:
@@ -2915,7 +2915,7 @@ async def _process_delivery_acceptance_side_effects(order_id, rider_id, dispatch
             )
         logger.info(f"Notification sent to sender for order {order_id}")
 
-        _invalidate_delivery_acceptance_caches(order_id)
+        _invalidate_delivery_acceptance_caches(order_id, rider_id, dispatch_id, owner_id)
 
         redis_client.setex(cache_key, 86400, "completed")
 
@@ -5148,10 +5148,22 @@ async def _notify_order_completion(order: Order, db: AsyncSession):
 
 
 
-def _invalidate_delivery_acceptance_caches(order_id):
+def _invalidate_delivery_acceptance_caches(order_id, rider_id, dispatch_id, owner_id):
      
     try:
         redis_client.delete(f'order_by_id:{order_id}')
+        cache_keys = [
+            ALL_DELIVERY,
+            "paid_pending_deliveries", 
+            "orders",
+            "near_by_riders"
+        ]
+        redis_client.delete(f'wallet_transactions:{owner_id}')
+        redis_client.delete(f"user_related_orders:{owner_id}")
+        redis_client.delete(f"user_orders:{rider_id}")
+        redis_client.delete(f"user_orders:{dispatch_id}")
+        redis_client.delete(f'wallet_transactions:{dispatch_id}')
+
     except Exception as e:
         logger.warning(f"Failed to invalidate some order caches: {str(e)}")
 
