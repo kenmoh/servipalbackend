@@ -5,7 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from jose import JWTError, jwt
 from datetime import datetime, timedelta
 from sqlalchemy import select
-from sqlalchemy.orm import joinedload, load_only
+from sqlalchemy.orm import joinedload, load_only, noload
 from pydantic import EmailStr
 
 from app.models.models import User, RefreshToken, Session
