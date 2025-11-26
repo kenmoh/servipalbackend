@@ -2411,8 +2411,6 @@ def _invalidate_pickup_order_caches(order: Order):
             continue 
 
 
-from sqlalchemy import text, bindparam
-
 async def _validate_and_update_delivery_acceptance(
     db: AsyncSession,
     order_id: UUID,
@@ -2480,8 +2478,8 @@ async def _validate_and_update_delivery_acceptance(
         {
             "rider_id": rider_id,
             "order_id": order_id,
-            "order_status": OrderStatus.ACCEPTED.value,
-            "delivery_status": DeliveryStatus.ACCEPTED.value,
+            "order_status": OrderStatus.ACCEPTED.value.upper(),
+            "delivery_status": DeliveryStatus.ACCEPTED.value.upper(),
         }
     )
     
@@ -3654,12 +3652,12 @@ async def _validate_and_update_pickup(
         delivery_update AS (
             UPDATE deliveries
             SET 
-                delivery_status = CAST('picked-up' AS deliverystatus),
+                delivery_status = CAST('PICKED_UP' AS deliverystatus),
                 updated_at = NOW()
             FROM validation v
             WHERE deliveries.id = v.delivery_id
                 AND v.rider_id = :rider_id
-                AND v.current_status = CAST('accepted' AS deliverystatus)
+                AND v.current_status = CAST('ACCEPTED' AS deliverystatus)
             RETURNING deliveries.delivery_status, deliveries.id
         )
         SELECT 
@@ -3671,7 +3669,7 @@ async def _validate_and_update_pickup(
             v.dispatch_id
         FROM validation v
         LEFT JOIN delivery_update du ON du.id = v.delivery_id
-        WHERE (du.delivery_status IS NOT NULL OR v.current_status = CAST('picked-up' AS deliverystatus))
+        WHERE (du.delivery_status IS NOT NULL OR v.current_status = CAST('PICKED_UP' AS deliverystatus))
             AND v.rider_id = :rider_id
     """)
     
