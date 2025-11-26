@@ -3634,11 +3634,6 @@ async def _validate_and_update_pickup(
     (delivery_status, delivery_id, order_number, delivery_fee, amount_due_dispatch, dispatch_id)
     
     Returns None if validation failed.
-    
-    Validates:
-    1. Order exists
-    2. Rider matches assigned rider
-    3. Current status is ACCEPTED (or already PICKED_UP for idempotency)
     """
     
     update_stmt = """
