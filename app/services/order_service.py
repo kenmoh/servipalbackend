@@ -2435,19 +2435,19 @@ async def _validate_and_update_delivery_acceptance(
                 d.rider_id
             FROM orders o
             INNER JOIN deliveries d ON d.order_id = o.id
-            INNER JOIN users u ON u.id = :rider_id
-            WHERE o.id = :order_id
+            INNER JOIN users u ON u.id = $1
+            WHERE o.id = $2
             FOR UPDATE OF o, d
         ),
         order_update AS (
             UPDATE orders
             SET 
-                order_status = :order_status::orderstatus,
+                order_status = $3::orderstatus,
                 updated_at = NOW()
             FROM validation v
             WHERE orders.id = v.order_id
                 AND v.rider_is_suspended_for_order_cancel = FALSE
-                AND v.rider_id = :rider_id
+                AND v.rider_id = $1
                 AND v.current_delivery_status = 'pending'::deliverystatus
                 AND v.user_type = 'rider'::usertype
             RETURNING orders.id, orders.order_status
@@ -2455,7 +2455,7 @@ async def _validate_and_update_delivery_acceptance(
         delivery_update AS (
             UPDATE deliveries
             SET 
-                delivery_status = :delivery_status::deliverystatus,
+                delivery_status = $4::deliverystatus,
                 updated_at = NOW()
             FROM order_update ou
             WHERE deliveries.order_id = ou.id
@@ -2475,12 +2475,12 @@ async def _validate_and_update_delivery_acceptance(
     
     result = await db.execute(
         text(update_stmt),
-        {
-            "order_id": order_id,
-            "rider_id": rider_id,
-            "order_status": OrderStatus.ACCEPTED.value,
-            "delivery_status": DeliveryStatus.ACCEPTED.value,
-        }
+        (
+            rider_id,                           
+            order_id,                           
+            OrderStatus.ACCEPTED.value,         
+            DeliveryStatus.ACCEPTED.value,      
+        )
     )
     
     row = result.first()
@@ -3621,7 +3621,7 @@ async def rider_pickup_delivery_order(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="An unexpected error occurred while processing the pickup.",
         )
-        
+
 
 async def _validate_and_update_pickup(
     db: AsyncSession,
@@ -3648,7 +3648,7 @@ async def _validate_and_update_pickup(
                 o.order_number
             FROM orders o
             INNER JOIN deliveries d ON d.order_id = o.id
-            WHERE o.id = :order_id
+            WHERE o.id = $1
             FOR UPDATE OF d
         ),
         delivery_update AS (
@@ -3658,7 +3658,7 @@ async def _validate_and_update_pickup(
                 updated_at = NOW()
             FROM validation v
             WHERE deliveries.id = v.delivery_id
-                AND v.rider_id = :rider_id
+                AND v.rider_id = $2
                 AND v.current_status = 'accepted'::deliverystatus
             RETURNING deliveries.delivery_status, deliveries.id
         )
@@ -3672,15 +3672,15 @@ async def _validate_and_update_pickup(
         FROM validation v
         LEFT JOIN delivery_update du ON du.id = v.delivery_id
         WHERE (du.delivery_status IS NOT NULL OR v.current_status = 'picked-up'::deliverystatus)
-            AND v.rider_id = :rider_id
+            AND v.rider_id = $2
     """
     
     result = await db.execute(
         text(update_stmt),
-        {
-            "order_id": order_id,
-            "rider_id": rider_id,
-        }
+        (
+            order_id,    
+            rider_id,    
+        )
     )
     
     row = result.first()
