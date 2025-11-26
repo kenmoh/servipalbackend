@@ -2452,7 +2452,6 @@ async def _validate_and_update_delivery_acceptance(
                 updated_at = NOW()
             FROM validation v
             WHERE orders.id = v.order_id
-                AND v.user_type = :rider_type
                 AND v.rider_is_suspended_for_order_cancel = FALSE
                 AND v.rider_id = :rider_id
                 AND v.current_delivery_status = :pending_status
