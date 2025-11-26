@@ -2411,6 +2411,8 @@ def _invalidate_pickup_order_caches(order: Order):
             continue 
 
 
+from sqlalchemy import text, bindparam
+
 async def _validate_and_update_delivery_acceptance(
     db: AsyncSession,
     order_id: UUID,
@@ -2422,7 +2424,7 @@ async def _validate_and_update_delivery_acceptance(
     or None if validation/update failed.
     """
     
-    update_stmt = """
+    update_stmt = text("""
         WITH validation AS (
             SELECT 
                 o.id as order_id,
@@ -2435,27 +2437,27 @@ async def _validate_and_update_delivery_acceptance(
                 d.rider_id
             FROM orders o
             INNER JOIN deliveries d ON d.order_id = o.id
-            INNER JOIN users u ON u.id = $1
-            WHERE o.id = $2
+            INNER JOIN users u ON u.id = :rider_id
+            WHERE o.id = :order_id
             FOR UPDATE OF o, d
         ),
         order_update AS (
             UPDATE orders
             SET 
-                order_status = $3::orderstatus,
+                order_status = CAST(:order_status AS orderstatus),
                 updated_at = NOW()
             FROM validation v
             WHERE orders.id = v.order_id
                 AND v.rider_is_suspended_for_order_cancel = FALSE
-                AND v.rider_id = $1
-                AND v.current_delivery_status = 'pending'::deliverystatus
-                AND v.user_type = 'rider'::usertype
+                AND v.rider_id = :rider_id
+                AND v.current_delivery_status = CAST('pending' AS deliverystatus)
+                AND v.user_type = CAST('rider' AS usertype)
             RETURNING orders.id, orders.order_status
         ),
         delivery_update AS (
             UPDATE deliveries
             SET 
-                delivery_status = $4::deliverystatus,
+                delivery_status = CAST(:delivery_status AS deliverystatus),
                 updated_at = NOW()
             FROM order_update ou
             WHERE deliveries.order_id = ou.id
@@ -2471,21 +2473,20 @@ async def _validate_and_update_delivery_acceptance(
         FROM delivery_update du
         INNER JOIN validation v ON du.order_id = v.order_id
         INNER JOIN order_update ou ON du.order_id = ou.id
-    """
+    """)
     
     result = await db.execute(
-        text(update_stmt),
-        (
-            rider_id,                           
-            order_id,                           
-            OrderStatus.ACCEPTED.value,         
-            DeliveryStatus.ACCEPTED.value,      
-        )
+        update_stmt,
+        {
+            "rider_id": rider_id,
+            "order_id": order_id,
+            "order_status": OrderStatus.ACCEPTED.value,
+            "delivery_status": DeliveryStatus.ACCEPTED.value,
+        }
     )
     
     row = result.first()
     return row if row else None
-
 
 async def _handle_validation_failure(
     db: AsyncSession, order_id: UUID, rider_id: UUID
@@ -2495,7 +2496,7 @@ async def _handle_validation_failure(
     Only called when update fails (rare case).
     """
     
-    check_stmt = """
+    check_stmt = text("""
         SELECT 
             u.id as user_exists,
             u.user_type,
@@ -2505,26 +2506,27 @@ async def _handle_validation_failure(
             d.rider_id,
             d.delivery_status
         FROM users u
-        LEFT JOIN orders o ON o.id = $1
+        LEFT JOIN orders o ON o.id = :order_id
         LEFT JOIN deliveries d ON d.order_id = o.id
-        WHERE u.id = $2
-    """
+        WHERE u.id = :rider_id
+    """)
     
     result = await db.execute(
-        text(check_stmt),
-        (order_id, rider_id)
+        check_stmt,
+        {"order_id": order_id, "rider_id": rider_id}
     )
     row = result.first()
     
-    if not row:
+    if not row or not row[0]:  # user_exists
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Rider not found."
         )
     
-    user_type, is_suspended, order_exists, delivery_exists, delivery_rider_id, delivery_status = row
+    (user_exists, user_type, is_suspended, order_exists, 
+     delivery_exists, delivery_rider_id, delivery_status) = row
     
-    if user_type != UserType.RIDER:
+    if user_type != UserType.RIDER.value:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only a rider can accept orders.",
@@ -2548,18 +2550,16 @@ async def _handle_validation_failure(
             detail="Invalid user",
         )
     
-    if delivery_status != DeliveryStatus.PENDING:
+    if delivery_status != DeliveryStatus.PENDING.value:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="This delivery has already been accepted or is no longer available.",
         )
     
-    # Shouldn't reach here, but just in case
     raise HTTPException(
         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-        detail="Failed to accept delivery due.",
+        detail="Failed to accept delivery.",
     )
-
 
 async def _validate_delivery_acceptance(
     db: AsyncSession,
@@ -3636,7 +3636,7 @@ async def _validate_and_update_pickup(
     Returns None if validation failed.
     """
     
-    update_stmt = """
+    update_stmt = text("""
         WITH validation AS (
             SELECT 
                 d.id as delivery_id,
@@ -3648,18 +3648,18 @@ async def _validate_and_update_pickup(
                 o.order_number
             FROM orders o
             INNER JOIN deliveries d ON d.order_id = o.id
-            WHERE o.id = $1
+            WHERE o.id = :order_id
             FOR UPDATE OF d
         ),
         delivery_update AS (
             UPDATE deliveries
             SET 
-                delivery_status = 'picked-up'::deliverystatus,
+                delivery_status = CAST('picked-up' AS deliverystatus),
                 updated_at = NOW()
             FROM validation v
             WHERE deliveries.id = v.delivery_id
-                AND v.rider_id = $2
-                AND v.current_status = 'accepted'::deliverystatus
+                AND v.rider_id = :rider_id
+                AND v.current_status = CAST('accepted' AS deliverystatus)
             RETURNING deliveries.delivery_status, deliveries.id
         )
         SELECT 
@@ -3671,21 +3671,20 @@ async def _validate_and_update_pickup(
             v.dispatch_id
         FROM validation v
         LEFT JOIN delivery_update du ON du.id = v.delivery_id
-        WHERE (du.delivery_status IS NOT NULL OR v.current_status = 'picked-up'::deliverystatus)
-            AND v.rider_id = $2
-    """
+        WHERE (du.delivery_status IS NOT NULL OR v.current_status = CAST('picked-up' AS deliverystatus))
+            AND v.rider_id = :rider_id
+    """)
     
     result = await db.execute(
-        text(update_stmt),
-        (
-            order_id,    
-            rider_id,    
-        )
+        update_stmt,
+        {
+            "order_id": order_id,
+            "rider_id": rider_id,
+        }
     )
     
     row = result.first()
     return row if row else None
-
 
 async def _handle_pickup_validation_failure(
     db: AsyncSession, order_id: UUID, rider_id: UUID
@@ -3695,7 +3694,7 @@ async def _handle_pickup_validation_failure(
     Only called when update fails (rare case).
     """
     
-    check_stmt = """
+    check_stmt = text("""
         SELECT 
             o.id as order_exists,
             d.id as delivery_exists,
@@ -3703,12 +3702,12 @@ async def _handle_pickup_validation_failure(
             d.delivery_status
         FROM orders o
         LEFT JOIN deliveries d ON d.order_id = o.id
-        WHERE o.id = $1
-    """
+        WHERE o.id = :order_id
+    """)
     
     result = await db.execute(
-        text(check_stmt),
-        (order_id,) 
+        check_stmt,
+        {"order_id": order_id}
     )
     row = result.first()
     
