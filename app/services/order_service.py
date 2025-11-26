@@ -2934,11 +2934,19 @@ async def _process_delivery_acceptance_side_effects(order_id, rider_id, dispatch
 
 
 
-async def _update_wallet_at_pickup(order: Order):
+async def _update_wallet_at_pickup(
+    order_id: UUID,
+    delivery_id: UUID,
+    order_number: str,
+    delivery_fee: Decimal,
+    amount_due_dispatch: Decimal,
+    dispatch_id: UUID,
+):
     """
-    
     Process wallet settlements for package delivery at PICKUP stage.
     Put FULL delivery_fee into dispatch escrow when rider picks up the package.
+    
+    OPTIMIZED VERSION: No database queries - all data passed as parameters.
     
     Flow:
     1. Rider accepts booking → No wallet changes
@@ -2946,12 +2954,12 @@ async def _update_wallet_at_pickup(order: Order):
     3. Sender confirms received → Settlement function runs → Move to balance
     
     Args:
-        order: Order instance with loaded delivery relationship
+        All required data passed directly (no Order object needed)
 
     Raises:
         HTTPException: If wallet operations fail after retries
     """
-    idempotency_key = f"pickup_escrow:{order.id}:{order.delivery.id}"  # Changed key prefix
+    idempotency_key = f"pickup_escrow:{order_id}:{delivery_id}"
     cache_key = f"idempotency:{idempotency_key}"
     
     # Atomic check-and-set using SETNX
@@ -2960,7 +2968,7 @@ async def _update_wallet_at_pickup(order: Order):
     if not is_first_call:
         existing_status = redis_client.get(cache_key)
         if existing_status == b"completed":
-            logger.info(f"Pickup escrow for order {order.id} already completed.")
+            logger.info(f"Pickup escrow for order {order_id} already completed.")
             return True
         elif existing_status == b"processing":
             # Wait for concurrent process to complete
@@ -2968,9 +2976,9 @@ async def _update_wallet_at_pickup(order: Order):
                 await asyncio.sleep(1)
                 status = redis_client.get(cache_key)
                 if status == b"completed":
-                    logger.info(f"Pickup escrow for order {order.id} completed by concurrent request.")
+                    logger.info(f"Pickup escrow for order {order_id} completed by concurrent request.")
                     return True
-            logger.warning(f"Timeout waiting for concurrent escrow processing for order {order.id}")
+            logger.warning(f"Timeout waiting for concurrent escrow processing for order {order_id}")
             return True
     
     # Set expiry on the processing lock (5 minutes)
@@ -2981,60 +2989,50 @@ async def _update_wallet_at_pickup(order: Order):
     
     while retry_count < MAX_RETRIES:
         try:
-            dispatch_amount = order.delivery.amount_due_dispatch
-            delivery_fee = order.delivery.delivery_fee
-
             # Validate amounts
-            if dispatch_amount < 0 or delivery_fee < 0:
+            if amount_due_dispatch < 0 or delivery_fee < 0:
                 redis_client.delete(cache_key)
-                logger.error(f"Invalid amounts for order {order.id}: dispatch_amount={dispatch_amount}, delivery_fee={delivery_fee}")
+                logger.error(f"Invalid amounts for order {order_id}: amount_due_dispatch={amount_due_dispatch}, delivery_fee={delivery_fee}")
                 raise ValueError("Settlement amounts cannot be negative")
             
-            if dispatch_amount > delivery_fee:
+            if amount_due_dispatch > delivery_fee:
                 redis_client.delete(cache_key)
-                logger.error(f"Invalid amounts for order {order.id}: dispatch_amount={dispatch_amount} > delivery_fee={delivery_fee}")
+                logger.error(f"Invalid amounts for order {order_id}: amount_due_dispatch={amount_due_dispatch} > delivery_fee={delivery_fee}")
                 raise ValueError("Dispatch amount cannot exceed delivery fee")
 
-            # Validate order is in correct state
-            if order.delivery.delivery_status != DeliveryStatus.PICKED_UP:
-                redis_client.delete(cache_key)
-                logger.error(f"Invalid status for escrow allocation: {order.delivery.delivery_status}")
-                raise ValueError("Can only allocate escrow when order is picked up")
-
-            # Update dispatch company wallet - put FULL delivery_fee into escrow
-            logger.info(f"Allocating {delivery_fee} to dispatch escrow for order {order.id}")
+            # Publish to message queue
+            logger.info(f"Allocating {delivery_fee} to dispatch escrow for order {order_id}")
             await producer.publish_message(
                 service="wallet",
                 operation="update_wallet",
                 payload={
-                    "wallet_id": str(order.delivery.dispatch_id),
+                    "wallet_id": str(dispatch_id),
                     "balance_change": "0",
                     "escrow_change": str(delivery_fee),
                     "idempotency_key": idempotency_key,
                     "details": {
-                        "order_id": str(order.id),
+                        "order_id": str(order_id),
                         "operation": "pickup_escrow_allocation",
-                        "order_number": order.order_number,
+                        "order_number": order_number,
                         "delivery_fee": str(delivery_fee),
-                        "amount_due_dispatch": str(dispatch_amount),
+                        "amount_due_dispatch": str(amount_due_dispatch),
                         "stage": "pickup",
                     },
                 },
             )
 
-
             # Mark as completed (expires after 24 hours)
             redis_client.setex(cache_key, 86400, "completed")
             
             logger.info(
-                f"Pickup escrow allocation completed for order {order.id}: "
+                f"Pickup escrow allocation completed for order {order_id}: "
                 f"delivery_fee={delivery_fee} added to dispatch escrow at PICKUP stage"
             )
             return True
 
         except ValueError as ve:
             redis_client.delete(cache_key)
-            logger.error(f"Validation error for order {order.id}: {str(ve)}")
+            logger.error(f"Validation error for order {order_id}: {str(ve)}")
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=f"Invalid order data: {str(ve)}",
@@ -3043,14 +3041,14 @@ async def _update_wallet_at_pickup(order: Order):
         except Exception as e:
             retry_count += 1
             logger.error(
-                f"Pickup escrow allocation attempt {retry_count} failed for order {order.id}: {str(e)}",
+                f"Pickup escrow allocation attempt {retry_count} failed for order {order_id}: {str(e)}",
                 exc_info=True,
             )
             
             if retry_count >= MAX_RETRIES:
                 redis_client.delete(cache_key)
                 logger.error(
-                    f"All {MAX_RETRIES} attempts failed for order {order.id}. Final error: {str(e)}"
+                    f"All {MAX_RETRIES} attempts failed for order {order_id}. Final error: {str(e)}"
                 )
                 raise HTTPException(
                     status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -3067,62 +3065,249 @@ async def _update_wallet_at_pickup(order: Order):
     )
 
 
-async def _process_pickup_side_effects(order_id: UUID):
+# async def _update_wallet_at_pickup(order: Order):
+#     """
+    
+#     Process wallet settlements for package delivery at PICKUP stage.
+#     Put FULL delivery_fee into dispatch escrow when rider picks up the package.
+    
+#     Flow:
+#     1. Rider accepts booking → No wallet changes
+#     2. Rider picks up package → THIS FUNCTION RUNS → Delivery fee goes to dispatch escrow
+#     3. Sender confirms received → Settlement function runs → Move to balance
+    
+#     Args:
+#         order: Order instance with loaded delivery relationship
+
+#     Raises:
+#         HTTPException: If wallet operations fail after retries
+#     """
+#     idempotency_key = f"pickup_escrow:{order.id}:{order.delivery.id}"  # Changed key prefix
+#     cache_key = f"idempotency:{idempotency_key}"
+    
+#     # Atomic check-and-set using SETNX
+#     is_first_call = redis_client.setnx(cache_key, "processing")
+    
+#     if not is_first_call:
+#         existing_status = redis_client.get(cache_key)
+#         if existing_status == b"completed":
+#             logger.info(f"Pickup escrow for order {order.id} already completed.")
+#             return True
+#         elif existing_status == b"processing":
+#             # Wait for concurrent process to complete
+#             for i in range(10):
+#                 await asyncio.sleep(1)
+#                 status = redis_client.get(cache_key)
+#                 if status == b"completed":
+#                     logger.info(f"Pickup escrow for order {order.id} completed by concurrent request.")
+#                     return True
+#             logger.warning(f"Timeout waiting for concurrent escrow processing for order {order.id}")
+#             return True
+    
+#     # Set expiry on the processing lock (5 minutes)
+#     redis_client.expire(cache_key, 300)
+
+#     MAX_RETRIES = 3
+#     retry_count = 0
+    
+#     while retry_count < MAX_RETRIES:
+#         try:
+#             dispatch_amount = order.delivery.amount_due_dispatch
+#             delivery_fee = order.delivery.delivery_fee
+
+#             # Validate amounts
+#             if dispatch_amount < 0 or delivery_fee < 0:
+#                 redis_client.delete(cache_key)
+#                 logger.error(f"Invalid amounts for order {order.id}: dispatch_amount={dispatch_amount}, delivery_fee={delivery_fee}")
+#                 raise ValueError("Settlement amounts cannot be negative")
+            
+#             if dispatch_amount > delivery_fee:
+#                 redis_client.delete(cache_key)
+#                 logger.error(f"Invalid amounts for order {order.id}: dispatch_amount={dispatch_amount} > delivery_fee={delivery_fee}")
+#                 raise ValueError("Dispatch amount cannot exceed delivery fee")
+
+#             # Validate order is in correct state
+#             if order.delivery.delivery_status != DeliveryStatus.PICKED_UP:
+#                 redis_client.delete(cache_key)
+#                 logger.error(f"Invalid status for escrow allocation: {order.delivery.delivery_status}")
+#                 raise ValueError("Can only allocate escrow when order is picked up")
+
+#             # Update dispatch company wallet - put FULL delivery_fee into escrow
+#             logger.info(f"Allocating {delivery_fee} to dispatch escrow for order {order.id}")
+#             await producer.publish_message(
+#                 service="wallet",
+#                 operation="update_wallet",
+#                 payload={
+#                     "wallet_id": str(order.delivery.dispatch_id),
+#                     "balance_change": "0",
+#                     "escrow_change": str(delivery_fee),
+#                     "idempotency_key": idempotency_key,
+#                     "details": {
+#                         "order_id": str(order.id),
+#                         "operation": "pickup_escrow_allocation",
+#                         "order_number": order.order_number,
+#                         "delivery_fee": str(delivery_fee),
+#                         "amount_due_dispatch": str(dispatch_amount),
+#                         "stage": "pickup",
+#                     },
+#                 },
+#             )
+
+
+#             # Mark as completed (expires after 24 hours)
+#             redis_client.setex(cache_key, 86400, "completed")
+            
+#             logger.info(
+#                 f"Pickup escrow allocation completed for order {order.id}: "
+#                 f"delivery_fee={delivery_fee} added to dispatch escrow at PICKUP stage"
+#             )
+#             return True
+
+#         except ValueError as ve:
+#             redis_client.delete(cache_key)
+#             logger.error(f"Validation error for order {order.id}: {str(ve)}")
+#             raise HTTPException(
+#                 status_code=status.HTTP_400_BAD_REQUEST,
+#                 detail=f"Invalid order data: {str(ve)}",
+#             )
+            
+#         except Exception as e:
+#             retry_count += 1
+#             logger.error(
+#                 f"Pickup escrow allocation attempt {retry_count} failed for order {order.id}: {str(e)}",
+#                 exc_info=True,
+#             )
+            
+#             if retry_count >= MAX_RETRIES:
+#                 redis_client.delete(cache_key)
+#                 logger.error(
+#                     f"All {MAX_RETRIES} attempts failed for order {order.id}. Final error: {str(e)}"
+#                 )
+#                 raise HTTPException(
+#                     status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+#                     detail=f"Failed to allocate pickup escrow after {MAX_RETRIES} attempts: {str(e)}",
+#                 )
+            
+#             # Exponential backoff
+#             await asyncio.sleep(2 ** retry_count)
+
+#     redis_client.delete(cache_key)
+#     raise HTTPException(
+#         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+#         detail="Unexpected error in pickup escrow processing",
+#     )
+
+
+# async def _process_pickup_side_effects(order_id: UUID):
+#     """
+#     Background task to handle non-critical pickup operations.
+#     Runs asynchronously after the main pickup response is returned.
+    
+#     Operations:
+#     1. Move funds to dispatch escrow
+#     2. Invalidate caches
+#     3. Send notifications (future)
+    
+#     Args:
+#         order_id: UUID of the order that was picked up
+#     """
+#     try:
+#         # Get a new DB session for background task
+        
+        
+#         async for db in get_db():
+            
+#             try:
+#                 # Fetch the order with delivery
+#                 order = await db.scalar(
+#                     select(Order)
+#                     .where(Order.id == order_id)
+#                     .options(selectinload(Order.delivery))
+#                 )
+                
+#                 if not order:
+#                     logger.error(f"Order {order_id} not found in background task")
+#                     return
+                
+#                 # 1b. Move funds to escrow (critical financial operation)
+#                 logger.info(f"Background: Moving funds to escrow for order {order_id}")
+#                 await _update_wallet_at_pickup(order)
+#                 logger.info(f"Background: Escrow allocation completed for order {order_id}")
+                
+#                 # 2. Invalidate caches
+#                 _invalidate_order_caches(order)
+#                 redis_client.delete(f"order_by_id:{order_id}")
+                
+#                 # 3. Future: Send notifications to customer, dispatch, etc.
+#                 # await _send_pickup_notifications(order, db)
+                
+#                 logger.info(f"Background: Pickup side effects completed for order {order_id}")
+                
+#             except Exception as e:
+#                 logger.error(
+#                     f"Error in pickup background task for order {order_id}: {e}",
+#                     exc_info=True
+#                 )
+#             finally:
+#                 break  # Exit the async generator
+                
+#     except Exception as e:
+#         logger.error(
+#             f"Failed to get DB session in pickup background task for order {order_id}: {e}",
+#             exc_info=True
+#         )
+
+
+
+async def _process_pickup_side_effects(
+    order_id: UUID,
+    delivery_id: UUID,
+    order_number: str,
+    delivery_fee: Decimal,
+    amount_due_dispatch: Decimal,
+    dispatch_id: UUID,
+):
     """
     Background task to handle non-critical pickup operations.
     Runs asynchronously after the main pickup response is returned.
     
+    NO DATABASE QUERIES - all data passed as parameters!
+    
     Operations:
-    1. Move funds to dispatch escrow
+    1. Move funds to dispatch escrow (message queue)
     2. Invalidate caches
     3. Send notifications (future)
     
     Args:
-        order_id: UUID of the order that was picked up
+        All data needed for wallet operations passed directly
     """
     try:
-        # Get a new DB session for background task
+        # 1. Move funds to escrow (critical financial operation)
+        logger.info(f"Background: Moving funds to escrow for order {order_id}")
         
+        await _update_wallet_at_pickup_optimized(
+            order_id=order_id,
+            delivery_id=delivery_id,
+            order_number=order_number,
+            delivery_fee=delivery_fee,
+            amount_due_dispatch=amount_due_dispatch,
+            dispatch_id=dispatch_id,
+        )
         
-        async for db in get_db():
-            
-            try:
-                # Fetch the order with delivery
-                order = await db.scalar(
-                    select(Order)
-                    .where(Order.id == order_id)
-                    .options(selectinload(Order.delivery))
-                )
-                
-                if not order:
-                    logger.error(f"Order {order_id} not found in background task")
-                    return
-                
-                # 1b. Move funds to escrow (critical financial operation)
-                logger.info(f"Background: Moving funds to escrow for order {order_id}")
-                await _update_wallet_at_pickup(order)
-                logger.info(f"Background: Escrow allocation completed for order {order_id}")
-                
-                # 2. Invalidate caches
-                _invalidate_order_caches(order)
-                redis_client.delete(f"order_by_id:{order_id}")
-                
-                # 3. Future: Send notifications to customer, dispatch, etc.
-                # await _send_pickup_notifications(order, db)
-                
-                logger.info(f"Background: Pickup side effects completed for order {order_id}")
-                
-            except Exception as e:
-                logger.error(
-                    f"Error in pickup background task for order {order_id}: {e}",
-                    exc_info=True
-                )
-            finally:
-                break  # Exit the async generator
-                
+        logger.info(f"Background: Escrow allocation completed for order {order_id}")
+        
+        # 2. Invalidate caches
+        redis_client.delete(f"order_by_id:{order_id}")
+        # Add other cache invalidations as needed
+        
+        # 3. Future: Send notifications
+        # await _send_pickup_notifications(order_id)
+        
+        logger.info(f"Background: Pickup side effects completed for order {order_id}")
+        
     except Exception as e:
         logger.error(
-            f"Failed to get DB session in pickup background task for order {order_id}: {e}",
+            f"Error in pickup background task for order {order_id}: {e}",
             exc_info=True
         )
 
@@ -3234,6 +3419,122 @@ async def assign_rider_to_existing_delivery_order(
 
 
 
+# async def rider_pickup_delivery_order(
+#     db: AsyncSession, order_id: UUID, rider_id: UUID
+# ) -> DeliveryStatusUpdateSchema:
+#     """
+#     Allows a rider to pickup a delivery order from customer.
+#     Fast response - immediate DB update, background wallet operations.
+#     THIS is where funds move to dispatch escrow (in background).
+#     """
+#     # 1. Endpoint-level idempotency check
+#     endpoint_idempotency_key = f"rider_pickup:{order_id}:{rider_id}"
+#     cache_key = f"idempotency:{endpoint_idempotency_key}"
+    
+#     is_first_call = redis_client.setnx(cache_key, "processing")
+    
+#     if not is_first_call:
+#         existing_status = redis_client.get(cache_key)
+#         if existing_status == b"completed":
+#             logger.info(f"Rider pickup for order {order_id} already processed.")
+#             order = await db.scalar(
+#                 select(Order)
+#                 .where(Order.id == order_id)
+#                 .options(selectinload(Order.delivery))
+#             )
+#             if order:
+#                 return DeliveryStatusUpdateSchema(
+#                     delivery_status=order.delivery.delivery_status
+#                 )
+#         raise HTTPException(
+#             status_code=status.HTTP_409_CONFLICT,
+#             detail="This pickup is already being processed."
+#         )
+    
+#     # Set expiration for processing lock (5 min)
+#     redis_client.expire(cache_key, 300)
+    
+#     try:
+#         # 2. Validate and fetch order (critical path - fast)
+#         order = await db.scalar(
+#             select(Order)
+#             .where(Order.id == order_id)
+#             .options(selectinload(Order.delivery))
+#             .with_for_update()
+#         )
+
+#         if not order:
+#             redis_client.delete(cache_key)
+#             raise HTTPException(
+#                 status_code=status.HTTP_404_NOT_FOUND, detail="Order not found."
+#             )
+
+#         if rider_id != order.delivery.rider_id:
+#             redis_client.delete(cache_key)
+#             raise HTTPException(
+#                 status_code=status.HTTP_403_FORBIDDEN, detail="Invalid rider."
+#             )
+
+#         # Check if already picked up (idempotency at DB level)
+#         if order.delivery.delivery_status == DeliveryStatus.PICKED_UP:
+#             logger.info(
+#                 f"Order {order_id} already picked up. Returning current status."
+#             )
+#             redis_client.setex(cache_key, 86400, "completed")
+#             return DeliveryStatusUpdateSchema(
+#                 delivery_status=order.delivery.delivery_status
+#             )
+
+#         # Validate status transition
+#         if order.delivery.delivery_status != DeliveryStatus.ACCEPTED:
+#             redis_client.delete(cache_key)
+#             raise HTTPException(
+#                 status_code=status.HTTP_400_BAD_REQUEST,
+#                 detail=f"Cannot pickup. Current status: {order.delivery.delivery_status.value}. Must be ACCEPTED."
+#             )
+
+#         # 3. Update status (critical operation only)
+#         order.delivery.delivery_status = DeliveryStatus.PICKED_UP
+        
+#         # 4. COMMIT IMMEDIATELY (critical operation only)
+#         await db.commit()
+#         await db.refresh(order)
+        
+#         logger.info(
+#             f"✓ Rider {rider_id} picked up order {order_id}. "
+#             f"Status: {order.delivery.delivery_status.value}"
+#         )
+        
+#         # 5. Mark as completed
+#         redis_client.setex(cache_key, 86400, "completed")
+        
+#         # 6. FIRE BACKGROUND TASKS (non-blocking)
+#         asyncio.create_task(
+#             _process_pickup_side_effects(
+#                 order_id=order.id,
+#             )
+#         )
+        
+#         # 7. RETURN IMMEDIATELY (instant response)
+#         return DeliveryStatusUpdateSchema(
+#             delivery_status=order.delivery.delivery_status
+#         )
+
+#     except HTTPException:
+#         await db.rollback()
+#         redis_client.delete(cache_key)
+#         raise
+#     except Exception as e:
+#         await db.rollback()
+#         redis_client.delete(cache_key)
+#         logger.error(
+#             f"Failed to pickup delivery for order {order_id}: {e}", exc_info=True
+#         )
+#         raise HTTPException(
+#             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+#             detail="An unexpected error occurred while processing the pickup.",
+#         )
+
 async def rider_pickup_delivery_order(
     db: AsyncSession, order_id: UUID, rider_id: UUID
 ) -> DeliveryStatusUpdateSchema:
@@ -3252,15 +3553,16 @@ async def rider_pickup_delivery_order(
         existing_status = redis_client.get(cache_key)
         if existing_status == b"completed":
             logger.info(f"Rider pickup for order {order_id} already processed.")
-            order = await db.scalar(
-                select(Order)
+            # Optimized: Only fetch delivery_status
+            result = await db.execute(
+                select(Delivery.delivery_status)
+                .join(Order, Delivery.order_id == Order.id)
                 .where(Order.id == order_id)
-                .options(selectinload(Order.delivery))
             )
-            if order:
-                return DeliveryStatusUpdateSchema(
-                    delivery_status=order.delivery.delivery_status
-                )
+            row = result.first()
+            if row:
+                return DeliveryStatusUpdateSchema(delivery_status=row[0])
+        
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="This pickup is already being processed."
@@ -3270,70 +3572,40 @@ async def rider_pickup_delivery_order(
     redis_client.expire(cache_key, 300)
     
     try:
-        # 2. Validate and fetch order (critical path - fast)
-        order = await db.scalar(
-            select(Order)
-            .where(Order.id == order_id)
-            .options(selectinload(Order.delivery))
-            .with_for_update()
-        )
-
-        if not order:
-            redis_client.delete(cache_key)
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND, detail="Order not found."
-            )
-
-        if rider_id != order.delivery.rider_id:
-            redis_client.delete(cache_key)
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN, detail="Invalid rider."
-            )
-
-        # Check if already picked up (idempotency at DB level)
-        if order.delivery.delivery_status == DeliveryStatus.PICKED_UP:
-            logger.info(
-                f"Order {order_id} already picked up. Returning current status."
-            )
-            redis_client.setex(cache_key, 86400, "completed")
-            return DeliveryStatusUpdateSchema(
-                delivery_status=order.delivery.delivery_status
-            )
-
-        # Validate status transition
-        if order.delivery.delivery_status != DeliveryStatus.ACCEPTED:
-            redis_client.delete(cache_key)
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Cannot pickup. Current status: {order.delivery.delivery_status.value}. Must be ACCEPTED."
-            )
-
-        # 3. Update status (critical operation only)
-        order.delivery.delivery_status = DeliveryStatus.PICKED_UP
+        # 2. Validate and update in ONE query - returns all data needed for background task
+        result = await _validate_and_update_pickup(db, order_id, rider_id)
         
-        # 4. COMMIT IMMEDIATELY (critical operation only)
+        if result is None:
+            await _handle_pickup_validation_failure(db, order_id, rider_id)
+        
+        (delivery_status, delivery_id, order_number, delivery_fee, 
+         amount_due_dispatch, dispatch_id) = result
+        
+        # 3. COMMIT IMMEDIATELY
         await db.commit()
-        await db.refresh(order)
         
         logger.info(
             f"✓ Rider {rider_id} picked up order {order_id}. "
-            f"Status: {order.delivery.delivery_status.value}"
+            f"Status: {delivery_status}"
         )
         
-        # 5. Mark as completed
+        # 4. Mark as completed
         redis_client.setex(cache_key, 86400, "completed")
         
-        # 6. FIRE BACKGROUND TASKS (non-blocking)
+        # 5. FIRE BACKGROUND TASKS with all necessary data (no DB fetch needed!)
         asyncio.create_task(
             _process_pickup_side_effects(
-                order_id=order.id,
+                order_id=order_id,
+                delivery_id=delivery_id,
+                order_number=order_number,
+                delivery_fee=delivery_fee,
+                amount_due_dispatch=amount_due_dispatch,
+                dispatch_id=dispatch_id,
             )
         )
         
-        # 7. RETURN IMMEDIATELY (instant response)
-        return DeliveryStatusUpdateSchema(
-            delivery_status=order.delivery.delivery_status
-        )
+        # 6. RETURN IMMEDIATELY
+        return DeliveryStatusUpdateSchema(delivery_status=delivery_status)
 
     except HTTPException:
         await db.rollback()
@@ -3349,6 +3621,132 @@ async def rider_pickup_delivery_order(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="An unexpected error occurred while processing the pickup.",
         )
+        
+
+async def _validate_and_update_pickup(
+    db: AsyncSession,
+    order_id: UUID,
+    rider_id: UUID,
+) -> tuple | None:
+    """
+    Validates and updates pickup in a SINGLE query using CTE.
+    Returns tuple with all data needed for background processing:
+    (delivery_status, delivery_id, order_number, delivery_fee, amount_due_dispatch, dispatch_id)
+    
+    Returns None if validation failed.
+    
+    Validates:
+    1. Order exists
+    2. Rider matches assigned rider
+    3. Current status is ACCEPTED (or already PICKED_UP for idempotency)
+    """
+    
+    update_stmt = """
+        WITH validation AS (
+            SELECT 
+                d.id as delivery_id,
+                d.delivery_status as current_status,
+                d.rider_id,
+                d.dispatch_id,
+                d.delivery_fee,
+                d.amount_due_dispatch,
+                o.order_number
+            FROM orders o
+            INNER JOIN deliveries d ON d.order_id = o.id
+            WHERE o.id = :order_id
+            FOR UPDATE OF d
+        ),
+        delivery_update AS (
+            UPDATE deliveries
+            SET 
+                delivery_status = 'picked-up'::deliverystatus,
+                updated_at = NOW()
+            FROM validation v
+            WHERE deliveries.id = v.delivery_id
+                AND v.rider_id = :rider_id
+                AND v.current_status = 'accepted'::deliverystatus
+            RETURNING deliveries.delivery_status, deliveries.id
+        )
+        SELECT 
+            COALESCE(du.delivery_status, v.current_status) as delivery_status,
+            v.delivery_id,
+            v.order_number,
+            v.delivery_fee,
+            v.amount_due_dispatch,
+            v.dispatch_id
+        FROM validation v
+        LEFT JOIN delivery_update du ON du.id = v.delivery_id
+        WHERE (du.delivery_status IS NOT NULL OR v.current_status = 'picked-up'::deliverystatus)
+            AND v.rider_id = :rider_id
+    """
+    
+    result = await db.execute(
+        text(update_stmt),
+        {
+            "order_id": order_id,
+            "rider_id": rider_id,
+        }
+    )
+    
+    row = result.first()
+    return row if row else None
+
+
+async def _handle_pickup_validation_failure(
+    db: AsyncSession, order_id: UUID, rider_id: UUID
+):
+    """
+    Determines why the pickup update failed and raises appropriate error.
+    Only called when update fails (rare case).
+    """
+    
+    check_stmt = """
+        SELECT 
+            o.id as order_exists,
+            d.id as delivery_exists,
+            d.rider_id,
+            d.delivery_status
+        FROM orders o
+        LEFT JOIN deliveries d ON d.order_id = o.id
+        WHERE o.id = :order_id
+    """
+    
+    result = await db.execute(
+        text(check_stmt),
+        {"order_id": order_id}
+    )
+    row = result.first()
+    
+    if not row or not row[0]:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Order not found."
+        )
+    
+    order_exists, delivery_exists, delivery_rider_id, delivery_status = row
+    
+    if not delivery_exists:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Delivery not found."
+        )
+    
+    if delivery_rider_id != rider_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Invalid rider."
+        )
+    
+    if delivery_status != DeliveryStatus.ACCEPTED.value:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Cannot pickup. Current status: {delivery_status}. Must be ACCEPTED."
+        )
+    
+    raise HTTPException(
+        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        detail="Failed to process pickup."
+    )
 
 async def _process_laundry_pickup_side_effects(order_id: UUID):
     """
