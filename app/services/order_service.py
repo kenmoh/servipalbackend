@@ -2454,7 +2454,6 @@ async def _validate_and_update_delivery_acceptance(
             WHERE orders.id = v.order_id
                 AND v.rider_is_suspended_for_order_cancel = FALSE
                 AND v.rider_id = :rider_id
-                AND v.current_delivery_status = :pending_status
             RETURNING orders.id
         ),
         delivery_update AS (
@@ -2474,12 +2473,8 @@ async def _validate_and_update_delivery_acceptance(
         {
             "order_id": order_id,
             "rider_id": rider_id,
-            # "owner_id": owner_id,
-            # "dispatch_id": dispatch_id,
             "order_status": OrderStatus.ACCEPTED,
             "delivery_status": DeliveryStatus.ACCEPTED,
-            # "user_type": UserType.RIDER,
-            
         }
     )
     
