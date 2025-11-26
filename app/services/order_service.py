@@ -2917,7 +2917,7 @@ async def _process_delivery_acceptance_side_effects(order_id, rider_id, dispatch
                     )
                 logger.info(f"Notification sent to sender for order {order_id}")
 
-                _invalidate_delivery_acceptance_caches(order_id, rider_id, dispatch_id, owner_id)
+                _invalidate_delivery_caches(order_id, rider_id, dispatch_id, owner_id)
 
                 logger.info(f"Background: Delivery acceptance side effects completed for order {order_id}")
 
@@ -3575,7 +3575,7 @@ async def rider_pickup_delivery_order(
             await _handle_pickup_validation_failure(db, order_id, rider_id)
         
         (delivery_status, delivery_id, order_number, delivery_fee, 
-         amount_due_dispatch, dispatch_id) = result
+         amount_due_dispatch, dispatch_id, owner_id) = result
         
         # 3. COMMIT IMMEDIATELY
         await db.commit()
@@ -3597,6 +3597,15 @@ async def rider_pickup_delivery_order(
                 delivery_fee=delivery_fee,
                 amount_due_dispatch=amount_due_dispatch,
                 dispatch_id=dispatch_id,
+            )
+        )
+
+        asyncio.create_task(
+            _invalidate_delivery_caches(
+                order_id=order_id,
+                rider_id=rider_id,
+                dispatch_id=dispatch_id,
+                owner_id=owner_id
             )
         )
         
@@ -3641,7 +3650,8 @@ async def _validate_and_update_pickup(
                 d.dispatch_id,
                 d.delivery_fee,
                 d.amount_due_dispatch,
-                o.order_number
+                o.order_number,
+                o.owner_id
             FROM orders o
             INNER JOIN deliveries d ON d.order_id = o.id
             WHERE o.id = :order_id
@@ -3664,7 +3674,8 @@ async def _validate_and_update_pickup(
             v.order_number,
             v.delivery_fee,
             v.amount_due_dispatch,
-            v.dispatch_id
+            v.dispatch_id,
+            v.owner_id
         FROM validation v
         LEFT JOIN delivery_update du ON du.id = v.delivery_id
         WHERE (du.delivery_status IS NOT NULL OR v.current_status = CAST('PICKED_UP' AS deliverystatus))
@@ -3680,6 +3691,7 @@ async def _validate_and_update_pickup(
     )
     
     row = result.first()
+
     return row if row else None
 
 async def _handle_pickup_validation_failure(
@@ -5152,7 +5164,7 @@ async def _notify_order_completion(order: Order, db: AsyncSession):
 
 
 
-def _invalidate_delivery_acceptance_caches(order_id, rider_id, dispatch_id, owner_id):
+def _invalidate_delivery_caches(order_id, rider_id, dispatch_id, owner_id):
      
     try:
         redis_client.delete(f'order_by_id:{order_id}')
