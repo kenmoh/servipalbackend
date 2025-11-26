@@ -2448,8 +2448,8 @@ async def _validate_and_update_delivery_acceptance(
             WHERE orders.id = v.order_id
                 AND v.rider_is_suspended_for_order_cancel = FALSE
                 AND v.rider_id = :rider_id
-                AND v.current_delivery_status = CAST(:pending_status AS deliverystatus)
-                AND v.user_type = CAST(:rider_type AS usertype)
+                AND v.current_delivery_status = 'PENDING'
+                AND v.user_type = 'RIDER'
             RETURNING orders.id, orders.order_status
         ),
         delivery_update AS (
