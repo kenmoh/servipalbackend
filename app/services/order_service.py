@@ -2822,17 +2822,18 @@ async def rider_accept_booking(
         if existing_status == b"completed":
             logger.info(f"Rider acceptance for order {order_id} already processed")
             
-            # Fetch current status
+            # Fetch current status - OPTIMIZED: Only get what we need
             result = await db.execute(
-                select(Order)
+                select(Delivery.delivery_status, Order.order_status)
+                .join(Order, Delivery.order_id == Order.id)
                 .where(Order.id == order_id)
-                .options(selectinload(Order.delivery))
             )
-            order = result.scalar_one_or_none()
+            row = result.first()
             
-            if order and order.delivery:
+            if row:
                 return DeliveryStatusUpdateSchema(
-                    delivery_status=order.delivery.delivery_status
+                    delivery_status=row[0],
+                    order_status=row[1]
                 )
         
         raise HTTPException(
@@ -2844,22 +2845,18 @@ async def rider_accept_booking(
     redis_client.expire(cache_key, 300)
     
     try:
-        # 2. Validate and update order (critical path - fast)
-        # order = await _validate_delivery_acceptance(
-        #     db,
-        #     order_id,
-        #     rider_id,
-        #     order_status=OrderStatus.ACCEPTED,
-        #     delivery_status=DeliveryStatus.ACCEPTED,
-        # )
-
-       
-        order_id, rider_id, owner_id, dispatch_id, order_status, delivery_status = await _validate_and_update_delivery_acceptance(db, order_id, rider_id)
-
-        # 3. COMMIT IMMEDIATELY (critical operation only)
-        # await db.commit()
-        # await db.refresh(order)
-
+        # 2. Validate and update order in ONE query
+        result = await _validate_and_update_delivery_acceptance(db, order_id, rider_id)
+        
+        if result is None:
+            # Update failed - determine why with a single diagnostic query
+            await _handle_validation_failure(db, order_id, rider_id)
+        
+        order_id, rider_id, owner_id, dispatch_id, order_status, delivery_status = result
+        
+        # 3. COMMIT IMMEDIATELY
+        await db.commit()
+        
         logger.info(
             f"✓ Rider {rider_id} accepted order {order_id}. "
             f"Status: {order_status}"
@@ -2878,12 +2875,10 @@ async def rider_accept_booking(
             )
         )
         
-        # 6. RETURN IMMEDIATELY (instant response)
-        # return DeliveryStatusUpdateSchema(
-        #     delivery_status=order.delivery.delivery_status
-        # )
+        # 6. RETURN IMMEDIATELY
         return DeliveryStatusUpdateSchema(
-            delivery_status=delivery_status, order_status=order_status
+            delivery_status=delivery_status, 
+            order_status=order_status
         )
         
     except HTTPException:
@@ -2901,7 +2896,6 @@ async def rider_accept_booking(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="An unexpected error occurred while accepting the delivery.",
         )
-
 
 async def _process_delivery_acceptance_side_effects(order_id, rider_id, dispatch_id, owner_id):
     endpoint_idempotency_key = f"rider_accept:{order_id}:{rider_id}"
