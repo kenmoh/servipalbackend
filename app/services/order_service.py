@@ -2415,10 +2415,11 @@ async def _validate_and_update_delivery_acceptance(
     db: AsyncSession,
     order_id: UUID,
     rider_id: UUID,
-) -> DeliveryStatus:
+) -> tuple | None:
     """
     Validates and updates in a SINGLE optimized query using CTE.
-    Returns the new delivery status.
+    Returns tuple of (order_id, rider_id, owner_id, dispatch_id, order_status, delivery_status)
+    or None if validation/update failed.
     
     This approach:
     1. Validates all conditions in the WHERE clause
@@ -2427,23 +2428,22 @@ async def _validate_and_update_delivery_acceptance(
     All in ONE database round-trip!
     """
     
-    # Use a CTE (Common Table Expression) to validate and update in one shot
     update_stmt = """
         WITH validation AS (
             SELECT 
                 o.id as order_id,
                 o.owner_id,
                 d.id as delivery_id,
+                d.dispatch_id,
                 u.user_type,
                 u.rider_is_suspended_for_order_cancel,
                 d.delivery_status as current_delivery_status,
-                d.rider_id,
-                d.dispatch_id
+                d.rider_id
             FROM orders o
             INNER JOIN deliveries d ON d.order_id = o.id
             INNER JOIN users u ON u.id = :rider_id
             WHERE o.id = :order_id
-            FOR UPDATE OF o, d  -- Lock both rows
+            FOR UPDATE OF o, d
         ),
         order_update AS (
             UPDATE orders
@@ -2461,11 +2461,20 @@ async def _validate_and_update_delivery_acceptance(
             SET 
                 delivery_status = :delivery_status,
                 updated_at = NOW()
-            FROM validation v, order_update ou
+            FROM order_update ou
             WHERE deliveries.order_id = ou.id
             RETURNING deliveries.order_id, deliveries.delivery_status
         )
-        SELECT delivery_status FROM delivery_update
+        SELECT 
+            du.order_id,
+            v.rider_id,
+            v.owner_id,
+            v.dispatch_id,
+            ou.order_status,
+            du.delivery_status
+        FROM delivery_update du
+        INNER JOIN validation v ON du.order_id = v.order_id
+        INNER JOIN order_update ou ON du.order_id = ou.id
     """
     
     result = await db.execute(
@@ -2474,18 +2483,13 @@ async def _validate_and_update_delivery_acceptance(
             "order_id": order_id,
             "rider_id": rider_id,
             "order_status": OrderStatus.ACCEPTED.value,
-            "delivery_status": DeliveryStatus.ACCEPTED.value,
+            "delivery_status": DeliveryStatus.ACCEPTED.value,     
         }
     )
     
     row = result.first()
-    
-    if not row:
-        # Query failed - need to determine why with specific checks
-        await _handle_validation_failure(db, order_id, rider_id)
-    order_id, rider_id, owner_id, dispatch_id, order_status, delivery_status = row 
-    
-    return order_id, rider_id, owner_id, dispatch_id, order_status, delivery_status
+    return row if row else None
+
 
 
 async def _handle_validation_failure(
@@ -2494,11 +2498,12 @@ async def _handle_validation_failure(
     """
     Determines why the update failed and raises appropriate error.
     Only called when update fails (rare case).
+    OPTIMIZED: Single query with all checks.
     """
     
-    # Single query to get all validation info
     check_stmt = """
         SELECT 
+            u.id as user_exists,
             u.user_type,
             u.rider_is_suspended_for_order_cancel,
             o.id as order_exists,
@@ -2517,15 +2522,16 @@ async def _handle_validation_failure(
     )
     row = result.first()
     
-    if not row:
+    if not row or not row[0]:  # user_exists
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Rider not found."
         )
     
-    user_type, is_suspended, order_exists, delivery_exists, delivery_rider_id, delivery_status = row
+    (user_exists, user_type, is_suspended, order_exists, 
+     delivery_exists, delivery_rider_id, delivery_status) = row
     
-    if user_type != UserType.RIDER:
+    if user_type != UserType.RIDER.value:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only a rider can accept orders.",
@@ -2549,7 +2555,7 @@ async def _handle_validation_failure(
             detail="Invalid user",
         )
     
-    if delivery_status != DeliveryStatus.PENDING:
+    if delivery_status != DeliveryStatus.PENDING.value:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="This delivery has already been accepted or is no longer available.",
@@ -2558,9 +2564,8 @@ async def _handle_validation_failure(
     # Shouldn't reach here, but just in case
     raise HTTPException(
         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-        detail="Failed to accept delivery due.",
+        detail="Failed to accept delivery.",
     )
-
 
 async def _validate_delivery_acceptance(
     db: AsyncSession,
@@ -2825,17 +2830,18 @@ async def rider_accept_booking(
         if existing_status == b"completed":
             logger.info(f"Rider acceptance for order {order_id} already processed")
             
-            # Fetch current status
+            # Fetch current status - OPTIMIZED: Only get what we need
             result = await db.execute(
-                select(Order)
+                select(Delivery.delivery_status, Order.order_status)
+                .join(Order, Delivery.order_id == Order.id)
                 .where(Order.id == order_id)
-                .options(selectinload(Order.delivery))
             )
-            order = result.scalar_one_or_none()
+            row = result.first()
             
-            if order and order.delivery:
+            if row:
                 return DeliveryStatusUpdateSchema(
-                    delivery_status=order.delivery.delivery_status
+                    delivery_status=row[0],
+                    order_status=row[1]
                 )
         
         raise HTTPException(
@@ -2847,22 +2853,18 @@ async def rider_accept_booking(
     redis_client.expire(cache_key, 300)
     
     try:
-        # 2. Validate and update order (critical path - fast)
-        # order = await _validate_delivery_acceptance(
-        #     db,
-        #     order_id,
-        #     rider_id,
-        #     order_status=OrderStatus.ACCEPTED,
-        #     delivery_status=DeliveryStatus.ACCEPTED,
-        # )
-
-       
-        order_id, rider_id, owner_id, dispatch_id, order_status, delivery_status = await _validate_and_update_delivery_acceptance(db, order_id, rider_id)
-
-        # 3. COMMIT IMMEDIATELY (critical operation only)
-        # await db.commit()
-        # await db.refresh(order)
-
+        # 2. Validate and update order in ONE query
+        result = await _validate_and_update_delivery_acceptance(db, order_id, rider_id)
+        
+        if result is None:
+            # Update failed - determine why with a single diagnostic query
+            await _handle_validation_failure(db, order_id, rider_id)
+        
+        order_id, rider_id, owner_id, dispatch_id, order_status, delivery_status = result
+        
+        # 3. COMMIT IMMEDIATELY
+        await db.commit()
+        
         logger.info(
             f"✓ Rider {rider_id} accepted order {order_id}. "
             f"Status: {order_status}"
@@ -2881,12 +2883,10 @@ async def rider_accept_booking(
             )
         )
         
-        # 6. RETURN IMMEDIATELY (instant response)
-        # return DeliveryStatusUpdateSchema(
-        #     delivery_status=order.delivery.delivery_status
-        # )
+        # 6. RETURN IMMEDIATELY
         return DeliveryStatusUpdateSchema(
-            delivery_status=delivery_status, order_status=order_status
+            delivery_status=delivery_status, 
+            order_status=order_status
         )
         
     except HTTPException:
@@ -2904,7 +2904,6 @@ async def rider_accept_booking(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="An unexpected error occurred while accepting the delivery.",
         )
-
 
 async def _process_delivery_acceptance_side_effects(order_id, rider_id, dispatch_id, owner_id):
     endpoint_idempotency_key = f"rider_accept:{order_id}:{rider_id}"
