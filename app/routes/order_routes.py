@@ -223,7 +223,7 @@ async def vendor_mark_order_delivered(
 async def rider_accept_booking(
     order_id: UUID,
     rider_id: UUID,
-    # current_user: User = Depends(get_current_user_with_few_data),
+    current_user: User = Depends(get_current_user_with_few_data),
     db: AsyncSession = Depends(get_db),
     
 ) -> DeliveryStatusUpdateSchema:

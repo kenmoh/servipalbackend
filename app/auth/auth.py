@@ -153,7 +153,6 @@ async def get_current_user_with_few_data(
         detail="Could not validate credentials",
         headers={"WWW-Authenticate": "Bearer"},
     )
-
     try:
         payload = jwt.decode(
             token, settings.JWT_SECRET_KEY, algorithms=[settings.JWT_ALGORITHM]
@@ -163,8 +162,8 @@ async def get_current_user_with_few_data(
             raise credentials_exception
     except JWTError:
         raise credentials_exception
-
-    # Load only specific columns to reduce overhead
+    
+    # Load only specific columns and prevent relationship loading
     query = (
         select(User)
         .where(User.id == user_id)
@@ -177,18 +176,20 @@ async def get_current_user_with_few_data(
                 User.user_type,
                 User.is_blocked,
                 User.account_status
-            )
+            ),
+            # Prevent ALL relationship loading
+            noload('*')  # This prevents loading any relationships
         )
+        .execution_options(populate_existing=False)  # Don't refresh if already in session
     )
     
     result = await db.execute(query)
     user = result.scalar_one_or_none()
-
+    
     if user is None or user.is_blocked:
         raise credentials_exception
-
+    
     return user
-
 
 async def get_user_from_token(token: str, db: AsyncSession) -> User | None:
     """

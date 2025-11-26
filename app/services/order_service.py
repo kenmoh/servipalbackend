@@ -2415,57 +2415,62 @@ async def _validate_and_update_delivery_acceptance(
     db: AsyncSession,
     order_id: UUID,
     rider_id: UUID,
-) -> DeliveryStatus:
+) -> tuple | None:
     """
     Validates and updates in a SINGLE optimized query using CTE.
-    Returns the new delivery status.
-    
-    This approach:
-    1. Validates all conditions in the WHERE clause
-    2. Updates both tables atomically
-    3. Returns the result
-    All in ONE database round-trip!
+    Returns tuple of (order_id, rider_id, owner_id, dispatch_id, order_status, delivery_status)
+    or None if validation/update failed.
     """
     
-    # Use a CTE (Common Table Expression) to validate and update in one shot
     update_stmt = """
         WITH validation AS (
             SELECT 
                 o.id as order_id,
                 o.owner_id,
                 d.id as delivery_id,
+                d.dispatch_id,
                 u.user_type,
                 u.rider_is_suspended_for_order_cancel,
                 d.delivery_status as current_delivery_status,
-                d.rider_id,
-                d.dispatch_id
+                d.rider_id
             FROM orders o
             INNER JOIN deliveries d ON d.order_id = o.id
             INNER JOIN users u ON u.id = :rider_id
             WHERE o.id = :order_id
-            FOR UPDATE OF o, d  -- Lock both rows
+            FOR UPDATE OF o, d
         ),
         order_update AS (
             UPDATE orders
             SET 
-                order_status = :order_status,
+                order_status = :order_status::orderstatus,
                 updated_at = NOW()
             FROM validation v
             WHERE orders.id = v.order_id
                 AND v.rider_is_suspended_for_order_cancel = FALSE
                 AND v.rider_id = :rider_id
+                AND v.current_delivery_status = 'pending'::deliverystatus
+                AND v.user_type = 'rider'::usertype
             RETURNING orders.id, orders.order_status
         ),
         delivery_update AS (
             UPDATE deliveries
             SET 
-                delivery_status = :delivery_status,
+                delivery_status = :delivery_status::deliverystatus,
                 updated_at = NOW()
-            FROM validation v, order_update ou
+            FROM order_update ou
             WHERE deliveries.order_id = ou.id
             RETURNING deliveries.order_id, deliveries.delivery_status
         )
-        SELECT delivery_status FROM delivery_update
+        SELECT 
+            du.order_id,
+            v.rider_id,
+            v.owner_id,
+            v.dispatch_id,
+            ou.order_status,
+            du.delivery_status
+        FROM delivery_update du
+        INNER JOIN validation v ON du.order_id = v.order_id
+        INNER JOIN order_update ou ON du.order_id = ou.id
     """
     
     result = await db.execute(
@@ -2479,12 +2484,7 @@ async def _validate_and_update_delivery_acceptance(
     )
     
     row = result.first()
-    
-    if not row:
-        # Query failed - need to determine why with specific checks
-        await _handle_validation_failure(db, order_id, rider_id)
-    
-    return row
+    return row if row else None
 
 
 async def _handle_validation_failure(
