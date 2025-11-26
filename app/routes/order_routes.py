@@ -261,7 +261,7 @@ async def rider_pickup_delivery_order(
 ) -> DeliveryStatusUpdateSchema:
     try:
         return await order_service.rider_pickup_delivery_order(
-            db=db, rider_id=rider_id, order_id=order_id
+            db=db, rider_id=current_user.id, order_id=order_id
         )
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
@@ -277,7 +277,7 @@ async def laundry_pickup(
 ) -> DeliveryStatusUpdateSchema:
     try:
         return await order_service.laundry_pickup(
-            db=db, vendor_id=vendor_id, order_id=order_id
+            db=db, vendor_id=current_user.id, order_id=order_id
         )
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
@@ -293,7 +293,7 @@ async def laundry_returned(
 ) -> DeliveryStatusUpdateSchema:
     try:
         return await order_service.laundry_returned(
-            db=db, vendor_id=vendor_id, order_id=order_id
+            db=db, vendor_id=current_user.id, order_id=order_id
         )
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
