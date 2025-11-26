@@ -2478,8 +2478,8 @@ async def _validate_and_update_delivery_acceptance(
         {
             "rider_id": rider_id,
             "order_id": order_id,
-            "order_status": OrderStatus.ACCEPTED,
-            "delivery_status": DeliveryStatus.ACCEPTED,
+            "order_status": OrderStatus.ACCEPTED.value.upper(),
+            "delivery_status": DeliveryStatus.ACCEPTED.value.upper(),
         }
     )
     
