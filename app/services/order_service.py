@@ -3281,7 +3281,7 @@ async def _process_pickup_side_effects(
         # 1. Move funds to escrow (critical financial operation)
         logger.info(f"Background: Moving funds to escrow for order {order_id}")
         
-        await _update_wallet_at_pickup_optimized(
+        await _update_wallet_at_pickup(
             order_id=order_id,
             delivery_id=delivery_id,
             order_number=order_number,
