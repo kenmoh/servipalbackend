@@ -2495,9 +2495,9 @@ async def _handle_validation_failure(
     Only called when update fails (rare case).
     """
     
-    # Single query to get all validation info
     check_stmt = """
         SELECT 
+            u.id as user_exists,
             u.user_type,
             u.rider_is_suspended_for_order_cancel,
             o.id as order_exists,
@@ -2505,14 +2505,14 @@ async def _handle_validation_failure(
             d.rider_id,
             d.delivery_status
         FROM users u
-        LEFT JOIN orders o ON o.id = :order_id
+        LEFT JOIN orders o ON o.id = $1
         LEFT JOIN deliveries d ON d.order_id = o.id
-        WHERE u.id = :rider_id
+        WHERE u.id = $2
     """
     
     result = await db.execute(
         text(check_stmt),
-        {"order_id": order_id, "rider_id": rider_id}
+        (order_id, rider_id)
     )
     row = result.first()
     
@@ -3703,12 +3703,12 @@ async def _handle_pickup_validation_failure(
             d.delivery_status
         FROM orders o
         LEFT JOIN deliveries d ON d.order_id = o.id
-        WHERE o.id = :order_id
+        WHERE o.id = $1
     """
     
     result = await db.execute(
         text(check_stmt),
-        {"order_id": order_id}
+        (order_id,) 
     )
     row = result.first()
     
