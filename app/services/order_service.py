@@ -2898,31 +2898,35 @@ async def rider_accept_booking(
         )
 
 async def _process_delivery_acceptance_side_effects(order_id, rider_id, dispatch_id, owner_id):
-    endpoint_idempotency_key = f"rider_accept_booking:{order_id}:{rider_id}"
-    cache_key = f"idempotency:{endpoint_idempotency_key}"
-
+    """
+    Background task for delivery acceptance side effects.
+    Handles notifications and cache invalidation after rider accepts a delivery.
+    """
     try:
-      
-        logger.info(f"Rider accepted order {order_id}. Funds will move to escrow at pickup.")
+        async for db in get_db():
+            try:
+                logger.info(f"Rider accepted order {order_id}. Funds will move to escrow at pickup.")
 
-        sender_token = await get_user_notification_token(db=db, user_id=owner_id)
-        if sender_token:
-            await send_push_notification(
-                tokens=[sender_token],
-                title="Order Assigned",
-                message=f"Your dispatch rider is on the way to pick up your order.",
-                navigate_to="/(app)/delivery/orders",
-            )
-        logger.info(f"Notification sent to sender for order {order_id}")
+                sender_token = await get_user_notification_token(db=db, user_id=owner_id)
+                if sender_token:
+                    await send_push_notification(
+                        tokens=[sender_token],
+                        title="Order Assigned",
+                        message=f"Your dispatch rider is on the way to pick up your order.",
+                        navigate_to="/(app)/delivery/orders",
+                    )
+                logger.info(f"Notification sent to sender for order {order_id}")
 
-        _invalidate_delivery_acceptance_caches(order_id, rider_id, dispatch_id, owner_id)
+                _invalidate_delivery_acceptance_caches(order_id, rider_id, dispatch_id, owner_id)
 
-        redis_client.setex(cache_key, 86400, "completed")
+                logger.info(f"Background: Delivery acceptance side effects completed for order {order_id}")
 
-    except HTTPException:
-        await db.rollback()
-        redis_client.delete(cache_key)
-        raise
+            except Exception as e:
+                logger.error(f"Error in delivery acceptance background task: {e}", exc_info=True)
+            finally:
+                break
+    except Exception as e:
+        logger.error(f"Failed to get DB session for delivery acceptance background task: {e}")
 
 
 
