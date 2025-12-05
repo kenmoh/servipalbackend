@@ -4859,7 +4859,7 @@ async def _notify_order_completion(order: Order, db: AsyncSession):
         )
        
 
-def _invalidate_delivery_acceptance_caches(
+async def _invalidate_delivery_acceptance_caches(
     order_id: UUID,
     rider_id: UUID,
     dispatch_id: UUID,
