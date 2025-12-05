@@ -387,6 +387,7 @@ async def _invalidate_package_order_caches(
 ):
     redis_client.delete(f"user_orders:{current_user.id}")
     redis_client.delete(f"user_orders:{order_data.owner_id}")
+    redis_client.delete(f"order_by_id:{order_data.order_id}")
     redis_client.delete(f"user_orders:{order_data.vendor_id}")
     redis_client.delete(f"user_orders:{delivery_data.rider_id}")
     redis_client.delete(f"user_orders:{delivery_data.dispatch_id}")
@@ -2917,7 +2918,7 @@ async def _process_delivery_acceptance_side_effects(order_id, rider_id, dispatch
                     )
                 logger.info(f"Notification sent to sender for order {order_id}")
 
-                _invalidate_delivery_acceptance_caches(order_id=order_id, rider_id=rider_id, dispatch_id=dispatch_id, owner_id=owner_id)
+                await _invalidate_delivery_acceptance_caches(order_id=order_id, rider_id=rider_id, dispatch_id=dispatch_id, owner_id=owner_id)
                 
                 # Broadcast status update to UI
                 await ws_service.broadcast_order_status_update(
