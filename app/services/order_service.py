@@ -2857,7 +2857,7 @@ async def rider_accept_booking(
         # 3. COMMIT IMMEDIATELY
         await db.commit()
         
-        logger.info(
+        logger.info(_validate_and_update_delivery_acceptance
             f"✓ Rider {rider_id} accepted order {order_id}. "
             f"Status: {order_status}"
         )
@@ -2917,7 +2917,7 @@ async def _process_delivery_acceptance_side_effects(order_id, rider_id, dispatch
                     )
                 logger.info(f"Notification sent to sender for order {order_id}")
 
-                await _invalidate_delivery_caches(order_id, rider_id, dispatch_id, owner_id)
+                _invalidate_delivery_acceptance_caches(order_id, rider_id, dispatch_id, owner_id)
                 
                 # Broadcast status update to UI
                 await ws_service.broadcast_order_status_update(
@@ -3298,7 +3298,7 @@ async def rider_pickup_delivery_order(
         )
 
         asyncio.create_task(
-            _invalidate_delivery_caches(
+            _invalidate_delivery_acceptance_caches(
                 order_id=order_id,
                 rider_id=rider_id,
                 dispatch_id=dispatch_id,
@@ -3461,7 +3461,7 @@ async def _process_laundry_pickup_side_effects(order_id: UUID):
                     return
 
                 # 1. Invalidate caches
-                await _invalidate_order_caches(order)
+                _invalidate_order_caches(order)
                 redis_client.delete(f"order_by_id:{order_id}")
 
                 # 2. Broadcast update
@@ -3532,7 +3532,7 @@ async def _process_laundry_returned_side_effects(order_id: UUID):
                     return
 
                 # 1. Invalidate caches
-                await _invalidate_order_caches(order)
+                _invalidate_order_caches(order)
 
                 # 2. Broadcast update
                 await ws_service.broadcast_order_status_update(
@@ -4859,7 +4859,7 @@ async def _notify_order_completion(order: Order, db: AsyncSession):
         )
        
 
-async def _invalidate_delivery_caches(
+def _invalidate_delivery_acceptance_caches(
     order_id: UUID,
     rider_id: UUID,
     dispatch_id: UUID,
@@ -4978,7 +4978,7 @@ async def _run_post_delivery_background_tasks(delivery: Delivery):
         await _notify_delivery_completion(delivery)
 
         # 2. Cache invalidation
-        _invalidate_delivery_caches(delivery)
+        await _invalidate_delivery_caches(delivery)
         _invalidate_pickup_order_caches(delivery.order)
         redis_client.delete(f"order_by_id:{delivery.order.id}")
 
