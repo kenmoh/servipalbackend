@@ -2857,7 +2857,7 @@ async def rider_accept_booking(
         # 3. COMMIT IMMEDIATELY
         await db.commit()
         
-        logger.info(_validate_and_update_delivery_acceptance
+        logger.info(
             f"✓ Rider {rider_id} accepted order {order_id}. "
             f"Status: {order_status}"
         )
@@ -2917,7 +2917,7 @@ async def _process_delivery_acceptance_side_effects(order_id, rider_id, dispatch
                     )
                 logger.info(f"Notification sent to sender for order {order_id}")
 
-                _invalidate_delivery_acceptance_caches(order_id, rider_id, dispatch_id, owner_id)
+                _invalidate_delivery_acceptance_caches(order_id=order_id, rider_id=rider_id, dispatch_id=dispatch_id, owner_id=owner_id)
                 
                 # Broadcast status update to UI
                 await ws_service.broadcast_order_status_update(
