@@ -3889,7 +3889,7 @@ async def sender_confirm_package_received(
 
         # === 3. COMMIT THE USER-FACING SUCCESS ===
         await db.commit()
-        logger.info(f"Package confirmed received for order {order.id} by user {current_user.id}")
+        logger.info(f"Package confirmed received for order {order.id} by user {sender_id}")
 
         # === 4. FIRE-AND-FORGET ALL OTHER TASKS ===
         asyncio.create_task(
