@@ -149,8 +149,8 @@ async def get_riders(
     stmt = (
         select(
             User,
-            func.count(Delivery.id).label("delivery_count"),
-            func.count(Review.id).label("review_count"),
+            func.count(func.distinct(Delivery.id)).label("delivery_count"),
+            func.count(func.distinct(Review.id)).label("review_count"),
             func.coalesce(func.avg(Review.rating), 0).label("average_rating"),
             func.ST_Distance(User.location_coordinates, point).label("distance_meters"),
         )
