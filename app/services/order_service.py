@@ -385,17 +385,20 @@ async def _update_order_with_payment_link(
 async def _invalidate_package_order_caches(
     order_data, delivery_data, current_user: User
 ):
-    redis_client.delete(f"user_orders:{current_user.id}")
-    redis_client.delete(f"user_orders:{order_data.owner_id}")
-    redis_client.delete(f"order_by_id:{order_data.order_id}")
-    redis_client.delete(f"user_orders:{order_data.vendor_id}")
-    redis_client.delete(f"user_orders:{delivery_data.rider_id}")
-    redis_client.delete(f"user_orders:{delivery_data.dispatch_id}")
-    redis_client.delete("near_by_riders")
-    redis_client.delete(f"{ALL_DELIVERY}")
-    redis_client.delete("paid_pending_deliveries")
-    redis_client.delete(f"user_related_orders:{current_user.id}")
-    redis_client.delete("orders")
+    try:
+        redis_client.delete(f"user_orders:{current_user.id}")
+        redis_client.delete(f"user_orders:{order_data.owner_id}")
+        redis_client.delete(f"order_by_id:{order_data.id}")
+        redis_client.delete(f"user_orders:{order_data.vendor_id}")
+        redis_client.delete(f"user_orders:{delivery_data.rider_id}")
+        redis_client.delete(f"user_orders:{delivery_data.dispatch_id}")
+        redis_client.delete("near_by_riders")
+        redis_client.delete(f"{ALL_DELIVERY}")
+        redis_client.delete("paid_pending_deliveries")
+        redis_client.delete(f"user_related_orders:{current_user.id}")
+        redis_client.delete("orders")
+    except Exception as e:
+        logger.warning(f"Cache invalidation failed: {e}")
     
 
 async def create_package_order(
