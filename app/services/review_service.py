@@ -238,6 +238,7 @@ async def create_rider_review(
         await db.refresh(review)
 
         redis_client.delete(f"reviews:{order.delivery.rider_id}")
+        redis_client.delete(f"near_by_riders")
 
         return ReviewResponse(
             id=review.id,
