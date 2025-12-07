@@ -4309,7 +4309,7 @@ async def _order_settlement(order: Order):
 async def _clear_sender_escrow(order: Order, base_idempotency_key: str):
     """Clear sender's escrow balance."""
     
-    total_spent = Decimal(order.delivery.delivery_fee)
+    total_spent = Decimal(order.grand_total)
     
     # Unique idempotency key for sender
     sender_idempotency_key = f"{base_idempotency_key}:sender:{order.owner_id}"
@@ -4879,7 +4879,10 @@ async def _invalidate_delivery_acceptance_caches(
             ALL_DELIVERY,
             "paid_pending_deliveries", 
             "orders",
-            "near_by_riders"
+            "near_by_riders",
+            f"user_orders:{rider_id}",
+            f"user_orders:{dispatch_id}",
+            f"user_orders:{owner_id}",
 
         ]
         
